@@ -124,6 +124,14 @@ describe("createAnthropicStream", () => {
     expect(request.temperature).toBeUndefined();
   });
 
+  test("forwards max effort to current adaptive-thinking Claude models", async () => {
+    for (const modelId of ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5"]) {
+      const request = await collectRequest(resolveModel({ provider: "anthropic", modelId }), { effort: "max" });
+      expect(request.model).toBe(modelId);
+      expect(request.output_config).toEqual({ effort: "max" });
+    }
+  });
+
   test("uses always-on adaptive thinking for Claude Opus 5.5", async () => {
     const request = await collectRequest(resolveModel({ provider: "anthropic", modelId: "claude-opus-5-5" }), {
       effort: "medium",

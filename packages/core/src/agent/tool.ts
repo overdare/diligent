@@ -14,6 +14,7 @@ export async function runToolCalls(
   generateItemId: () => string,
   onToolAbort: () => void,
   outputStore?: ToolOutputFileStore,
+  sessionId?: string,
 ): Promise<{
   executions: Array<{
     toolCall: ToolCallBlock;
@@ -31,6 +32,7 @@ export async function runToolCalls(
 
   const buildToolContext = (toolCall: ToolCallBlock, toolItemId: string): ToolContext => ({
     toolCallId: toolCall.id,
+    sessionId,
     signal: signal ?? new AbortController().signal,
     abort: onToolAbort,
     onUpdate: (partial) => {
@@ -47,6 +49,11 @@ export async function runToolCalls(
   const canRunInParallel =
     toolCalls.length > 1 && toolCalls.every((toolCall) => registry.get(toolCall.name)?.supportParallel);
   const itemIds = toolCalls.map(() => generateItemId());
+
+  if (signal?.aborted) {
+    fillAbortedExecutions(toolCalls, itemIds, executions, signal, stream, false);
+    return { executions };
+  }
 
   if (canRunInParallel) {
     for (let index = 0; index < toolCalls.length; index++) {

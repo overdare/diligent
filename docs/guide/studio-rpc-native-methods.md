@@ -1,0 +1,73 @@
+# Native Studio RPC tools
+
+The OVERDARE bundled Studio tool provider serves the Web runtime and the MCP server with the same
+argument validation, approval, write serialization, and error mapping. Connected clients consume
+the resulting tool output through their existing tool rendering paths.
+
+## Unified asset import
+
+Use `studiorpc_asset_manager_import` for image, model, and audio files. Studio selects the importer
+from the extension: PNG/JPG/JPEG/TGA/BMP/EXR, FBX/OBJ/GLB/GLTF, or WAV/MP3/OGG. `file` must be an
+absolute path accessible on Studio's computer. Optional `assetName` names a model; images and audio
+ignore it. The result includes `asset.assetid`.
+
+```json
+{ "file": "C:/assets/tree.glb", "assetName": "Tree" }
+```
+
+The tool permits up to five minutes for import and saves the level on success. The dev shared-file
+adapter maps the unified import's paths just as it mapped image imports. The MCP server accepts
+saved calls to `studiorpc_asset_manager_image_import` as a compatibility alias, while advertising
+only the unified tool. No separate model import tool is registered.
+
+If saving fails after import succeeds, the result preserves the imported asset and reports
+`saved: false` and `saveError`, with the tool marked as failed. Inspect Studio and save the level;
+do not repeat the import. A timeout or cancellation also requires inspection before retrying.
+
+## Game defaults and PIE clients
+
+`studiorpc_game_settings_read` takes no arguments and reads Workspace and StarterPlayer defaults.
+`studiorpc_game_settings_update` takes a non-empty partial patch, preserves omitted values, and
+saves the level after a successful update.
+
+```json
+{ "maxPlayers": 12, "gravity": 980, "walkSpeed": 500, "httpEnabled": false }
+```
+
+Supported fields are `maxPlayers` (integer 1–20), `gravity`, `gravityScale`, `jumpHeight`, `jumpPower`,
+`useJumpPower`, `walkSpeed`, `maxSlopeAngle` (0–89 degrees), and `httpEnabled`. Movement values are
+finite, non-negative numbers representable as a native float. Distances use centimeters, speed
+uses cm/s, and gravity uses cm/s². These defaults configure subsequent play sessions; they do not
+change existing live PIE characters. A save failure preserves the successful update's result and
+reports that persistence failed; retry the save rather than the update.
+
+`studiorpc_game_play` accepts `{ "addClient": true }` to queue one additional client in the running
+PIE session without restarting it. Do not combine this with `numberOfPlayer` or `restart: true`.
+Use `studiorpc_game_pie_status` to wait for the new client and retrieve its ID. Do not repeat an
+accepted addition request.
+
+`studiorpc_game_observe` accepts `pieSessionId` and `clientId` together to observe a particular
+client. Omitting both selects the main client. At least one section must be requested:
+
+```json
+{ "character": true, "instances": true, "pieSessionId": "session-id", "clientId": "client-id" }
+```
+
+## Geometry drafts and placed models
+
+`studiorpc_proceduralmodel_run` runs a draft recipe without placing a model. The world must already
+be saved. `id` names `.overdare/geometry/<id>/main.py` under Studio's world directory; pass `code`
+to write and run inline Python, or omit it to reuse the saved recipe. IDs contain at most 64
+letters, digits, dots, underscores, or hyphens and cannot start with a dot. Empty inline code is
+rejected instead of silently reusing an older recipe. `parameters` supplies the draft's parameter
+object, and `timeoutSeconds` is 5–240, with a native default of 240. Only `action: "draft"` is
+supported. Draft calls are serialized to keep saved recipe sources from racing.
+
+`studiorpc_proceduralmodel_set` authors a placed model and supports both `rebuild` and `bake`.
+Its RPC deadline is 30 seconds. Studio may continue the native run after this deadline, so inspect
+the model before retrying a timed-out operation. The draft tool allows 300 seconds, beyond its
+native 240-second deadline. A native `success: false` result is preserved
+and marked as a tool error, including MCP `isError`, so a failed run is not presented as success.
+
+The standalone `game.ui.*`, `asset_manager.model.import`, and `instance.vfx_recipe.add` tools
+are not exposed by this provider.

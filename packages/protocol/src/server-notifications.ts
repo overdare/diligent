@@ -13,7 +13,14 @@ import {
   UsageSchema,
   UserMessageSchema,
 } from "./data-model";
+import { ThreadGoalResponseSchema } from "./goals";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "./methods";
+
+export const ThreadGoalUpdatedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_GOAL_UPDATED),
+  params: ThreadGoalResponseSchema.extend({ threadId: z.string() }),
+});
+export type ThreadGoalUpdatedNotification = z.infer<typeof ThreadGoalUpdatedNotificationSchema>;
 
 export const ThreadStartedNotificationSchema = z.object({
   method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED),
@@ -342,6 +349,7 @@ export const CollabInteractionEndNotificationSchema = z.object({
 export type CollabInteractionEndNotification = z.infer<typeof CollabInteractionEndNotificationSchema>;
 
 export const DiligentServerNotificationSchema = z.union([
+  ThreadGoalUpdatedNotificationSchema,
   AgentEventNotificationSchema,
   ThreadStartedNotificationSchema,
   ThreadResumedNotificationSchema,

@@ -1,12 +1,17 @@
+// @summary Discover asset candidates and packs, with an optional explicit user picker.
+
 import type { ToolContext, ToolResult } from "@diligent/core/tool-contract";
 import { type RuntimeToolHost, requestToolApproval, requestToolUserInput } from "@diligent/runtime";
 import { z } from "zod";
+import {
+  buildPackResult,
+  enumeratePack,
+  isCatalogAsset,
+  normalizeAssetCandidate,
+  RAG_BASE_URL,
+  RAG_TIMEOUT_MS,
+} from "./asset-catalog";
 import { buildSearchRender, normalizeAssetForRender } from "./render";
-
-// Env override lets dev sessions target a local chatbot-api before features
-// (e.g. assetFilter) reach production.
-const BASE_URL = process.env.DILIGENT_RAG_BASE_URL?.trim() || "https://aiguide.overdare.com";
-const TIMEOUT_MS = 10_000;
 
 interface RagResult {
   text: string;
@@ -42,19 +47,6 @@ function isAssetResult(result: AnyResult): result is AssetResult {
   return "assetId" in result;
 }
 
-function normalizeAssetResult(result: Partial<AssetResult>): Partial<AssetResult> {
-  return {
-    text: result.text,
-    score: result.score,
-    title: result.title,
-    keywords: result.keywords,
-    assetId: result.assetId,
-    assetType: result.assetType,
-    categoryId: result.categoryId,
-    subCategoryId: result.subCategoryId,
-  };
-}
-
 export const name = "overdaresearch";
 
 export const description = `Searches OVERDARE documentation and assets using RAG.
@@ -63,7 +55,13 @@ Use this tool to find relevant OVERDARE API references, guides, and asset metada
 When to use each source:
   - Default topK by source: docs=4, assets=8; only increase if results are insufficient
   - "docs": API references, conceptual guides, configuration details, service descriptions
-  - "assets": Asset catalog search returning asset metadata such as title, keywords, assetId, assetType, categoryId, and subCategoryId
+  - "assets": Returns candidates with assetId, title, description, imageUrl, classifications, and detected packs.
+    Choose suitable assets yourself using descriptions. If appearance matters, inspect imageUrl with
+    overdaresearch_deep(action="asset-preview") before judging the image.
+    A pack may be more suitable for a themed scene: use overdaresearch_deep(action="asset-pack", packKeyword=...)
+    to read its palette, then import only the members you need using the existing import tools.
+    Set requestUserInput=true only when you want to offer the user a choice; otherwise continue autonomously.
+    If nothing fits, refine the search or use another approach. A pack is a palette, not a prefab.
 
 Query tips:
   - Provide a clear, specific RAG-friendly query describing what you want to find
@@ -77,47 +75,24 @@ export const parameters = z.object({
     .enum(["docs", "assets"])
     .describe("docs = API references and guides. assets = asset catalog search with asset metadata fields."),
   topK: z.number().int().min(1).max(10).describe("Number of results to return"),
-  selectable: z
+  requestUserInput: z
     .boolean()
-    .default(true)
+    .default(false)
     .describe(
-      "Assets only (default true). When 2+ assets match, the user is asked to pick one and the chosen assetId is returned; exactly 1 match auto-selects; 0 matches returns not-found. When a themed pack is detected the picker also offers importing the whole pack; if the user picks it, the full member list is returned instead of a single assetId. Set false ONLY for internal/informational asset lookups where you must read the results yourself (e.g. choosing UI element assets while generating an interface); never set false to pick a placement asset on the user's behalf.",
+      "Assets only. Set true to offer the user an asset or pack picker, including a none option. " +
+        "Otherwise read the candidates and choose suitable assets yourself without waiting for user input.",
     ),
 });
 
 type Params = z.infer<typeof parameters>;
 
-// Assets that skip the picker and auto-select the top-scored match, like the
-// pre-picker behavior. assetType and categoryId are orthogonal axes in the RAG
-// data (values verified against the live /api/chat/rag response), and AUDIO /
-// ANIMATION appear on BOTH axes, so each is checked on both to catch every case:
-//   - assetType=MODEL, categoryId=ANIMATION (e.g. BasicWalkAnimations)
-//   - assetType=ANIMATION, categoryId=GAMEPLAY (e.g. flip jump)
-//   - ACTION_SEQUENCE is an assetType that spans categories (EFFECTS, WEAPON, …).
-// Compared case-insensitively.
-const AUTO_SELECT_TYPES = new Set(["AUDIO", "ANIMATION", "ACTION_SEQUENCE"]);
-const AUTO_SELECT_CATEGORIES = new Set(["AUDIO", "ANIMATION", "EFFECTS", "UI_ELEMENTS"]);
-
-function shouldAutoSelect(asset: Partial<AssetResult>): boolean {
-  return (
-    AUTO_SELECT_TYPES.has((asset.assetType ?? "").trim().toUpperCase()) ||
-    AUTO_SELECT_CATEGORIES.has((asset.categoryId ?? "").trim().toUpperCase())
-  );
-}
-
-function autoSelectResult(raw: Partial<AssetResult>, resultCount: number): ToolResult {
-  const only = normalizeAssetForRender(raw);
-  return {
-    output: `Selected asset: ${only.title} (assetId: ${only.assetId})`,
-    metadata: { resultCount, assetId: only.assetId },
-  };
-}
-
 const PACK_OPTION_PREFIX = "pack:";
 
 interface AssetSelection {
   output: string;
-  /** Set when the user picked a whole pack instead of a single asset. */
+  selectionStatus: "selected" | "none" | "cancelled" | "custom";
+  assetId?: string;
+  /** Set only when the user picked an offered pack. */
   packKeyword?: string;
 }
 
@@ -142,7 +117,7 @@ async function selectAsset(
           // cards, which visually separates "import the whole set" from the
           // individual assets.
           ...packs.map((p) => ({
-            label: `Import full pack: ${p.keyword} (${p.memberCount} assets)`,
+            label: `Use pack palette: ${p.keyword} (${p.memberCount} assets)`,
             description: "Themed asset collection",
             value: `${PACK_OPTION_PREFIX}${p.keyword}`,
           })),
@@ -157,6 +132,7 @@ async function selectAsset(
               subtitle: a.assetType,
             },
           })),
+          { label: "None of these are suitable", description: "Try another search or approach", value: "none" },
         ],
       },
     ],
@@ -165,68 +141,25 @@ async function selectAsset(
   const answer = response?.answers.asset;
   const chosen = Array.isArray(answer) ? answer[0] : answer;
   if (!chosen || chosen.trim().length === 0) {
-    return { output: "[Cancelled by user]" };
+    return { output: "[Cancelled by user]", selectionStatus: "cancelled" };
   }
-  if (chosen.startsWith(PACK_OPTION_PREFIX)) {
-    return { output: "", packKeyword: chosen.slice(PACK_OPTION_PREFIX.length) };
+  if (chosen === "none") {
+    return { output: "No suitable asset selected. Try another search or approach.", selectionStatus: "none" };
   }
+  const pack = packs.find((p) => `${PACK_OPTION_PREFIX}${p.keyword}` === chosen);
+  if (pack) return { output: "", selectionStatus: "selected", packKeyword: pack.keyword };
   const match = normalized.find((a) => a.assetId === chosen);
-  return {
-    output: match ? `Selected asset: ${match.title} (assetId: ${match.assetId})` : `Selected assetId: ${chosen}`,
-  };
+  if (match)
+    return {
+      output: `Selected asset: ${match.title} (assetId: ${match.assetId})`,
+      selectionStatus: "selected",
+      assetId: match.assetId,
+    };
+  return { output: `User feedback (no asset selected): ${chosen}`, selectionStatus: "custom" };
 }
 
-// Asset content text is "<visual description>. Category: … Keywords: … Type: …";
-// the tail duplicates the structured metadata fields, so keep only the prose.
-function packMemberDescription(text: string): string {
-  const withoutTail = text.split(/\s+Category:\s/)[0].trim();
-  return withoutTail.length > 400 ? `${withoutTail.slice(0, 400)}…` : withoutTail;
-}
-
-// Enumerate every member of a pack via the exact keyword filter (no ranking).
-async function enumeratePack(keyword: string): Promise<Array<Partial<AssetResult> & { description?: string }>> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const response = await fetch(`${BASE_URL}/api/chat/rag`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        version: "3",
-        source: "assets",
-        assetFilter: { keywords: [keyword] },
-      }),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new Error(`Pack enumeration failed (HTTP ${response.status})`);
-    }
-    const data = (await response.json()) as RagResponse;
-    // Keep the visual description (needed to compose a scene from vague titles
-    // like "Wall 06"), but strip the "Category:/Keywords:/Type:" tail — it
-    // duplicates the structured fields below and roughly doubles the payload
-    // (~20k → ~16k tokens for the 145-member metro pack). Scores don't exist
-    // in enumeration mode (no ranking).
-    return (data?.results ?? []).filter(isAssetResult).map((result) => ({
-      title: result.title,
-      description: packMemberDescription(result.text ?? ""),
-      keywords: result.keywords,
-      assetId: result.assetId,
-      assetType: result.assetType,
-      categoryId: result.categoryId,
-      subCategoryId: result.subCategoryId,
-    }));
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("Pack enumeration timed out");
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-export async function execute(args: Params, _ctx: ToolContext, host?: RuntimeToolHost): Promise<ToolResult> {
+export async function execute(args: Params, ctx: ToolContext, host?: RuntimeToolHost): Promise<ToolResult> {
+  ctx.signal.throwIfAborted();
   const approval = await requestToolApproval(host, {
     permission: "execute",
     toolName: name,
@@ -238,10 +171,10 @@ export async function execute(args: Params, _ctx: ToolContext, host?: RuntimeToo
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), RAG_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${BASE_URL}/api/chat/rag`, {
+    const response = await fetch(`${RAG_BASE_URL}/api/chat/rag`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -252,11 +185,9 @@ export async function execute(args: Params, _ctx: ToolContext, host?: RuntimeToo
         source: args.source,
         topK: args.topK ?? 4,
         threshold: 0.5,
-        // Pack detection runs server-side with a relaxed scan; only useful when a
-        // picker will actually be shown.
-        ...(args.source === "assets" && args.selectable ? { includePacks: true } : {}),
+        ...(args.source === "assets" ? { includePacks: true } : {}),
       }),
-      signal: controller.signal,
+      signal: AbortSignal.any([ctx.signal, controller.signal]),
     });
 
     if (!response.ok) {
@@ -272,52 +203,46 @@ export async function execute(args: Params, _ctx: ToolContext, host?: RuntimeToo
     }
 
     const data = (await response.json()) as RagResponse;
-    const results = (data?.results ?? []).filter((result) => (result.text ?? "").length > 0);
+    clearTimeout(timer); // A user picker can wait longer than the network timeout.
+    const results = data?.results ?? [];
 
     if (args.source === "assets") {
-      const rawAssets = results.filter(isAssetResult);
-      const assetResults = rawAssets.map(normalizeAssetResult);
+      const rawAssets = results.filter(isCatalogAsset);
+      const assetResults = rawAssets.map(normalizeAssetCandidate);
       const packs = data?.packs ?? [];
 
-      if (args.selectable) {
-        // The pack scan runs at a lower score floor than the visible results, so
-        // "0 results but a pack was detected" is reachable — the pack is then the
-        // only answer and must still reach the picker.
-        if (rawAssets.length === 0 && packs.length === 0) {
-          return { output: "No results found.", metadata: { resultCount: 0 } };
-        }
-        // A detected pack must reach the picker even with zero or one asset match —
-        // the pack option may be the better answer (e.g. "subway" matches one old
-        // prop while the metro pack holds the real content).
-        if (rawAssets.length === 1 && packs.length === 0) {
-          return autoSelectResult(rawAssets[0], 1);
-        }
-        // Audio/Animation/Effects/UI and Action-Sequence assets skip the picker
-        // and auto-select the top-scored match.
-        if (rawAssets.length > 0 && shouldAutoSelect(rawAssets[0])) {
-          return autoSelectResult(rawAssets[0], rawAssets.length);
-        }
+      if (rawAssets.length === 0 && packs.length === 0) {
+        return { output: "No results found.", metadata: { resultCount: 0 } };
+      }
+      if (args.requestUserInput) {
         const selection = await selectAsset(host, args.query, rawAssets, packs);
         if (selection.packKeyword) {
-          const members = await enumeratePack(selection.packKeyword);
-          return {
-            output: JSON.stringify({ pack: selection.packKeyword, memberCount: members.length, members }, null, 2),
-            metadata: { resultCount: members.length, packKeyword: selection.packKeyword },
-          };
+          const result = buildPackResult(selection.packKeyword, await enumeratePack(selection.packKeyword, ctx.signal));
+          return { ...result, metadata: { ...result.metadata, selectionStatus: "selected" } };
         }
-        return { output: selection.output, metadata: { resultCount: rawAssets.length } };
+        return {
+          output: selection.output,
+          metadata: {
+            resultCount: rawAssets.length,
+            selectionStatus: selection.selectionStatus,
+            ...(selection.assetId ? { assetId: selection.assetId } : {}),
+          },
+        };
       }
-
       return {
-        output: assetResults.length
-          ? JSON.stringify({ results: assetResults, totalCount: data?.totalCount ?? assetResults.length }, null, 2)
-          : "No results found.",
+        output: JSON.stringify(
+          { results: assetResults, totalCount: data?.totalCount ?? assetResults.length, packs },
+          null,
+          2,
+        ),
         render: buildSearchRender({ source: args.source, query: args.query }, rawAssets),
-        metadata: { resultCount: assetResults.length, results: assetResults },
+        metadata: { resultCount: assetResults.length, results: assetResults, packs },
       };
     }
 
-    const ragResults = results.filter((result): result is RagResult => !isAssetResult(result));
+    const ragResults = results.filter(
+      (result): result is RagResult => !isAssetResult(result) && (result.text ?? "").length > 0,
+    );
 
     return {
       output: ragResults.length ? JSON.stringify(ragResults, null, 2) : "No results found.",
@@ -325,6 +250,7 @@ export async function execute(args: Params, _ctx: ToolContext, host?: RuntimeToo
       metadata: { resultCount: ragResults.length, results: ragResults },
     };
   } catch (err) {
+    if (ctx.signal.aborted) throw ctx.signal.reason;
     if (err instanceof Error && err.name === "AbortError") {
       throw new Error("OVERDARE RAG search timed out");
     }

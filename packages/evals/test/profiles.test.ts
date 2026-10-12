@@ -56,8 +56,8 @@ describe("eval profiles", () => {
   });
 
   test("an explicit ChatGPT model override remains a ChatGPT profile", () => {
-    expect(resolveSelectedProfiles({ ...BASE_OPTIONS, provider: "chatgpt", model: "gpt-5.5" })).toEqual([
-      { provider: "chatgpt", model: "gpt-5.5", effort: "medium" },
+    expect(resolveSelectedProfiles({ ...BASE_OPTIONS, provider: "chatgpt", model: "gpt-6-astra" })).toEqual([
+      { provider: "chatgpt", model: "gpt-6-astra", effort: "medium" },
     ]);
   });
 
@@ -95,7 +95,7 @@ describe("eval profiles", () => {
       bindProviderManager: (manager: ProviderManager) => manager.setApiKey("openai", "bound"),
       redactionSecrets: () => [],
     } as unknown as ChatGPTEvalAuth;
-    const profile = { provider: "chatgpt", model: "gpt-5.5", effort: "medium" } as const;
+    const profile = { provider: "chatgpt", model: "gpt-6-astra", effort: "medium" } as const;
 
     expect(createProfileStream(profile, {}, auth)).toBe(stream);
     const manager = new ProviderManager({});

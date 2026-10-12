@@ -79,6 +79,77 @@ function makeInspectingSessionManagerFactory(observer: (agent: RuntimeAgent) => 
 }
 
 describe("AgentRegistry", () => {
+  it("retains captured goal usage ownership after the parent's run scope changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "goal-child-usage-"));
+    try {
+      const samples: unknown[] = [];
+      const live = new Set<string>();
+      let scope: import("../../src/goals/controller").GoalWorkScope | undefined = {
+        identity: { goalId: "goal", epoch: 1, outerRunId: "outer" },
+        signal: new AbortController().signal,
+        startedAt: 0,
+        recordUsage: (sample) => {
+          samples.push(sample);
+        },
+        childStarted: (id) => {
+          live.add(id);
+        },
+        childFinished: (id) => {
+          live.delete(id);
+        },
+      };
+      const registry = new AgentRegistry(
+        makeCollabDeps({
+          cwd: root,
+          paths: await ensureDiligentDir(root),
+          streamFn: makeStreamFn([makeAssistant("child")]),
+          getGoalScope: () => scope,
+        }),
+      );
+      const originalScope = scope;
+      const child = registry.spawn({ prompt: "Inspect", description: "Inspection" });
+      expect(live.has(child.threadId)).toBe(true);
+      scope = undefined;
+      await registry.wait([child.threadId], 1000);
+      expect(samples).toHaveLength(1);
+      expect(samples[0]).toMatchObject({ sessionId: child.threadId, inputTokens: 10, outputTokens: 5 });
+      expect(live.size).toBe(0);
+      scope = originalScope;
+      const resumed = registry.spawn({
+        prompt: "Inspect again",
+        description: "Resumed inspection",
+        resumeId: child.threadId,
+      });
+      await registry.wait([resumed.threadId], 1000);
+      expect(samples).toHaveLength(2);
+      const executions = samples as Array<{ executionId?: string }>;
+      expect(executions[0].executionId).toBeDefined();
+      expect(executions[1].executionId).not.toBe(executions[0].executionId);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("never inherits root goal closures even when nesting and allow-lists request them", () => {
+    const definition = resolveAvailableAgentDefinitions(getBuiltinAgentDefinitions(), [])[0]!;
+    const result = resolveChildToolAccess(
+      [
+        makeTool("create_goal"),
+        makeTool("get_goal"),
+        makeTool("update_goal"),
+        makeTool("read"),
+        makeTool("spawn_agent"),
+      ],
+      {
+        allowNestedAgents: true,
+        allowedTools: ["create_goal", "get_goal", "update_goal", "read", "spawn_agent"],
+      },
+      { ...definition, readonly: false },
+    );
+    expect(result.childTools.map((tool) => tool.name)).toEqual(["read"]);
+    expect(result.allowedChildToolNames.has("create_goal")).toBe(false);
+    expect(result.allowedChildToolNames.has("get_goal")).toBe(false);
+    expect(result.allowedChildToolNames.has("update_goal")).toBe(false);
+  });
   it("uses lifecycle-only Stop semantics for child agents", async () => {
     const root = await mkdtemp(join(tmpdir(), "diligent-child-stop-lifecycle-"));
     try {
@@ -565,7 +636,7 @@ describe("AgentRegistry", () => {
     });
     const registry = new AgentRegistry(
       makeCollabDeps({
-        model: { provider: "openai", modelId: "gpt-5.6-sol" },
+        model: { provider: "openai", modelId: "gpt-6.1-sol" },
         parentTools: [makeTool("read"), makeTool("edit"), makeTool("spawn_agent")],
         onCollabEvent: (event) => events.push(event),
         sessionManagerFactory: (config) =>
@@ -588,7 +659,7 @@ describe("AgentRegistry", () => {
     });
     await registry.wait([resumed.threadId], 5000);
 
-    expect(inspectedAgent?.model.modelId).toBe("gpt-5.6-luna");
+    expect(inspectedAgent?.model.modelId).toBe("gpt-6-luna");
     expect(inspectedAgent?.tools.map((tool) => tool.name)).toEqual(["read"]);
     expect(inspectedAgent?.systemPrompt).toContainEqual({
       label: "nested_subagent_policy",
@@ -964,7 +1035,7 @@ describe("AgentRegistry", () => {
 
   it("uses the built-in agent default model class", async () => {
     const observedModels: string[] = [];
-    const parentModelRef = { provider: "anthropic", modelId: "claude-opus-4-8" } as const;
+    const parentModelRef = { provider: "anthropic", modelId: "claude-opus-5-5" } as const;
     const exploreDefinition = getBuiltinAgentDefinitions().find((definition) => definition.name === "explore");
     expect(exploreDefinition?.defaultModelClass).toBeDefined();
     const registry = new AgentRegistry(
@@ -983,7 +1054,7 @@ describe("AgentRegistry", () => {
 
   it("uses a custom agent default model class", async () => {
     const observedModels: string[] = [];
-    const parentModelRef = { provider: "anthropic", modelId: "claude-opus-4-8" } as const;
+    const parentModelRef = { provider: "anthropic", modelId: "claude-opus-5-5" } as const;
     const defaultModelClass = "lite" as const;
     const registry = new AgentRegistry(
       makeCollabDeps({
@@ -1010,19 +1081,90 @@ describe("AgentRegistry", () => {
     expect(observedModels).toEqual([expected.modelId]);
   });
 
-  it("inherits the parent model class when an agent has no default", async () => {
+  it("uses xhigh effort for a role with an explicit pro class", async () => {
+    const observedEfforts: string[] = [];
+    const definitions = getBuiltinAgentDefinitions().map((definition) =>
+      definition.name === "general" ? { ...definition, defaultModelClass: "pro" as const } : definition,
+    );
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        model: { provider: "openai", modelId: "gpt-6-astra" },
+        effort: "low",
+        agentDefinitions: definitions,
+        sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => observedEfforts.push(agent.effort)),
+      }),
+    );
+    const { threadId } = registry.spawn({ prompt: "work", description: "", agentType: "general" });
+    await registry.wait([threadId], 5000);
+    expect(observedEfforts).toEqual(["xhigh"]);
+  });
+
+  it("inherits the exact parent model and effort when an agent has no class", async () => {
     const observedModels: string[] = [];
     const registry = new AgentRegistry(
       makeCollabDeps({
-        model: { provider: "anthropic", modelId: "claude-opus-4-8" },
-        sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => observedModels.push(agent.model.modelId)),
+        model: { provider: "openai", modelId: "gpt-6-astra" },
+        effort: "max",
+        sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
+          observedModels.push(agent.model.modelId);
+          expect(agent.effort).toBe("max");
+        }),
       }),
     );
 
     const { threadId } = registry.spawn({ prompt: "work", description: "", agentType: "general" });
     await registry.wait([threadId], 5000);
 
-    expect(observedModels).toEqual(["claude-opus-5"]);
+    expect(observedModels).toEqual(["gpt-6-astra"]);
+  });
+
+  it("inherits the current parent model and effort on restore when no class was saved", async () => {
+    const observed: Array<{ modelId: string; effort: string }> = [];
+    const inspectingFactory = makeInspectingSessionManagerFactory((agent) => {
+      observed.push({ modelId: agent.model.modelId, effort: agent.effort });
+    });
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        model: { provider: "openai", modelId: "gpt-6-astra" },
+        effort: "max",
+        sessionManagerFactory: (config) => Object.assign(inspectingFactory(config), { resume: async () => true }),
+      }),
+    );
+    registry.restoreAgent("classless-child", "Inherited", { agentType: "explore", allowNestedAgents: false });
+    const { threadId } = registry.spawn({ prompt: "continue", description: "", resumeId: "classless-child" });
+    await registry.wait([threadId], 5000);
+    expect(observed).toEqual([{ modelId: "gpt-6-astra", effort: "max" }]);
+  });
+
+  it("keeps classless inheritance when resuming a child after the parent model changes", async () => {
+    const observed: Array<{ modelId: string; effort: string }> = [];
+    const inspectingFactory = makeInspectingSessionManagerFactory((agent) => {
+      observed.push({ modelId: agent.model.modelId, effort: agent.effort });
+    });
+    const factory = (config: SessionManagerConfig) =>
+      Object.assign(inspectingFactory(config), { resume: async () => true });
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        model: { provider: "openai", modelId: "gpt-6-astra" },
+        effort: "max",
+        sessionManagerFactory: factory,
+      }),
+    );
+    const child = registry.spawn({ prompt: "start", description: "", agentType: "general" });
+    await registry.wait([child.threadId], 5000);
+    registry.updateDeps(
+      makeCollabDeps({
+        model: { provider: "anthropic", modelId: "claude-fable-5-1" },
+        effort: "xhigh",
+        sessionManagerFactory: factory,
+      }),
+    );
+    const resumed = registry.spawn({ prompt: "continue", description: "", resumeId: child.threadId });
+    await registry.wait([resumed.threadId], 5000);
+    expect(observed).toEqual([
+      { modelId: "gpt-6-astra", effort: "max" },
+      { modelId: "claude-fable-5-1", effort: "xhigh" },
+    ]);
   });
 
   it("excludes collab tools and binds the image loader to the child cwd", async () => {
@@ -1158,8 +1300,8 @@ describe("AgentRegistry", () => {
   it("updates reused registry deps so later child spawns see the latest parent model", async () => {
     const observedModels: string[] = [];
     const observedEfforts: string[] = [];
-    const initialModel = { provider: "anthropic", modelId: "claude-opus-4-8" } as const;
-    const latestModel = { provider: "openai", modelId: "gpt-5.6-sol" } as const;
+    const initialModel = { provider: "anthropic", modelId: "claude-opus-5-5" } as const;
+    const latestModel = { provider: "openai", modelId: "gpt-6.1-sol" } as const;
     const latestEffort = "high" as const;
     const registry = new AgentRegistry(
       makeCollabDeps({

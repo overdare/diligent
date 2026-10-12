@@ -151,15 +151,19 @@ It is important to remember:
       }
 
       const previewPath = touchedPaths[0]?.targetPath ?? touchedPaths[0]?.sourcePath ?? "(none)";
-      const approval = await requestToolApproval(host, {
-        permission: "write",
-        toolName: "apply_patch",
-        description: `Apply patch touching ${touchedPaths.length} file(s)`,
-        details: {
-          file_path: previewPath,
-          paths: touchedPaths.map((path) => path.targetPath),
+      const approval = await requestToolApproval(
+        host,
+        {
+          permission: "write",
+          toolName: "apply_patch",
+          description: `Apply patch touching ${touchedPaths.length} file(s)`,
+          details: {
+            file_path: previewPath,
+            paths: touchedPaths.map((path) => path.targetPath),
+          },
         },
-      });
+        { signal: ctx.signal },
+      );
       if (approval === "reject") {
         ctx.abort();
         return {

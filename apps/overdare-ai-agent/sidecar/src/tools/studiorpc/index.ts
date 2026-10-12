@@ -11,13 +11,13 @@ import {
 } from "@diligent/runtime";
 import * as luaValidate from "./methods/lua.validate";
 import { call } from "./rpc";
+import { studioRpcCallOptions, studioRpcSessionId, withStudioRpcContext } from "./rpc-context";
 import { methodModules, mutatingMethods, renderBuilders, savingMethods } from "./tool-registry";
+import { createActionSequencerApplyJsonTool } from "./tools/action-sequencer-apply-json-tool";
 import { createAssetDrawerImportBulkTool } from "./tools/asset-drawer-import-bulk-tool";
 import { createCollisionProfileTools } from "./tools/collision-profile-tool";
 import { createExecuteLuauTool } from "./tools/execute-luau-tool";
 import { createHubWorldCategoriesListTool } from "./tools/hub-world-categories-list-tool";
-import { createHubWorldLookupTool } from "./tools/hub-world-lookup-tool";
-import { consumeHumanEdits, createHumanEditsTool, type HumanEditsCapture } from "./tools/human-edits-tool";
 import { createInstanceDeleteTool } from "./tools/instance-delete-tool";
 import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
@@ -33,6 +33,8 @@ import { captureSavedSnapshot } from "./tools/snapshot-capture";
 import { createSnapshotContextTool } from "./tools/snapshot-context-tool";
 import { createSnapshotCreateTool } from "./tools/snapshot-create-tool";
 import { createSnapshotListTool } from "./tools/snapshot-list-tool";
+import { consumeStudioChanges, createStudioChangesTool, type StudioChangesCapture } from "./tools/studio-changes-tool";
+import { checkResult } from "./tools/v2/result";
 import type { Tool, ToolResult } from "./types";
 import { createWriteLock, type WriteLock } from "./write-lock";
 
@@ -51,11 +53,11 @@ interface TurnSnapshotState {
   warningReported?: boolean;
   userMessageId?: string;
   /**
-   * Human edits consumed from Studio's EditLogging at turn start. Holds the
-   * frozen summary (served by the human-edits tool as the turn cache) and the
+   * Studio changes consumed from Studio's EditLogging at turn start. Holds the
+   * frozen summary (served by the studio-changes tool as the turn cache) and the
    * deferred deletion of the consumed log files.
    */
-  humanEdits?: HumanEditsCapture;
+  studioChanges?: StudioChangesCapture;
   /** Truncated user prompt; becomes the snapshot's label (its rollback-point summary). */
   promptLabel?: string;
   /** First capture failure this turn; set so the warning is reported only once. */
@@ -86,31 +88,32 @@ function forkableSnapshotTool(tool: CoreTool, getTurnState: () => TurnSnapshotSt
   } as CoreTool;
 }
 
-function createHumanEditsLoopHook(getTurnState: () => TurnSnapshotState | undefined): AgentLoopHook {
-  let pendingHumanEdits: HumanEditsCapture | undefined;
+function createStudioChangesLoopHook(getTurnState: () => TurnSnapshotState | undefined): AgentLoopHook {
+  let pendingStudioChanges: StudioChangesCapture | undefined;
 
   return {
-    id: "studiorpc-human-edits",
+    id: "studiorpc-studio-changes",
     onPromptStart() {
-      pendingHumanEdits = getTurnState()?.humanEdits;
+      pendingStudioChanges = getTurnState()?.studioChanges;
     },
     beforeTurn() {
-      const humanEdits = pendingHumanEdits;
-      pendingHumanEdits = undefined;
-      if (!humanEdits) return;
+      const studioChanges = pendingStudioChanges;
+      pendingStudioChanges = undefined;
+      if (!studioChanges) return;
+      if (studioChanges.delivered) return;
       // The summary is now part of the turn (injected below or empty), so the
       // consumed log files can be dropped. If this never runs, the rotated
       // files are re-read next turn — a duplicate report, never a loss.
-      humanEdits.finalize();
-      if (humanEdits.result.metadata?.humanEditsDetected !== true) return;
+      studioChanges.finalize();
+      if (studioChanges.result.metadata?.studioChangesDetected !== true) return;
       return [
         createPresentableContextInjection({
-          source: "studiorpc-human-edits",
-          content: humanEdits.result.output,
+          source: "studiorpc-studio-changes",
+          content: studioChanges.result.output,
           presentation: {
-            kind: "human-edits",
-            title: "Human edits detected",
-            content: humanEdits.result.output,
+            kind: "studio-changes",
+            title: "Studio changes detected",
+            content: studioChanges.result.output,
           },
         }),
       ];
@@ -133,7 +136,7 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
       userMessageId: typeof input.user_message_id === "string" ? input.user_message_id : undefined,
       promptLabel: typeof input.prompt === "string" ? input.prompt.slice(0, 2000) : undefined,
       transcriptPath: typeof input.transcript_path === "string" ? input.transcript_path : undefined,
-      humanEdits: consumeHumanEdits(input.cwd),
+      studioChanges: consumeStudioChanges(input.cwd, input.session_id),
     });
     return { blocked: false };
   };
@@ -170,7 +173,7 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     onUserPromptSubmit: beginTurn,
     onStop: endTurn,
     createAgentLoopHooks: ({ cwd, sessionId, agentKind }) =>
-      agentKind === "main" ? [createHumanEditsLoopHook(() => states.get(stateKey(cwd, sessionId)))] : [],
+      agentKind === "main" ? [createStudioChangesLoopHook(() => states.get(stateKey(cwd, sessionId)))] : [],
   };
 }
 
@@ -251,7 +254,8 @@ export async function createStudioRpcTools(ctx: {
   getTurnState?: () => TurnSnapshotState | undefined;
 }): Promise<Tool[]> {
   const writeLock = ctx.writeLock ?? createWriteLock();
-  const callRpc = ctx.callRpc ?? call;
+  const transport = ctx.callRpc ?? call;
+  const callRpc: typeof call = (method, params, options) => transport(method, params, studioRpcCallOptions(options));
   const applyLevelChanges = () => callRpc("level.apply", {});
   const getTurnState = (toolContext: SnapshotToolContext) =>
     SNAPSHOT_TURN in toolContext ? toolContext[SNAPSHOT_TURN] : ctx.getTurnState?.();
@@ -350,6 +354,7 @@ export async function createStudioRpcTools(ctx: {
   const isCollisionEdit = (name: string) => name === "create_collision_profile" || name === "edit_collision_profile";
 
   const tools: Tool[] = [
+    wrapTool(withSnapshot(createActionSequencerApplyJsonTool(callRpc, writeLock)), ctx.host),
     wrapTool(createInstanceReadTool(ctx.cwd, callRpc), ctx.host),
     wrapTool(withSnapshot(createExecuteLuauTool(callRpc, writeLock)), ctx.host),
     wrapTool(
@@ -411,10 +416,16 @@ export async function createStudioRpcTools(ctx: {
     wrapTool(createSnapshotListTool(ctx.cwd), ctx.host),
     wrapTool(createSnapshotContextTool(ctx.cwd), ctx.host),
     wrapTool(
-      createHumanEditsTool(ctx.cwd, (toolContext) => getTurnState(toolContext)?.humanEdits?.result),
+      createStudioChangesTool(
+        ctx.cwd,
+        () => {
+          const ts = ctx.getTurnState?.();
+          return studioRpcSessionId() === ts?.sessionId ? ts.studioChanges : undefined;
+        },
+        studioRpcSessionId,
+      ),
       ctx.host,
     ),
-    createHubWorldLookupTool(),
     createHubWorldCategoriesListTool(),
     // Play-test input drives a running PIE session, not the map, so it takes no
     // write lock and no rollback snapshot.
@@ -454,7 +465,7 @@ export async function createStudioRpcTools(ctx: {
           }
         }
 
-        const isMutating = mutatingMethods.has(method);
+        const isMutating = mutatingMethods.has(method) || mod.serialize === true;
         const release = isMutating ? await writeLock.acquire() : undefined;
         try {
           try {
@@ -474,8 +485,21 @@ export async function createStudioRpcTools(ctx: {
               result = await mod.postProcess(result, args as Record<string, unknown>, toolCallRpc);
             }
             // Persist editor-state changes to file immediately on success.
-            if (savingMethods.has(method)) {
-              await toolCallRpc("level.save.file", {});
+            let failed = isRecord(result) && result.success === false;
+            if (!failed && savingMethods.has(method)) {
+              try {
+                checkResult("level.save.file", await toolCallRpc("level.save.file", {}));
+              } catch (error) {
+                failed = true;
+                const reason = error instanceof Error ? error.message : String(error);
+                result = {
+                  ...(isRecord(result) ? result : { result }),
+                  saved: false,
+                  saveError:
+                    `${rpcMethod} already succeeded, but level.save.file failed: ${reason}. ` +
+                    "Do not repeat the operation; inspect Studio and save the level.",
+                };
+              }
             }
             const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
             const renderBuilder = renderBuilders[toolName];
@@ -488,7 +512,7 @@ export async function createStudioRpcTools(ctx: {
               output: warning ? `${warning}\n${output}` : output,
               render,
               outputImages,
-              metadata: { method: rpcMethod, result },
+              metadata: { method: rpcMethod, result, ...(failed ? { error: true } : {}) },
             };
           } catch (error) {
             // Same rationale as withSnapshot's catch: a warning generated but
@@ -503,7 +527,13 @@ export async function createStudioRpcTools(ctx: {
     });
   }
 
-  return tools;
+  // All tool implementations, including v1/v2 helpers that import call directly,
+  // inherit the executing agent's identity through awaits and write-lock waits.
+  return tools.map((tool) => ({
+    ...tool,
+    execute: (args, toolCtx) =>
+      withStudioRpcContext({ sessionId: toolCtx.sessionId, signal: toolCtx.signal }, () => tool.execute(args, toolCtx)),
+  }));
 }
 
 function wrapTool(tool: Tool, host?: RuntimeToolHost): Tool {

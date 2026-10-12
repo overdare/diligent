@@ -1,6 +1,7 @@
 // @summary Input dock with auto-resize textarea, slash command autocomplete, model/effort controls, and usage tray
 
 import {
+  type GoalStatus,
   type Mode,
   type ModelInfo,
   ModeSchema,
@@ -13,7 +14,7 @@ import { useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AgentContextItem } from "../lib/agent-native-bridge";
 import type { SlashCommand } from "../lib/slash-commands";
-import { BUILTIN_COMMANDS, filterCommands, isSlashPrefix } from "../lib/slash-commands";
+import { BUILTIN_COMMANDS, filterCommands, isSlashPrefix, parseSlashCommand } from "../lib/slash-commands";
 import { ComposerContextChips } from "./ComposerContextChips";
 import { AgentLogo, ArrowUp, Check, Plus, Stop, TriangleArrowRight, X } from "./icons";
 import { ModelEffortSelect } from "./ModelEffortSelect";
@@ -44,6 +45,7 @@ interface InputDockProps {
   canSend: boolean;
   canSteer: boolean;
   threadStatus: ThreadStatus;
+  goalStatus?: GoalStatus;
   mode: Mode;
   onModeChange: (mode: Mode) => void;
   effort: ThinkingEffort;
@@ -74,6 +76,18 @@ interface InputDockProps {
 type ComposerMenuKey = "mode" | "compaction";
 
 const SUPPORTED_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
+export function shouldSubmitGoalCommandDuringBusy(input: string, isBusy: boolean): boolean {
+  if (!isBusy) return false;
+  const command = parseSlashCommand(input);
+  if (command?.name !== "goal") return false;
+  const action = command.args?.trim().split(/\s+/, 1)[0];
+  return action === undefined || action === "status" || action === "pause" || action === "clear";
+}
+
+export function shouldShowStopControl(threadStatus: ThreadStatus, goalStatus: GoalStatus | null): boolean {
+  return threadStatus === "busy" || goalStatus === "active";
+}
 
 function UploadSpinner() {
   return (
@@ -203,6 +217,7 @@ export function InputDock({
   canSend,
   canSteer,
   threadStatus,
+  goalStatus,
   mode,
   onModeChange,
   effort,
@@ -241,6 +256,7 @@ export function InputDock({
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
 
   const isBusy = threadStatus === "busy";
+  const showStopControl = shouldShowStopControl(threadStatus, goalStatus ?? null);
 
   // Update slash menu when input changes
   const updateSlashMenu = useCallback(
@@ -375,6 +391,10 @@ export function InputDock({
     // Normal key handling
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      if (!hasBlockingPrompt && shouldSubmitGoalCommandDuringBusy(input, isBusy)) {
+        onSend();
+        return;
+      }
       const action = getComposerEnterAction({
         hasBlockingPrompt,
         isBusy,
@@ -535,18 +555,30 @@ export function InputDock({
                 </button>
               </>
             ) : (
-              <button
-                type="button"
-                aria-label="Send message"
-                onClick={() => {
-                  if (sendDisabled) return;
-                  if (!composingRef.current) onSend();
-                }}
-                disabled={sendDisabled}
-                className={composerSendButtonClasses}
-              >
-                <ArrowUp className="h-3 w-3" aria-hidden="true" />
-              </button>
+              <>
+                {showStopControl ? (
+                  <button
+                    type="button"
+                    aria-label="Stop goal"
+                    onClick={onInterrupt}
+                    className={composerStopButtonClasses}
+                  >
+                    <Stop className="h-3 w-3" aria-hidden="true" />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  aria-label="Send message"
+                  onClick={() => {
+                    if (sendDisabled) return;
+                    if (!composingRef.current) onSend();
+                  }}
+                  disabled={sendDisabled}
+                  className={composerSendButtonClasses}
+                >
+                  <ArrowUp className="h-3 w-3" aria-hidden="true" />
+                </button>
+              </>
             )}
           </div>
         </div>

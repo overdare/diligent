@@ -376,6 +376,7 @@ export const instanceClassEnum = z.enum([
   "LinearVelocity",
   "VectorForce",
   "Model",
+  "ProceduralModel",
   "Folder",
   "ScrollingFrame",
   "UIListLayout",
@@ -943,6 +944,18 @@ const rawInstancePropertiesUnion = z.union([
     .strict()
     .describe(
       "Use when class=Model. Groups BaseParts into a single unit; supports physics, movement, and rotation as one entity.",
+    ),
+  z
+    .object({
+      CastShadow: z.boolean().optional(),
+      PivotOffsetCFrame: cframe.optional(),
+      WorldPivot: cframe.optional(),
+      Size: vec3.describe("Build dimensions in cm, with Y up").optional(),
+      AutoRebuild: z.boolean().describe("Whether input changes automatically rebuild the recipe").optional(),
+    })
+    .strict()
+    .describe(
+      "Use when class=ProceduralModel. A recipe-backed Model with writable pivots, build dimensions, and automatic rebuilding. Use the geometry-recipe workflow to author recipes and bake geometry.",
     ),
   z
     .object({})

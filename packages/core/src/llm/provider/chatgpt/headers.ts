@@ -2,5 +2,5 @@
 
 export const CHATGPT_SESSION_HEADER = "session-id";
 
-// Must be >= the highest minimal_client_version we send: gpt-6-sol and gpt-6-luna require 0.155.0.
-export const CHATGPT_CODEX_CLIENT_VERSION = "0.155.0";
+// GPT-6.1 Sol live requests succeed with 0.159.0; the older 0.155.0 header rejects the model.
+export const CHATGPT_CODEX_CLIENT_VERSION = "0.159.0";

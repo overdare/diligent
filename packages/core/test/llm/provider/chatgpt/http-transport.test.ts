@@ -19,10 +19,10 @@ describe("ChatGPT HTTP transport", () => {
     expect(
       summarizeChatGPTWebSocketPayload({
         type: "response.create",
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         input: [{ type: "message" }, { type: "message" }],
       }),
-    ).toBe("response.create model=gpt-5.6-luna inputItems=2");
+    ).toBe("response.create model=gpt-6-luna inputItems=2");
     expect(
       summarizeChatGPTWebSocketPayload({
         type: "response.output_text.delta",
@@ -56,7 +56,7 @@ describe("ChatGPT HTTP transport", () => {
     });
 
     const events = await collectEvents(
-      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }), TEST_CONTEXT, {
+      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }), TEST_CONTEXT, {
         effort: "medium",
         sessionId: "session_1",
       }),
@@ -75,7 +75,7 @@ describe("ChatGPT HTTP transport", () => {
 
     const body = request.body;
     expect(body.type).toBeUndefined();
-    expect(body.model).toBe("gpt-5.6-luna");
+    expect(body.model).toBe("gpt-6-luna");
     expect((body.reasoning as { effort: string }).effort).toBe("medium");
     expect(body.instructions).toBeUndefined();
     expect(body.tools).toBeUndefined();
@@ -118,8 +118,8 @@ describe("ChatGPT HTTP transport", () => {
     expect((body.input as Array<Record<string, unknown>>)[0]).toMatchObject({ type: "additional_tools" });
   });
 
-  test("sends GPT-6 Sol and Luna through ChatGPT Responses Lite", async () => {
-    for (const modelId of ["gpt-6-sol", "gpt-6-luna"]) {
+  test("sends GPT-6.1 Sol and Luna through ChatGPT Responses Lite", async () => {
+    for (const modelId of ["gpt-6.1-sol", "gpt-6-luna"]) {
       const model = resolveModel({ provider: "chatgpt", modelId });
       const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
       globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -137,6 +137,11 @@ describe("ChatGPT HTTP transport", () => {
       expect(request.headers.get("x-openai-internal-codex-responses-lite")).toBe("true");
       expect(request.body.model).toBe(model.modelId);
       expect(request.body.parallel_tool_calls).toBe(false);
+      expect(request.body.reasoning).toMatchObject({ effort: "medium", context: "all_turns" });
+      expect((request.body.input as Array<Record<string, unknown>>)[0]).toMatchObject({
+        type: "additional_tools",
+        role: "developer",
+      });
     }
   });
 
@@ -149,7 +154,7 @@ describe("ChatGPT HTTP transport", () => {
 
     const events = await collectEvents(
       createChatGPTStream(() => testTokens())(
-        resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }),
+        resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }),
         TEST_CONTEXT,
         {
           effort: "medium",
@@ -170,7 +175,7 @@ describe("ChatGPT HTTP transport", () => {
 
     const events = await collectEvents(
       createChatGPTStream(() => testTokens())(
-        resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }),
+        resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }),
         TEST_CONTEXT,
         {
           effort: "medium",
@@ -207,7 +212,7 @@ describe("ChatGPT HTTP transport", () => {
     const chatgptStream = createChatGPTStream(() => testTokens());
 
     const events = await collectEvents(
-      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }), TEST_CONTEXT, {
+      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }), TEST_CONTEXT, {
         effort: "medium",
         sessionId: "session-http-debug",
       }),
@@ -219,7 +224,7 @@ describe("ChatGPT HTTP transport", () => {
     expect(outgoingLogs).toHaveLength(2);
     expect(outgoingLogs[0]).toContain(`state=sending bytes=${requestBytes}`);
     expect(outgoingLogs[1]).toContain(`state=sent bytes=${requestBytes} status=200`);
-    expect(outgoingLogs.every((line) => line.includes("response.create model=gpt-5.6-luna"))).toBe(true);
+    expect(outgoingLogs.every((line) => line.includes("response.create model=gpt-6-luna"))).toBe(true);
     expect(outgoingLogs.every((line) => !line.includes("sensitive text"))).toBe(true);
     expect(
       transportLogs.some(
@@ -258,7 +263,7 @@ describe("ChatGPT HTTP transport", () => {
     });
 
     const events = await collectEvents(
-      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }), TEST_CONTEXT, {
+      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }), TEST_CONTEXT, {
         effort: "medium",
       }),
     );
@@ -293,7 +298,7 @@ describe("ChatGPT HTTP transport", () => {
     });
 
     const events = await collectEvents(
-      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }), TEST_CONTEXT, {
+      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }), TEST_CONTEXT, {
         effort: "medium",
       }),
     );
@@ -319,7 +324,7 @@ describe("ChatGPT HTTP transport", () => {
     });
 
     const events = await collectEvents(
-      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }), TEST_CONTEXT, { effort: "medium" }),
+      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }), TEST_CONTEXT, { effort: "medium" }),
     );
     const error = events.find((event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error");
 

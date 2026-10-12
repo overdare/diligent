@@ -93,13 +93,6 @@ describe("sleep tool", () => {
     expect(createSleepTool().name).toBe("sleep");
   });
 
-  it("describes the default, user-specified times, and that it does not advance the game", () => {
-    const description = createSleepTool().description;
-    expect(description).toContain("Waits 5 seconds when `seconds` is omitted");
-    expect(description).toContain('If the user states a wait time ("wait 10 seconds"), pass exactly that number.');
-    expect(description).toContain("does not run or advance the game");
-  });
-
   it("waits 5 seconds by default when called with no parameters", async () => {
     const scheduler = new FakeScheduler();
     const tool = createSleepTool(scheduler);

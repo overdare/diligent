@@ -1,12 +1,12 @@
-// @summary Reads, rotates, and summarizes Studio's EditLogging transaction files (human edits).
+// @summary Reads, rotates, and summarizes Studio's EditLogging transaction files.
 
-import { readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { decodeOvdrjm, isRecord } from "./ovdrjm-utils";
 
 /**
- * Studio appends one JSON envelope per finalized human edit transaction.
- * Agent edits are never logged, so everything here is a genuine creator edit.
+ * Studio appends one JSON envelope per finalized edit transaction.
+ * Optional Origin metadata attributes MCP sessions; legacy records have unknown authorship.
  * Studio recreates the file when it is missing, which is what makes the
  * rotate-and-delete consumption model safe.
  *
@@ -38,13 +38,21 @@ function listLogFiles(cwd: string): { pending: string[]; leftovers: string[] } {
 /** Suffix marking a log file rotated out of Studio's way but not yet deleted. */
 const CONSUMING_SUFFIX = ".consuming";
 
-const VALUE_MAX_CHARS = 120;
-const MAX_SECTION_ENTRIES = 30;
+/** Byte budgets conservatively approximate 1,500 / 2,000 tokens; not a tokenizer guarantee. */
+export const STUDIO_CHANGES_LIMITS = {
+  targetBytes: 6_000,
+  maxBytes: 8_000,
+  maxTargets: 20,
+  maxProperties: 4,
+  maxListItems: 3,
+  maxSessions: 3,
+  maxValueChars: 80,
+} as const;
 
 /**
  * Section headings of the rendered summary. The web notice re-parses these out of
  * the text to show a change count, so renaming one here silently breaks that count
- * — `studiorpc-human-edits.test.ts` asserts the two lists stay in step.
+ * — `studiorpc-studio-changes.test.ts` asserts the two lists stay in step.
  */
 export const SECTION_TITLES = {
   added: "Added",
@@ -55,9 +63,9 @@ export const SECTION_TITLES = {
   sourceChanged: "Script source changed",
 } as const;
 
-export const TURN_START_HEADER = "Human edits since the agent's last completed turn:";
-export const MID_TURN_HEADER = "Human edits made while this turn was in progress:";
-export const NO_EDITS_MESSAGE = "No human edits detected since the agent's last completed turn.";
+export const TURN_START_HEADER = "Studio changes collected at turn start:";
+export const MID_TURN_HEADER = "Studio changes recorded during this turn:";
+export const NO_EDITS_MESSAGE = "No Studio changes recorded in the collected edit log.";
 
 interface EditLogChange {
   property: string;
@@ -78,6 +86,7 @@ interface EditLogObject {
 }
 
 export interface EditLogEnvelope {
+  origin?: { kind?: string; sessionId?: string; connectionId?: string; studioInstanceId?: string };
   timestamp: string;
   operation?: string;
   subjectGuids: string[];
@@ -148,6 +157,14 @@ function toEnvelope(value: Record<string, unknown>): EditLogEnvelope | undefined
   if (objects.length === 0) return undefined;
   return {
     timestamp: asString(pick(value, "timestamp", "Timestamp")) ?? "",
+    origin: isRecord(value.Origin)
+      ? {
+          kind: asString(value.Origin.Kind),
+          sessionId: asString(value.Origin.SessionId),
+          connectionId: asString(value.Origin.ConnectionId),
+          studioInstanceId: asString(value.Origin.StudioInstanceId),
+        }
+      : undefined,
     operation: asString(pick(value, "operation", "Operation", "action", "Action")),
     subjectGuids: [
       ...asStringArray(pick(value, "subjectGuids", "SubjectGuids")),
@@ -274,24 +291,35 @@ export function rotateAndReadEditLogs(cwd: string): EditLogBatch {
 }
 
 /** Read pending log files without rotating or deleting — safe mid-turn peek. */
-export function peekEditLogs(cwd: string): Omit<EditLogBatch, "consumedPaths"> {
-  return readBatchFiles(listLogFiles(cwd).pending);
+export function peekEditLogs(cwd: string): Omit<EditLogBatch, "consumedPaths"> & { generation: string } {
+  const paths = listLogFiles(cwd).pending;
+  const generation = paths
+    .map((path) => {
+      const stat = statSync(path);
+      return `${path}:${stat.ino}:${stat.birthtimeMs}`;
+    })
+    .join("|");
+  return { ...readBatchFiles(paths), generation };
 }
 
 export function deleteConsumed(paths: string[]): void {
   for (const path of paths) rmSync(path, { force: true });
 }
 
-/** Per-instance aggregate accumulated across all envelopes in a batch. */
+/** Per-instance aggregate accumulated within one attributable session. */
 interface TargetSummary {
   guid: string;
+  sessionId?: string;
   name?: string;
   type?: string;
   created: boolean;
   removed: boolean;
   reparent?: { from?: string; to?: string };
   /** property -> earliest before / latest after across the batch. */
-  props: Map<string, { before?: string; after?: string; count: number }>;
+  props: Map<
+    string,
+    { before?: string; after?: string; beforeIdentity?: string; afterIdentity?: string; count: number }
+  >;
   /** list-typed property -> rendered delta lines. */
   lists: Map<string, { added: string[]; removed: string[]; modified: string[] }>;
   /** Semantic group edits, not readable instance properties. */
@@ -300,8 +328,14 @@ interface TargetSummary {
 }
 
 function formatValue(value: unknown): string {
-  const text = typeof value === "string" ? value : (JSON.stringify(value) ?? "(none)");
-  return text.length > VALUE_MAX_CHARS ? `${text.slice(0, VALUE_MAX_CHARS)}…` : text;
+  return typeof value === "string" ? value : (JSON.stringify(value) ?? "(none)");
+}
+
+function short(value: string | undefined): string {
+  const text = value ?? "(none)";
+  return text.length > STUDIO_CHANGES_LIMITS.maxValueChars
+    ? `${text.slice(0, STUDIO_CHANGES_LIMITS.maxValueChars)}…`
+    : text;
 }
 
 /** Render one element of a list delta: plain string, or {Name, InstanceType, ObjectGuid} reference. */
@@ -330,7 +364,7 @@ const CREATE_ACTION = /create/i;
 const REMOVE_ACTION = /delete|remove|destroy/i;
 
 /**
- * True for the records that carry the human's direct intent. Older logs have
+ * True for the records that carry the transaction's direct subjects. Older logs have
  * no `role`; there, an envelope-level subject list is the fallback filter.
  */
 function isSubject(object: EditLogObject, envelope: EditLogEnvelope): boolean {
@@ -374,8 +408,12 @@ function applyChange(target: TargetSummary, change: EditLogChange): void {
   }
   // Scalar before/after: collapse repeated edits (gizmo drags) to first-before -> last-after.
   const entry = target.props.get(change.property) ?? { count: 0 };
-  if (entry.count === 0) entry.before = formatValue(change.before);
+  if (entry.count === 0) {
+    entry.before = formatValue(change.before);
+    entry.beforeIdentity = JSON.stringify(change.before);
+  }
   entry.after = formatValue(change.after);
+  entry.afterIdentity = JSON.stringify(change.after);
   entry.count++;
   target.props.set(change.property, entry);
 }
@@ -383,12 +421,15 @@ function applyChange(target: TargetSummary, change: EditLogChange): void {
 function aggregate(envelopes: EditLogEnvelope[]): Map<string, TargetSummary> {
   const targets = new Map<string, TargetSummary>();
   for (const envelope of envelopes) {
+    const sessionId = envelope.origin?.kind === "mcp" ? envelope.origin.sessionId || undefined : undefined;
     for (const object of envelope.objects) {
       if (!isSubject(object, envelope)) continue;
-      let target = targets.get(object.guid);
+      const key = JSON.stringify([sessionId ?? null, object.guid]);
+      let target = targets.get(key);
       if (!target) {
         target = {
           guid: object.guid,
+          sessionId,
           created: false,
           removed: false,
           props: new Map(),
@@ -396,7 +437,7 @@ function aggregate(envelopes: EditLogEnvelope[]): Map<string, TargetSummary> {
           gizmoChanges: new Map(),
           sourceEdits: 0,
         };
-        targets.set(object.guid, target);
+        targets.set(key, target);
       }
       target.name = object.name ?? target.name;
       target.type = object.type ?? target.type;
@@ -413,104 +454,267 @@ function aggregate(envelopes: EditLogEnvelope[]): Map<string, TargetSummary> {
   return targets;
 }
 
+export type StudioChangeType = keyof typeof SECTION_TITLES;
+
 function label(target: TargetSummary): string {
-  return `${target.type ?? "Instance"} "${target.name ?? target.guid}" (${target.guid})`;
+  return `${short(target.type ?? "Instance")} "${short(target.name ?? target.guid)}" (${short(target.guid)})`;
 }
 
-function detailLines(target: TargetSummary): string[] {
-  const lines: string[] = [];
+interface Detail {
+  property: string;
+  lines: string[];
+  omittedItems: number;
+}
+
+function details(target: TargetSummary, expanded = false): Detail[] {
+  const result: Detail[] = [];
   for (const [kind, count] of target.gizmoChanges) {
-    const times = count > 1 ? ` (${count} edits)` : "";
-    lines.push(`  ${kind} changed via gizmo${times}`);
+    result.push({
+      property: kind,
+      lines: [`  ${kind} changed via gizmo${count > 1 ? ` (${count} edits)` : ""}`],
+      omittedItems: 0,
+    });
   }
   for (const [property, entry] of target.props) {
-    const times = entry.count > 1 ? ` (${entry.count} edits)` : "";
-    lines.push(`  ${property}: ${entry.before} -> ${entry.after}${times}`);
+    if (entry.beforeIdentity === entry.afterIdentity) continue;
+    result.push({
+      property,
+      lines: [
+        `  ${short(property)}: ${short(entry.before)} -> ${short(entry.after)}${entry.count > 1 ? ` (${entry.count} edits)` : ""}`,
+      ],
+      omittedItems: 0,
+    });
   }
   for (const [property, delta] of target.lists) {
-    if (delta.added.length > 0) lines.push(`  ${property}: added ${delta.added.join(", ")}`);
-    if (delta.removed.length > 0) lines.push(`  ${property}: removed ${delta.removed.join(", ")}`);
-    for (const item of delta.modified) lines.push(`  ${property}: modified ${item}`);
+    const lines: string[] = [];
+    let omittedItems = 0;
+    let remaining = expanded ? Number.POSITIVE_INFINITY : STUDIO_CHANGES_LIMITS.maxListItems;
+    for (const kind of ["added", "removed", "modified"] as const) {
+      const items = delta[kind];
+      const shown = items.slice(0, remaining);
+      remaining -= shown.length;
+      omittedItems += items.length - shown.length;
+      if (expanded) {
+        for (const item of shown) lines.push(`  ${short(property)}: ${kind} ${short(item)}`);
+      } else if (shown.length) {
+        lines.push(`  ${short(property)}: ${kind} ${shown.map(short).join(", ")}`);
+      }
+    }
+    if (omittedItems) lines.push(`  ${short(property)}: ${omittedItems} list items omitted`);
+    if (lines.length) result.push({ property, lines, omittedItems });
   }
-  return lines;
+  // Identity and reference changes are useful even when a transform-heavy edit
+  // exhausts the per-object property budget.
+  return result.sort((a, b) => propertyPriority(a.property) - propertyPriority(b.property));
 }
 
-function cappedSection(title: string, entries: string[]): string | undefined {
-  if (entries.length === 0) return undefined;
-  const shown = entries.slice(0, MAX_SECTION_ENTRIES);
-  if (entries.length > MAX_SECTION_ENTRIES) shown.push(`(… ${entries.length - MAX_SECTION_ENTRIES} more)`);
-  return `${title} (${entries.length}):\n${shown.join("\n")}`;
+function propertyPriority(property: string): number {
+  return /^(Name|Tag|Attribute)$|reference|refobject|assetid/i.test(property) ? 0 : 1;
 }
+
+function kinds(target: TargetSummary): StudioChangeType[] {
+  if (target.created && target.removed) return ["addedThenRemoved"];
+  if (target.removed) return ["removed"];
+  const result: StudioChangeType[] = [];
+  if (target.created) result.push("added");
+  else {
+    if (target.reparent && target.reparent.from !== target.reparent.to) result.push("moved");
+    const hasProperties = [...target.props.values()].some((entry) => entry.beforeIdentity !== entry.afterIdentity);
+    const hasLists = [...target.lists.values()].some(
+      (delta) => delta.added.length || delta.removed.length || delta.modified.length,
+    );
+    if (hasProperties || hasLists || target.gizmoChanges.size) result.push("modified");
+  }
+  if (target.sourceEdits) result.push("sourceChanged");
+  return result;
+}
+
+function priority(target: TargetSummary): number {
+  const types = kinds(target);
+  if (types.includes("sourceChanged")) return 0;
+  if (types.includes("removed")) return 1;
+  if (types.includes("moved")) return 2;
+  if ([...target.props.keys(), ...target.lists.keys()].some((key) => propertyPriority(key) === 0)) return 3;
+  if (types.includes("added")) return 4;
+  return 5;
+}
+
+function eventLine(target: TargetSummary, kind: StudioChangeType): string {
+  const identity = label(target);
+  switch (kind) {
+    case "added":
+      return `+ ${identity}`;
+    case "addedThenRemoved":
+      return `+- ${identity}`;
+    case "removed":
+      return `- ${identity}`;
+    case "moved":
+      return `> ${identity}: parent ${short(target.reparent?.from)} -> ${short(target.reparent?.to)}`;
+    case "modified":
+      return `~ ${identity}`;
+    case "sourceChanged":
+      return `* ${identity}: source edited ${target.sourceEdits} time(s); content is not logged; read the script for its current state`;
+  }
+}
+
+function sessionHeading(sessionId?: string): string {
+  return `Session: ${short(sessionId ?? "unknown").replace(/[\r\n\t]/g, " ")}`;
+}
+
+function changeCounts(targets: TargetSummary[]): Record<StudioChangeType, number> {
+  const counts = Object.fromEntries(Object.keys(SECTION_TITLES).map((key) => [key, 0])) as Record<
+    StudioChangeType,
+    number
+  >;
+  for (const target of targets) for (const kind of kinds(target)) counts[kind]++;
+  return counts;
+}
+
+const ATTRIBUTION =
+  "Explicit MCP records for this session are excluded when session attribution is available. " +
+  "Legacy or unattributed records do not identify who made the changes and may include this session's own work. " +
+  "This is a collected log summary, not a diff against your work. " +
+  "Compare these changes with your own work; if anything differs from what you expect, inspect the affected instances before editing. " +
+  "Preserve changes unrelated to the request.";
 
 export interface EditLogSummary {
   output: string;
   editCount: number;
+  shownTargets: number;
+  omittedTargets: number;
 }
 
-/**
- * Collapse a batch of edit-log envelopes into the compact per-section summary
- * injected into the agent's context. Section headers must stay in sync with
- * the web HumanEditsNotice count parser.
- */
+export interface EditLogSummaryOptions {
+  footer?: string;
+}
+
+/** A single byte/target budget covers all sections, including counts and recovery instructions. */
 export function summarizeEditLog(
   envelopes: EditLogEnvelope[],
   parseFailures = 0,
   header = TURN_START_HEADER,
+  options: EditLogSummaryOptions = {},
 ): EditLogSummary {
-  const targets = aggregate(envelopes);
+  const targets = [...aggregate(envelopes).values()].filter((target) => kinds(target).length);
+  const counts = changeCounts(targets);
+  const editCount = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  if (!editCount) return { output: NO_EDITS_MESSAGE, editCount: 0, shownTargets: 0, omittedTargets: 0 };
 
-  const added: string[] = [];
-  const addedThenRemoved: string[] = [];
-  const removed: string[] = [];
-  const moved: string[] = [];
-  const modified: string[] = [];
-  const sourceChanged: string[] = [];
-
-  for (const target of targets.values()) {
-    // Checked before the create/remove branches below: a script that was created
-    // and then written to is reported as both, or the agent sees "a new empty
-    // LocalScript" and overwrites the code the creator just typed into it.
-    if (target.sourceEdits > 0 && !target.removed) {
-      sourceChanged.push(
-        `* ${label(target)}: source edited ${target.sourceEdits} time(s) — content is not logged; read the script for its current state`,
-      );
-    }
-    if (target.created && target.removed) {
-      addedThenRemoved.push(`± ${label(target)}`);
-      continue;
-    }
-    if (target.created) {
-      added.push([`+ ${label(target)}`, ...detailLines(target)].join("\n"));
-      continue;
-    }
-    if (target.removed) {
-      removed.push(`- ${label(target)}`);
-      continue;
-    }
-    if (target.reparent) {
-      moved.push(`> ${label(target)}: parent ${target.reparent.from} -> ${target.reparent.to}`);
-    }
-    const details = detailLines(target);
-    if (details.length > 0) modified.push([`~ ${label(target)}`, ...details].join("\n"));
+  const selected: TargetSummary[] = [];
+  const footer = options.footer ?? 'Use studiorpc_studio_changes with view="details" to inspect omitted changes.';
+  const groups = new Map<string | undefined, TargetSummary[]>();
+  for (const target of targets) {
+    const group = groups.get(target.sessionId) ?? [];
+    group.push(target);
+    groups.set(target.sessionId, group);
   }
+  const groupPriority = (group: TargetSummary[]) => group.reduce((best, target) => Math.min(best, priority(target)), 6);
+  const visibleGroups = [...groups]
+    .sort((a, b) => groupPriority(a[1]) - groupPriority(b[1]))
+    .slice(0, STUDIO_CHANGES_LIMITS.maxSessions);
+  const visibleSessions = new Set(visibleGroups.map(([sessionId]) => sessionId));
+  const render = (): string => {
+    const totals = (Object.keys(SECTION_TITLES) as StudioChangeType[])
+      .filter((kind) => counts[kind])
+      .map((kind) => `${SECTION_TITLES[kind]}=${counts[kind]}`)
+      .join(", ");
+    const parts = [header, ATTRIBUTION, `Total changes: ${editCount}\nTotals: ${totals}`];
+    let omittedProperties = 0;
+    let omittedItems = 0;
+    for (const [sessionId, group] of visibleGroups) {
+      parts.push(sessionHeading(sessionId));
+      const groupCounts = changeCounts(group);
+      for (const kind of Object.keys(SECTION_TITLES) as StudioChangeType[]) {
+        if (!groupCounts[kind]) continue;
+        const entries: string[] = [];
+        if (kind === "addedThenRemoved") {
+          const transientTypes = new Map<string, number>();
+          for (const target of group.filter((target) => kinds(target).includes(kind))) {
+            const type = target.type ?? "Instance";
+            transientTypes.set(type, (transientTypes.get(type) ?? 0) + 1);
+          }
+          entries.push(
+            [...transientTypes.entries()]
+              .slice(0, 3)
+              .map(([type, count]) => `${short(type)}: ${count}`)
+              .join(", "),
+          );
+          if (transientTypes.size > 3) entries.push(`(${transientTypes.size - 3} more types)`);
+        } else {
+          for (const target of selected.filter((t) => t.sessionId === sessionId && kinds(t).includes(kind))) {
+            const lines = [eventLine(target, kind)];
+            if (kind === "added" || kind === "modified") {
+              const all = details(target);
+              const shown = all.slice(0, STUDIO_CHANGES_LIMITS.maxProperties);
+              lines.push(...shown.flatMap((detail) => detail.lines));
+              const omitted = all.length - shown.length;
+              omittedProperties += omitted;
+              omittedItems += all.reduce((sum, detail) => sum + detail.omittedItems, 0);
+              if (omitted) lines.push(`  ${omitted} properties omitted`);
+            }
+            entries.push(lines.join("\n"));
+          }
+          const omitted = groupCounts[kind] - entries.length;
+          if (omitted) entries.push(`(${omitted} entries omitted)`);
+        }
+        parts.push(`${SECTION_TITLES[kind]} (${groupCounts[kind]}):\n${entries.join("\n")}`);
+      }
+    }
+    if (groups.size > visibleGroups.length) parts.push(`${groups.size - visibleGroups.length} session groups omitted.`);
+    parts.push(
+      `${selected.length} of ${targets.length} object/session entries detailed; ${targets.length - selected.length} entries, ${omittedProperties} properties and ${omittedItems} list items omitted from detail.`,
+    );
+    if (parseFailures) parts.push(`(${parseFailures} log entries could not be parsed and were skipped.)`);
+    parts.push(footer);
+    return parts.join("\n\n");
+  };
+  for (const target of targets
+    .filter((t) => visibleSessions.has(t.sessionId) && !kinds(t).includes("addedThenRemoved"))
+    .sort((a, b) => priority(a) - priority(b))) {
+    if (selected.length >= STUDIO_CHANGES_LIMITS.maxTargets) break;
+    selected.push(target);
+    if (Buffer.byteLength(render(), "utf8") > STUDIO_CHANGES_LIMITS.targetBytes) selected.pop();
+  }
+  return {
+    output: render(),
+    editCount,
+    shownTargets: selected.length,
+    omittedTargets: targets.length - selected.length,
+  };
+}
 
-  const sections = [
-    cappedSection(SECTION_TITLES.added, added),
-    cappedSection(SECTION_TITLES.addedThenRemoved, addedThenRemoved),
-    cappedSection(SECTION_TITLES.removed, removed),
-    cappedSection(SECTION_TITLES.moved, moved),
-    cappedSection(SECTION_TITLES.modified, modified),
-    cappedSection(SECTION_TITLES.sourceChanged, sourceChanged),
-  ].filter((section): section is string => section !== undefined);
+export interface StudioChangeDetailsOptions {
+  guid?: string;
+  changeType?: StudioChangeType;
+  offset?: number;
+  limit?: number;
+  /** Remaining budget after the caller reserves its header and continuation text. */
+  maxBytes?: number;
+}
 
-  const editCount =
-    added.length + addedThenRemoved.length + removed.length + moved.length + modified.length + sourceChanged.length;
-  if (editCount === 0) return { output: NO_EDITS_MESSAGE, editCount: 0 };
-
-  const parts = [header, ...sections];
-  if (parseFailures > 0) parts.push(`(${parseFailures} log entries could not be parsed and were skipped.)`);
-  parts.push(
-    "These are the creator's own edits. If any overlap with your current task, inspect the affected instances before editing them.",
-  );
-  return { output: parts.join("\n\n"), editCount };
+/** Page detail rows rather than objects, so a single object with many properties remains queryable. */
+export function studioChangeDetails(envelopes: EditLogEnvelope[], options: StudioChangeDetailsOptions = {}) {
+  const rows: string[] = [];
+  for (const target of aggregate(envelopes).values()) {
+    if (options.guid && target.guid !== options.guid) continue;
+    for (const kind of kinds(target)) {
+      if (options.changeType && kind !== options.changeType) continue;
+      const event = `${sessionHeading(target.sessionId)}\n${eventLine(target, kind)}`;
+      if (kind === "modified" || kind === "added") {
+        const changes = details(target, true).flatMap((detail) => detail.lines);
+        if (changes.length) for (const line of changes) rows.push(`${event}\n${line}`);
+        else rows.push(event);
+      } else rows.push(event);
+    }
+  }
+  const offset = options.offset ?? 0;
+  const limit = Math.min(options.limit ?? 20, 20);
+  const shown: string[] = [];
+  const maxBytes = Math.min(options.maxBytes ?? STUDIO_CHANGES_LIMITS.targetBytes, STUDIO_CHANGES_LIMITS.targetBytes);
+  for (const row of rows.slice(offset, offset + limit)) {
+    if (Buffer.byteLength(shown.concat(row).join("\n"), "utf8") > maxBytes) break;
+    shown.push(row);
+  }
+  const end = offset + shown.length;
+  return { output: shown.join("\n"), total: rows.length, nextOffset: end < rows.length ? end : undefined };
 }

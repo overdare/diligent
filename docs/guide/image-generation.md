@@ -2,7 +2,7 @@
 
 OVERDARE exposes one `generate_image` tool for generating an image and saving it locally.
 Studio import remains a separate operation using the existing
-`studiorpc_asset_manager_image_import` tool. Generation does not require a Studio connection
+`studiorpc_asset_manager_import` tool. Generation does not require a Studio connection
 or new Studio RPC methods.
 
 ## Tool contract
@@ -45,7 +45,7 @@ providers still require explicit user approval. This is model-facing guidance; t
 not retry internally or block general-purpose file or shell tools.
 
 For Studio workflows, pass the returned `file` directly to
-`studiorpc_asset_manager_image_import`, then use its returned asset ID. Generation itself
+`studiorpc_asset_manager_import`, then use its returned asset ID. Generation itself
 does not import an asset or save a Studio level.
 
 When developing with a Mac agent and remote Windows Studio, configure the dev-only shared
@@ -67,8 +67,8 @@ generated artwork with plain Frames or TextButtons. Missing gameplay code is rep
 There is no bundled genre-image library or template-selection gate. New GUI and full visual redesign
 requests use this image-guided workflow by default; explicit no-generation or existing-assets-only
 requests override it. Focused font, text, layout, or behavior edits load only their relevant references.
-Legacy `ui-generator` and `overdare-ui-templates` entries are disabled upgrade placeholders;
-they are not advertised or invocable by the model.
+Legacy `ui-generator` and `overdare-ui-templates` entries are removed from bootstrap
+assets and remain revoked in the manifest so initialization removes old installed copies.
 
 Before generating the guide, the skill selects typography from the supplied internal Studio
 font catalog. The full family IDs and supported Weight/Style combinations live in its

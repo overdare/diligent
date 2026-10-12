@@ -7,10 +7,10 @@ import { AssistantMessage } from "../AssistantMessage";
 import { CollabGroup } from "../CollabGroup";
 import { CompactingIndicator } from "../CompactingIndicator";
 import { ContextMessage } from "../ContextMessage";
-import { HumanEditsNotice } from "../HumanEditsNotice";
 import { AgentLogo } from "../icons";
 import { QuestionCard } from "../QuestionCard";
 import { StreamingIndicator } from "../StreamingIndicator";
+import { StudioChangesNotice } from "../StudioChangesNotice";
 import { ToolActivityGroup } from "../ToolActivityGroup";
 import { ToolBlock } from "../ToolBlock";
 import { UserMessage } from "../UserMessage";
@@ -37,8 +37,8 @@ export function MessageListRowContent({
     case "message":
       switch (row.item.kind) {
         case "context":
-          return row.item.variant === "human-edits" ? (
-            <HumanEditsNotice summary={row.item.summary} />
+          return row.item.variant === "studio-changes" || row.item.variant === "human-edits" ? (
+            <StudioChangesNotice summary={row.item.summary} />
           ) : (
             <ContextMessage summary={row.item.summary} label={row.item.title} />
           );

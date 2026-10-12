@@ -19,7 +19,7 @@ export interface ModelClassDefinition {
 }
 
 const DEFAULT_EFFORT_BY_MODEL_CLASS: Readonly<Record<ModelClass, ThinkingEffort>> = {
-  pro: "high",
+  pro: "xhigh",
   general: "medium",
   lite: "low",
 };
@@ -59,30 +59,12 @@ export const MODEL_CLASSES: readonly ModelClassDefinition[] = MODEL_CLASS_IDS.ma
 });
 
 const MODEL_CLASS_BY_ID = new Map(MODEL_CLASSES.map((modelClass) => [modelClass.id, modelClass]));
-const modelClassKey = (provider: ProviderName, modelId: string): string => `${provider}\0${modelId}`;
-const MODEL_CLASS_BY_MODEL_REF = new Map<string, ModelClass>();
-for (const modelClass of MODEL_CLASSES) {
-  for (const [provider, modelId] of Object.entries(modelClass.defaultModelIds)) {
-    if (modelId) MODEL_CLASS_BY_MODEL_REF.set(modelClassKey(provider as ProviderName, modelId), modelClass.id);
-  }
-  for (const [provider, modelIds] of Object.entries(modelClass.additionalModelIds ?? {})) {
-    for (const modelId of modelIds ?? []) {
-      MODEL_CLASS_BY_MODEL_REF.set(modelClassKey(provider as ProviderName, modelId), modelClass.id);
-    }
-  }
-}
-
 /** Resolve a provider's concrete default for a class, or preserve the current model if unsupported. */
 export function resolveModelForClass(currentModel: Model, targetClass: ModelClass): Model {
   const targetModelId = MODEL_CLASS_BY_ID.get(targetClass)?.defaultModelIds[currentModel.provider];
   if (targetModelId === undefined || targetModelId === currentModel.modelId) return currentModel;
 
   return resolveModel({ provider: currentModel.provider, modelId: targetModelId });
-}
-
-/** Determine class membership from class policy; unclassified concrete models default to general. */
-export function getModelClass(model: Model): ModelClass {
-  return MODEL_CLASS_BY_MODEL_REF.get(modelClassKey(model.provider, model.modelId)) ?? "general";
 }
 
 /** Return the default thinking effort associated with a model class. */

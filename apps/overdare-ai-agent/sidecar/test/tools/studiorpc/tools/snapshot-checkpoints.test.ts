@@ -40,7 +40,13 @@ const hook = (cwd: string, userMessageId = "request-a", sessionId = "session") =
 describe("fresh and linked checkpoints", () => {
   test("inherited tools and nested children keep the spawning request after the next parent prompt", async () => {
     const cwd = project();
-    const provider = createStudioRpcToolProvider({ callRpc: async () => ({ success: true }) });
+    const rpcSessions: Array<string | undefined> = [];
+    const provider = createStudioRpcToolProvider({
+      callRpc: async (_method, _params, options) => {
+        rpcSessions.push(options?.sessionId);
+        return { success: true };
+      },
+    });
     await provider.onUserPromptSubmit!(hook(cwd, "original"));
     const tools = await provider.createTools({ cwd, sessionId: "session" });
     const mainEdit = tools.find((t) => t.name === "studiorpc_asset_drawer_import")!;
@@ -49,9 +55,14 @@ describe("fresh and linked checkpoints", () => {
     await provider.onStop?.({ ...hook(cwd), hook_event_name: "Stop" });
     await provider.onUserPromptSubmit!(hook(cwd, "next"));
     const nestedEdit = forkToolForChild(childEdit);
-    await childEdit.execute(importArgs, context());
-    await nestedEdit.execute(importArgs, context());
-    await childManual.execute({}, context());
+    await childEdit.execute(importArgs, { ...context(), sessionId: "child" });
+    expect(rpcSessions.length).toBeGreaterThan(0);
+    expect(rpcSessions.every((sessionId) => sessionId === "child")).toBe(true);
+    rpcSessions.length = 0;
+    await nestedEdit.execute(importArgs, { ...context(), sessionId: "nested-child" });
+    expect(rpcSessions.length).toBeGreaterThan(0);
+    expect(rpcSessions.every((sessionId) => sessionId === "nested-child")).toBe(true);
+    await childManual.execute({}, { ...context(), sessionId: "child" });
     expect(listSnapshots(cwd)).toHaveLength(2);
     expect(listSnapshots(cwd).every((s) => s.userMessageId === "original")).toBe(true);
     await mainEdit.execute(importArgs, context());

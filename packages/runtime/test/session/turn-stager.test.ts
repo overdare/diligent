@@ -178,7 +178,7 @@ describe("TurnStager", () => {
             source: "test-hook",
             message: makeUser("internal"),
             metadata: {
-              presentation: { kind: "human-edits", title: "Human edits detected", content: "Added: Ramp" },
+              presentation: { kind: "studio-changes", title: "Studio changes detected", content: "Added: Ramp" },
             },
           },
         ],
@@ -191,7 +191,7 @@ describe("TurnStager", () => {
       type: "message",
       visibility: "internal",
       source: "test-hook",
-      presentation: { kind: "human-edits", title: "Human edits detected", content: "Added: Ramp" },
+      presentation: { kind: "studio-changes", title: "Studio changes detected", content: "Added: Ramp" },
     });
   });
 });

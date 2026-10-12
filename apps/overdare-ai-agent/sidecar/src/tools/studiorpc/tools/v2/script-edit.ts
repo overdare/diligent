@@ -5,7 +5,7 @@ import { buildScriptEditRender } from "../../render";
 import type { ToolResult } from "../../types";
 import { normalizeLeadingSpaces, normalizeLineEndings } from "../ovdrjm-utils";
 import { applyEdit } from "../script-edit-tool";
-import { callInstanceRpc, DEPTH_SELF, readInstanceNode, saveLevelFile } from "./client";
+import { callInstanceRpc, DEPTH_SELF, readInstanceNode } from "./client";
 import { instanceTypeOf, SCRIPT_CLASSES } from "./scripts";
 
 type ScriptEditArgs = ReturnType<typeof scriptEdit.params.parse>;
@@ -39,7 +39,6 @@ export async function editScriptViaRpc(parsed: ScriptEditArgs): Promise<ToolResu
   await callInstanceRpc("instance.update", {
     Instances: [{ ActorGuid: targetGuid, Source: eolNormalized.result }],
   });
-  await saveLevelFile();
 
   let output = `Edited script ${targetGuid}: replaced ${count} occurrence(s)`;
   const normalizations: string[] = [];

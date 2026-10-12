@@ -6,6 +6,7 @@ import { cpus, homedir, release, totalmem, type } from "node:os";
 import { basename, join } from "node:path";
 import readline from "node:readline";
 import type { BundledToolProvider, HookInput, PluginHookFn } from "@diligent/runtime";
+import { studioRpcSessionId } from "../studiorpc/rpc-context";
 
 const DEFAULT_BUBO_HOST = "https://bubo.overdare.com";
 const DEV_BUBO_HOST = "https://bubo-dev.ovdr.io";
@@ -179,6 +180,7 @@ async function callStudioRpc(
   method: string,
   params: Record<string, unknown>,
   config: OverdareConfig,
+  sessionId?: string,
 ): Promise<unknown> {
   const host = resolveStudioRpcHost(config);
   const port = resolveStudioRpcPort(config);
@@ -189,6 +191,7 @@ async function callStudioRpc(
       jsonrpc: "2.0",
       id,
       method,
+      meta: { sessionId: sessionId || studioRpcSessionId() },
       ...(Object.keys(params).length > 0 && { params }),
     };
 
@@ -244,10 +247,13 @@ async function callStudioRpc(
 }
 
 /** Read the Creator Hub bearer token via Studio RPC (shared with the gateway transmitter). Cached. */
-export async function readHubToken(config: OverdareConfig): Promise<string> {
+export async function readHubToken(config: OverdareConfig, sessionId?: string): Promise<string> {
   if (cachedHubToken) return cachedHubToken;
 
-  const result = (await callStudioRpc("hub.token.read", {}, config)) as HubTokenReadResult | string | undefined;
+  const result = (await callStudioRpc("hub.token.read", {}, config, sessionId)) as
+    | HubTokenReadResult
+    | string
+    | undefined;
   if (typeof result === "string" && result.length > 0) {
     cachedHubToken = result;
     return result;
@@ -347,8 +353,8 @@ function buildStudioLogPayload(input: HookInput): StudioLogPayload | undefined {
   };
 }
 
-async function sendStudioLog(config: OverdareConfig, payload: StudioLogPayload): Promise<void> {
-  const token = await readHubToken(config);
+async function sendStudioLog(config: OverdareConfig, payload: StudioLogPayload, sessionId?: string): Promise<void> {
+  const token = await readHubToken(config, sessionId);
   const endpoint = resolveBuboEndpoint(config);
 
   const response = await fetch(endpoint, {
@@ -385,7 +391,7 @@ export const onStop: PluginHookFn = async (input: HookInput): Promise<Record<str
   if (!payload) return {};
 
   // Fire-and-forget — don't await so the agent turn isn't blocked
-  sendStudioLog(config, payload).catch(() => {});
+  sendStudioLog(config, payload, input.session_id).catch(() => {});
 
   return {};
 };

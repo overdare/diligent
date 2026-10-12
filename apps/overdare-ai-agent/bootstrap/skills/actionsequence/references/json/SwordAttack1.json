@@ -1,13 +1,14 @@
 {
   "Class": "/Script/LuaAPI.ActionSequence",
   "Header": {
-    "version": 1,
+    "version": 2,
     "createTime": "2026.01.26-21.08.26",
     "lastModifyTime": "2026.01.26-21.08.26"
   },
   "ActionSequenceID": "",
   "SequencerDescription": "",
   "Length": 0.56666702032089233,
+  "PreviewTarget": {},
   "Tracks": [
     {
       "Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
@@ -26,6 +27,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 0.56666702032089233,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -55,6 +58,7 @@
           "roll": 152.86758699999999
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "SimpleTrail_0",
@@ -171,6 +175,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 0.56666702032089233,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -235,6 +241,8 @@
       "IsEnable": true,
       "StartTime": 0.1365029513835907,
       "EndTime": 0.1365029513835907,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -307,6 +315,8 @@
       "IsEnable": true,
       "StartTime": 0.13358333706855774,
       "EndTime": 0.33295834064483643,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -328,6 +338,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 0.33291667699813843,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -349,6 +361,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 0.56666702032089233,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -370,6 +384,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 0.56666702032089233,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -391,6 +407,8 @@
       "IsEnable": true,
       "StartTime": 0.39945831894874573,
       "EndTime": 0.56658333539962769,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,

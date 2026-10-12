@@ -50,7 +50,7 @@ export interface AgentEntry {
 /** Security-relevant child policy that must not broaden when a persisted child is resumed. */
 export interface CollabResumePolicy {
   agentType: string;
-  modelClass: ModelClass;
+  modelClass?: ModelClass;
   allowedTools?: string[];
   allowNestedAgents: boolean;
 }
@@ -59,6 +59,7 @@ export interface CollabResumePolicy {
 export type CollabAgentEvent = Extract<AgentEvent, { type: `collab_${string}` }> | ChildAgentEvent;
 
 export interface CollabToolDeps {
+  getGoalScope?: () => import("../goals/controller").GoalWorkScope | undefined;
   cwd: string;
   paths: DiligentPaths;
   model: ModelRef;
@@ -76,9 +77,15 @@ export interface CollabToolDeps {
   /** Called when collab boundary events fire (spawn/wait/close begin+end). */
   onCollabEvent?: (event: CollabAgentEvent) => void;
   /** Routes sub-agent user input requests up to the parent session's ask handler. */
-  ask?: (request: UserInputRequest) => Promise<UserInputResponse>;
+  ask?: (
+    request: UserInputRequest,
+    options?: import("../tools/capabilities").RuntimeRequestOptions,
+  ) => Promise<UserInputResponse>;
   /** Routes sub-agent approval requests up to the parent session's approval handler. */
-  approve?: (request: ApprovalRequest) => Promise<ApprovalResponse>;
+  approve?: (
+    request: ApprovalRequest,
+    options?: import("../tools/capabilities").RuntimeRequestOptions,
+  ) => Promise<ApprovalResponse>;
   /** Stream function for child agents — when omitted, falls back to the global stream resolver. */
   streamFn?: import("@diligent/core/provider-contract").StreamFunction;
   /** Parent-selected full-output store, retained by every nested collaboration registry. */

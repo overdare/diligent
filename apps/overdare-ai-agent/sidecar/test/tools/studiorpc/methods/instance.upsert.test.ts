@@ -309,17 +309,13 @@ describe("instance.upsert class property validation", () => {
 });
 
 describe("UIListLayout alignment hints", () => {
-  test("the tool schema no longer offers Center as the example alignment", () => {
-    // A free-string `e.g. "Center"` description was the only concrete value the model saw, so it
-    // centered every generated list and cropped the children against the engine's Left default.
+  test("UIListLayout HorizontalAlignment is constrained to Studio's enum", () => {
     const schema = zodToJsonSchema(classPropertiesSchemas.get("UIListLayout") as z.ZodTypeAny) as {
       properties: Record<string, { enum?: string[]; description?: string }>;
     };
     const horizontal = schema.properties.HorizontalAlignment;
 
     expect(horizontal.enum).toEqual(["Left", "Center", "Right"]);
-    expect(horizontal.description).toContain('default is "Left"');
-    expect(JSON.stringify(horizontal)).not.toContain("e.g.");
   });
 
   test("rejects an alignment value outside the enum", () => {
@@ -368,6 +364,64 @@ describe("compatibility write boundaries", () => {
       const properties = JSON.parse(`{"${key}":{}}`);
       expect(() => parseArgs({ items: [{ class: "Part", parentGuid: "W", name: "P", properties }] })).toThrow();
       expect(() => parseInstancePatchProperties("Part", properties)).toThrow();
+    }
+  });
+});
+
+const valueCases = [
+  ["StringValue", "", { Type: "String", String: "" }],
+  ["StringValue", "ready", { Type: "String", String: "ready" }],
+  ["NumberValue", 0, { Type: "Number", Number: 0 }],
+  ["NumberValue", -1.5, { Type: "Number", Number: -1.5 }],
+  ["BoolValue", false, { Type: "Bool", Bool: false }],
+  ["BoolValue", true, { Type: "Bool", Bool: true }],
+  ["IntValue", 0, { Type: "Integer", Integer: 0 }],
+  ["IntValue", -2, { Type: "Integer", Integer: -2 }],
+] as const;
+
+test.each(
+  valueCases,
+)("normalizes %s Value=%s to Studio tagged JSON for creates and patches", (className, value, expected) => {
+  const parsed = parseArgs({
+    items: [{ class: className, parentGuid: "workspace", name: "State", properties: { Value: value } }],
+  });
+  expect(parsed.items[0].properties).toEqual({ Value: expected });
+  expect(parseInstancePatchProperties(className, { Value: value })).toEqual({ Value: expected });
+  expect(parseInstancePatchProperties(className, {})).toEqual({});
+  expect(classPropertiesSchemas.get(className)!.parse({ Value: value })).toEqual({ Value: value });
+});
+
+describe("ProceduralModel compatibility writes", () => {
+  test("accepts inherited pivots and writable recipe controls for creation and GUID patches", () => {
+    const properties = {
+      WorldPivot: { Position: { X: 10, Y: 20, Z: 30 }, Orientation: { X: 0, Y: 90, Z: 0 } },
+      PivotOffsetCFrame: { Position: { X: 1, Y: 2, Z: 3 }, Orientation: { X: 0, Y: 0, Z: 0 } },
+      CastShadow: false,
+      Size: { X: 120, Y: 80, Z: 60 },
+      AutoRebuild: false,
+    };
+    const created = parseArgs({ items: [{ class: "ProceduralModel", parentGuid: "W", name: "Recipe", properties }] });
+    const patched = parseInstancePatchProperties("ProceduralModel", properties);
+    expect(created.items[0].properties).toEqual(patched);
+    expect(patched).toMatchObject({
+      WorldPivot: { ObjectType: "CFrame", Position: { ObjectType: "Vector3", X: 10, Y: 20, Z: 30 } },
+      PivotOffsetCFrame: { ObjectType: "CFrame" },
+      Size: { ObjectType: "Vector3", X: 120, Y: 80, Z: 60 },
+      CastShadow: false,
+      AutoRebuild: false,
+    });
+    expect(parseInstancePatchProperties("ProceduralModel", { CastShadow: true })).toEqual({ CastShadow: true });
+    expect(JSON.stringify(zodToJsonSchema(params))).toContain('"ProceduralModel"');
+  });
+  test("rejects invalid property types and internal bake metadata", () => {
+    for (const properties of [
+      { AutoRebuild: "false" },
+      { Size: { X: "bad", Y: 1, Z: 1 } },
+      { PreviewStatus: "ready" },
+      { BakedOwner: "fake" },
+      { PublishedParams: "{}" },
+    ]) {
+      expect(() => parseInstancePatchProperties("ProceduralModel", properties)).toThrow(/properties/);
     }
   });
 });

@@ -1,13 +1,14 @@
 {
   "Class": "/Script/LuaAPI.ActionSequence",
   "Header": {
-    "version": 1,
+    "version": 2,
     "createTime": "2026.02.12-14.33.51",
     "lastModifyTime": "2026.02.12-14.33.51"
   },
   "ActionSequenceID": "",
   "SequencerDescription": "",
   "Length": 0.40000000596046448,
+  "PreviewTarget": {},
   "Tracks": [
     {
       "Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
@@ -26,6 +27,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 0.40000000596046448,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -55,6 +58,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "FlashHit_0",
@@ -162,6 +166,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 0.40000000596046448,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -183,6 +189,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 0.40000000596046448,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -204,6 +212,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 0.40000000596046448,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -225,6 +235,8 @@
       "IsEnable": true,
       "StartTime": 0.31604167819023132,
       "EndTime": 0.40000000596046448,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,

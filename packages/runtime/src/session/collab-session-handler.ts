@@ -8,7 +8,7 @@ import type { SessionEntry } from "./types";
 export interface HistoricalCollabAgent {
   threadId: string;
   nickname: string;
-  policy?: Omit<CollabResumePolicy, "modelClass"> & { modelClass?: ModelClass };
+  policy?: CollabResumePolicy;
 }
 
 export class CollabSessionHandler {

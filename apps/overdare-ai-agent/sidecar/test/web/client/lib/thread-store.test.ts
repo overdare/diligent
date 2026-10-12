@@ -10,6 +10,22 @@ import {
 import { USER_FACING_NETWORK_ERROR_MESSAGE } from "../../../../src/web/client/lib/user-facing-errors";
 import { WEB_IMAGE_ROUTE_PREFIX } from "../../../../src/web/shared/image-routes";
 
+const activeGoal = {
+  id: "goal-1",
+  threadId: "t1",
+  revision: 1,
+  objective: "Ship the release",
+  status: "active" as const,
+  maxTurns: 10,
+  turnsUsed: 2,
+  tokensUsed: 400,
+  cacheReadTokens: 50,
+  activeTimeMs: 100,
+  accountingScope: "reported_agent_tokens" as const,
+  createdAt: 1,
+  updatedAt: 2,
+};
+
 function reduce(state: typeof initialThreadState, notification: DiligentServerNotification) {
   const adapter = adapterInstance;
   const events = adapter.toAgentEvents(notification);
@@ -55,6 +71,32 @@ test("thread identity notifications do not switch visible history without hydrat
 
   expect(next.activeThreadId).toBe("thread-old");
   expect(next.items).toBe(seeded.items);
+});
+
+test("older goal notifications cannot overwrite a newer clear snapshot", () => {
+  const cleared = { ...initialThreadState, activeThreadId: "t1", goal: null, goalSequence: 8 };
+  const next = reduce(cleared, {
+    method: "thread/goal/updated",
+    params: { threadId: "t1", goal: activeGoal, sequence: 7 },
+  });
+
+  expect(next.goal).toBeNull();
+  expect(next.goalSequence).toBe(8);
+});
+
+test("thread hydration restores the goal snapshot and clears the previous thread goal", () => {
+  const withGoal = hydrateFromThreadRead(initialThreadState, {
+    threadId: "t1",
+    items: [],
+    goal: activeGoal,
+    goalSequence: 4,
+  });
+  expect(withGoal.goal).toEqual(activeGoal);
+  expect(withGoal.goalSequence).toBe(4);
+
+  const switched = hydrateFromThreadRead(withGoal, { threadId: "t2", items: [] });
+  expect(switched.goal).toBeNull();
+  expect(switched.goalSequence).toBe(0);
 });
 
 test("merges item started/delta/completed into single assistant item", () => {
@@ -2886,7 +2928,7 @@ test("hydrateFromThreadRead keeps sub-agent running when truncated wait summary 
   expect(collabWait && collabWait.kind === "collab" ? collabWait.status : "").toBe("running");
 });
 
-test("context_notice renders a structured human-edits card without replacing the optimistic user message", () => {
+test("context_notice renders a structured studio-changes card without replacing the optimistic user message", () => {
   resetAdapter();
   const seeded = {
     ...initialThreadState,
@@ -2894,10 +2936,10 @@ test("context_notice renders a structured human-edits card without replacing the
   };
   const event = {
     type: "context_notice",
-    source: "studiorpc-human-edits",
+    source: "studiorpc-studio-changes",
     presentation: {
-      kind: "human-edits",
-      title: "Human edits detected",
+      kind: "studio-changes",
+      title: "Studio changes detected",
       content: 'Added (1):\n+ Part "Ramp" (p2) under "Workspace" (ws-0)',
     },
   } as const;
@@ -2912,7 +2954,7 @@ test("context_notice renders a structured human-edits card without replacing the
   expect(contextCards).toHaveLength(1);
   const card = contextCards[0];
   if (!card || card.kind !== "context") throw new Error("expected context item");
-  expect(card.variant).toBe("human-edits");
+  expect(card.variant).toBe("studio-changes");
   expect(card.summary).toContain('+ Part "Ramp" (p2)');
 
   const users = next.items.filter((item) => item.kind === "user");
@@ -2928,8 +2970,8 @@ test("hydrateFromThreadRead restores structured context notices", () => {
       {
         type: "contextMessage",
         itemId: "ctx-1",
-        source: "studiorpc-human-edits",
-        presentation: { kind: "human-edits", title: "Human edits detected", content: "Added: Ramp" },
+        source: "studiorpc-studio-changes",
+        presentation: { kind: "studio-changes", title: "Studio changes detected", content: "Added: Ramp" },
         timestamp: 2,
       },
     ],
@@ -2941,7 +2983,7 @@ test("hydrateFromThreadRead restores structured context notices", () => {
   expect(hydrated.items).toEqual([
     expect.objectContaining({
       kind: "context",
-      variant: "human-edits",
+      variant: "studio-changes",
       summary: expect.stringContaining("Added: Ramp"),
     }),
   ]);

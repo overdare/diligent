@@ -180,3 +180,75 @@ test("recognizes modern and legacy IME composition keyboard events", () => {
   expect(isImeCompositionEvent({ isComposing: false, keyCode: 229 })).toBe(true);
   expect(isImeCompositionEvent({ isComposing: false, keyCode: 13 })).toBe(false);
 });
+
+test("asset cards submit asset, pack and none values through the same question flow", async () => {
+  const assetRequest = {
+    questions: [
+      {
+        id: "asset",
+        header: "Asset",
+        question: "Choose a palette",
+        display: "asset" as const,
+        options: [
+          { label: "Use metro palette", description: "12 assets", value: "pack:pack_metro" },
+          {
+            label: "Wall",
+            description: "MODEL",
+            value: "123",
+            asset: { thumbnailUrl: "https://asset-prod.cdn.overdare.com/wall.png" },
+          },
+          { label: "None of these are suitable", description: "Try another approach", value: "none" },
+        ],
+      },
+    ],
+  };
+  const rootElement = document.createElement("div");
+  document.body.appendChild(rootElement);
+  const root = createRoot(rootElement);
+  let selected = "";
+  let submitted = "";
+  let cancelled = false;
+  function Harness() {
+    const [answers, setAnswers] = useState<Record<string, string>>({});
+    return createElement(QuestionCard, {
+      request: assetRequest,
+      answers,
+      onAnswerChange: (id: string, value: string | string[]) => {
+        selected = value as string;
+        setAnswers({ [id]: selected });
+      },
+      onSubmit: () => {
+        submitted = answers.asset;
+      },
+      onCancel: () => {
+        cancelled = true;
+      },
+    });
+  }
+  await act(async () => {
+    root.render(createElement(Harness));
+  });
+  for (const value of ["123", "pack:pack_metro", "none"]) {
+    await act(async () => {
+      rootElement.querySelector<HTMLButtonElement>(`[data-asset-value="${value}"]`)!.click();
+    });
+    expect(selected).toBe(value);
+    await act(async () => {
+      const submit = Array.from(rootElement.querySelectorAll<HTMLButtonElement>("button")).find((b) =>
+        b.textContent?.includes("Submit"),
+      )!;
+      submit.click();
+    });
+    expect(submitted).toBe(value);
+  }
+  await act(async () => {
+    Array.from(rootElement.querySelectorAll<HTMLButtonElement>("button"))
+      .find((b) => b.textContent?.includes("Cancel"))!
+      .click();
+  });
+  expect(cancelled).toBe(true);
+  await act(async () => {
+    root.unmount();
+  });
+  rootElement.remove();
+});

@@ -172,9 +172,8 @@ fn deploy_plugins(
 /// Sync non-skill directories that mix bundled entries and user additions.
 /// Skills use skill_manifest's journal and revocation policy instead.
 ///
-/// ponytail: an entry dropped from a newer bootstrap lingers in dest (we can't
-/// distinguish a retired product agent from a user-created agent). Upgrade path:
-/// track a manifest of product-managed names and prune those absent from src.
+/// Explicitly revoked product agents are removed by skill_manifest and skipped
+/// here, including on rollback. Other absent entries remain user-owned.
 fn deploy_managed_dir(
     src: &Path,
     dest: &Path,
@@ -189,6 +188,12 @@ fn deploy_managed_dir(
         let name = entry.file_name();
         let src_child = entry.path();
         let dest_child = dest.join(&name);
+        if dir_label == "agents"
+            && crate::skill_manifest::is_agent_revoked(dest.parent().unwrap(), &src_child)
+                .map_err(std::io::Error::other)?
+        {
+            continue;
+        }
         let exists = dest_child.exists();
         if !should_copy_entry(exists, mode) {
             let _ = writeln!(
@@ -244,7 +249,7 @@ pub fn run(env: Env, update_applied: bool) -> Result<(), String> {
         fs::read_dir(&bootstrap).map_err(|e| format!("Cannot read bootstrap dir: {e}"))?;
     for entry in entries.flatten() {
         let name = entry.file_name();
-        if name == "skills" || name == "skills-manifest.json" {
+        if name == "skills" || name == "skills-manifest.json" || name == "agents-manifest.json" {
             continue;
         }
         let src = entry.path();

@@ -2,7 +2,7 @@
 
 import type { TextBlock } from "@diligent/core/message-contract";
 import {
-  getModelClass,
+  getDefaultEffortForClass,
   type ModelClass,
   resolveModel,
   resolveModelForClass,
@@ -20,7 +20,7 @@ import { SessionManager } from "../session/manager";
 import { isSafeSessionId } from "../session/types";
 import { forkToolForChild } from "../tools/child-fork";
 import { buildDefaultTools } from "../tools/defaults";
-import { COLLAB_TOOL_NAMES } from "../tools/tool-metadata";
+import { COLLAB_TOOL_NAMES, TOOL_CAPABILITIES } from "../tools/tool-metadata";
 import { NicknamePool } from "./nicknames";
 import type { AgentEntry, AgentStatus, CollabAgentEvent, CollabResumePolicy, CollabToolDeps } from "./types";
 import { isFinal } from "./types";
@@ -61,7 +61,9 @@ export function resolveChildToolAccess(
   params: { allowNestedAgents?: boolean; allowedTools?: string[] },
   agentDefinition: ResolvedAgentDefinition,
 ): { childTools: Tool[]; nestedCollabEnabled: boolean; allowedChildToolNames: Set<string> } {
-  let allowedChildToolNames = new Set(parentTools.map((tool) => tool.name));
+  let allowedChildToolNames = new Set(
+    parentTools.filter((tool) => !TOOL_CAPABILITIES[tool.name]?.rootOnly).map((tool) => tool.name),
+  );
   const agentAllowedTools = agentDefinition.allowedTools?.length ? agentDefinition.allowedTools : undefined;
   const policyAllowedTools = params.allowedTools?.length ? params.allowedTools : undefined;
 
@@ -253,17 +255,19 @@ export class AgentRegistry {
     }
     const nickname = restoredEntry?.nickname ?? this.pool.reserve();
     const abortController = new AbortController();
+    const goalScope = this.deps.getGoalScope?.();
+    const goalExecutionId = crypto.randomUUID();
+    goalScope?.signal.throwIfAborted();
 
     const parentModel = resolveModel(this.deps.model);
     // Model selection is not the parent's to make. An agent uses its AGENT.md `model_class` when it declares
     // one; otherwise it inherits the parent's model and effort. A spawn-time `params.modelClass` is ignored on
     // purpose — only a resume keeps its original class.
-    const targetClass: ModelClass =
-      restoredPolicy?.modelClass ?? agentDefinition.defaultModelClass ?? getModelClass(parentModel);
+    const targetClass = restoredPolicy ? restoredPolicy.modelClass : agentDefinition.defaultModelClass;
     const effectiveAllowedTools = normalizeToolAllowlist(restoredPolicy?.allowedTools);
     const effectivePolicy: CollabResumePolicy = {
       agentType,
-      modelClass: targetClass,
+      ...(targetClass !== undefined && { modelClass: targetClass }),
       ...(effectiveAllowedTools ? { allowedTools: effectiveAllowedTools } : {}),
       allowNestedAgents: restoredPolicy?.allowNestedAgents ?? params.allowNestedAgents === true,
     };
@@ -306,10 +310,9 @@ export class AgentRegistry {
       },
     ];
 
-    // Resume uses the original model class; a new child uses the requested or role-default class.
-    const childModel = resolveModelForClass(parentModel, targetClass);
-    const useClassDefaultEffort = restoredPolicy !== undefined || agentDefinition.defaultModelClass !== undefined;
-    const childEffort = resolveChildEffort(this.deps.effort, targetClass, childModel, useClassDefaultEffort);
+    // Only an explicit class selects another model; classless children inherit the parent directly.
+    const childModel = targetClass === undefined ? parentModel : resolveModelForClass(parentModel, targetClass);
+    const childEffort = resolveChildEffort(this.deps.effort, targetClass, childModel);
 
     const factory = this.deps.sessionManagerFactory ?? ((cfg) => new SessionManager(cfg));
 
@@ -337,14 +340,26 @@ export class AgentRegistry {
         : undefined,
       agent: async (): Promise<RuntimeAgent> => {
         const childAsk = this.deps.ask
-          ? (request: import("../tools/user-input-types").UserInputRequest) =>
-              this.deps.ask!({
-                ...request,
-                source: { threadId: childManager.sessionId, nickname },
-              })
+          ? (
+              request: import("../tools/user-input-types").UserInputRequest,
+              options?: import("../tools/capabilities").RuntimeRequestOptions,
+            ) =>
+              this.deps.ask!(
+                {
+                  ...request,
+                  source: { threadId: childManager.sessionId, nickname },
+                },
+                { signal: options?.signal ?? abortController.signal },
+              )
           : undefined;
 
-        const childDeps = { ...this.deps, parentTools: childTools, ask: childAsk, depth: this.depth - 1 };
+        const childDeps = {
+          ...this.deps,
+          getGoalScope: () => goalScope,
+          parentTools: childTools,
+          ask: childAsk,
+          depth: this.depth - 1,
+        };
         const result = await buildDefaultTools({
           cwd: this.deps.cwd,
           paths: this.deps.paths,
@@ -456,9 +471,11 @@ export class AgentRegistry {
       let output: string | null = null;
       let turnNumber = 0;
       let fatalError: string | null = null;
+      let coreTurnId = "";
 
       const unsub = childManager.subscribe((event) => {
         if (event.type === "turn_start") {
+          coreTurnId = event.turnId;
           turnNumber++;
           this.emit({
             type: "turn_start",
@@ -467,6 +484,8 @@ export class AgentRegistry {
             nickname,
             turnNumber,
           });
+        } else if (event.type === "usage") {
+          goalScope?.recordUsage({ sessionId: threadId, executionId: goalExecutionId, coreTurnId, ...event.usage });
         } else if (event.type === "message_start") {
           this.emit({ ...event, childThreadId: threadId, nickname });
         } else if (event.type === "message_discarded") {
@@ -517,7 +536,14 @@ export class AgentRegistry {
       return status;
     });
 
-    entry.promise = promise;
+    const cancelGoal = () => abortController.abort();
+    goalScope?.childStarted(threadId);
+    goalScope?.signal.addEventListener("abort", cancelGoal, { once: true });
+    if (goalScope?.signal.aborted) cancelGoal();
+    entry.promise = promise.finally(() => {
+      goalScope?.signal.removeEventListener("abort", cancelGoal);
+      goalScope?.childFinished(threadId);
+    });
     this.agents.set(threadId, entry);
 
     emitSpawnEnd("running");
@@ -731,19 +757,12 @@ export class AgentRegistry {
    * Used on session resume to re-populate the in-memory registry
    * so that thread IDs from a prior server lifetime remain valid.
    */
-  restoreAgent(
-    threadId: string,
-    nickname: string,
-    policy?: Omit<CollabResumePolicy, "modelClass"> & { modelClass?: ModelClass },
-  ): void {
+  restoreAgent(threadId: string, nickname: string, policy?: CollabResumePolicy): void {
     if (this.agents.has(threadId)) return; // already known
-    const agentDefinition = policy ? resolveAgentDefinition(this.deps.agentDefinitions, policy.agentType) : undefined;
-    const parentModel = resolveModel(this.deps.model);
     const normalizedPolicyAllowedTools = normalizeToolAllowlist(policy?.allowedTools);
     const resumePolicy = policy
       ? {
           ...policy,
-          modelClass: policy.modelClass ?? agentDefinition?.defaultModelClass ?? getModelClass(parentModel),
           ...(normalizedPolicyAllowedTools ? { allowedTools: normalizedPolicyAllowedTools } : {}),
         }
       : undefined;
@@ -797,23 +816,15 @@ function normalizeToolAllowlist(tools: string[] | undefined): string[] | undefin
   return normalized.length > 0 ? normalized : undefined;
 }
 
-function defaultEffortForModelClass(modelClass: ModelClass): ThinkingEffort {
-  if (modelClass === "lite") return "low";
-  if (modelClass === "pro") return "high";
-  return "medium";
-}
-
 function resolveChildEffort(
   parentEffort: ThinkingEffort,
-  modelClass: ModelClass,
+  modelClass: ModelClass | undefined,
   childModel: ReturnType<typeof resolveModelForClass>,
-  useClassDefaultEffort: boolean,
 ): ThinkingEffort {
-  if (useClassDefaultEffort) {
-    const defaultEffort = defaultEffortForModelClass(modelClass);
-    if (supportsThinkingEffort(childModel, defaultEffort)) {
-      return defaultEffort;
-    }
+  if (modelClass === undefined) return parentEffort;
+  const defaultEffort = getDefaultEffortForClass(modelClass);
+  if (supportsThinkingEffort(childModel, defaultEffort)) {
+    return defaultEffort;
   }
   if (!childModel.supportsThinking) {
     return parentEffort;

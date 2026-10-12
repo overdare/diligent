@@ -3,7 +3,6 @@
 export type { ModelClass, ModelClassDefinition } from "./llm/model-class-policy";
 export {
   getDefaultEffortForClass,
-  getModelClass,
   MODEL_CLASSES,
   resolveModelForClass,
 } from "./llm/model-class-policy";

@@ -1,13 +1,14 @@
 {
   "Class": "/Script/LuaAPI.ActionSequence",
   "Header": {
-    "version": 1,
+    "version": 2,
     "createTime": "2026.03.05-13.05.28",
     "lastModifyTime": "2026.03.05-13.05.28"
   },
   "ActionSequenceID": "",
   "SequencerDescription": "",
   "Length": 1.9084169864654541,
+  "PreviewTarget": {},
   "Tracks": [
     {
       "Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
@@ -26,6 +27,8 @@
       "IsEnable": true,
       "StartTime": 0.0036249998956918716,
       "EndTime": 0.46666666865348816,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -52,6 +55,8 @@
       "IsEnable": true,
       "StartTime": 0.38812500238418579,
       "EndTime": 1.906166672706604,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -78,6 +83,8 @@
       "IsEnable": true,
       "StartTime": 1.1757082939147949,
       "EndTime": 1.4425417184829712,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -107,6 +114,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "VFX_Muzzle_0",
@@ -231,6 +239,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.9084169864654541,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -260,6 +270,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "VFX_Cast_0",
@@ -376,6 +387,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.9084169864654541,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -405,6 +418,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "VFX_Portal_0",
@@ -521,6 +535,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.9084169864654541,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -550,6 +566,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaMeshPartData",
         "Name": "Gun_0",
@@ -632,6 +649,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.9084169864654541,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -653,6 +672,8 @@
       "IsEnable": true,
       "StartTime": 1.7909166812896729,
       "EndTime": 1.9082916975021362,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -717,6 +738,8 @@
       "IsEnable": true,
       "StartTime": 1.300150990486145,
       "EndTime": 1.300150990486145,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -789,6 +812,8 @@
       "IsEnable": true,
       "StartTime": 1.2998332977294922,
       "EndTime": 1.7998332977294922,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -810,6 +835,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.9082499742507935,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -831,6 +858,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.9083333015441895,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
