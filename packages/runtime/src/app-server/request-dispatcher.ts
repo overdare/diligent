@@ -39,6 +39,7 @@ import { handleSkillsList, handleSkillsSet, type SkillConfigManager } from "./sk
 import { handleSubagentsList, handleSubagentsSet, type SubagentConfigManager } from "./subagent-handlers";
 import {
   handleEffortSet,
+  handleFastModeSet,
   handleModeSet,
   handleThreadCompactStart,
   handleThreadRead,
@@ -171,6 +172,7 @@ export function applySessionDefaults(
     DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START,
     DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET,
     DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET,
+    DILIGENT_CLIENT_REQUEST_METHODS.FAST_MODE_SET,
     DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ,
     DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST,
     DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
@@ -305,6 +307,9 @@ export async function dispatchClientRequest(
 
     case DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET:
       return handleEffortSet(ctx.threadHandlersCtx, request.params.threadId, request.params.effort);
+
+    case DILIGENT_CLIENT_REQUEST_METHODS.FAST_MODE_SET:
+      return handleFastModeSet(ctx.threadHandlersCtx, request.params.threadId, request.params.fastMode);
 
     case DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST:
       return handleKnowledgeList(ctx.threadHandlersCtx, request.params.threadId, request.params.limit);

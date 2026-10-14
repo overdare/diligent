@@ -53,6 +53,7 @@ export function createOpenAIStream(
           temperature: options.temperature,
           useReasoning,
           effort: options.effort,
+          fastMode: model.supportsFastMode ? (options.fastMode ?? false) : undefined,
           store: false,
           imageDetail,
           localImageLoader: context.localImageLoader,

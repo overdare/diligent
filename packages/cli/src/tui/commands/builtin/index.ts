@@ -2,6 +2,7 @@ import type { SkillMetadata } from "@diligent/runtime";
 import type { CommandRegistry } from "../registry";
 import { compactCommand } from "./compact";
 import { effortCommand } from "./effort";
+import { fastCommand } from "./fast";
 import { goalCommand } from "./goal";
 import { helpCommand } from "./help";
 import { mcpCommand } from "./mcp";
@@ -21,6 +22,7 @@ export function registerBuiltinCommands(
 ): void {
   registry.register(helpCommand);
   registry.register(effortCommand);
+  registry.register(fastCommand);
   registry.register({ ...goalCommand, hidden: capabilities.goals !== true });
   for (const command of modeCommands) registry.register(command);
   registry.register(modelCommand);

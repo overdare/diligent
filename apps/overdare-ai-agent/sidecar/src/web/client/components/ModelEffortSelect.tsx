@@ -1,4 +1,4 @@
-// @summary Merged composer control: usage-gauge model pill opening a Models menu with an Effort row beneath it
+// @summary Composer model menu with independent reasoning effort and Fast mode controls
 
 import type { ModelInfo, ThinkingEffort } from "@diligent/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -17,8 +17,7 @@ import {
 } from "./ui-styles";
 import { useAnchoredPortal } from "./useAnchoredPortal";
 
-/** Design `menu/header` height, `menu` inset, and `menu/item` height — used to size and place the submenu. */
-const MENU_HEADER_HEIGHT = 28;
+/** Effort submenu inset and row height. */
 const MENU_GROUP_PADDING = 8;
 const MENU_ITEM_HEIGHT = 24;
 /** Design places the Effort panel 2px to the right of the Models panel. */
@@ -37,19 +36,6 @@ export function canFitEffortBeside(viewportWidth: number): boolean {
 
 /** The panel's 1px hairline sits outside the auto height, so it counts toward the outer box. */
 const MENU_BORDER = 2;
-/** The rule between the model rows and the Effort row adds no margin of its own — the 4px group insets carry the spacing. */
-const MENU_DIVIDER_BLOCK = 1;
-
-/** Full Models panel: hairline, `Models` header, model rows, divider, and the single Effort row. */
-export function getModelsMenuHeight(modelCount: number): number {
-  return (
-    MENU_BORDER +
-    MENU_HEADER_HEIGHT +
-    (MENU_GROUP_PADDING + modelCount * MENU_ITEM_HEIGHT) +
-    MENU_DIVIDER_BLOCK +
-    (MENU_GROUP_PADDING + MENU_ITEM_HEIGHT)
-  );
-}
 
 /** The Effort panel carries no header of its own — design measures 180x130 for five rows. */
 export function getEffortMenuHeight(itemCount: number): number {
@@ -87,6 +73,8 @@ interface ModelEffortSelectProps {
   onModelChange: (modelId: string) => void;
   effort: ThinkingEffort;
   onEffortChange: (effort: ThinkingEffort) => void;
+  fastMode: boolean;
+  onFastModeChange: (fastMode: boolean) => void;
   supportsThinking: boolean;
   currentContextTokens: number;
   contextWindow: number;
@@ -99,6 +87,8 @@ export function ModelEffortSelect({
   onModelChange,
   effort,
   onEffortChange,
+  fastMode,
+  onFastModeChange,
   supportsThinking,
   currentContextTokens,
   contextWindow,
@@ -211,6 +201,7 @@ export function ModelEffortSelect({
         ) : null}
         <span className="min-w-0 truncate text-[#DCE2E8]">{modelLabel}</span>
         {showEffort ? <span className="shrink-0 text-[#565F69]">{effortLabel}</span> : null}
+        {currentModelInfo?.supportsFastMode && fastMode ? <span className="shrink-0 text-accent">Fast</span> : null}
         <TriangleArrowDown
           className={cn("h-2 w-2 shrink-0 text-[#88929C] transition-transform", isOpen && "rotate-180")}
           aria-hidden="true"
@@ -293,6 +284,23 @@ export function ModelEffortSelect({
                     {/* Effort is its own row under the model list, not a per-model submenu. */}
                     <div className="border-t border-[#2A3038]" />
                     <div className={composerMenuGroupClasses}>
+                      {currentModelInfo?.supportsFastMode ? (
+                        <>
+                          <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            aria-checked={fastMode}
+                            onMouseEnter={() => setSubmenuPosition(null)}
+                            onFocus={() => setSubmenuPosition(null)}
+                            onClick={() => onFastModeChange(!fastMode)}
+                            className={cn(menuItemClasses, "gap-2")}
+                          >
+                            <span className="min-w-0 flex-1 text-left">Fast mode</span>
+                            <span className={fastMode ? "text-accent" : "text-muted"}>{fastMode ? "On" : "Off"}</span>
+                          </button>
+                          <p className="px-2 py-1 text-2xs text-muted">Faster responses, higher cost / usage.</p>
+                        </>
+                      ) : null}
                       <button
                         type="button"
                         role="menuitem"

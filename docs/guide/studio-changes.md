@@ -1,17 +1,51 @@
 # Studio change summaries
 
-The OVERDARE Studio tool provider collects the project edit log once at the start
-of each user request. Its shared agent hook injects one bounded summary for the
-main agent. Web and TUI receive the same context presentation; child agents do
-not independently inject it. There is no automatic polling during a request.
+Studio records `Edit.Log` for manual Editor edits and Lua Editor commands.
+Direct instance RPC writes do not produce this log. To verify collected change
+summaries against a live Studio, perform edits manually or through
+`studiorpc_execute_luau` with `target: "Editor"`.
+
+The owning OVERDARE sidecar collects project edit logs into a shared, bounded RAM
+journal when a user request starts or `studiorpc_studio_changes` queries new
+changes. Startup and idle time do not scan or consume logs; there is no polling
+timer. Changes made during a request remain on disk until the next collection
+trigger. Collection is shared across sessions, independently of delivery. No database,
+archive files, or cursor files are created. Existing disk archives are left
+untouched and are not used by the new detail tool.
+
+## Session delivery and authorship
+
+Each actual session has an independent RAM sequence marker. Collection deletes
+complete, ingested source files without waiting for every session to read them;
+another session's unread changes remain in the journal until bounded eviction.
+Abandoned sessions never prevent cleanup. Marker state survives tool recreation
+in the same process, not process restart.
+
+One bounded automatic summary is injected at the start of each main user request.
+The marker advances only after the runtime accepts it into conversation context.
+Web and TUI receive the same presentation. Child agents do not automatically
+inject summaries; they can query explicitly without advancing their main's marker.
+New edits during a request are available through explicit queries or the next
+request's automatic summary.
+
+Studio RPC requests carry the actual executing session ID in top-level
+`meta.sessionId`, including child IDs. The runtime resolves the root group from
+persisted ancestry, not the last main prompt. Explicit `Origin.Kind: "mcp"`
+records from the querying session, its main, or known descendants are excluded.
+Other groups' edits remain visible. Unknown, mixed, legacy, and unregistered
+authors remain visible rather than being guessed. Studio must already emit
+origin metadata; this change does not modify Studio's logging schema.
+External MCP calls without runtime identity do not inherit a main's identity.
+Standalone MCP and background calls use a stable `sidecar-...` process identity;
+it identifies the sidecar, not an external client's individual agent transcript.
+Runtime execution identity takes precedence over tool arguments through nested
+helpers, awaits, and write-lock waits.
 
 ## Automatic context budget
 
-One budget covers every section, attribution text, counts, and detail instructions.
-The renderer targets 6,000 UTF-8 bytes and stays below an 8,000-byte ceiling.
-These are conservative approximations of 1,500 and 2,000 tokens, not tokenizer
-guarantees. A future mid-request injection must share this request's budget,
-rather than allocate a fresh budget per loop iteration.
+One budget covers every section, attribution, counts, warnings, and detail
+instructions. The renderer targets 6,000 UTF-8 bytes with an 8,000-byte ceiling.
+These approximate 1,500 and 2,000 tokens, not tokenizer guarantees.
 
 - At most 20 object/session entries receive details across all sections.
 - Each object shows at most four changed properties. Each list property shows
@@ -24,7 +58,7 @@ rather than allocate a fresh budget per loop iteration.
   a delete in another remain separate, as do opposite property edits by different
   sessions. Each session's counts include all its collected changes.
 - At most three session groups are displayed, ranked by their most critical
-  change. Omitted groups are counted and remain available through archived details.
+  change. Omitted groups are counted and remain available through temporary RAM details.
   `Total changes` and `Totals` cover every session, including omitted groups. Web
   uses the complete total for its badge; TUI receives the same summary text.
 - Script source edits, deletions, parent moves, and identity/reference edits take
@@ -37,38 +71,34 @@ rather than allocate a fresh budget per loop iteration.
   details are omitted, preserving the Web notice's count contract.
 - Output stops at object boundaries and reports omission counts.
 
-Only explicit origin metadata identifies a session. Legacy records may include
-this agent's own work and are not a diff against an agent-relative baseline.
+For a deleted subject, `Changes: [{ "Property": "Descendants", "Removed": [...] }]`
+marks every referenced descendant as deleted, even when it is absent from
+`ActorGuids` or `Objects`. Studio supplies a recursively flattened list of
+`ObjectRef` values (`ActorGuid`, `Name`, `InstanceType`). Each GUID is counted
+once per attributed session, including overlapping selected roots. A descendant
+created in the same session and query range becomes "Added then removed";
+otherwise it is "Removed". A later
+creation restores its added state. Automatic summaries and explicit details
+use the same aggregation and transaction authorship filtering.
 
-Every Studio RPC request includes the top-level `meta.sessionId` field. The
-executing agent supplies its session ID through `ToolContext`, including child
-agents that share their parent's tools. An asynchronous execution context carries
-the ID through nested helpers, awaits, and write-lock waits. Standalone MCP and
-background calls without an agent ID use a stable `sidecar-...` process identity.
-Separate sidecar processes receive separate identities. If Studio records `Origin.Kind` as
-`mcp` and `Origin.SessionId` matches that ID, automatic summaries and detail
-queries exclude the record. Other sessions, legacy records without origin
-metadata, and `unknown` or `mixed` origins remain visible. Archives retain all
-parsed records, including this agent's own edits. Studio builds that do not
-record origin metadata continue to report changes as before. External MCP calls
-use their sidecar identity for filtering; it does not identify an external
-client's individual agent transcript. Both summaries and archived detail pages
-identify the remaining records' session groups. Full IDs remain in the raw archive
-when display labels are truncated or omitted.
+`ActorGuids` still identifies directly selected subjects. Neither incidental
+`Objects` records nor `LuaChildren.Removed` imply cascade deletion. Older Studio
+logs without `Descendants.Removed` cannot identify all cascaded deletions; inspect
+current Studio state when such history is ambiguous. Output limits truncate
+presentation only, not the descendant classification.
 
-## Follow-up reads
+These summaries are collected history, not an agent-relative diff. Compare them
+with expected work and inspect affected instances before editing.
 
-`studiorpc_studio_changes({})` reports live transactions not yet returned by this
-tool, excluding the delivered turn-start summary. Repeated calls without edits
-return the no-changes message. Identical transactions appended later still count
-as new occurrences. Cursors and automatic turn caches are scoped to the executing
-session, so a child query cannot suppress a parent's report. A new user request
-or recreated live log resets that session's cursor.
-Queries do not rotate or delete Studio's live log, so the next request can still
-collect that batch.
+## Explicit queries and temporary details
 
-The automatic summary and live query results include a `batchId`. Request
-archived details with:
+`studiorpc_studio_changes({})` refreshes collection and reports retained
+transactions not yet returned to this session. A successful new query advances
+only that marker; invalid queries and detail reads do not. Repeated queries
+without edits return no changes. Identical transactions appended later remain
+distinct occurrences. Recreating the live log does not reset a session marker.
+
+Summaries include a temporary `batchId`. Retrieve paginated detail rows with:
 
 ```json
 {
@@ -81,22 +111,43 @@ archived details with:
 }
 ```
 
-`changeType` accepts `added`, `addedThenRemoved`, `removed`, `moved`, `modified`,
-or `sourceChanged`. Supplying a filter or batch ID also selects detail mode.
-Detail pages contain individual property/list-item rows, so objects with more
-than four properties remain fully queryable. The page can contain fewer than
-`limit` rows to respect the shared byte budget; follow the returned continuation
-offset. Specify the same batch ID to keep pagination stable while Studio edits
-continue. Details default to the most recent queried or captured batch; without
-one, the tool snapshots the live log or reads the latest local archive.
+`changeType` accepts `added`, `addedThenRemoved`, `removed`, `moved`,
+`modified`, or `sourceChanged`. Supplying a filter or batch ID also selects
+detail mode. Follow the returned continuation offset with the same batch ID.
+Details default to this consumer's latest retained batch, not another session's.
+IDs refer to fixed journal ranges and are restricted to their consumer. Partial
+eviction or restart expires the batch explicitly; there is no latest-batch
+fallback for an explicit expired ID and no archive path. Script source content
+is not logged: read the current script when source events are reported.
 
-Details also provide the archive path for inspecting complete values through a
-bounded file read. Archives contain all parsed transactions and are saved under
-the project's storage namespace, for example `.overdare/logs/studio-changes/`.
-They remain available after tool recreation and process restart. Query cursors
-are process-local, so restarting a tool may report the live batch again.
+## Retention, source safety, and recovery
 
-The turn-start collector durably writes an archive before deleting rotated log
-files. Failed archival leaves those files for a later retry. Archives are local
-diagnostics and are not automatically pruned. The engine does not log script
-source content; source events instruct the agent to read the current script.
+Default internal limits are 16 MiB encoded journal payload and 10,000 records;
+4,096 consumer markers and identities each; 256 detail descriptors and file
+retry entries; an 8 MiB input read, 64 MiB recognized source backlog, and four
+processed files per refresh. Encoded bytes and entry counts bound retained logical
+data, not exact process RSS; JavaScript objects and transient parsing use more.
+Oldest journal records are evicted regardless of unread markers. Only inactive
+markers and identities may be replaced; all-active capacity is rejected.
+
+The single owner rotates only recognized regular `Edit.Log` files and its
+recognized rotation names, never arbitrary `*.consuming` files or symlinks.
+Complete transaction prefixes are appended once; unfinished UTF-8/UTF-16 tails
+and empty newly opened files stay on disk for retry. Failed reads and deletes
+receive fair collection slots so they do not block later files. Delete failures
+retry cleanup without duplicating the already-ingested prefix.
+Oversized sources/backlogs may be deliberately dropped
+with a visible history-gap notice.
+
+RAM-only means process exit, restart, or bounded eviction can lose undelivered
+changes. Resumed sessions and missing/expired history receive a gap warning,
+including when no edit survives. Inspect current Studio state before continuing;
+do not assume remembered state is current. The collector awaits an in-flight
+refresh during normal shutdown or failed host startup. Failed reads, incomplete
+writes, and failed file removals are retried at later collection triggers.
+`STUDIO_DISABLED` hosts do not own collection. Standalone MCP tool creation does
+not collect logs; explicit new-change queries refresh the shared collector.
+
+This supports multiple sessions in one owning process. Independent processes
+against the same project do not share RAM or markers; cross-process broadcasting
+is not implemented. Studio is assumed to reopen its log per finalized transaction.

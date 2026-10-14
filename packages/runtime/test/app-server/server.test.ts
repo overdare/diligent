@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventStream } from "@diligent/core/event-stream";
-import { resolveModel } from "@diligent/core/model-registry";
+import { getModelInfoList, resolveModel } from "@diligent/core/model-registry";
 import { type Model, ProviderError, ProviderManager, type StreamFunction } from "@diligent/core/provider-contract";
 import type {
   DiligentServerNotification,
@@ -983,6 +983,68 @@ describe("DiligentAppServer", () => {
     expect(
       (readResult(newThreadRead) as { currentModel?: { provider: string; modelId: string } }).currentModel,
     ).toEqual({ provider: "openai", modelId: "gpt-5.6-terra" });
+  });
+
+  it("refreshes selected-model bundled capabilities after a same-provider model change", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-model-tools-"));
+    const assembledModels: string[] = [];
+    const runtimeConfig = makeFactoryRuntimeConfig();
+    const nextModel = getModelInfoList().find(
+      (model) => model.provider === runtimeConfig.model.provider && model.modelId !== runtimeConfig.model.modelId,
+    );
+    expect(nextModel).toBeDefined();
+    const provider: BundledToolProvider = {
+      id: "selected-model-capability",
+      createTools: ({ generateText }) => {
+        expect(generateText).toBeDefined();
+        assembledModels.push("assembled");
+        return [];
+      },
+    };
+    const server = new DiligentAppServer(
+      createAppServerConfig({ cwd: projectRoot, runtimeConfig, bundledToolProviders: [provider] }),
+    );
+    const connection = connectTestPeer(server);
+    let completed!: () => void;
+    let completion = new Promise<void>((resolve) => {
+      completed = resolve;
+    });
+    connection.setNotificationListener((notification) => {
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) completed();
+    });
+    const started = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 650,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const threadId = (readResult(started) as { threadId: string }).threadId;
+
+    await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 651,
+      method: "turn/start",
+      params: { threadId, message: "first" },
+    });
+    await completion;
+    expect(assembledModels).toHaveLength(1);
+
+    readResult(
+      await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 652,
+        method: "config/set",
+        params: { threadId, model: { provider: nextModel!.provider, modelId: nextModel!.modelId } },
+      }),
+    );
+    completion = new Promise<void>((resolve) => {
+      completed = resolve;
+    });
+    await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 653,
+      method: "turn/start",
+      params: { threadId, message: "second" },
+    });
+    await completion;
+
+    expect(assembledModels).toHaveLength(2);
   });
 
   it("config/reload re-discovers skills and forces the next turn to rebuild its agent", async () => {

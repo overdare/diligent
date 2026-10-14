@@ -145,6 +145,14 @@ export interface EffortChangeEntry {
   timestamp: number;
 }
 
+export interface FastModeChangeEntry {
+  id: string;
+  parentId?: string;
+  type: "fast_mode_change";
+  fastMode: boolean;
+  timestamp: number;
+}
+
 export interface SteeringEntry {
   id: string;
   parentId?: string;
@@ -177,6 +185,7 @@ export type SessionEntry =
   | SessionInfoEntry
   | ModeChangeEntry
   | EffortChangeEntry
+  | FastModeChangeEntry
   | SteeringEntry
   | ErrorEntry;
 

@@ -58,6 +58,7 @@ export function useAppState({
   const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [showImageUploadIndicator, setShowImageUploadIndicator] = useState(false);
   const [effort, setEffortState] = useState<ThinkingEffort>("medium");
+  const [fastMode, setFastModeState] = useState(false);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [runtimeVersion, setRuntimeVersion] = useState<string>("");
   const [goalsSupported, setGoalsSupported] = useState(false);
@@ -88,6 +89,7 @@ export function useAppState({
     applySessionModel: providerMgr.applySessionModel,
     resetDraftModel: providerMgr.resetDraftModel,
     setEffortState,
+    setFastModeState,
     activateThreadPrompts: serverRequests.activateThread,
     shelveThreadPrompts: serverRequests.shelveActivePrompts,
     clearAttention: notificationState.clearAttention,
@@ -231,6 +233,7 @@ export function useAppState({
     dispatch,
     setCwd,
     setEffortState,
+    setFastModeState,
     setSkills,
     setRuntimeVersion,
     setGoalsSupported,
@@ -257,6 +260,7 @@ export function useAppState({
     isUploadingImages,
     supportsVision,
     effort,
+    fastMode,
     slashCommands,
     goalsSupported,
     currentModel: providerMgr.currentModel,
@@ -269,6 +273,7 @@ export function useAppState({
     setIsUploadingImages,
     setShowImageUploadIndicator,
     setEffortState,
+    setFastModeState,
     changeModel: providerMgr.changeModel,
     startNewThread: threadMgr.startNewThread,
     openThread: threadMgr.openThread,
@@ -317,6 +322,7 @@ export function useAppState({
     showImageUploadIndicator,
     setShowImageUploadIndicator,
     effort,
+    fastMode,
     setEffortState,
     ...modalState,
     attentionThreadIds: notificationState.attentionThreadIds,

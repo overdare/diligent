@@ -17,6 +17,7 @@ export const DILIGENT_CLIENT_REQUEST_METHODS = {
   TURN_STEER_UPDATE: "turn/steer/update",
   MODE_SET: "mode/set",
   EFFORT_SET: "effort/set",
+  FAST_MODE_SET: "fastMode/set",
   KNOWLEDGE_LIST: "knowledge/list",
   KNOWLEDGE_UPDATE: "knowledge/update",
   THREAD_DELETE: "thread/delete",

@@ -18,6 +18,7 @@ import {
 } from "../../src/tools/studiorpc/tools/snapshot";
 import { createSnapshotContextTool } from "../../src/tools/studiorpc/tools/snapshot-context-tool";
 import { createSnapshotListTool } from "../../src/tools/studiorpc/tools/snapshot-list-tool";
+import { bindStudioTestSession } from "../helpers/studio-session";
 
 function projectDir(): string {
   const cwd = mkdtempSync(join(tmpdir(), "proj-"));
@@ -230,12 +231,18 @@ describe("snapshot capture on first edit", () => {
       approve?: () => Promise<"once" | "always" | "reject">;
     } = {},
   ) {
-    const provider = createStudioRpcToolProvider({ callRpc: options.callRpc ?? (async () => ({})) });
+    const provider = bindStudioTestSession(
+      createStudioRpcToolProvider({ callRpc: options.callRpc ?? (async () => ({ success: true })) }),
+    );
     const p = provider as typeof provider & {
       onUserPromptSubmit: NonNullable<typeof provider.onUserPromptSubmit>;
     };
     await p.onUserPromptSubmit(hookInput(cwd, sessionId)); // begins the turn
-    const tools = await provider.createTools({ cwd, host: { approve: options.approve ?? (async () => "once") } });
+    const tools = await provider.createTools({
+      cwd,
+      sessionId,
+      host: { approve: options.approve ?? (async () => "once") },
+    });
     return { provider: p, tools };
   }
 
@@ -258,7 +265,7 @@ describe("snapshot capture on first edit", () => {
           expect(readFileSync(join(snapshotsDir(cwd), "editor_0.ovdrjm"), "utf8")).toBe(original);
           writeFileSync(join(cwd, "world.ovdrjm"), '{"Root":{"edited":true}}');
         }
-        return "saved";
+        return method === "level.save.file" ? { success: true } : "saved";
       },
     });
     await tools
@@ -367,7 +374,7 @@ describe("snapshot capture on first edit", () => {
     const { tools } = await setup(cwd, "sess", {
       callRpc: async (method) => {
         if (method === "asset_drawer.import" && shouldThrow) throw new Error("rpc down");
-        return {};
+        return { success: true };
       },
     });
     const importTool = tools.find((t) => t.name === "studiorpc_asset_drawer_import")!;
@@ -406,7 +413,7 @@ describe("createRollbackTool", () => {
     const calls: string[] = [];
     const tool = createRollbackTool(cwd, async (method) => {
       calls.push(method);
-      return {};
+      return { success: true };
     });
 
     const result = await tool.execute({} as never, toolCtx());
@@ -422,7 +429,7 @@ describe("createRollbackTool", () => {
     const calls: string[] = [];
     const tool = createRollbackTool(cwd, async (method) => {
       calls.push(method);
-      return {};
+      return { success: true };
     });
 
     const result = await tool.execute({} as never, toolCtx());
@@ -432,7 +439,7 @@ describe("createRollbackTool", () => {
   });
 
   test("is registered as a tool on the provider", async () => {
-    const provider = createStudioRpcToolProvider({ callRpc: async () => ({}) });
+    const provider = createStudioRpcToolProvider({ callRpc: async () => ({ success: true }) });
     const tools = await provider.createTools({
       cwd: "/tmp/project",
       host: { approve: async () => "once" },
@@ -446,7 +453,7 @@ describe("createRollbackTool", () => {
     writeFileSync(join(cwd, "world.ovdrjm"), '{"Root":{"x":2}}');
     captureSnapshot(cwd, "sess", 1, { label: "second edit" }); // {"Root":{"x":2}}
     writeFileSync(join(cwd, "world.ovdrjm"), '{"Root":{"x":3}}');
-    const tool = createRollbackTool(cwd, async () => ({}));
+    const tool = createRollbackTool(cwd, async () => ({ success: true }));
 
     const result = await tool.execute({ snapshotId: "sess_0" } as never, toolCtx());
 
@@ -461,7 +468,7 @@ describe("createRollbackTool", () => {
     const calls: string[] = [];
     const tool = createRollbackTool(cwd, async (method) => {
       calls.push(method);
-      return {};
+      return { success: true };
     });
 
     const result = await tool.execute({ snapshotId: "missing_1" } as never, toolCtx());
@@ -480,7 +487,7 @@ describe("createRollbackTool", () => {
     const tool = createRollbackTool(cwd, async (method) => {
       calls.push(method);
       if (method === "level.apply") throw new Error("editor busy");
-      return {};
+      return { success: true };
     });
 
     const result = await tool.execute({} as never, toolCtx());
@@ -504,7 +511,7 @@ describe("createRollbackTool", () => {
       const tool = createRollbackTool(cwd, async (method) => {
         calls.push(method);
         if (method === "level.apply") throw new Error("editor busy");
-        return {};
+        return { success: true };
       });
 
       const result = await tool.execute({} as never, toolCtx());
@@ -529,7 +536,7 @@ describe("createRollbackTool", () => {
       const tool = createRollbackTool(cwd, async (method) => {
         if (method === "level.apply") throw new Error("editor busy");
         if (method === "level.save.file" && ++saveCalls > 1) throw new Error("editor gone");
-        return {};
+        return { success: true };
       });
 
       const result = await tool.execute({} as never, toolCtx());
@@ -546,7 +553,7 @@ describe("createRollbackTool", () => {
     const cwd = projectDir();
     captureSnapshot(cwd, "sess", 0, { label: "build a castle" });
     writeFileSync(join(cwd, "world.ovdrjm"), '{"Root":{"x":9}}');
-    const tool = createRollbackTool(cwd, async () => ({}));
+    const tool = createRollbackTool(cwd, async () => ({ success: true }));
 
     const result = await tool.execute({} as never, toolCtx());
 
@@ -562,7 +569,7 @@ describe("createRollbackTool", () => {
     writeFileSync(join(dir, "sess_0.ovdrjm"), '{"Root":{"original":true}}');
     chmodSync(dir, 0o555); // safety snapshot capture fails: dir is read-only
     try {
-      const tool = createRollbackTool(cwd, async () => ({})); // level.save.file / level.apply all succeed
+      const tool = createRollbackTool(cwd, async () => ({ success: true })); // level.save.file / level.apply all succeed
 
       const result = await tool.execute({} as never, toolCtx());
 
@@ -601,7 +608,7 @@ describe("createSnapshotListTool", () => {
   });
 
   test("is registered as a tool on the provider", async () => {
-    const provider = createStudioRpcToolProvider({ callRpc: async () => ({}) });
+    const provider = createStudioRpcToolProvider({ callRpc: async () => ({ success: true }) });
     const tools = await provider.createTools({ cwd: "/tmp/project", host: { approve: async () => "once" } });
     expect(tools.map((tool) => tool.name)).toContain("studiorpc_snapshot_list");
   });
@@ -626,7 +633,7 @@ describe("createSnapshotContextTool", () => {
     writeFileSync(path, `${lines.join("\n")}\n`);
   }
 
-  test("returns the matched request and the entries that follow it", async () => {
+  test("returns the matched request and following entries up to the next request", async () => {
     const cwd = projectDir();
     const transcriptPath = join(cwd, "session.jsonl");
     writeTranscript(transcriptPath, [
@@ -637,11 +644,11 @@ describe("createSnapshotContextTool", () => {
     captureSnapshot(cwd, "sess", 0, { label: "make a castle", transcriptPath });
     const tool = createSnapshotContextTool(cwd);
 
-    const result = await tool.execute({ snapshotId: "sess_0" } as never, toolCtx());
+    const result = await tool.execute({ snapshotId: "sess_0", includeConversation: true } as never, toolCtx());
 
     expect(result.output).toContain("[user] make a castle");
     expect(result.output).toContain("[assistant] Building the castle now.");
-    expect(result.output).toContain("[user] make it bigger");
+    expect(result.output).not.toContain("[user] make it bigger");
     expect(result.metadata?.error).toBeUndefined();
   });
 
@@ -661,7 +668,7 @@ describe("createSnapshotContextTool", () => {
     writeFileSync(sidecar, JSON.stringify(meta));
     const tool = createSnapshotContextTool(cwd);
 
-    const result = await tool.execute({ snapshotId: "sess_0" } as never, toolCtx());
+    const result = await tool.execute({ snapshotId: "sess_0", includeConversation: true } as never, toolCtx());
 
     expect(result.output).toContain("first attempt"); // matched the 00:01 occurrence, not 00:05
   });
@@ -670,7 +677,7 @@ describe("createSnapshotContextTool", () => {
     const cwd = projectDir();
     captureSnapshot(cwd, "sess", 0, { label: "x" });
     const tool = createSnapshotContextTool(cwd);
-    const result = await tool.execute({ snapshotId: "sess_0" } as never, toolCtx());
+    const result = await tool.execute({ snapshotId: "sess_0", includeConversation: true } as never, toolCtx());
     expect(result.output).toContain("no transcript reference");
     expect(result.metadata?.error).toBeUndefined();
   });
@@ -679,7 +686,7 @@ describe("createSnapshotContextTool", () => {
     const cwd = projectDir();
     captureSnapshot(cwd, "sess", 0, { label: "x", transcriptPath: join(cwd, "gone.jsonl") });
     const tool = createSnapshotContextTool(cwd);
-    const result = await tool.execute({ snapshotId: "sess_0" } as never, toolCtx());
+    const result = await tool.execute({ snapshotId: "sess_0", includeConversation: true } as never, toolCtx());
     expect(result.output).toContain("could not be read");
   });
 
@@ -689,7 +696,7 @@ describe("createSnapshotContextTool", () => {
     writeTranscript(transcriptPath, [{ role: "user", content: "something else", at: "2026-01-01T00:01:00Z" }]);
     captureSnapshot(cwd, "sess", 0, { label: "make a castle", transcriptPath });
     const tool = createSnapshotContextTool(cwd);
-    const result = await tool.execute({ snapshotId: "sess_0" } as never, toolCtx());
+    const result = await tool.execute({ snapshotId: "sess_0", includeConversation: true } as never, toolCtx());
     expect(result.output).toContain("not found in the transcript");
   });
 
@@ -701,7 +708,7 @@ describe("createSnapshotContextTool", () => {
   });
 
   test("is registered as a tool on the provider", async () => {
-    const provider = createStudioRpcToolProvider({ callRpc: async () => ({}) });
+    const provider = createStudioRpcToolProvider({ callRpc: async () => ({ success: true }) });
     const tools = await provider.createTools({ cwd: "/tmp/project", host: { approve: async () => "once" } });
     expect(tools.map((tool) => tool.name)).toContain("studiorpc_snapshot_context");
   });

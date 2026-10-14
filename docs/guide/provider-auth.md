@@ -178,6 +178,32 @@ Behavioral constraints:
 - concurrent OAuth starts are rejected (`OAuth flow already in progress`)
 - current callback wait timeout is 5 minutes
 
+## GPT Fast mode
+
+Fast mode is an independent processing-speed preference for supported `openai` API-key and
+`chatgpt` subscription models. It does not change the selected model or reasoning effort.
+
+- **Web:** open the composer model selector and toggle **Fast mode**.
+- **TUI:** open `/model` and select **Fast mode: On/Off**, or use `/fast`, `/fast on`, or `/fast off`.
+- Fresh clients start with Fast mode off. The preference is saved per thread and restored when
+  resuming it. New conversations use the current client's preference.
+- Changes apply on the next turn, not partway through an active tool loop. Child agents inherit
+  the preference; unsupported models ignore it. Switching to an unsupported model hides the Web
+  toggle and the Fast status indicator without discarding the preference.
+- Supported GPT requests explicitly send `service_tier: "priority"` when enabled and
+  `service_tier: "default"` when disabled, including ChatGPT HTTP/SSE and WebSocket Responses Lite.
+  `priority` is OpenAI's compatible name for the Fast tier.
+- Fast mode increases API costs or subscription usage. Availability and actual processing speed
+  depend on the provider and account; OpenAI may downgrade a request to the standard tier.
+  Diligent's token-cost estimates still use catalog base rates, not service-tier billing.
+
+The shared protocol exposes `ModelInfo.supportsFastMode`, `thread/start.fastMode`,
+`fastMode/set { threadId?, fastMode }`, and `thread/read.currentFastMode`. Session files record
+`fast_mode_change` entries, which also appear in the debug viewer.
+
+See [OpenAI Fast mode](https://developers.openai.com/api/docs/guides/fast-mode) and
+[Codex speed and usage](https://developers.openai.com/codex/speed) for provider policies and pricing.
+
 ## Refresh and runtime binding
 
 Runtime binds external auth into `ProviderManager` and refreshes ChatGPT OAuth tokens automatically before provider use when needed.

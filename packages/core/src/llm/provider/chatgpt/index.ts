@@ -321,6 +321,7 @@ export function createChatGPTStream(
           sessionId: options.sessionId,
           useReasoning,
           effort,
+          fastMode: model.supportsFastMode ? (options.fastMode ?? false) : undefined,
           store: false,
           localImageLoader: context.localImageLoader,
           provider: "chatgpt",

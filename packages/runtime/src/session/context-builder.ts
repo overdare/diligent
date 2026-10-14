@@ -9,6 +9,7 @@ export interface SessionContext {
   compactionSummary?: Record<string, unknown>;
   currentModel?: ModelRef;
   currentEffort?: ThinkingEffort;
+  currentFastMode?: boolean;
   currentMode?: Mode;
 }
 
@@ -98,6 +99,7 @@ export function buildSessionContext(
   const providerMessages: Message[] = [];
   let currentModel: ModelRef | undefined;
   let currentEffort: ThinkingEffort | undefined;
+  const currentFastMode = path.findLast((entry) => entry.type === "fast_mode_change")?.fastMode;
   let currentMode = latestModeInPath(path);
   let lastAssistantModel: ModelRef | undefined;
 
@@ -176,6 +178,7 @@ export function buildSessionContext(
     compactionSummary: lastCompaction?.compactionSummary,
     currentModel: currentModel ?? lastAssistantModel,
     currentEffort,
+    currentFastMode,
     currentMode,
   };
 }

@@ -153,6 +153,8 @@ function getSystemEventInfo(entry: SessionEntry): { badge: string; description: 
       const e = entry as EffortChangeEntry;
       return { badge: "Effort Change", description: `${e.effort} (${e.changedBy})` };
     }
+    case "fast_mode_change":
+      return { badge: "Fast Mode", description: entry.fastMode ? "On" : "Off" };
     case "steering": {
       const e = entry as SteeringEntry;
       const content = typeof e.message.content === "string" ? e.message.content : JSON.stringify(e.message.content);
@@ -212,6 +214,7 @@ export function MessageCard({ entry, toolPairs, onSelectEntry }: MessageCardProp
       entry.type === "session_info" ||
       entry.type === "mode_change" ||
       entry.type === "effort_change" ||
+      entry.type === "fast_mode_change" ||
       entry.type === "steering" ||
       entry.type === "error")
   ) {

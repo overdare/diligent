@@ -1,11 +1,16 @@
 import type { AgentLoopHook } from "@diligent/core/agent";
 import type { Tool as CoreTool, ToolContext as CoreToolContext } from "@diligent/core/tool-contract";
 import {
+  acknowledgeContextInjection,
   type BundledToolProvider,
   createPresentableContextInjection,
+  FORK_TOOL_FOR_CHILD,
+  getSessionExecutionContext,
   type HookInput,
+  onSessionExecutionEnd,
   type PluginHookFn,
   type RuntimeToolHost,
+  type TextGenerationFn,
 } from "@diligent/runtime";
 import { enrichScriptReferences } from "./methods/action-sequence-script-references";
 import { isRecord as isSequenceRecord } from "./methods/action-sequence-shared";
@@ -29,13 +34,16 @@ import { createScriptDeleteTool } from "./tools/script-delete-tool";
 import { createScriptEditTool } from "./tools/script-edit-tool";
 import { createScriptGrepTool } from "./tools/script-grep-tool";
 import { createScriptReadTool } from "./tools/script-read-tool";
-import { captureSnapshot, nextRequestIndex, pruneSnapshots, snapshotsDir } from "./tools/snapshot";
+import { captureSavedSnapshot } from "./tools/snapshot-capture";
 import { createSnapshotContextTool } from "./tools/snapshot-context-tool";
+import { createSnapshotCreateTool } from "./tools/snapshot-create-tool";
 import { createSnapshotListTool } from "./tools/snapshot-list-tool";
-import { consumeStudioChanges, createStudioChangesTool, type StudioChangesCapture } from "./tools/studio-changes-tool";
+import { getStudioChangeCollector } from "./tools/studio-change-collector";
+import type { StudioChangeConsumer } from "./tools/studio-change-store";
+import { captureStudioChanges, createStudioChangesTool } from "./tools/studio-changes-tool";
 import { checkResult } from "./tools/v2/result";
 import type { Tool, ToolResult } from "./types";
-import { createWriteLock } from "./write-lock";
+import { createWriteLock, type WriteLock } from "./write-lock";
 
 type StudioRpcToolContext = CoreToolContext & {
   approve: NonNullable<RuntimeToolHost["approve"]>;
@@ -48,13 +56,10 @@ export interface StudioRpcToolProviderOptions {
 /** Per-turn rollback-snapshot state shared between the provider hooks and tools. */
 interface TurnSnapshotState {
   sessionId: string | undefined;
-  taken: boolean;
-  /**
-   * Studio changes consumed from Studio's EditLogging at turn start. Holds the
-   * frozen summary (served by the studio-changes tool as the turn cache) and the
-   * deferred deletion of the consumed log files.
-   */
-  studioChanges?: StudioChangesCapture;
+  capture?: Promise<void>;
+  warningReported?: boolean;
+  userMessageId?: string;
+  studioChangesPending?: boolean;
   /** Truncated user prompt; becomes the snapshot's label (its rollback-point summary). */
   promptLabel?: string;
   /** First capture failure this turn; set so the warning is reported only once. */
@@ -63,71 +68,164 @@ interface TurnSnapshotState {
   transcriptPath?: string;
 }
 
-function createStudioChangesLoopHook(turnState: TurnSnapshotState): AgentLoopHook {
-  let pendingStudioChanges: StudioChangesCapture | undefined;
+// Inherited tools keep their spawning request even after the parent starts its
+// next request. This product-owned context never changes the core Tool contract.
+const SNAPSHOT_TURN = Symbol("studioSnapshotTurn");
+type SnapshotToolContext = CoreToolContext & { [SNAPSHOT_TURN]?: TurnSnapshotState };
+
+function forkableSnapshotTool(tool: CoreTool, getTurnState: () => TurnSnapshotState | undefined): CoreTool {
+  return {
+    ...tool,
+    [FORK_TOOL_FOR_CHILD]: (inheritedTool: CoreTool) => {
+      const turnState = getTurnState();
+      return forkableSnapshotTool(
+        {
+          ...inheritedTool,
+          execute: (args, context) =>
+            inheritedTool.execute(args, { ...context, [SNAPSHOT_TURN]: turnState } as SnapshotToolContext),
+        },
+        () => turnState,
+      );
+    },
+  } as CoreTool;
+}
+
+function executionConsumer(): StudioChangeConsumer | undefined {
+  const execution = getSessionExecutionContext();
+  return execution
+    ? { sessionId: execution.sessionId, rootSessionId: execution.rootSessionId, resumed: execution.resumed }
+    : undefined;
+}
+
+function createStudioChangesLoopHook(cwd: string, getTurnState: () => TurnSnapshotState | undefined): AgentLoopHook {
+  let pending = false;
 
   return {
     id: "studiorpc-studio-changes",
     onPromptStart() {
-      pendingStudioChanges = turnState.studioChanges;
+      const state = getTurnState();
+      pending = state?.studioChangesPending === true;
+      if (state) state.studioChangesPending = false;
+      const consumer = executionConsumer();
+      if (consumer) onSessionExecutionEnd(getStudioChangeCollector(cwd).store.registerSession(consumer));
     },
     beforeTurn() {
-      const studioChanges = pendingStudioChanges;
-      pendingStudioChanges = undefined;
-      if (!studioChanges) return;
-      if (studioChanges.delivered) return;
-      // The summary is now part of the turn (injected below or empty), so the
-      // consumed log files can be dropped. If this never runs, the rotated
-      // files are re-read next turn — a duplicate report, never a loss.
-      studioChanges.finalize();
-      if (studioChanges.result.metadata?.studioChangesDetected !== true) return;
+      if (!pending) return;
+      pending = false;
+      const consumer = executionConsumer();
+      if (!consumer) return;
+      const studioChanges = captureStudioChanges(getStudioChangeCollector(cwd).store.read(consumer));
+      if (
+        studioChanges.result.metadata?.studioChangesDetected !== true &&
+        studioChanges.result.metadata?.historyGap !== true
+      ) {
+        studioChanges.finalize();
+        return;
+      }
       return [
-        createPresentableContextInjection({
-          source: "studiorpc-studio-changes",
-          content: studioChanges.result.output,
-          presentation: {
-            kind: "studio-changes",
-            title: "Studio changes detected",
+        acknowledgeContextInjection(
+          createPresentableContextInjection({
+            source: "studiorpc-studio-changes",
             content: studioChanges.result.output,
-          },
-        }),
+            presentation: {
+              kind: "studio-changes",
+              title: "Studio changes detected",
+              content: studioChanges.result.output,
+            },
+          }),
+          () => studioChanges.finalize(),
+        ),
       ];
     },
   };
 }
 
 export function createStudioRpcToolProvider(options: StudioRpcToolProviderOptions = {}): BundledToolProvider {
-  // Shared across the provider's hooks and its tools. The rollback baseline is
-  // captured just before the turn's *first map edit* (not at prompt time), so
-  // turns that don't edit the map — rollback requests, questions — leave no
-  // snapshot and never shadow the real baseline. `taken` enforces once-per-turn.
-  const turnState: TurnSnapshotState = { sessionId: undefined, taken: false };
+  const callRpc = options.callRpc ?? call;
 
-  // Start of each user request: consume Studio's edit log and arm a fresh
-  // snapshot for the upcoming turn. The actual capture happens lazily on the
-  // first edit tool. Studio saves the level itself on Send, so no
-  // turn-boundary save RPC is needed. Only explicit matching MCP session records are excluded.
+  const requests = new WeakMap<object, TurnSnapshotState>();
+  const pending = new Map<string, TurnSnapshotState>();
+  const writeLocks = new Map<string, WriteLock>();
+  const stateKey = (cwd: string, sessionId?: string) => JSON.stringify([cwd, sessionId]);
+  const getRequestState = (cwd: string, sessionId?: string): TurnSnapshotState | undefined => {
+    const execution = getSessionExecutionContext();
+    if (!execution) return pending.get(stateKey(cwd, sessionId));
+    let state = requests.get(execution.rootRequest);
+    if (!state) {
+      const key = stateKey(cwd, execution.rootSessionId);
+      state = pending.get(key) ?? { sessionId: execution.rootSessionId };
+      pending.delete(key);
+      requests.set(execution.rootRequest, state);
+    }
+    return state;
+  };
+
+  // Arm a verified baseline for this root request; children retain it across later prompts.
   const beginTurn: PluginHookFn = async (input: HookInput) => {
-    turnState.sessionId = input.session_id;
-    turnState.taken = false;
-    // Store generously (2000 chars); display sites truncate to 120. Keeping the
-    // full text local means no transcript lookups are ever needed.
-    turnState.promptLabel = typeof input.prompt === "string" ? input.prompt.slice(0, 2000) : undefined;
-    turnState.captureError = undefined;
-    turnState.transcriptPath = typeof input.transcript_path === "string" ? input.transcript_path : undefined;
-    turnState.studioChanges = consumeStudioChanges(input.cwd, input.session_id);
+    const key = stateKey(input.cwd, input.session_id);
+    if (pending.size >= 4096 && !pending.has(key)) {
+      return { blocked: true, reason: "Studio pending request capacity reached" };
+    }
+    pending.set(key, {
+      sessionId: input.session_id,
+      studioChangesPending: true,
+      userMessageId: typeof input.user_message_id === "string" ? input.user_message_id : undefined,
+      promptLabel: typeof input.prompt === "string" ? input.prompt.slice(0, 2000) : undefined,
+      transcriptPath: typeof input.transcript_path === "string" ? input.transcript_path : undefined,
+    });
+    await getStudioChangeCollector(input.cwd).refresh();
     return { blocked: false };
   };
   beginTurn.mode = "sync";
+  const endTurn: PluginHookFn = async (input) => {
+    pending.delete(stateKey(input.cwd, input.session_id));
+    return { blocked: false };
+  };
+  endTurn.mode = "sync";
 
   return {
     id: "@overdare/studiorpc-tools",
     displayName: "OVERDARE Studio RPC Tools",
     supersedesPluginPackages: ["@overdare/plugin-studiorpc"],
-    createTools: async ({ cwd, host }) =>
-      createCoreTools(await createStudioRpcTools({ cwd, host, callRpc: options.callRpc, turnState })),
+    createTools: async ({ cwd, host, sessionId, generateText }) => {
+      let writeLock = writeLocks.get(cwd);
+      if (!writeLock) {
+        writeLock = createWriteLock();
+        writeLocks.set(cwd, writeLock);
+      }
+      const getTurnState = () => getRequestState(cwd, sessionId);
+      return createCoreTools(
+        await createStudioRpcTools({
+          cwd,
+          host,
+          callRpc,
+          sessionId,
+          generateText,
+          writeLock,
+          getTurnState,
+        }),
+      ).map((tool) =>
+        forkableSnapshotTool(
+          {
+            ...tool,
+            async execute(args, context) {
+              const consumer = executionConsumer();
+              const release = consumer ? getStudioChangeCollector(cwd).store.registerSession(consumer) : undefined;
+              try {
+                return await tool.execute(args, context);
+              } finally {
+                release?.();
+              }
+            },
+          },
+          getTurnState,
+        ),
+      );
+    },
     onUserPromptSubmit: beginTurn,
-    createAgentLoopHooks: ({ agentKind }) => (agentKind === "main" ? [createStudioChangesLoopHook(turnState)] : []),
+    onStop: endTurn,
+    createAgentLoopHooks: ({ cwd, sessionId, agentKind }) =>
+      agentKind === "main" ? [createStudioChangesLoopHook(cwd, () => getRequestState(cwd, sessionId))] : [],
   };
 }
 
@@ -202,33 +300,55 @@ export async function createStudioRpcTools(ctx: {
   cwd: string;
   host?: RuntimeToolHost;
   callRpc?: typeof call;
-  turnState?: TurnSnapshotState;
+  sessionId?: string;
+  generateText?: TextGenerationFn;
+  writeLock?: WriteLock;
+  getTurnState?: () => TurnSnapshotState | undefined;
 }): Promise<Tool[]> {
-  const writeLock = createWriteLock();
+  const writeLock = ctx.writeLock ?? createWriteLock();
   const transport = ctx.callRpc ?? call;
   const callRpc: typeof call = (method, params, options) => transport(method, params, studioRpcCallOptions(options));
   const applyLevelChanges = () => callRpc("level.apply", {});
+  const getTurnState = (toolContext: SnapshotToolContext) =>
+    SNAPSHOT_TURN in toolContext ? toolContext[SNAPSHOT_TURN] : ctx.getTurnState?.();
 
   // Capture the pre-edit rollback baseline once per turn, lazily on the first
   // map-editing tool. On failure, returns a one-time warning for the wrapping
   // tool to surface — a silently missing baseline would make a later rollback
   // restore an older snapshot than the user expects.
-  const ensureSnapshot = (): string | undefined => {
-    const ts = ctx.turnState;
-    if (!ts || ts.taken || !ts.sessionId) return undefined;
-    try {
-      const index = nextRequestIndex(snapshotsDir(ctx.cwd), ts.sessionId);
-      captureSnapshot(ctx.cwd, ts.sessionId, index, {
-        label: ts.promptLabel,
-        kind: "turn",
-        transcriptPath: ts.transcriptPath,
-      });
-      pruneSnapshots(ctx.cwd, ts.sessionId);
-      ts.taken = true;
-      return undefined;
-    } catch (error) {
-      if (ts.captureError) return undefined; // already reported this turn
-      ts.captureError = (error as Error).message;
+  const ensureSnapshot = async (
+    ts: TurnSnapshotState | undefined,
+    signal: AbortSignal,
+  ): Promise<string | undefined> => {
+    if (!ts?.sessionId) return undefined;
+    const sessionId = ts.sessionId;
+    ts.capture ??= (async () => {
+      const release = await writeLock.acquire();
+      try {
+        await captureSavedSnapshot(
+          ctx.cwd,
+          sessionId,
+          callRpc,
+          {
+            label: ts.promptLabel,
+            kind: "turn",
+            transcriptPath: ts.transcriptPath,
+            userMessageId: ts.userMessageId,
+          },
+          signal,
+          ctx.generateText,
+        );
+      } catch (error) {
+        ts.captureError = error instanceof Error ? error.message : String(error);
+      } finally {
+        release();
+      }
+    })();
+    await ts.capture;
+    // A failed capture is never retried after edits start: that would record
+    // already-edited content as the request's pre-edit baseline.
+    if (ts.captureError && !ts.warningReported) {
+      ts.warningReported = true;
       return (
         `[warning] Rollback baseline could not be captured (${ts.captureError}). ` +
         `studiorpc_rollback would restore an older snapshot; check studiorpc_snapshot_list before rolling back.`
@@ -240,15 +360,17 @@ export async function createStudioRpcTools(ctx: {
   const withSnapshot = (tool: Tool): Tool => ({
     ...tool,
     execute: async (args, toolCtx) => {
-      const warning = ensureSnapshot();
+      const ts = getTurnState(toolCtx);
+      const warning = await ensureSnapshot(ts, toolCtx.signal);
       let result: Awaited<ReturnType<Tool["execute"]>>;
       try {
+        toolCtx.signal.throwIfAborted();
         result = await tool.execute(args, toolCtx);
       } catch (error) {
         // The warning was generated but never delivered (execute threw before
         // returning). Un-mark it as reported so the next edit tool regenerates
         // and delivers it, instead of the failure permanently swallowing it.
-        if (warning && ctx.turnState) ctx.turnState.captureError = undefined;
+        if (warning && ts) ts.warningReported = false;
         throw error;
       }
       return warning ? { ...result, output: `${warning}\n${result.output}` } : result;
@@ -316,14 +438,56 @@ export async function createStudioRpcTools(ctx: {
     ...createCollisionProfileTools(ctx.cwd, writeLock, applyLevelChanges).map((tool) =>
       wrapTool(isCollisionEdit(tool.name) ? withSnapshot(tool) : tool, ctx.host),
     ),
-    wrapTool(createRollbackTool(ctx.cwd, callRpc), ctx.host),
+    wrapTool(
+      createRollbackTool(ctx.cwd, callRpc, {
+        writeLock,
+        generateText: ctx.generateText,
+        getContext: (toolContext) => {
+          const ts = getTurnState(toolContext);
+          return {
+            sessionId: ts?.sessionId ?? ctx.sessionId,
+            userMessageId: ts?.userMessageId,
+            transcriptPath: ts?.transcriptPath,
+          };
+        },
+      }),
+      ctx.host,
+    ),
+    wrapTool(
+      createSnapshotCreateTool(async (signal, toolContext) => {
+        const ts = getTurnState(toolContext);
+        const release = await writeLock.acquire();
+        try {
+          return await captureSavedSnapshot(
+            ctx.cwd,
+            ts?.sessionId ?? ctx.sessionId ?? "manual",
+            callRpc,
+            {
+              kind: "manual",
+              label: "Manual checkpoint",
+              userMessageId: ts?.userMessageId,
+              transcriptPath: ts?.transcriptPath,
+            },
+            signal,
+            ctx.generateText,
+          );
+        } finally {
+          release();
+        }
+      }),
+      ctx.host,
+    ),
     wrapTool(createSnapshotListTool(ctx.cwd), ctx.host),
     wrapTool(createSnapshotContextTool(ctx.cwd), ctx.host),
     wrapTool(
       createStudioChangesTool(
-        ctx.cwd,
-        () => (studioRpcSessionId() === ctx.turnState?.sessionId ? ctx.turnState?.studioChanges : undefined),
-        studioRpcSessionId,
+        getStudioChangeCollector(ctx.cwd),
+        () =>
+          executionConsumer() ?? {
+            sessionId: studioRpcSessionId(),
+            rootSessionId: studioRpcSessionId(),
+            resumed: false,
+          },
       ),
       ctx.host,
     ),
@@ -344,7 +508,9 @@ export async function createStudioRpcTools(ctx: {
       parameters: params,
       async execute(args, toolCtx) {
         const isDryRun = method === "animation.write" && (args as Record<string, unknown>).dryRun === true;
-        const warning = capturesBeforeRun && !isDryRun ? ensureSnapshot() : undefined;
+        const ts = getTurnState(toolCtx);
+        const warning = capturesBeforeRun && !isDryRun ? await ensureSnapshot(ts, toolCtx.signal) : undefined;
+        toolCtx.signal.throwIfAborted();
         const bundledToolCtx = withApproval(toolCtx, ctx.host);
         const toolCallRpc = withSignal(callRpc, toolCtx.signal);
         const rpcMethod = mod.resolveMethod ? mod.resolveMethod(args as Record<string, unknown>) : method;
@@ -369,6 +535,7 @@ export async function createStudioRpcTools(ctx: {
         const release = isMutating ? await writeLock.acquire() : undefined;
         try {
           try {
+            toolCtx.signal.throwIfAborted();
             if (mod.preCall) await mod.preCall(args as Record<string, unknown>, toolCallRpc);
             const normalizedArgs = mod.normalizeArgs
               ? mod.normalizeArgs(args as Record<string, unknown>)
@@ -424,7 +591,7 @@ export async function createStudioRpcTools(ctx: {
           } catch (error) {
             // Same rationale as withSnapshot's catch: a warning generated but
             // lost to a thrown error must be regenerated on the next edit tool.
-            if (warning && ctx.turnState) ctx.turnState.captureError = undefined;
+            if (warning && ts) ts.warningReported = false;
             throw error;
           }
         } finally {

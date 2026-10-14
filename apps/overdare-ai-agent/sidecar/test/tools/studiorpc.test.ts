@@ -197,7 +197,6 @@ describe("createStudioRpcToolProvider", () => {
     };
 
     expect(studioRpcProvider.onUserPromptSubmit.mode).toBe("sync");
-    expect(provider.onStop).toBeUndefined();
 
     await studioRpcProvider.onUserPromptSubmit({
       session_id: "session-1",
@@ -205,6 +204,19 @@ describe("createStudioRpcToolProvider", () => {
       cwd: "/tmp/project",
       hook_event_name: "UserPromptSubmit",
       prompt: "hello",
+    });
+    await provider.onStop?.({
+      session_id: "session-1",
+      transcript_path: "",
+      cwd: "/tmp/project",
+      hook_event_name: "Stop",
+    });
+
+    await provider.onStop?.({
+      session_id: "session-1",
+      transcript_path: "/tmp/session.jsonl",
+      cwd: "/tmp/project",
+      hook_event_name: "Stop",
     });
 
     expect(calls).toEqual([]);

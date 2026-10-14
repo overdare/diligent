@@ -61,6 +61,8 @@ export class AppSessionLifecycle {
       mode: this.deps.runtime.currentMode,
       effort: this.deps.runtime.currentEffort,
       effortLabel: this.deps.runtime.currentEffort,
+      fastMode: this.deps.runtime.currentFastMode,
+      supportsFastMode: this.deps.config.model.supportsFastMode,
     });
 
     const welcomeLines = buildWelcomeBanner({
@@ -121,6 +123,7 @@ export class AppSessionLifecycle {
     if (!thread || threadId !== this.deps.runtime.currentThreadId) return;
 
     this.deps.runtime.currentEffort = thread.currentEffort;
+    this.deps.runtime.currentFastMode = thread.currentFastMode ?? false;
     this.deps.runtime.goalSnapshot = applyGoalSnapshot(this.deps.runtime.goalSnapshot ?? { goal: null, sequence: 0 }, {
       goal: thread.goal ?? null,
       sequence: thread.goalSequence ?? 0,
@@ -147,6 +150,8 @@ export class AppSessionLifecycle {
       contextWindow,
       effort: thread.currentEffort,
       effortLabel: thread.currentEffort,
+      fastMode: this.deps.runtime.currentFastMode,
+      supportsFastMode: activeModel.supportsFastMode,
       goal: goal
         ? {
             status: goal.status,

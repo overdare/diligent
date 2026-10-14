@@ -722,6 +722,8 @@ test("input dock renders attached context chips", () => {
       onModeChange={() => {}}
       effort="medium"
       onEffortChange={() => {}}
+      fastMode={false}
+      onFastModeChange={() => {}}
       currentModel="gpt-5"
       availableModels={[]}
       onModelChange={() => {}}
@@ -918,6 +920,8 @@ test("input dock shows the designed toolbar tag for every mode", () => {
       onModeChange={() => {}}
       effort="medium"
       onEffortChange={() => {}}
+      fastMode={false}
+      onFastModeChange={() => {}}
       currentModel="gpt-5"
       availableModels={[]}
       onModelChange={() => {}}
@@ -955,6 +959,8 @@ test("input dock shows the designed toolbar tag for every mode", () => {
       onModeChange={() => {}}
       effort="medium"
       onEffortChange={() => {}}
+      fastMode={false}
+      onFastModeChange={() => {}}
       currentModel="gpt-5"
       availableModels={[
         {
@@ -1011,6 +1017,8 @@ test("input dock shows the designed toolbar tag for every mode", () => {
       onModeChange={() => {}}
       effort="medium"
       onEffortChange={() => {}}
+      fastMode={false}
+      onFastModeChange={() => {}}
       currentModel="gpt-5"
       availableModels={[]}
       onModelChange={() => {}}
@@ -1054,6 +1062,8 @@ test("input dock only blocks submission while a prompt is pending", () => {
       onModeChange={() => {}}
       effort="medium"
       onEffortChange={() => {}}
+      fastMode={false}
+      onFastModeChange={() => {}}
       currentModel="gpt-5"
       availableModels={[]}
       onModelChange={() => {}}
@@ -1097,6 +1107,8 @@ test("input dock keeps the agent logo before the placeholder while the input is 
         onModeChange={() => {}}
         effort="medium"
         onEffortChange={() => {}}
+        fastMode={false}
+        onFastModeChange={() => {}}
         currentModel="gpt-5"
         availableModels={[]}
         onModelChange={() => {}}
@@ -1154,6 +1166,8 @@ test("input dock composer textarea does not inherit field border styles", () => 
       onModeChange={() => {}}
       effort="medium"
       onEffortChange={() => {}}
+      fastMode={false}
+      onFastModeChange={() => {}}
       currentModel="gpt-5"
       availableModels={[]}
       onModelChange={() => {}}
@@ -1208,6 +1222,8 @@ test("input dock model pill merges model and effort without bordered select trig
       onModeChange={() => {}}
       effort="medium"
       onEffortChange={() => {}}
+      fastMode={false}
+      onFastModeChange={() => {}}
       currentModel="gpt-5"
       availableModels={[
         {
@@ -2027,6 +2043,8 @@ test("input dock renders pending image preview and add-images action", () => {
       onModeChange={() => {}}
       effort="medium"
       onEffortChange={() => {}}
+      fastMode={false}
+      onFastModeChange={() => {}}
       currentModel="gpt-5.6-terra"
       availableModels={[
         {
@@ -2105,6 +2123,8 @@ test("input dock renders GPT-5.6 xhigh as a distinct selected effort", () => {
       onModeChange={() => {}}
       effort="xhigh"
       onEffortChange={() => {}}
+      fastMode={false}
+      onFastModeChange={() => {}}
       currentModel="gpt-5.6-sol"
       availableModels={[
         {
@@ -2157,6 +2177,8 @@ test("input dock compaction menu does not show compacting label swap", () => {
       onModeChange={() => {}}
       effort="medium"
       onEffortChange={() => {}}
+      fastMode={false}
+      onFastModeChange={() => {}}
       currentModel="gpt-5"
       availableModels={[]}
       onModelChange={() => {}}
@@ -2194,6 +2216,8 @@ test("input dock shows uploading state and disables send affordance", () => {
       onModeChange={() => {}}
       effort="high"
       onEffortChange={() => {}}
+      fastMode={false}
+      onFastModeChange={() => {}}
       currentModel={TEST_ANTHROPIC_MODEL_ID}
       availableModels={[
         {
@@ -2242,6 +2266,8 @@ test("input dock hides effort selector when model does not support thinking", ()
       onModeChange={() => {}}
       effort="medium"
       onEffortChange={() => {}}
+      fastMode={false}
+      onFastModeChange={() => {}}
       currentModel="gpt-5.3-chat-latest"
       availableModels={[
         {

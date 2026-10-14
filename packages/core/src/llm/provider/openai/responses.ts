@@ -263,6 +263,7 @@ export async function buildResponsesRequestBody(input: {
   temperature?: number;
   useReasoning?: boolean;
   effort?: ThinkingEffort;
+  fastMode?: boolean;
   store?: boolean;
   enablePromptCaching?: boolean;
   strictTools?: boolean;
@@ -282,6 +283,7 @@ export async function buildResponsesRequestBody(input: {
     }),
   };
   if (input.systemInstructions) body.instructions = input.systemInstructions;
+  if (input.fastMode !== undefined) body.service_tier = input.fastMode ? "priority" : "default";
   if (input.sessionId) body.prompt_cache_key = input.sessionId;
   if (input.enablePromptCaching) {
     if (usesResponsesLite(input.model)) {

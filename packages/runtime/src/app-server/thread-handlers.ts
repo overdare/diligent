@@ -45,8 +45,10 @@ export interface ThreadRuntime {
   cwd: string;
   mode: Mode;
   effort: ThinkingEffort;
+  fastMode?: boolean;
   model: ModelRef;
   runningEffortSnapshot?: ThinkingEffort;
+  runningFastModeSnapshot?: boolean;
   runningModelSnapshot?: ModelRef;
   /** User ID of the connection that started the current turn (set at turn start, cleared on end). */
   currentTurnUserId?: string;
@@ -75,6 +77,7 @@ export function resetTurnRuntimeState(runtime: ThreadRuntime): void {
   runtime.currentTurnId = null;
   runtime.currentTurnUserId = undefined;
   runtime.runningEffortSnapshot = undefined;
+  runtime.runningFastModeSnapshot = undefined;
   runtime.runningModelSnapshot = undefined;
   runtime.isRunning = false;
 }
@@ -124,7 +127,7 @@ export interface ThreadHandlersContext {
 
 export async function handleThreadStart(
   ctx: ThreadHandlersContext,
-  params: { cwd: string; mode?: Mode; effort?: ThinkingEffort; model?: ModelRef },
+  params: { cwd: string; mode?: Mode; effort?: ThinkingEffort; fastMode?: boolean; model?: ModelRef },
 ): Promise<{ threadId: string }> {
   const mode = params.mode ?? "default";
   const tempId = generateSessionId();
@@ -132,6 +135,8 @@ export async function handleThreadStart(
   const model = params.model ?? (await ctx.getLatestModelForCwd(params.cwd));
   const runtime = await ctx.createThreadRuntime(tempId, params.cwd, mode, true, effort, model);
   runtime.effort = normalizeThinkingEffort(resolveModel(runtime.model), runtime.effort);
+  runtime.fastMode = params.fastMode ?? false;
+  if (runtime.fastMode) runtime.manager.appendFastModeChange(true);
   const threadId = runtime.manager.sessionId;
   runtime.id = threadId;
 
@@ -156,6 +161,7 @@ export async function handleThreadRead(
   isRunning: boolean;
   currentMode: Mode;
   currentEffort: ThinkingEffort;
+  currentFastMode: boolean;
   currentModel?: ModelRef;
   totalCost?: number;
   goal?: import("@diligent/protocol").ThreadGoal | null;
@@ -207,6 +213,7 @@ export async function handleThreadRead(
     isRunning: runtime.isRunning,
     currentMode: runtime.manager.getCurrentMode() ?? runtime.mode,
     currentEffort: runtime.manager.getCurrentEffort() ?? runtime.effort,
+    currentFastMode: runtime.manager.getCurrentFastMode() ?? runtime.fastMode ?? false,
     currentModel: runtime.manager.getCurrentModel() ?? runtime.model,
     totalCost,
   };
@@ -298,4 +305,17 @@ export async function handleEffortSet(
   runtime.agent?.setEffort(effort);
   runtime.manager.appendEffortChange(effort, "command");
   return { effort };
+}
+
+export async function handleFastModeSet(
+  ctx: ThreadHandlersContext,
+  threadId: string | undefined,
+  fastMode: boolean,
+): Promise<{ fastMode: boolean }> {
+  const runtime = await ctx.resolveThreadRuntime(threadId);
+  runtime.goalCreation = undefined;
+  // The active turn keeps its snapshot; the next turn picks up the new preference.
+  runtime.fastMode = fastMode;
+  runtime.manager.appendFastModeChange(fastMode);
+  return { fastMode };
 }
