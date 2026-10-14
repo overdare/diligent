@@ -121,8 +121,8 @@ After a call, state one accurate status line, then continue the original task.
 - Missing context, authentication, tool, or network failure means reporting unavailable
   or failed. Do not repeatedly retry or stop the original task.
 
-This skill and tool share the `issue-report` experiment: dev channel by default,
-production only through its existing explicit override. If `agent_report` is absent,
+This skill and tool share the `issue-report` experiment: off by default in every
+release channel, enabled only through an explicit override. If `agent_report` is absent,
 state the finding without transmitting. Never fall back to Python, curl, Slack
 webhooks, direct token retrieval, or the newest transcript.
 

@@ -1,4 +1,4 @@
-// @summary Tests the release-channel gate on OVERDARE experiment defaults.
+// @summary Tests opt-in issue reporting across OVERDARE release channels.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { resolveExperimentGates, resolveExperimentStates } from "@diligent/runtime";
@@ -6,8 +6,8 @@ import { resolveExperimentGates, resolveExperimentStates } from "@diligent/runti
 const realEnv = process.env.DILIGENT_ENV;
 
 /**
- * `OVERDARE_EXPERIMENTS` reads `DILIGENT_ENV` at module evaluation, so each case needs a
- * fresh module instance. A cache-busting query keeps Bun from handing back the first one.
+ * Load fresh definitions after setting the channel to cover regressions to channel-specific
+ * defaults. A cache-busting query keeps Bun from handing back the first module instance.
  */
 async function disabledSkills(env: string | undefined, overrides?: Record<string, boolean>) {
   if (env === undefined) delete process.env.DILIGENT_ENV;
@@ -33,12 +33,12 @@ describe("issue-report experiment", () => {
     expect(await disabledSkills(env)).toContain("session-issue-report");
   });
 
-  test("exposes session-issue-report on the dev channel", async () => {
-    expect(await disabledSkills("dev")).not.toContain("session-issue-report");
+  test("keeps session-issue-report off by default on the dev channel", async () => {
+    expect(await disabledSkills("dev")).toContain("session-issue-report");
   });
 
-  test("is case-insensitive about the channel value", async () => {
-    expect(await disabledSkills("DEV")).not.toContain("session-issue-report");
+  test("keeps session-issue-report off with an uppercase dev channel", async () => {
+    expect(await disabledSkills("DEV")).toContain("session-issue-report");
   });
 
   test("an explicit override wins over a prod channel", async () => {
@@ -55,7 +55,7 @@ async function disabledTools(env: string | undefined, overrides?: Record<string,
 test.each([undefined, "prod"])("issue-report hides its transmission tool in %s", async (env) => {
   expect(await disabledTools(env)).toContain("agent_report");
 });
-test("issue-report exposes tool and skill together in dev or with an override", async () => {
-  expect(await disabledTools("dev")).not.toContain("agent_report");
+test("issue-report tool stays off in dev and an explicit override enables it", async () => {
+  expect(await disabledTools("dev")).toContain("agent_report");
   expect(await disabledTools("prod", { "issue-report": true })).not.toContain("agent_report");
 });

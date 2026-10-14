@@ -5,9 +5,9 @@ The OVERDARE `session-issue-report` skill judges whether an observed problem mer
 structured payload: title, task context, problem, report reason, suggestion, optional suspected cause, and evidence.
 The cause is free prose, not an enum. It should remain absent when the evidence does not support an explanation.
 
-The existing `issue-report` experiment owns both the skill and tool. Its development default and existing explicit
-experiment overrides still apply. Reporting also requires telemetry consent; turning the experiment on does not
-bypass consent.
+The existing `issue-report` experiment owns both the skill and tool and defaults to OFF in every release channel.
+Users can enable it through Config → Experiments → Internal issue reporting. Existing explicit overrides are
+preserved. Reporting also requires telemetry consent; turning the experiment on does not bypass consent.
 
 ## Runtime-owned context
 
