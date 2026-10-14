@@ -79,6 +79,7 @@ export async function prepareNewThreadForFirstMessage({
   cwd,
   model,
   effort,
+  fastMode,
   activateServerThread,
   applySessionModel,
   dispatch,
@@ -92,6 +93,7 @@ export async function prepareNewThreadForFirstMessage({
   cwd: string;
   model?: ModelRef;
   effort: ThinkingEffort;
+  fastMode?: boolean;
   activateServerThread: (threadId: string) => Promise<ThreadReadResponse>;
   applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
   dispatch: Dispatch<AppAction>;
@@ -104,6 +106,7 @@ export async function prepareNewThreadForFirstMessage({
     cwd: cwd || "/",
     mode,
     effort,
+    fastMode,
     model,
   });
   const threadId = started.threadId;
@@ -245,6 +248,7 @@ export function useAppActions({
   isUploadingImages,
   supportsVision,
   effort,
+  fastMode,
   slashCommands,
   goalsSupported,
   currentModel,
@@ -257,6 +261,7 @@ export function useAppActions({
   setIsUploadingImages,
   setShowImageUploadIndicator,
   setEffortState,
+  setFastModeState,
   changeModel,
   startNewThread,
   openThread,
@@ -281,6 +286,7 @@ export function useAppActions({
   isUploadingImages: boolean;
   supportsVision: boolean;
   effort: ThinkingEffort;
+  fastMode: boolean;
   slashCommands: SlashCommand[];
   goalsSupported: boolean;
   currentModel: ModelRef | undefined;
@@ -293,6 +299,7 @@ export function useAppActions({
   setIsUploadingImages: Dispatch<SetStateAction<boolean>>;
   setShowImageUploadIndicator: Dispatch<SetStateAction<boolean>>;
   setEffortState: Dispatch<SetStateAction<ThinkingEffort>>;
+  setFastModeState: Dispatch<SetStateAction<boolean>>;
   changeModel: (model: ModelRef, threadId?: string) => Promise<void>;
   startNewThread: () => Promise<void>;
   openThread: (threadId: string) => Promise<void>;
@@ -331,6 +338,7 @@ export function useAppActions({
           cwd: cwdRef.current || "/",
           model: currentModelRef.current,
           effort,
+          fastMode,
           activateServerThread,
           applySessionModel,
           dispatch,
@@ -405,6 +413,7 @@ export function useAppActions({
     modeRef,
     cwdRef,
     effort,
+    fastMode,
     applySessionModel,
     activateServerThread,
     refreshThreadList,
@@ -863,6 +872,27 @@ export function useAppActions({
     [setEffort],
   );
 
+  const handleFastModeChange = useCallback(
+    (nextFastMode: boolean) => {
+      void (async () => {
+        try {
+          const rpc = rpcRef.current;
+          if (state.activeThreadId) {
+            if (!rpc) throw new Error("Not connected to the server.");
+            await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.FAST_MODE_SET, {
+              threadId: state.activeThreadId,
+              fastMode: nextFastMode,
+            });
+          }
+          if (stateRef.current.activeThreadId === state.activeThreadId) setFastModeState(nextFastMode);
+        } catch (error) {
+          dispatch({ type: "show_info_toast", payload: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+    },
+    [rpcRef, stateRef, state.activeThreadId, setFastModeState, dispatch],
+  );
+
   const handleModelChange = useCallback(
     (optionKey: string) => {
       const model = availableModels.find((candidate) => modelOptionKey(candidate) === optionKey);
@@ -888,6 +918,7 @@ export function useAppActions({
     handleRetryLastTurn,
     handleModeChange,
     handleEffortChange,
+    handleFastModeChange,
     handleModelChange,
     handleCompactionClick,
     handleAddImagesToDock,

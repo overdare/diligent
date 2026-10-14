@@ -27,6 +27,8 @@ function makeContext(overrides?: Partial<CommandContext>): CommandContext {
     setMode: () => {},
     currentEffort: "medium",
     setEffort: async () => {},
+    currentFastMode: false,
+    setFastMode: async () => {},
     setModel: async () => {},
     clearChatHistory: () => {},
     clearScreenAndResetRenderer: () => {},

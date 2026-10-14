@@ -50,6 +50,8 @@ interface InputDockProps {
   onModeChange: (mode: Mode) => void;
   effort: ThinkingEffort;
   onEffortChange: (effort: ThinkingEffort) => void;
+  fastMode: boolean;
+  onFastModeChange: (fastMode: boolean) => void;
   currentModel: string;
   availableModels: ModelInfo[];
   onModelChange: (modelId: string) => void;
@@ -222,6 +224,8 @@ export function InputDock({
   onModeChange,
   effort,
   onEffortChange,
+  fastMode,
+  onFastModeChange,
   currentModel,
   availableModels,
   onModelChange,
@@ -521,6 +525,8 @@ export function InputDock({
                 onModelChange={onModelChange}
                 effort={effort}
                 onEffortChange={onEffortChange}
+                fastMode={fastMode}
+                onFastModeChange={onFastModeChange}
                 supportsThinking={supportsThinking}
                 currentContextTokens={currentContextTokens}
                 contextWindow={contextWindow}

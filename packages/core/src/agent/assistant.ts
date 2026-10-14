@@ -65,6 +65,7 @@ export async function streamAssistantMessage(
     config: {
       model: Model;
       effort: ThinkingEffort;
+      fastMode?: boolean;
       localImageLoader?: import("../llm/image-io").LocalImageLoader;
     };
     sessionId?: string;
@@ -100,6 +101,7 @@ export async function streamAssistantMessage(
   const providerStream = runtime.providerStream(request.config.model, context, {
     signal: request.signal,
     effort: request.config.effort,
+    fastMode: request.config.model.supportsFastMode ? (request.config.fastMode ?? false) : undefined,
     sessionId: request.sessionId,
     maxTokens: resolveMaxTokens(request.config.model),
     turnStateRef: request.turnScope.turnStateRef,

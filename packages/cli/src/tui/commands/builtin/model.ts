@@ -4,6 +4,7 @@ import { DEFAULT_PROVIDER, PROVIDER_DESCRIPTORS, PROVIDER_NAMES, type ProviderNa
 import type { ListPickerItem } from "../../components/list-picker";
 import { t } from "../../theme";
 import type { Command } from "../types";
+import { fastCommand } from "./fast";
 import { promptApiKey } from "./provider";
 
 function providerDisplayName(provider: ProviderName): string {
@@ -79,10 +80,25 @@ export const modelCommand: Command = {
       return;
     }
 
+    if (ctx.config.model.supportsFastMode) {
+      items.push(
+        { label: "Options", value: "", header: true },
+        {
+          label: `Fast mode: ${ctx.currentFastMode ? "On" : "Off"}`,
+          description: "Toggle faster responses with higher cost / usage",
+          value: "fast-mode",
+        },
+      );
+    }
+
     const selectedIdx = items.findIndex((i) => i.value === currentModelKey);
 
     const value = await ctx.app.pick({ title: "Model", items, selectedIndex: Math.max(0, selectedIdx) });
     if (!value) {
+      return;
+    }
+    if (value === "fast-mode") {
+      await fastCommand.handler("", ctx);
       return;
     }
     const model = resolveModelSelector(value);

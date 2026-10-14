@@ -86,6 +86,7 @@ export interface CreateAgentArgs {
   cwd: string;
   mode: Mode;
   effort: ThinkingEffort;
+  fastMode?: boolean;
   model: ModelRef;
   approve: (
     request: ApprovalRequest,
@@ -771,6 +772,7 @@ export class DiligentAppServer {
           cwd,
           mode: runtime.mode,
           effort: runtime.runningEffortSnapshot ?? runtime.effort,
+          fastMode: runtime.runningFastModeSnapshot ?? runtime.fastMode ?? false,
           model: selectedModel,
           approve: (request, options) => this.requestApproval(runtime.id, request, options),
           ask: (request, options) => this.requestUserInput(runtime.id, request, options),
@@ -788,7 +790,7 @@ export class DiligentAppServer {
           }
         } else {
           // Defer catalog/registry updates until the active turn has finished using them.
-          if (!sameModelRef(lastResolvedModel, selectedModel)) {
+          if (!sameModelRef(lastResolvedModel, selectedModel) || agent.fastMode !== request.fastMode) {
             await this.config.refreshAgentTools?.(agent, request);
           }
           if (!sameModelRef(lastResolvedModel, selectedModel) && !sameModelRef(agent.model, selectedModel)) {
@@ -800,6 +802,7 @@ export class DiligentAppServer {
           }
           agent.setEffort(request.effort);
         }
+        agent.setFastMode(request.fastMode ?? false);
         lastResolvedModel = selectedModel;
         return agent;
       },
@@ -843,6 +846,7 @@ export class DiligentAppServer {
 
       runtime.mode = runtime.manager.getCurrentMode() ?? runtime.mode;
       runtime.effort = runtime.manager.getCurrentEffort() ?? runtime.effort;
+      runtime.fastMode = runtime.manager.getCurrentFastMode() ?? false;
       runtime.model = runtime.manager.getCurrentModel() ?? runtime.model;
       this.threads.set(id, runtime);
       this.activeThreadId = id;

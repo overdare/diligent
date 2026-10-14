@@ -289,6 +289,7 @@ export async function handleTurnStart(
     if (!isCurrent()) return { accepted: true };
 
     runtime.runningEffortSnapshot = runtime.effort;
+    runtime.runningFastModeSnapshot = runtime.fastMode ?? false;
     runtime.runningModelSnapshot = params.model ?? runtime.model;
     runtime.currentTurnUserId = ctx.getUserId(connectionId);
 

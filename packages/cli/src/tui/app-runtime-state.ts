@@ -28,6 +28,7 @@ export class AppRuntimeState {
   pendingUserInputRequestIds = new Set<RequestId>();
   currentMode: ProtocolMode;
   currentEffort: ThinkingEffort;
+  currentFastMode = false;
   turnStartedAtMs: number | null = null;
   reasoningStartedAtMs: number | null = null;
   reasoningAccumulatedMs = 0;

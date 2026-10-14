@@ -50,6 +50,7 @@ export async function handleThreadResume(
     const context = runtime.manager.getContext();
     runtime.mode = runtime.manager.getCurrentMode() ?? runtime.mode;
     runtime.effort = runtime.manager.getCurrentEffort() ?? runtime.effort;
+    runtime.fastMode = runtime.manager.getCurrentFastMode() ?? false;
     runtime.model = runtime.manager.getCurrentModel() ?? runtime.model;
     ctx.threads.set(threadId, runtime);
 

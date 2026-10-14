@@ -23,6 +23,7 @@ interface LoopConfig {
   systemPrompt: SystemSection[];
   tools: Tool[];
   effort: ThinkingEffort;
+  fastMode?: boolean;
   compaction?: CompactionConfig;
   localImageLoader?: LocalImageLoader;
 }

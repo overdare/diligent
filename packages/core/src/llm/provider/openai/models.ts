@@ -21,6 +21,7 @@ export const OPENAI_MODELS = defineProviderModels("openai", [
     supportsThinking: true,
     supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
     supportsVision: true,
+    supportsFastMode: true,
   },
   {
     modelId: "gpt-6-astra",
@@ -34,6 +35,7 @@ export const OPENAI_MODELS = defineProviderModels("openai", [
     supportsThinking: true,
     supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
     supportsVision: true,
+    supportsFastMode: true,
     aliases: ["gpt-6", "astra"],
   },
   {
@@ -48,6 +50,7 @@ export const OPENAI_MODELS = defineProviderModels("openai", [
     supportsThinking: true,
     supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
     supportsVision: true,
+    supportsFastMode: true,
     knowledgeCutoff: "2026-04-30",
     provenance: {
       source: "OpenAI API model documentation",
@@ -67,5 +70,6 @@ export const OPENAI_MODELS = defineProviderModels("openai", [
     supportsThinking: true,
     supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
     supportsVision: true,
+    supportsFastMode: true,
   },
 ]);
