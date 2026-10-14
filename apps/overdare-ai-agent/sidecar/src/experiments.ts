@@ -14,14 +14,13 @@ function isDevChannel(): boolean {
 
 export const OVERDARE_EXPERIMENTS: ExperimentDefinition[] = [
   {
-    // Internal diagnostics: the skill ships in the bundle but a prod-channel build filters
-    // it out of the model's skill list, so creators never see it. Sending additionally
-    // requires WEBHOOK_URL in the report script, which is blank by default.
-    // Both gates are off by default in prod.
+    // Internal diagnostics: expose the skill and its authenticated transmission tool together.
+    // Production remains opt-in through the existing experiment override.
     id: "issue-report",
     title: "Internal issue reporting",
     description: "Let the agent report Studio/agent defects and its own wasted effort to an internal Slack channel.",
     defaultEnabled: isDevChannel(),
     skillNames: ["session-issue-report"],
+    toolNames: ["agent_report"],
   },
 ];

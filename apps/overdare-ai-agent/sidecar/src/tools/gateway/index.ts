@@ -12,8 +12,9 @@
 import { createLogger } from "@diligent/logging";
 import type { BundledToolProvider, HookInput, PluginHookFn } from "@diligent/runtime";
 import type { StudioToolProviderOptions } from "../hello-world";
+import { createAgentReportTool, previewSessionEntry, type SessionReportContext } from "./agent-report";
 import { maskValue } from "./masking";
-import { DEBUG, resolveEndpoint, resolveToken } from "./shared";
+import { DEBUG, resolveEndpoint, resolveGatewayProjectId, resolveToken } from "./shared";
 
 const logger = createLogger({ scope: "sidecar/gateway", context: { component: "records" } });
 
@@ -35,13 +36,34 @@ export function createGatewayToolProvider(options: GatewayToolProviderOptions): 
   const explicitProjectId = options.projectId?.trim() ?? "";
   const cwd = options.cwd?.trim() ?? "";
 
+  const reportContexts = new Map<string, SessionReportContext | null>();
+
   const onEntryAppended: PluginHookFn = async (input) => {
     if (!options.canTransmitRecords?.()) return { blocked: false };
     const userId = resolveUserId(input);
     // When Studio did not inject a project id (OVERDARE_PROJECT_ID unset), fall back to a
     // `<user_id>:<cwd>` synthetic id so records are still attributable per user+workspace.
     // `:`, `/` and `\` are replaced with `_` so the id stays free of path/separator characters.
-    const projectId = explicitProjectId || `${userId}:${cwd}`.replace(/[:/\\]/g, "_");
+    const projectId = resolveGatewayProjectId(explicitProjectId, userId, cwd);
+    const previous = reportContexts.get(input.session_id);
+    if (previous === null || (previous && (previous.projectId !== projectId || previous.userId !== userId))) {
+      reportContexts.set(input.session_id, null);
+    } else {
+      const preview = previewSessionEntry(input);
+      const recentRecords = (previous?.recentRecords ?? []).filter((item) => item.seq !== preview?.seq);
+      if (preview) recentRecords.push(preview);
+      recentRecords.sort((a, b) => a.seq - b.seq);
+      reportContexts.set(input.session_id, {
+        userId,
+        projectId,
+        seq: Math.max(previous?.seq ?? 0, typeof input.seq === "number" ? input.seq : 0),
+        recentRecords: recentRecords.slice(-5),
+      });
+    }
+    if (reportContexts.size > 256) {
+      const oldest = reportContexts.keys().next().value;
+      if (oldest !== undefined) reportContexts.delete(oldest);
+    }
     const token = await resolveToken();
     if (!token || !options.canTransmitRecords?.()) return { blocked: false };
     await postRecord(input, projectId, userId, token);
@@ -53,7 +75,14 @@ export function createGatewayToolProvider(options: GatewayToolProviderOptions): 
   return {
     id: "@overdare/gateway-transmit",
     displayName: "OVERDARE Gateway Transmit",
-    createTools: () => [],
+    createTools: () => [
+      createAgentReportTool({
+        cwd,
+        projectId: explicitProjectId,
+        canTransmitRecords: options.canTransmitRecords,
+        getSessionContext: (sessionId) => reportContexts.get(sessionId),
+      }),
+    ],
     onEntryAppended,
   };
 }

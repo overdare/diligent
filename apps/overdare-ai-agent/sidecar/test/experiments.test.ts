@@ -45,3 +45,17 @@ describe("issue-report experiment", () => {
     expect(await disabledSkills("prod", { "issue-report": true })).not.toContain("session-issue-report");
   });
 });
+
+async function disabledTools(env: string | undefined, overrides?: Record<string, boolean>) {
+  await disabledSkills(env, overrides);
+  const module = await import(`../src/experiments?channel=${env ?? "unset"}`);
+  return resolveExperimentGates(resolveExperimentStates(module.OVERDARE_EXPERIMENTS, overrides)).disabledToolNames;
+}
+
+test.each([undefined, "prod"])("issue-report hides its transmission tool in %s", async (env) => {
+  expect(await disabledTools(env)).toContain("agent_report");
+});
+test("issue-report exposes tool and skill together in dev or with an override", async () => {
+  expect(await disabledTools("dev")).not.toContain("agent_report");
+  expect(await disabledTools("prod", { "issue-report": true })).not.toContain("agent_report");
+});

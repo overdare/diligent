@@ -1,198 +1,132 @@
 ---
 name: session-issue-report
-description: Report a Studio / OVERDARE-agent / diligent-tool defect, or the agent's own wasted effort, to the internal Slack channel with redacted session context. Fire it on your own judgment mid-task the moment you conclude that (1) a tool, RPC, or documented contract is broken, missing a capability the work genuinely needed, or behaving against its own schema or description, or (2) the work itself went wrong — a tool was misused, something already built got rebuilt, or many turns went into an approach that proved wasted. Those two conditions are the entire trigger, and they hold from either seat — the model working inside the agent, and the model driving that agent over MCP or a subagent call. Nobody will ask you to do this — the driver is usually another model rather than a person, and no harness prompts for reports, so do not wait for a request or a conversational cue. Internal only — needs WEBHOOK_URL configured in scripts/send_report.py and is gated off outside the dev channel.
+description: Use when Studio behavior contradicts checked valid input or a documented contract, the agent's own mistaken approach wastes meaningful work, or a missing capability or concrete improvement would materially help the current task. Includes useful feature requests even when the task ultimately succeeds, and supported bug suspicions whose root cause is not yet proven.
 ---
 
 # Session Issue Report
 
-Studio work fails in ways nobody finds out about. A tool returns a schema error the agent
-silently works around; a capability is missing so the agent invents a detour; the agent
-rereads the same three files for eight turns and then gets it right. None of that raises
-an alert, none of it reaches a backlog, and whoever was driving the session has already
-moved on.
+You judge whether a finding is useful and write the report. Call `agent_report` to
+submit it; the tool supplies authentication, the executing session/project, time,
+working directory, and actual recent record excerpts. The Gateway stores a masked
+report and may queue a Slack alert. There is no automatic detector or threshold.
 
-This skill is the manual path for that: **you noticed something, so you say so.** One
-Slack message, with enough context that whoever reads it can act without replaying the
-session.
+## When to report
 
-It is deliberately judgment-first. There is no detector and no threshold — you decide.
-That is the whole point: a heuristic can catch a tool erroring three times, but only you
-can tell that the tool's *description* was ambiguous, or that your own second attempt was
-the wasted one.
+Report mid-task when you have checked evidence and a concrete change a teammate
+could investigate or implement. Do not wait for a request, three errors, a rollback,
+a system reminder, or completion of the original task.
 
-## Who fires this, and from which seat
+Choose one dominant kind:
 
-Two vantage points reach this skill, and they see different evidence. Name yours in the
-report, because a reader weighs the two differently.
+| Kind | Meaning | Check before reporting |
+|---|---|---|
+| `agent_failure` | Your wrong approach, tool misuse, unnecessary repetition, or discarded incorrect work | Explain the mistaken behavior and why the waste was avoidable |
+| `studio_bug` | Observed Studio behavior contradicts valid input, a checked contract, or an expected result | Check the input schema and verify the actual outcome, such as read-back after a successful write |
+| `feature_request` | An absent capability or improvement would materially help this concrete task | Check existing tools/docs, describe the current workaround and actual benefit |
 
-**Inside the agent** — you are doing the Studio work. You have the tool results, the exact
-errors, your own turn history. This is the richest evidence and the common case.
+A task that succeeds through a costly workaround can still justify a feature
+request. Absence of a capability is not proof of a bug. A bug report can express a
+supported suspicion: distinguish observed facts from the suspected cause.
 
-**Driving the agent** — you are an orchestrator, eval harness, or another session steering
-this agent through MCP or a subagent call. You cannot see its internal tool traffic, but
-you see something it cannot: whether the task *actually* succeeded, and how much it cost.
-"It reported success and the level is still wrong" and "it took forty turns for a
-one-line change" are judgments only this seat can make.
+Do not report:
+- One transient failure that succeeds on a reasonable retry.
+- An ordinary mistake corrected immediately.
+- A user changing requirements or their mind.
+- An unverified outcome or a cosmetic idea unrelated to the actual task.
+- The same issue twice in a session, including a paraphrased title.
 
-From the driving seat, pass `--session` explicitly. The script otherwise picks the
-most recently written transcript, which may well be your own rather than the agent's — the
-two live under different storage namespaces (`.overdare/sessions` for the OVERDARE agent,
-`.diligent/sessions` for a diligent CLI run).
+If facts are insufficient, continue checking. If you cannot name a concrete
+investigation or improvement, continue the task instead of reporting that it felt hard.
 
-## Two kinds of report
+## What to write
 
-**`product`** — the defect is not yours. Studio, the OVERDARE agent, a diligent tool, or a
-documented contract is at fault: a tool that errors on input its own schema says is valid,
-an RPC that returns success and changes nothing, a capability that plainly should exist and
-does not, a doc that describes behaviour the build does not have.
+Write titles and explanatory prose in Korean. Preserve exact tool names, property
+names, error codes, and short diagnostic excerpts. Never paste full user prompts,
+invent evidence, or claim a suspected cause has been proven.
 
-**`self`** — the defect is yours. You misread a tool's contract, you repeated a call that
-could not have worked, you rebuilt something that already existed a directory over, you
-took fifteen turns on what two would have done. Report these with the same candour you
-would want from a colleague; the point is to find the *system* reason it happened (a thin
-tool description, a missing example, a confusing name), not to flagellate.
+Call `agent_report` with `kind` and `payload` only:
+- `title`: one line, 1-200 characters.
+- `task_context`: what you were doing and your vantage point, 1-1000 characters.
+- `problem`: observed problem or current limitation, 1-2000 characters.
+- `report_reason`: why this deserves a teammate's attention, 1-1000 characters.
+- `suggestion`: concrete improvement or investigation, 1-1000 characters.
+- `cause`: optional suspected cause, 1-1000 characters or null. Omit if unknown.
+- `evidence`: optional `tool` (1-128 characters) and `details` (1-2000 characters).
 
-Most reports worth sending are `self` with a `product` cause underneath — "I passed
-`"2px"` four times because the schema says `number` but the tool description gives no unit
-example." Pick the kind by who most needs to act, and say the other half in the body.
+The reason to report and the root cause are different. Do not add metadata fields:
+`user_id`, `project_id`, `session_id`, `seq`, `event_ts`, `client_report_id`, `cwd`,
+`version`, and `recent_records` are supplied by the tool. Do not search session files.
+The recent-record tail supports your reasoning; keep your own evidence concise.
 
-## The bar
+## Examples
 
-Send when a competent teammate reading the message would say *"good, I want to know
-that."* That is a higher bar than "something went wrong" and a lower one than "I can prove
-it is a bug."
+A mistaken approach worth improving:
 
-Worth sending:
-
-- A tool rejects input that its own schema and description say is valid.
-- A write reports success and the scene / file is unchanged.
-- A capability was genuinely needed, properly searched for, and does not exist — say what
-  it was needed *for*, since that is the part a backlog entry cannot reconstruct.
-- An earlier approach turns out to be wasted work, and there is a nameable reason a future
-  agent would fall into it too.
-- The same failure recurs after the approach changed — recurrence across *different*
-  attempts is much stronger evidence than three identical retries.
-
-Not worth sending:
-
-- One transient failure that succeeded on retry. Networks flake.
-- A tool erroring on input that was genuinely wrong — that is the tool doing its job.
-- A single misstep that was corrected immediately. Ordinary work.
-- The caller changing their mind, or asking for something else. Not a defect at all.
-- Anything unverified: if it is unclear whether the RPC applied, check before reporting. A
-  confidently wrong report costs a reader more than silence.
-- The same thing twice in one session. The script blocks exact duplicates, but do not lean
-  on it — a second report with a slightly different title gets through and is noise.
-
-When genuinely unsure, the tiebreaker is whether you can name a concrete change someone
-could make. If you can, send it. If the report would amount to "this felt hard," keep
-working instead.
-
-## Sending
-
-Write the body to a heredoc and pipe it in. `--kind` and `--title` are the only required
-flags; the session tail is attached for you. The script sits next to this file — use the
-path this SKILL.md was loaded from.
-
-```bash
-printf '%s' "$(cat <<'EOF'
-작업 상황: 에이전트 내부에서 HUD 프레임에 UIStroke를 추가하고 있었습니다.
-
-발생한 문제: studiorpc_instance_upsert가 Thickness에 단위를 붙인 값을 INVALID_PROPERTY로 거부했습니다. 단위 표기를 바꾸며 네 차례 시도했지만 모두 실패했습니다.
-
-보고 이유: 숫자형 속성에 문자열을 전달한 제 실수입니다. 오류 원인을 확인하지 않고 단위 표기만 바꾸며 재시도해 작업을 낭비했습니다.
-
-개선 제안: 도구 설명에 Thickness: 2 예시를 추가하고, 오류 메시지에 숫자형 값을 사용해야 한다고 안내하면 좋겠습니다.
-EOF
-)" | python3 skills/session-issue-report/scripts/send_report.py \
-      --kind self \
-      --title "UIStroke 두께 입력 오류를 확인하지 않고 반복 시도"
+```json
+{
+  "kind": "agent_failure",
+  "payload": {
+    "title": "입력형을 확인하지 않고 잘못된 호출을 반복",
+    "task_context": "에이전트 내부에서 HUD 프레임에 UIStroke를 추가하는 작업",
+    "problem": "숫자형 속성에 문자열을 넣고 오류 원인 확인 없이 같은 실수를 반복",
+    "report_reason": "입력 계약을 먼저 확인했다면 피할 수 있는 작업 낭비",
+    "suggestion": "오류 뒤 입력형을 먼저 확인하고 숫자 예시를 참고",
+    "cause": "도구 입력 계약을 제대로 확인하지 못함",
+    "evidence": {"tool": "studiorpc_instance_upsert", "details": "숫자형 오류를 확인한 뒤에도 문자열을 재전달"}
+  }
+}
 ```
 
-Useful flags: `--dry-run` prints the Slack Block Kit JSON payload without posting (use it to check the
-redaction or the tail first), `--tail N` changes how many session entries ride along
-(default 5, maximum 30; 0 omits the tail), `--session PATH` pins a specific transcript — required from the driving seat.
+A checked Studio bug suspicion:
 
-The script uses `WEBHOOK_URL` declared at the top of `scripts/send_report.py`.
-**If it is blank it prints a note and sends nothing** — that is not a failure, so do not
-retry it or look for the URL. Report the finding in your reply instead, and mention that
-the user can set `WEBHOOK_URL` in the script.
-
-## Writing a body someone can act on
-
-Write every report title and all explanatory prose in Korean, regardless of the task's
-language. Preserve exact tool names, property names, error codes, and diagnostic excerpts
-when translating would change the evidence. The formatter does not translate input.
-
-Use the four Korean labels shown in the example: `작업 상황:`, `발생한 문제:`,
-`보고 이유:`, and `개선 제안:`. Separate them with blank lines. Include your vantage point
-in `작업 상황`. Write concise plain text, without Markdown headings, `**bold**`, tables,
-or code fences. The script adds native Slack headers, section labels, dividers, and
-session metadata. The session tail is supporting evidence beneath the report.
-
-Four things, in this order, because it is the order a reader needs them:
-
-1. **What you were doing** — one sentence of task context, plus which seat you occupied.
-   Without it the rest is noise.
-2. **What happened** — the observable facts. Exact tool name, exact error, how many
-   attempts, what changed between them.
-3. **Why you think it is reportable** — your reasoning, including which kind it is and why.
-   This is the part no log can produce, and it is why a model is writing the report instead
-   of a monitor.
-4. **What would have helped** — the concrete change. A reader who agrees should be able to
-   turn this line into a ticket.
-
-Describe rather than dump. The session tail is already attached, so quoting long tool
-output into the body just buries the reasoning. Never paste the caller's prompts
-verbatim — say what was asked for. Secrets are redacted on the way out (the same
-`secrets-2` patterns the sidecar uses), but that is a safety net, not a licence: this path
-has no gateway and no consent gate behind it, so whatever is written leaves the machine as
-written.
-
-## After reporting
-
-State one short line — what was reported and why — then **carry on with the task**.
-Reporting is a side effect, never a reason to stop, ask permission, or change the plan. If
-it did not send (no webhook, HTTP error), that is also just a line in the reply; the work
-still matters more than the telemetry.
-
-## Availability and gating (internal)
-
-This skill ships inside the agent bundle (`apps/overdare-ai-agent/bootstrap/skills/`) so the
-in-agent model can reach it at all. Three things have to line up before a report can
-leave, and in a normal creator install none of them do.
-
-**1. The experiment must be on.** `issue-report` in `sidecar/src/experiments.ts` lists this
-skill under `skillNames`, and a disabled experiment drops it from the model's skill list
-outright (`runtime.ts` filters on `disabledSkillNames`), so a creator never learns it
-exists. Its `defaultEnabled` follows the release channel — on only when the sidecar's
-`DILIGENT_ENV` is exactly `dev`, matching `plugin-sdk`'s `currentEnv()`.
-
-**2. Something has to put the sidecar on the dev channel**, which is less automatic than
-"it is a dev build". The launcher resolves its own channel from `--agent-env`, then a
-`DILIGENT_ENV` variable, then a compile-time value, and falls back to **prod**
-(`apps/overdare-ai-agent/src/env.rs`) — and release CI bakes nothing in. Whatever it
-resolves is forwarded verbatim to the sidecar (`webserver.rs`:
-`cmd.env("DILIGENT_ENV", env.as_str())`, which is exactly `"dev"` or `"prod"`). So the
-switch is one of:
-
-- Studio launches the agent with `--agent-env dev`
-- `DILIGENT_ENV=dev` is exported in the environment
-- `experiments.overrides["issue-report"] = true` in `config.jsonc`, which skips the channel
-  question entirely
-
-A local `make dev` run goes through no launcher, so `DILIGENT_ENV` is unset, which reads as
-prod and leaves the skill off. Use the override or export the variable.
-
-**3. A webhook URL must be configured.** Edit `scripts/send_report.py` and set the
-`WEBHOOK_URL` variable near the top of the file:
-
-```python
-WEBHOOK_URL = "https://hooks.slack.com/services/..."
+```json
+{
+  "kind": "studio_bug",
+  "payload": {
+    "title": "속성 변경 성공 응답 후 실제 값이 유지됨",
+    "task_context": "에이전트 내부에서 HUD 프레임의 속성을 수정하는 작업",
+    "problem": "입력 스키마에 맞게 호출했지만 성공 응답 뒤 재조회 결과가 그대로였음",
+    "report_reason": "성공 응답과 검증 결과가 서로 달라 확인이 필요함",
+    "suggestion": "실제 적용 여부를 검증하고 실패하면 오류를 반환",
+    "cause": "Studio 속성 적용 경로 문제로 추정",
+    "evidence": {"tool": "studiorpc_instance_upsert", "details": "동일 객체를 재조회해 변경되지 않았음을 확인"}
+  }
+}
 ```
 
-The variable is blank by default. The script does not read a webhook URL from environment
-variables or configuration files. Leaving it blank skips sending; `--dry-run` still works.
+A feature request after successful work:
 
-`.diligent/skills/session-issue-report` is a symlink to this directory, so a diligent CLI
-run in this repo picks up the same single copy — there is no second version to keep in sync.
+```json
+{
+  "kind": "feature_request",
+  "payload": {
+    "title": "여러 객체의 속성을 일괄 변경하는 기능 필요",
+    "task_context": "에이전트 내부에서 여러 HUD 객체에 같은 속성을 적용하는 작업",
+    "problem": "현재 제공된 도구로는 객체마다 호출해야 함",
+    "report_reason": "기능 목록을 확인했고 실제 반복 작업 비용이 발생",
+    "suggestion": "선택 객체에 같은 속성을 일괄 적용하는 기능 제공",
+    "cause": null,
+    "evidence": {"details": "기존 기능으로 완료했지만 개별 호출을 반복"}
+  }
+}
+```
+
+## Result and availability
+
+After a call, state one accurate status line, then continue the original task.
+- Saved means stored in the Gateway DB.
+- Slack queued means queued, not delivered.
+- Duplicate means already submitted; do not reword it and submit again.
+- No consent means not transmitted/stored.
+- Missing context, authentication, tool, or network failure means reporting unavailable
+  or failed. Do not repeatedly retry or stop the original task.
+
+This skill and tool share the `issue-report` experiment: dev channel by default,
+production only through its existing explicit override. If `agent_report` is absent,
+state the finding without transmitting. Never fall back to Python, curl, Slack
+webhooks, direct token retrieval, or the newest transcript.
+
+Inside the bound OVERDARE agent, invoke the tool directly. If you are driving another
+agent through MCP, ask that bound agent to file when available. A standalone driver
+or generic CLI without a bound report tool must not report its own session as the
+agent's. No credentials are shipped in this skill.
