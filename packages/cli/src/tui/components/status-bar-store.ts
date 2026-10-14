@@ -12,6 +12,8 @@ export interface StatusBarInfo {
   mode?: Mode;
   effort?: ThinkingEffort;
   effortLabel?: string;
+  fastMode?: boolean;
+  supportsFastMode?: boolean;
   goal?: {
     status: GoalStatus;
     tokensUsed: number;

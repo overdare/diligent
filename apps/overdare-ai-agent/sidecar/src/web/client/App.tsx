@@ -102,6 +102,7 @@ export function App() {
     threadTitle,
     pendingImagePreviews,
     effort,
+    fastMode,
     isUploadingImages,
     showImageUploadIndicator,
     threadMgr,
@@ -354,6 +355,8 @@ export function App() {
             onModeChange={handleModeChange}
             effort={effort}
             onEffortChange={handleEffortChange}
+            fastMode={fastMode}
+            onFastModeChange={actions.handleFastModeChange}
             currentModel={providerMgr.currentModel ? modelOptionKey(providerMgr.currentModel) : ""}
             availableModels={providerMgr.availableModels}
             onModelChange={handleModelChange}

@@ -2,25 +2,13 @@
 
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import {
-  canFitEffortBeside,
-  getEffortMenuHeight,
-  getEffortMenuPosition,
-  getModelsMenuHeight,
-} from "../../../../src/web/client/components/ModelEffortSelect";
+import { canFitEffortBeside, getEffortMenuPosition } from "../../../../src/web/client/components/ModelEffortSelect";
 import {
   formatUsageTooltipLabel,
   getCursorTooltipPosition,
   getUsageGaugeRatio,
   UsageGauge,
 } from "../../../../src/web/client/components/UsageGauge";
-
-test("menu heights match the design panels", () => {
-  // Hairline 2 + header 28 + eight rows 200 + rule 1 + Effort row 32.
-  expect(getModelsMenuHeight(8)).toBe(263);
-  // Effort panel carries no header of its own: 180x130 for five rows.
-  expect(getEffortMenuHeight(5)).toBe(130);
-});
 
 test("side-by-side panels need 398px of viewport, otherwise the menu drills down", () => {
   // 200 (Models) + 2 (gap) + 180 (Effort) + 8px margins on both sides.

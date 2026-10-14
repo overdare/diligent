@@ -45,6 +45,7 @@ export const ModelInfoSchema = z.object({
   supportsThinking: z.boolean(),
   supportedEfforts: z.array(ThinkingEffortSchema).optional(),
   supportsVision: z.boolean().optional(),
+  supportsFastMode: z.boolean().optional(),
 });
 export type ModelInfo = z.infer<typeof ModelInfoSchema>;
 
@@ -62,6 +63,7 @@ export const InitializeResponseSchema = z.object({
   cwd: z.string().optional(),
   mode: ModeSchema.optional(),
   effort: ThinkingEffortSchema.optional(),
+  fastMode: z.boolean().optional(),
   currentModel: ModelRefSchema.optional(),
   availableModels: z.array(ModelInfoSchema).optional(),
   skills: z.array(SkillInfoSchema).optional(),
@@ -72,6 +74,7 @@ export const ThreadStartParamsSchema = z.object({
   cwd: z.string(),
   mode: ModeSchema.optional(),
   effort: ThinkingEffortSchema.optional(),
+  fastMode: z.boolean().optional(),
   model: ModelRefSchema.optional(),
 });
 export type ThreadStartParams = z.infer<typeof ThreadStartParamsSchema>;
@@ -136,6 +139,7 @@ export const ThreadReadResponseSchema = z.object({
   isRunning: z.boolean(),
   currentMode: ModeSchema.optional(),
   currentEffort: ThinkingEffortSchema,
+  currentFastMode: z.boolean().optional(),
   currentModel: ModelRefSchema.optional(),
   totalCost: z.number().nonnegative().optional(),
 });
@@ -247,6 +251,17 @@ export const EffortSetResponseSchema = z.object({
   effort: ThinkingEffortSchema,
 });
 export type EffortSetResponse = z.infer<typeof EffortSetResponseSchema>;
+
+export const FastModeSetParamsSchema = z.object({
+  threadId: z.string().optional(),
+  fastMode: z.boolean(),
+});
+export type FastModeSetParams = z.infer<typeof FastModeSetParamsSchema>;
+
+export const FastModeSetResponseSchema = z.object({
+  fastMode: z.boolean(),
+});
+export type FastModeSetResponse = z.infer<typeof FastModeSetResponseSchema>;
 
 export const KnowledgeListParamsSchema = z.object({
   threadId: z.string().optional(),
@@ -670,6 +685,7 @@ export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
   }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET), params: ModeSetParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET), params: EffortSetParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.FAST_MODE_SET), params: FastModeSetParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST), params: KnowledgeListParamsSchema }),
   z.object({
     method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE),
@@ -737,6 +753,7 @@ export const DiligentClientResponseSchema = z.discriminatedUnion("method", [
   }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET), result: ModeSetResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET), result: EffortSetResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.FAST_MODE_SET), result: FastModeSetResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST), result: KnowledgeListResponseSchema }),
   z.object({
     method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE),

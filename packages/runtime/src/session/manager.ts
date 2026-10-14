@@ -196,6 +196,10 @@ export class SessionManager {
     return buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {}).currentEffort;
   }
 
+  getCurrentFastMode(): boolean | undefined {
+    return buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {}).currentFastMode;
+  }
+
   getCurrentMode(): Mode | undefined {
     return buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {}).currentMode;
   }
@@ -314,6 +318,16 @@ export class SessionManager {
       changedBy,
     };
     this.appendAndPersist(entry);
+  }
+
+  appendFastModeChange(fastMode: boolean): void {
+    this.appendAndPersist({
+      type: "fast_mode_change",
+      id: generateEntryId(),
+      parentId: this.state.getCommittedLeafId(),
+      timestamp: new Date().toISOString(),
+      fastMode,
+    });
   }
 
   appendError(error: ErrorEntry["error"], options?: { fatal?: boolean; turnId?: string; persist?: boolean }): void {

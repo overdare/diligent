@@ -38,6 +38,7 @@ export interface ModelInfo extends ModelRef {
   supportsThinking: boolean;
   supportedEfforts?: ThinkingEffort[];
   supportsVision?: boolean;
+  supportsFastMode?: boolean;
 }
 
 export interface Model extends ModelRef {
@@ -50,6 +51,7 @@ export interface Model extends ModelRef {
   supportsThinking: boolean;
   supportedEfforts?: ThinkingEffort[];
   supportsVision?: boolean;
+  supportsFastMode?: boolean;
   supportsAdaptiveThinking?: boolean; // opus/sonnet/fable: model decides budget
   supportsXhighEffort?: boolean; // adaptive Anthropic models that accept output_config.effort=xhigh
   thinkingBudgets?: {
@@ -88,6 +90,7 @@ export interface StreamOptions {
   temperature?: number;
   sessionId?: string;
   effort?: ThinkingEffort;
+  fastMode?: boolean;
   /** Sticky routing token shared across retries within a single turn. Set once from the
    *  first successful response header; replayed on subsequent requests in the same turn. */
   turnStateRef?: { value: string | undefined };

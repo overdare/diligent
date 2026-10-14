@@ -137,6 +137,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
     cwd,
     mode,
     effort,
+    fastMode,
     model: modelRef,
     approve,
     ask,
@@ -180,6 +181,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
       getGoalScope: request.goalHost?.scope,
       model: modelRef,
       effort,
+      fastMode,
       agentDefinitions: runtimeConfig.agentDefinitions,
       getParentSessionId: getSessionId,
       approve,
@@ -225,6 +227,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
       getGoalScope: request.goalHost?.scope,
       model: modelRef,
       effort,
+      fastMode,
       agentDefinitions: runtimeConfig.agentDefinitions,
       parentTools: filteredTools,
       getParentSessionId: getSessionId,
@@ -240,7 +243,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
 
 async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAgent> {
   const { request, runtimeConfig, getPaths, bundledToolProviders } = args;
-  const { cwd, mode, effort, model: modelRef } = request;
+  const { cwd, mode, effort, fastMode, model: modelRef } = request;
   const model = resolveModel(modelRef);
   const activeMode = (mode ?? "default") as Mode;
   const systemPrompt = await withLatestKnowledge(
@@ -275,6 +278,7 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
     tools,
     {
       effort,
+      fastMode,
       llmMsgStreamFn: runtimeConfig.streamFunction,
       llmCompactionFn,
       localImageLoader: createLocalImageLoader(cwd),
@@ -370,6 +374,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
         cwd,
         mode: runtimeConfig.mode,
         effort: initialEffort,
+        fastMode: false,
         currentModel: runtimeConfig.model,
         availableModels: modelsForConfiguredProviders(),
       };

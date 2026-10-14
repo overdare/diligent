@@ -225,6 +225,7 @@ export class App {
     this.threadManager = createThreadManager({
       getRpcClient: () => this.rpcClient,
       getCurrentMode: () => this.runtime.currentMode,
+      getCurrentFastMode: () => this.runtime.currentFastMode,
       setCurrentThreadId: (id) => {
         if (this.runtime.currentThreadId !== id) {
           this.runtime.goalSnapshot = { goal: null, sequence: 0 };
@@ -249,6 +250,9 @@ export class App {
       },
       setCurrentEffort: (effort) => {
         this.runtime.currentEffort = effort;
+      },
+      setCurrentFastMode: (fastMode) => {
+        this.runtime.currentFastMode = fastMode;
       },
       restartRpcClient: async () => {
         await this.restartRpcClient();
@@ -275,6 +279,7 @@ export class App {
       getSkills: () => this.skills,
       getCurrentMode: () => this.runtime.currentMode,
       getCurrentEffort: () => this.runtime.currentEffort,
+      getCurrentFastMode: () => this.runtime.currentFastMode,
       getIsProcessing: () => this.runtime.isProcessing,
       setIsProcessing: (val) => {
         this.runtime.isProcessing = val;
@@ -327,7 +332,10 @@ export class App {
       promptInline: (o) => this.dialogs.promptInline(o),
       shutdown: () => this.shutdown(),
       onModelChanged: (model) => {
-        this.statusBar.update({ model: formatModelRef(model) });
+        this.statusBar.update({
+          model: formatModelRef(model),
+          supportsFastMode: this.config.model.supportsFastMode,
+        });
         this.renderer.requestRender();
       },
       onEffortChanged: (effort, label) => {

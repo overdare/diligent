@@ -333,6 +333,17 @@ export function detectEntryType(raw: Record<string, unknown>, context?: DetectEn
       timestamp: parseTimestamp(raw.timestamp),
     };
   }
+  if (raw.type === "fast_mode_change") {
+    const id = asString(raw.id);
+    if (!id || typeof raw.fastMode !== "boolean") return null;
+    return {
+      id,
+      parentId: asParentId(raw.parentId),
+      type: "fast_mode_change",
+      fastMode: raw.fastMode,
+      timestamp: parseTimestamp(raw.timestamp),
+    };
+  }
   if (raw.type === "steering") {
     const id = asString(raw.id);
     const source = asString(raw.source);

@@ -29,6 +29,7 @@ function makeHandlerDeps(overrides: Partial<CommandHandlerDeps> = {}): CommandHa
   const configManager: ConfigManager = {
     setMode: () => {},
     setEffort: async () => {},
+    setFastMode: async () => {},
     setModel: async () => {},
     reloadConfig: async () => {},
   };
@@ -41,6 +42,7 @@ function makeHandlerDeps(overrides: Partial<CommandHandlerDeps> = {}): CommandHa
     getSkills: () => [],
     getCurrentMode: () => "default",
     getCurrentEffort: () => "medium",
+    getCurrentFastMode: () => false,
     getIsProcessing: () => false,
     setIsProcessing: () => {},
     setPendingTurn: () => {},

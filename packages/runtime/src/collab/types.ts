@@ -64,6 +64,7 @@ export interface CollabToolDeps {
   paths: DiligentPaths;
   model: ModelRef;
   effort: ThinkingEffort;
+  fastMode?: boolean;
   agentDefinitions: ResolvedAgentDefinition[];
   parentTools: Tool[];
   maxAgents?: number; // default 8

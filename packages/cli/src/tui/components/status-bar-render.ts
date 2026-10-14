@@ -89,6 +89,7 @@ export function renderStatusBar(store: StatusBarStore, width: number): string[] 
   if (info.model) {
     leftParts.push(info.model);
   }
+  if (info.fastMode && info.supportsFastMode) leftParts.push("Fast");
 
   if (info.contextWindow) {
     const used = info.tokensUsed ?? 0;

@@ -184,6 +184,7 @@ export class AgentRegistry {
       ...this.deps,
       model: next.model,
       effort: next.effort,
+      fastMode: next.fastMode,
       agentDefinitions: next.agentDefinitions,
       parentTools: next.parentTools,
       getParentSessionId: next.getParentSessionId,
@@ -392,6 +393,7 @@ export class AgentRegistry {
           filteredTools,
           {
             effort: childEffort,
+            fastMode: this.deps.fastMode,
             llmMsgStreamFn: this.deps.streamFn,
             localImageLoader: createLocalImageLoader(this.deps.cwd),
             toolOutputStore: this.deps.toolOutputStore ?? toolOutputStore,
