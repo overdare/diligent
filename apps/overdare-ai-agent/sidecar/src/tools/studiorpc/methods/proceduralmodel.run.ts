@@ -18,7 +18,11 @@ const draftFields = {
     .string()
     .min(1)
     .max(64)
-    .regex(/^[\p{L}\p{N}_-][\p{L}\p{N}_.-]*$/u)
+    // JSON Schema patterns cannot carry the Unicode flag needed for JavaScript property escapes.
+    // Keep the native Unicode ID contract in local validation instead of emitting an invalid pattern.
+    .refine((id) => /^[\p{L}\p{N}_-][\p{L}\p{N}_.-]*$/u.test(id), {
+      message: "Recipe ID must contain only letters, digits, dots, underscores, or hyphens and not start with a dot.",
+    })
     .describe("Recipe ID, up to 64 letters/digits/dots/underscores/hyphens; must not start with a dot."),
   action: z.literal("draft").optional(),
   parameters: z.record(z.string(), z.unknown()).optional(),
