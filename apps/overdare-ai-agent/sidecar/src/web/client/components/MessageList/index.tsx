@@ -33,6 +33,7 @@ function MessageListImpl({
   questionPrompt,
   onLoadChildThread,
   onReportMessage,
+  onErrorRecovery,
 }: MessageListProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const pendingAutoscrollFrameRef = useRef<number | null>(null);
@@ -78,6 +79,9 @@ function MessageListImpl({
     }
     return undefined;
   }, [items]);
+  const lastItem = items.at(-1);
+  // Recovery belongs to the latest failure only; older errors stay as timeline history.
+  const actionableErrorId = threadStatus === "idle" && lastItem?.kind === "error" ? lastItem.id : undefined;
 
   const setScrollButtonVisible = useCallback((visible: boolean) => {
     if (showScrollBtnRef.current === visible) return;
@@ -150,9 +154,11 @@ function MessageListImpl({
         onLoadChildThread={onLoadChildThread}
         onReportMessage={onReportMessage}
         lastCompletedResponseId={lastCompletedResponseId}
+        actionableErrorId={actionableErrorId}
+        onErrorRecovery={onErrorRecovery}
       />
     ),
-    [lastCompletedResponseId, onLoadChildThread, onReportMessage, threadCwd],
+    [actionableErrorId, lastCompletedResponseId, onErrorRecovery, onLoadChildThread, onReportMessage, threadCwd],
   );
 
   const measureItemSize = useCallback<SizeFunction>((element, field) => {
@@ -267,6 +273,8 @@ function MessageListImpl({
                   onLoadChildThread={onLoadChildThread}
                   onReportMessage={onReportMessage}
                   lastCompletedResponseId={lastCompletedResponseId}
+                  actionableErrorId={actionableErrorId}
+                  onErrorRecovery={onErrorRecovery}
                 />
               </div>
             ))}

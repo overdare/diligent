@@ -1,10 +1,10 @@
 // @summary Main application component: pure composition of hooks and sub-components
 
+import type { ErrorRecovery } from "@diligent/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppHeader } from "./components/AppHeader";
 import { ConnectionModal } from "./components/ConnectionModal";
 import { DeleteThreadModal } from "./components/DeleteThreadModal";
-import { ErrorBanner } from "./components/ErrorBanner";
 import type { FeedbackReportSubmission } from "./components/FeedbackReportModal";
 import { FeedbackReportModal } from "./components/FeedbackReportModal";
 import { FirstRunNoticeModal } from "./components/FirstRunNoticeModal";
@@ -199,6 +199,23 @@ export function App() {
     },
     [state.activeThreadId],
   );
+  const handleErrorRecovery = useCallback(
+    (recovery: ErrorRecovery) => {
+      switch (recovery.kind) {
+        case "configure_provider":
+          if (recovery.provider) handleOpenProvider(recovery.provider);
+          else handleOpenProviders();
+          return;
+        case "start_new_thread":
+          void startNewThread();
+          return;
+        case "retry":
+          handleRetryLastTurn();
+          return;
+      }
+    },
+    [handleOpenProvider, handleOpenProviders, handleRetryLastTurn, startNewThread],
+  );
   const handleCancelFeedbackReport = useCallback(() => setFeedbackReport(null), []);
   const handleSubmitFeedbackReport = useCallback(
     async ({ clientReportId, category, description }: FeedbackReportSubmission) => {
@@ -285,15 +302,6 @@ export function App() {
             }}
           />
 
-          {state.activeError ? (
-            <ErrorBanner
-              error={state.activeError}
-              onOpenProviders={(provider) => (provider ? handleOpenProvider(provider) : handleOpenProviders())}
-              onStartNewThread={() => void startNewThread()}
-              onRetry={handleRetryLastTurn}
-            />
-          ) : null}
-
           <MessageList
             items={state.items}
             threadStatus={state.threadStatus}
@@ -307,6 +315,7 @@ export function App() {
             questionPrompt={questionPrompt}
             onLoadChildThread={loadChildThread}
             onReportMessage={handleReportMessage}
+            onErrorRecovery={handleErrorRecovery}
           />
 
           {state.planState?.steps.some((s) => s.status !== "done") && <PlanPanel planState={state.planState!} />}

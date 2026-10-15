@@ -2,7 +2,7 @@
 
 import { normalizeToolName } from "@diligent/protocol";
 import { toWebImageUrl } from "../../shared/image-routes";
-import type { PlanState, RenderItem, ThreadState, UsageState } from "./thread-store";
+import type { PlanState, RenderItem, ThreadState, UsageState, UserImage } from "./thread-store";
 
 export { normalizeToolName };
 
@@ -68,7 +68,7 @@ export function stringifyUnknown(value: unknown): string {
 
 export function extractUserTextAndImages(content: unknown): {
   text: string;
-  images: Array<{ url: string; fileName?: string; mediaType?: string }>;
+  images: UserImage[];
 } {
   if (typeof content === "string") {
     return { text: content, images: [] };
@@ -78,15 +78,19 @@ export function extractUserTextAndImages(content: unknown): {
   }
 
   const textParts: string[] = [];
-  const images: Array<{ url: string; fileName?: string; mediaType?: string }> = [];
+  const images: UserImage[] = [];
   for (const block of content) {
     if (!block || typeof block !== "object" || !("type" in block)) continue;
-    if (block.type === "text" && typeof (block as { text?: unknown }).text === "string") {
-      textParts.push((block as { text: string }).text);
+    if (block.type === "text" && "text" in block && typeof block.text === "string") {
+      textParts.push(block.text);
     }
-    if (block.type === "local_image") {
-      const b = block as { path: string; fileName?: string; mediaType?: string };
-      images.push({ url: toWebImageUrl(b.path), fileName: b.fileName, mediaType: b.mediaType });
+    if (block.type === "local_image" && "path" in block && typeof block.path === "string") {
+      images.push({
+        url: toWebImageUrl(block.path),
+        path: block.path,
+        fileName: "fileName" in block && typeof block.fileName === "string" ? block.fileName : undefined,
+        mediaType: "mediaType" in block && typeof block.mediaType === "string" ? block.mediaType : undefined,
+      });
     }
   }
 

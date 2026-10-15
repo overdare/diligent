@@ -3,6 +3,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ProviderError, ProviderErrorType } from "@diligent/core/provider-contract";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS, type ThreadReadResponse } from "@diligent/protocol";
+import type { StreamFunction } from "@diligent/runtime";
 import { createSimpleStream } from "./helpers/fake-stream";
 import { createProtocolClient, type ProtocolTestClient } from "./helpers/protocol-client";
 import { createTestServer } from "./helpers/server-factory";
@@ -119,5 +122,56 @@ describe("session-resume", () => {
     const thread = result.data.find((t) => t.id === threadId);
     expect(thread).toBeTruthy();
     expect(thread!.firstUserMessage).toContain("my first message");
+  });
+
+  test("thread/read restores a failed turn's error at its transcript position after restart", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-resume-error-"));
+    let calls = 0;
+    const succeed = createSimpleStream("recovered");
+    const streamFn: StreamFunction = (model, context, options) => {
+      calls += 1;
+      if (calls === 1) {
+        throw new ProviderError("socket closed unexpectedly", {
+          errorType: ProviderErrorType.Network,
+          isRetryable: false,
+        });
+      }
+      return succeed(model, context, options);
+    };
+
+    const server1 = createTestServer({ cwd: tmpDir, streamFunction: streamFn });
+    const client1 = createProtocolClient(server1);
+    const threadId = await client1.initAndStartThread(tmpDir);
+    const failedTurn = await client1.sendTurnAndWait(threadId, "first request");
+    await client1.sendTurnAndWait(threadId, "second request");
+    client1.close();
+
+    const liveError = failedTurn.flatMap((notification) =>
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT &&
+      notification.params.event.type === "error"
+        ? [notification.params.event.error]
+        : [],
+    );
+    expect(liveError).toHaveLength(1);
+    expect(liveError[0]?.presentation?.recovery).toEqual({ kind: "retry" });
+
+    const server2 = createTestServer({ cwd: tmpDir, streamFunction: streamFn });
+    client = createProtocolClient(server2);
+    await client.request("initialize", {
+      clientName: "test",
+      clientVersion: "0.0.1",
+      protocolVersion: 1,
+    });
+    const read = (await client.request("thread/read", { threadId })) as ThreadReadResponse;
+
+    expect(read.items.map((item) => item.type)).toEqual(["userMessage", "error", "userMessage", "agentMessage"]);
+    const [firstUser, errorItem, secondUser] = read.items;
+    if (firstUser?.type !== "userMessage" || errorItem?.type !== "error" || secondUser?.type !== "userMessage") {
+      throw new Error("expected user, error, user ordering");
+    }
+    expect(errorItem.error.message).toBe("socket closed unexpectedly");
+    expect(errorItem.error.presentation).toEqual(liveError[0]?.presentation);
+    expect(errorItem.timestamp).toBeGreaterThanOrEqual(firstUser.timestamp ?? Number.POSITIVE_INFINITY);
+    expect(errorItem.timestamp).toBeLessThanOrEqual(secondUser.timestamp ?? 0);
   });
 });

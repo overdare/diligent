@@ -148,6 +148,19 @@ describe("classifyAnthropicError", () => {
     expect(result.isRetryable).toBe(true);
   });
 
+  test.each([
+    ["request timeout", () => new Anthropic.APIConnectionTimeoutError()],
+    ["connection failure", () => new Anthropic.APIConnectionError({ cause: new TypeError("fetch failed") })],
+  ])("classifies SDK %s as retryable network error", (_label, createError) => {
+    const err = createError();
+    const result = classifyAnthropicError(err);
+
+    expect(result.errorType).toBe("network");
+    expect(result.isRetryable).toBe(true);
+    expect(result.message).toBe(err.message);
+    expect(result.cause).toBe(err);
+  });
+
   test("classifies non-Error thrown values as unknown", () => {
     const result = classifyAnthropicError("string error");
 

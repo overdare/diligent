@@ -1,6 +1,6 @@
 // @summary Tests that Anthropic text block citations are preserved in the final assistant message
 import { describe, expect, mock, test } from "bun:test";
-import { APIError } from "@anthropic-ai/sdk/core/error.mjs";
+import { APIConnectionError, APIError } from "@anthropic-ai/sdk/core/error.mjs";
 import type { Model, ProviderEvent, ProviderResult, StreamContext } from "../../../../src/llm/types";
 
 const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
@@ -27,6 +27,7 @@ class MockAnthropicStream {
 
 class MockAnthropicClient {
   static APIError = APIError;
+  static APIConnectionError = APIConnectionError;
 
   messages = {
     stream: () => new MockAnthropicStream(),
@@ -36,6 +37,7 @@ class MockAnthropicClient {
 mock.module("@anthropic-ai/sdk", () => ({
   default: MockAnthropicClient,
   APIError,
+  APIConnectionError,
 }));
 
 const { createAnthropicStream } = await import("../../../../src/llm/provider/anthropic");

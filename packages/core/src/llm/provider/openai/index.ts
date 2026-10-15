@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import { EventStream } from "../../../event-stream";
 import { flattenSections } from "../../system-sections";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "../../types";
-import { ProviderError } from "../../types";
+import { ProviderError, ProviderErrorType } from "../../types";
 
 export { createOpenAINativeCompaction } from "./native-compaction";
 
@@ -103,6 +103,10 @@ export function createOpenAIClient(apiKey: string, baseUrl?: string): OpenAI {
 
 export function classifyOpenAIError(err: unknown): ProviderError {
   if (err instanceof ProviderError) return err;
+  // SDK connection and timeout errors extend APIError but carry no HTTP status.
+  if (err instanceof OpenAI.APIConnectionError) {
+    return new ProviderError(err.message, { errorType: ProviderErrorType.Network, isRetryable: true, cause: err });
+  }
   if (err instanceof OpenAI.APIError) {
     return classifyOpenAIFamilyError({
       message: err.message,

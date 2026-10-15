@@ -142,6 +142,7 @@ Errors crossing the frontend boundary keep three responsibilities separate:
 - Core classifies provider failures and preserves raw diagnostics, retry metadata, status, upstream codes, and stable Diligent reasons. Core messages do not describe client commands, controls, or navigation.
 - Runtime adds a common user-facing message and, when applicable, one semantic recovery intent such as configuring a provider, starting a new thread, or explicitly retrying a turn. Persisted session errors remain raw diagnostics.
 - Web, TUI, and non-interactive clients render the runtime message and translate the recovery intent into their own button, picker, or command hint. Recovery never runs automatically, and clients fall back to the raw diagnostic when connected to an older server.
+- Interactive clients show turn errors as timestamped transcript items at the point of failure, both live and from `thread/read` history, and offer recovery only for a trailing failure on an idle thread.
 
 Detailed guidance for the current structured tool-rendering flow lives in `docs/guide/tool-rendering.md`.
 

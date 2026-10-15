@@ -297,7 +297,7 @@ describe("App", () => {
     expect(output).toContain("bash");
   });
 
-  test("provider error is displayed", async () => {
+  test("provider error is displayed once in the transcript", async () => {
     const workspace = await setupWorkspace("diligent-app-test-");
     const streamFn = createScriptedStreamFunction([{ error: new Error("something went wrong") }]);
 
@@ -315,7 +315,8 @@ describe("App", () => {
       workspace.cleanup();
     }
 
-    expect(terminal.stdout.writes.join("")).toContain("something went wrong");
+    const output = stripAnsi(terminal.stdout.writes.join(""));
+    expect(output.match(/✗ something went wrong/g)).toHaveLength(1);
   });
 
   test("/clear resets thread while keeping input UI visible", async () => {

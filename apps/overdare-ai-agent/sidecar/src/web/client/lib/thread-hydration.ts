@@ -7,7 +7,7 @@ import {
   type ThreadReadResponse,
 } from "@diligent/protocol";
 import type { PlanState, ThreadState } from "./thread-store";
-import { reduceServerNotification } from "./thread-store";
+import { createErrorRenderItem, reduceServerNotification } from "./thread-store";
 import { normalizeToolName, parsePlanOutput, updateItem, withItem, zeroUsage } from "./thread-utils";
 
 function parseSpawnOutput(output: string): { threadId?: string; nickname?: string } {
@@ -104,8 +104,6 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
     activeTurnStartedAt: null,
     activeReasoningStartedAt: null,
     activeReasoningDurationMs: 0,
-    activeTurnHadError: false,
-    activeError: null,
     threadStatus: payload.isRunning ? "busy" : "idle",
     planState: null,
     isCompacting: false,
@@ -138,6 +136,12 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
         summary: `\`\`\`\n${item.presentation.content}\n\`\`\``,
         timestamp: item.timestamp ?? Date.now(),
       });
+      continue;
+    }
+
+    if (item.type === "error") {
+      const id = `history:error:${item.itemId}`;
+      current = withItem(current, id, createErrorRenderItem(id, item.error, item.timestamp ?? Date.now()));
       continue;
     }
 
