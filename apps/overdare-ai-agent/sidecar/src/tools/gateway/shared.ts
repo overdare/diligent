@@ -1,4 +1,4 @@
-// @summary Shared endpoint/auth helpers for the OVERDARE gateway client (records + consent).
+// @summary Shared endpoint/auth helpers for the OVERDARE gateway client (records, consent, and skill reports).
 
 import { loadOverdareConfig, readHubToken } from "../analytics";
 
@@ -40,4 +40,9 @@ export async function resolveToken(): Promise<string | undefined> {
   } catch {
     return undefined; // hub token unavailable (no Studio RPC) — stay disabled
   }
+}
+
+/** Use the same project attribution for telemetry and skill reports. */
+export function resolveGatewayProjectId(projectId: string | undefined, userId: string, cwd: string): string {
+  return projectId?.trim() || (userId + ":" + cwd).replace(/[:/\\]/g, "_");
 }
