@@ -1,6 +1,6 @@
 // @summary Tests for Anthropic provider-native web tool content block normalization
 import { describe, expect, mock, test } from "bun:test";
-import { APIError } from "@anthropic-ai/sdk/core/error.mjs";
+import { APIConnectionError, APIError } from "@anthropic-ai/sdk/core/error.mjs";
 import {
   type Model,
   ProviderError,
@@ -36,6 +36,7 @@ class MockAnthropicStream {
 
 class MockAnthropicClient {
   static APIError = APIError;
+  static APIConnectionError = APIConnectionError;
 
   messages = {
     stream: () => new MockAnthropicStream(),
@@ -45,6 +46,7 @@ class MockAnthropicClient {
 mock.module("@anthropic-ai/sdk", () => ({
   default: MockAnthropicClient,
   APIError,
+  APIConnectionError,
 }));
 
 const { createAnthropicStream } = await import("../../../../src/llm/provider/anthropic");
