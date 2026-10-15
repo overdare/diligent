@@ -218,6 +218,8 @@ function checkThreadReadSnapshots(execution: RuntimeEvalExecution<unknown>): Eva
     if (!line.id) continue;
     if (line.type === "compaction" && !hasItem("compaction", line.id))
       failures.push(failure("thread_read_parity", `thread/read omitted persisted compaction ${line.id}.`));
+    if (line.type === "error" && !hasItem("error", line.id))
+      failures.push(failure("thread_read_parity", `thread/read omitted persisted turn error ${line.id}.`));
     if (line.type !== "message") continue;
     if (line.visibility === "internal") {
       if (line.presentation && !hasItem("contextMessage", line.id))

@@ -42,7 +42,7 @@ export interface TurnOrchestratorContext {
   emit: (event: AgentEvent) => void;
   appendEntries: (entries: SessionEntry[]) => void;
   appendAndPersist: (entry: SessionEntry) => void;
-  appendError: (error: ErrorEntry["error"], opts?: { fatal?: boolean; turnId?: string; persist?: boolean }) => void;
+  appendError: (error: ErrorEntry["error"], opts?: { fatal?: boolean; turnId?: string }) => void;
   repairEntries: () => void;
   getContext: () => Message[];
 }
@@ -375,7 +375,7 @@ export class TurnOrchestrator {
       error: err,
       fields: { lastPersisted, serializedError: serializable, runContext },
     });
-    this.ctx.appendError(serializable, { fatal: false, turnId, persist: true });
+    this.ctx.appendError(serializable, { fatal: false, turnId });
     return serializable;
   }
 

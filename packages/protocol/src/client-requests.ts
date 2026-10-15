@@ -12,7 +12,6 @@ import {
   ProtocolVersionSchema,
   ProviderAuthStatusSchema,
   ProviderNameSchema,
-  SerializableErrorSchema,
   SessionSummarySchema,
   SUPPORTED_IMAGE_MEDIA_TYPES,
   ThinkingEffortSchema,
@@ -122,17 +121,6 @@ export const ThreadReadResponseSchema = z.object({
   goalSequence: z.number().int().nonnegative().optional(),
   cwd: z.string(),
   items: z.array(ThreadItemSchema),
-  errors: z
-    .array(
-      z.object({
-        id: z.string(),
-        timestamp: z.string(),
-        turnId: z.string().optional(),
-        fatal: z.boolean(),
-        error: SerializableErrorSchema,
-      }),
-    )
-    .optional(),
   hasFollowUp: z.boolean(),
   pendingSteers: z.array(PendingSteerSchema).optional(),
   entryCount: z.number().int().nonnegative(),

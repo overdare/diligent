@@ -1,5 +1,7 @@
 // @summary Builds model context and raw transcript views from tree-structured session entries with compaction support
+import type { SerializableError } from "@diligent/core/agent";
 import type { Message } from "@diligent/core/message-contract";
+import type { ProviderName } from "@diligent/core/provider-contract";
 import type { AssistantMessage, Mode, ModelRef, ThinkingEffort } from "@diligent/protocol";
 import type { CompactionEntry, SessionEntry } from "./types";
 
@@ -37,6 +39,14 @@ export type SessionTranscriptEntry =
       timestamp: string;
       summary: string;
       displaySummary?: string;
+    }
+  | {
+      type: "error";
+      id: string;
+      timestamp: string;
+      error: SerializableError;
+      /** Provider selected on this path when the error was recorded. */
+      provider?: ProviderName;
     };
 
 function getPathEntries(entries: SessionEntry[], leafId?: string | null): SessionEntry[] {
@@ -199,6 +209,7 @@ function latestModeInPath(path: SessionEntry[]): Mode | undefined {
 export function buildSessionTranscript(entries: SessionEntry[], leafId?: string | null): SessionTranscriptEntry[] {
   const path = getPathEntries(entries, leafId);
   const transcript: SessionTranscriptEntry[] = [];
+  let provider: ProviderName | undefined;
 
   for (const entry of path) {
     switch (entry.type) {
@@ -229,6 +240,18 @@ export function buildSessionTranscript(entries: SessionEntry[], leafId?: string 
           timestamp: entry.timestamp,
           summary: entry.summary ?? entry.displaySummary ?? "Compacted",
           displaySummary: entry.displaySummary,
+        });
+        break;
+      case "model_change":
+        provider = entry.provider;
+        break;
+      case "error":
+        transcript.push({
+          type: "error",
+          id: entry.id,
+          timestamp: entry.timestamp,
+          error: entry.error,
+          ...(provider ? { provider } : {}),
         });
         break;
     }
