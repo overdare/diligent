@@ -98,6 +98,13 @@ place copies of it with `studiorpc_execute_luau`, grouped under one Folder or Mo
 new model for each placement. A few repeats that belong to one object, such as a table's four legs,
 stay inside that object's recipe.
 
+For non-ODA rigging and animation, read `studiorpc_character_api` and the
+`custom-character` skill. The existing `character.build` accepts this
+ProceduralModel's GUID and freezes its Source, Size and typed attributes for a
+separate character draft. Its recipe must explicitly emit the requested rig,
+weights and motion; the bridge does not infer them. It leaves the source model
+unchanged and retains the normal FBX import/upload and Lua playback workflow.
+
 ## Judge on the numbers before the picture
 
 `studiorpc_proceduralmodel_set` with `rebuild: true` returns the whole run: `parts`,

@@ -1,0 +1,197 @@
+// @summary Declares the Studio RPC method that creates or replaces an animation clip from JSON and saves it.
+import type { ImageBlock } from "@diligent/protocol";
+import { z } from "zod";
+import {
+  ANIMATION_TIMEOUT_MS,
+  animationSchema,
+  attachPreviewImage,
+  dropBlank,
+  formatCheckResult,
+  formatWriteResult,
+  groundSchema,
+  isBlank,
+  normalizePreview,
+  pinsSchema,
+  previewSchema,
+  withErrorData,
+} from "./animation-shared";
+
+export const method = "animation.write";
+
+export const timeoutMs = ANIMATION_TIMEOUT_MS;
+
+export const description =
+  "For a general rig, first read with modelGuid (a Workspace Model containing one skeletal MeshPart), then create with that same modelGuid. " +
+  "An existing assetPath infers the clip's original Skeleton and preview skin; edits preserve bone hierarchy, bind pose and weights. " +
+  "General-rig dryRun reports original bone names and skin heights. The ODA anatomical directions, pins, ground and clearance solver described below are ODA-only; use original bone keys for general rigs. " +
+  "Downloaded general clips with animated scale, events, additive poses, root-motion extraction or other unsupported data are rejected rather than silently simplified.\n" +
+  "Create or replace a character animation clip from JSON, save it as a local .uasset, and return a preview " +
+  "contact sheet. Get bone names and axes first from studiorpc_animation_read with no assetPath. To try poses " +
+  "without saving or rendering (joint positions, penetrations, IK solves), set dryRun: true.\n" +
+  "Per frame (frames: up to 24; default: up to 12 of the keyed frames and pin edges; ask for the few frames you are " +
+  "working on): joints = hips (LowerTorso), head, elbows (LowerArm), hands, knees (LowerLeg) and feet; " +
+  "lowestPointCm = the lowest skin point of each hand, foot, LowerTorso and thigh (where the sole, toe or heel, the " +
+  "fist and the seat really are, not the bone); penetrations = up to 3 deepest places where a hand, forearm, shin " +
+  "or foot sinks into the head, torso or a thigh, with depthCm, deepestPointCm and pushOutCm (the shortest move " +
+  "that gets that point out); directions = unit vectors of each hand (fingers: wrist toward fist; palm: the side " +
+  "that faces the thigh when standing) and foot (toes: heel toward toes; sole: out of the sole, [0, 0, -1] when " +
+  "flat). Positions are component space in cm: x = the character's left, y = forward, z = up, " +
+  "floor at z = 0. For the whole clip: floor and clearance, as in the write preview.\n" +
+  "pins work as in this tool. A pin of up to 5 frames also reports keys: the solved rotations of " +
+  "the limb's three bones. A pin over one frame, frames: [f, f], with a position is an IK solve: it returns the UpperArm/LowerArm/Hand " +
+  "(or UpperLeg/LowerLeg/Foot) rotations that put the hand or foot there, bending the elbow or knee only the way it hinges, " +
+  "which you can copy into your own keys; add a pole to choose where the elbow or knee goes. A pin with a path " +
+  "of up to 5 frames solves several targets at once. reachMarginCm says how much further the limb could stretch; negative " +
+  "means the target is that far out of reach (outOfReachFrames counts those frames).\n" +
+  "ground works as in this tool; result.ground lists which body part touches the floor on which " +
+  "frames, the contact order of a roll or fall.\n" +
+  "Workflow: write without assetPath to create a clip under /Temp/AnimationAssets/<name> (a suffix is added if " +
+  "the name is taken; use the returned assetPath and animation.name). Look at the image, preview.floor, " +
+  "preview.clearance and preview.poseSamples, edit the JSON, then write again with assetPath and the revision " +
+  "from your last read/write. A replace rewrites the whole clip: tracks and keys you leave out are removed. revision is " +
+  "required on replace; REVISION_CONFLICT means the clip changed since you read it — call studiorpc_animation_read, " +
+  "reapply your edit to the returned animation, and write with the new revision. After a timeout, do not repeat " +
+  "a create: it may have succeeded. Leave optional params out when you do not use them.\n" +
+  "JSON (version 1): { version: 1, name, fps: 30 | 60, durationFrames: N, tracks: { <boneName>: [ { frame, " +
+  "rotation?, translation?, interp? } ] } }.\n" +
+  "- Length is N/fps s, at most 10 s. frame is an integer 0..N, strictly ascending and unique per track. " +
+  "scale is always 1.\n" +
+  "- interp sets how the motion leaves a key: linear (default, constant speed, mechanical), cubic (eases in and " +
+  "out; use it for natural motion such as swings, weight shifts and holds that settle), constant (snaps at the " +
+  "next key). Cubic tangents are automatic from the neighbouring keys, exactly like the AnimationEditor's Cubic key.\n" +
+  "- rotation = [roll, pitch, yaw] degrees about the bone's own reference axes (roll = X, pitch = Y, yaw = Z); " +
+  "translation = [x, y, z] cm along those axes. Both are deltas from the bone's reference pose and default to " +
+  "[0, 0, 0], which is the reference pose.\n" +
+  "- Bones not in tracks stay in the reference pose; tracks: {} is a reference-pose clip; a track needs at " +
+  "least one key. Limits: 64 tracks, 4096 keys total. name matches [A-Za-z][A-Za-z0-9_]{0,63} and cannot " +
+  "change on replace. Unknown fields, wrong array lengths and non-numbers are rejected; nothing is clamped " +
+  "or re-sorted.\n" +
+  "pins: [{ bone: RightHand | LeftHand | RightFoot | LeftFoot, frames: [from, to], position?: [x, y, z], flat?, pole?, " +
+  "path?, pivot? }] keep " +
+  "that hand or foot fixed at one component-space point (cm; default: where it is at `from`) while the rest of " +
+  "the body moves: a planted foot, a hand supporting the body on the floor. Studio solves the upper/lower limb " +
+  "and the hand/foot on every frame of the range (the elbow or knee bends only the way it hinges), writes those as keys, and " +
+  "keeps the pose you keyed just outside the range. The saved clip contains only keys; on a replace, send your own " +
+  "keys and the same pins again and they are baked again. result.pins reports maxErrorCm, outOfReachFrames and " +
+  "reachMarginCm (how much further the limb could stretch; negative = out of reach) per pin, " +
+  "and entryJumpDeg / exitJumpDeg: how far the limb's joints turn in the one frame where the pin takes over from " +
+  "your keys and hands back to them. More than about 15 is a visible pop; key the limb near the pinned pose on the " +
+  "frames just outside the range, or start and end the pin where the limb already is. flat: true (feet " +
+  "only) plants the foot flat with the sole on the floor at its heading on `from` (walking, standing, squats); " +
+  "without it the foot keeps the tilt and height it has at `from`. For a hand on the floor, set position z from " +
+  "preview.floor (raise it by the reported maxDepthCm when the hand sinks). " +
+  "pole: [x, y, z] bends the elbow or knee toward that point instead of the way it hinges (a guard with the elbows " +
+  "down, a knee turned out); againstHingeFrames counts frames where that bends the joint backwards. " +
+  "path: [{ frame, position }] instead of position moves the hand or foot through those points (eased between " +
+  "them, held before the first and after the last); it keeps the rotation your keys give it. " +
+  'pivot: "toe" (feet only, not with flat) holds the front edge of the sole instead of the ankle, and the foot ' +
+  "turns about it as you key Foot Z (+ lifts the heel): a push-off, a tiptoe. A pin that starts on the frame " +
+  "after another pin of the same bone ends continues from where that one left it (flat, then toe, then flat).\n" +
+  "ground: [{ frames: [from, to] }] keeps the body on the floor on every frame of the range: Studio raises or lowers " +
+  "LowerTorso until the lowest skin point meets the floor as a standing pose does, so a roll, a fall, sitting or lying " +
+  "neither floats nor sinks while you key only the rotations. It is applied before the pins. result.ground reports " +
+  "maxShiftCm, entryShiftCm / exitShiftCm (how far the hips move in the one frame where the range takes over from your " +
+  "keys and hands back; key the hips near that height just outside the range) and contacts: which body part touches " +
+  "the floor on which frames, in order.\n" +
+  "preview: omitted or true = default contact sheet (frames 0%, 20%, 40%, 60%, 80%, 100%, rounded to distinct integer frames; both views; MOTION column), " +
+  'false = none, { frames: [up to 22], views: ["front", "side"], motion: true | false } = those. The PNG comes ' +
+  "back as an image: blocks = up to six frames in order, each with front/side rows; columns = frames in order, then MOTION (the clip " +
+  "onion-skinned, earlier = fainter, with paths: right hand red, left hand blue, right foot orange, left foot " +
+  "cyan, head yellow). preview.floor checks the skinned mesh against the floor (z = 0) on every frame: " +
+  "belowFloor (sinking, with depth and bone), airborne, contacts (bone -> frame ranges on the floor). " +
+  "preview.clearance lists frame ranges where a hand, forearm, shin or foot sinks into the head, torso or a " +
+  "thigh (part, into, maxDepthCm, deepestFrame; a shin or foot is not checked against its own thigh). " +
+  "preview.poseSamples gives animated bones' component-space translation (cm), rotationQuat [x,y,z,w], lowestCm " +
+  "and touchingFloor per sampled frame. A failed preview does not undo the save; re-capture with " +
+  "studiorpc_animation_read.\n" +
+  "Result: { assetPath, filePath, revision, animation (name, fps, durationFrames and track/key counts; the " +
+  "saved keys come from studiorpc_animation_read), applied, saved, created, pins?, preview, " +
+  "warnings }. Errors carry data.kind (INVALID_ANIMATION, INVALID_PARAMS, REVISION_CONFLICT, " +
+  "UNSUPPORTED_REPRESENTATION, ASSET_NOT_FOUND, SAVE_FAILED, APPLY_FAILED) and data.errors[] with path, bone, " +
+  "frame and message. Invalid input and conflicts leave the asset unchanged; SAVE_FAILED reports applied and " +
+  "saved as they are.";
+
+export const params = z
+  .object({
+    modelGuid: z
+      .string()
+      .optional()
+      .describe(
+        "Existing Workspace Model's single-skin rig for creation. Existing assetPath infers its original rig; a conflicting selector is rejected.",
+      ),
+    dryRun: z
+      .boolean()
+      .optional()
+      .describe("Evaluate poses without saving or rendering. assetPath/revision are checked even in dryRun."),
+    frames: z
+      .array(z.number().int().min(0))
+      .min(1)
+      .max(24)
+      .optional()
+      .describe("With dryRun only: up to 24 pose frames; default up to 12 keyed frames and pin edges."),
+    animation: animationSchema.describe("The whole clip in the version-1 JSON format above."),
+    assetPath: z.string().optional().describe("Clip to replace. Omit to create a new clip."),
+    revision: z
+      .string()
+      .optional()
+      .describe("Required with assetPath: the revision from the last read or write of that clip."),
+    preview: previewSchema
+      .optional()
+      .describe("Omit or true for the default contact sheet, false for none, or { frames, views, motion }."),
+    pins: pinsSchema
+      .optional()
+      .describe("Hands/feet held at a fixed point over a frame range; baked into keys. Omit for none."),
+    ground: groundSchema
+      .optional()
+      .describe(
+        "Frame ranges where the body's lowest point stays on the floor; baked into LowerTorso keys. Omit for none.",
+      ),
+  })
+  .strict()
+  .refine((args) => args.frames === undefined || args.dryRun === true, {
+    message: "frames requires dryRun: true",
+    path: ["frames"],
+  });
+
+export function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const out =
+    args.dryRun === true
+      ? dropBlank(args, ["assetPath", "revision", "modelGuid"])
+      : normalizePreview(dropBlank(args, ["assetPath", "revision", "modelGuid"]));
+  if (args.dryRun === true) delete out.preview;
+  if (Array.isArray(out.frames) && out.frames.length === 0) delete out.frames;
+  if (Array.isArray(out.pins) && out.pins.length === 0) delete out.pins;
+  if (Array.isArray(out.ground) && out.ground.length === 0) delete out.ground;
+  return out;
+}
+
+export async function recover(error: unknown, args: Record<string, unknown>): Promise<unknown> {
+  if (args.dryRun === true) return withErrorData(error);
+  return withErrorData(
+    error,
+    args.assetPath === undefined || isBlank(args.assetPath)
+      ? "The create may still have completed in Studio. Do not repeat it blindly; ask the user or check " +
+          "/Temp/AnimationAssets before writing again."
+      : "The replace may still have completed in Studio. Call studiorpc_animation_read with this assetPath " +
+          "and compare the revision before writing again.",
+  );
+}
+
+export async function attachImages(result: unknown): Promise<ImageBlock[] | undefined> {
+  let parsed: unknown = result;
+  if (typeof result === "string") {
+    try {
+      parsed = JSON.parse(result);
+    } catch {
+      return undefined;
+    }
+  }
+  if (parsed && typeof parsed === "object" && "dryRun" in parsed && parsed.dryRun === true) return undefined;
+  return attachPreviewImage(result);
+}
+
+export function postProcess(result: unknown): unknown {
+  if (result && typeof result === "object" && "dryRun" in result && result.dryRun === true)
+    return formatCheckResult(result);
+  return formatWriteResult(result);
+}

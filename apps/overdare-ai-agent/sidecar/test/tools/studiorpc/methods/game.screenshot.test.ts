@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createStudioRpcToolProvider } from "../../../../src/tools/studiorpc";
 import {
   attachImages,
   normalizeArgs,
@@ -35,6 +36,73 @@ function shot(
 }
 const LEVEL_SHOT = shot({ X: 0, Y: 340, Z: 900 }, { X: -0.9548412561416626, Y: 0, Z: 0 });
 const ANGLED_SHOT = shot({ X: 620, Y: 430, Z: 640 }, { X: -6.243453502655029, Y: 43.63607406616211, Z: 0 });
+
+describe("game.screenshot client targeting", () => {
+  const target = { pieSessionId: "play-session", clientId: "client-2" };
+
+  test("accepts optional target strings and preserves them at the RPC boundary", () => {
+    expect(normalizeArgs(params.parse(target))).toEqual({ includeGui: true, ...target });
+    expect(normalizeArgs(params.parse({}))).toEqual({ includeGui: true });
+    expect(params.safeParse({ pieSessionId: 1, clientId: "client-2" }).success).toBe(false);
+    expect(params.safeParse({ pieSessionId: "play-session", clientId: "" }).success).toBe(false);
+  });
+
+  test("keeps the play-test target separate from the executing agent session", async () => {
+    const seen: Array<{ method: string; params: unknown; sessionId?: string }> = [];
+    const provider = createStudioRpcToolProvider({
+      callRpc: async (method, args, options) => {
+        seen.push({ method, params: args, sessionId: options?.sessionId });
+        return { success: true };
+      },
+    });
+    const tools = await provider.createTools({ cwd: tmpdir() });
+    const tool = tools.find((tool) => tool.name === "studiorpc_game_screenshot")!;
+    const result = await tool.execute(tool.parameters.parse({ ...target, includeGui: false }), {
+      toolCallId: "screenshot",
+      sessionId: "agent-session",
+      signal: new AbortController().signal,
+      abort() {},
+    });
+    expect(seen).toEqual([
+      { method: "game.screenshot", params: { ...target, includeGui: false }, sessionId: "agent-session" },
+    ]);
+    expect(result.render?.blocks).toContainEqual(
+      expect.objectContaining({
+        type: "key_value",
+        items: expect.arrayContaining([
+          { key: "pieSessionId", value: target.pieSessionId },
+          { key: "clientId", value: target.clientId },
+        ]),
+      }),
+    );
+  });
+
+  test("locates names and lists nearby instances in the captured client", async () => {
+    const seen: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const out = await postProcess(LEVEL_SHOT, { ...target, locate: ["Target", "Missing"] }, async (method, args) => {
+      seen.push({ method, params: args });
+      if (method === "game.instance.read" && args.name === "Target") {
+        return { instance: { path: "Workspace.Target", properties: { CFrame: { Position: { X: 0, Y: 340, Z: 0 } } } } };
+      }
+      if (method === "game.instance.read") return { instances: [{ name: "Target" }] };
+      if (method === "level.browse") return { level: [] };
+      throw new Error(`unexpected method ${method}`);
+    });
+    expect(located(out)).toMatchObject({ label: "Workspace.Target", world: { x: 0, y: 340, z: 0 } });
+    const liveReads = seen.filter((entry) => entry.method === "game.instance.read");
+    expect(liveReads).toHaveLength(3);
+    expect(
+      liveReads.every(
+        (entry) => entry.params.pieSessionId === target.pieSessionId && entry.params.clientId === target.clientId,
+      ),
+    ).toBe(true);
+    expect(seen.find((entry) => entry.method === "level.browse")?.params).toEqual({});
+    expect(out).toMatchObject({
+      locateNotFound: ["Missing"],
+      locateNote: expect.stringContaining("The running game lists: Target."),
+    });
+  });
+});
 function located(result: unknown, index = 0) {
   const list = (result as { located: Record<string, unknown>[] }).located;
   return list[index];
