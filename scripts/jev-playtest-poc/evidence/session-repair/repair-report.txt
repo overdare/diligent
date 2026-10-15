@@ -1,0 +1,137 @@
+Session repair and objective-based playtest coverage
+==================================================
+Session: 20261002013651784000-4e256c
+Date: 2026-10-02 KST
+Current game: HexFall
+
+Implemented repairs
+-------------------
+- Added the bundled autonomous-playtest skill, two focused authoring/diagnosis
+  references, manifest registration and a system-prompt routing instruction.
+  The live Diligent session loaded this skill and read its references.
+- Added harness list discovery. An absent read returns found:false and an
+  author/install next step instead of an unexpected tool exception. A failed
+  Studio lookup remains a transport failure, not evidence of missing assets.
+- Driver v2 publishes a valid ready:false initial frame and forwards optional
+  coverage. Adapter updates refresh the generated common driver as well.
+- The runtime waits through partial initializing observations within the startup
+  bound, blocks stale/unverified dispatch, and still fails on a real different
+  client/session, malformed frame, or adapter error. A terminal frame with missing
+  character data is accepted only after owned-session verification.
+- A typed Studio input error -32108 with reason interruptedByUser is classified
+  as input_cancelled, without input retry. Other look/pointer errors remain errors.
+- Added declared test-target coverage. Offered, selected, dispatched, completed,
+  and effect-confirmed action stages remain separate. State/event observations
+  are distinct from action effects. No declared inventory never means 100%.
+- Extended the optional recorder preparation budget, retaining bounded gameplay.
+  Fresh-run and coverage gates prevent historical results from satisfying the
+  current replay's verification.
+
+Actual maintained harness
+-------------------------
+Diligent read the current game's code and failure trace, updated the Studio
+adapter, saved it, validated both Lua scripts, and read it back. Per-game facts
+and behavior remain inside the Studio module; business scripts/rules were not
+patched by these framework changes.
+
+The maintained source is archived as maintained-hexfall.luau.
+SHA-256: 3ce01672c6f969114f0b5cb0591d514efe29097fa820b5783d17f6f7d629dcf1
+
+Changes include server-state freshness, grounded support checks, actual jump and
+second-impulse/landing correlation, intended-destination effect assertions,
+removing stale/lost-support candidates, and separate round/match outcome checks.
+This replaces the earlier weak assertion that any 60cm movement proved the jump
+behavior. It does not prove that the resulting traversal controller is reliable.
+
+Fresh real episode
+------------------
+The 100-second bounded episode completed with outcome timeout, not victory.
+Elapsed including startup/cleanup: 102.64 seconds.
+Observations: 663; observation errors: 0.
+Model requests: 34; dispatched input batches: 120.
+Invalidated choices: 10.
+Cleanup verified and stopped the same owned PIE session.
+The game witnessed lost rounds and reached round 3; this was not uninterrupted
+100-second survival and did not establish the final match winner.
+
+Declared coverage: 8 / 11 (72.7%). This is coverage over the source-backed test
+inventory chosen by the adapter, not whole-code branch or event coverage.
+
+Confirmed targets:
+- Actual live participation
+- A 15-second real round-timer survival milestone
+- Double-jump with intended live-destination landing
+- Actual second upward impulse
+- Supported tile warning
+- Supported tile removal
+- Physical landing on a lower layer
+- Actual round-end result
+
+Not established:
+- Single-jump intended landing: 2 completed inputs, 0 confirmed effects.
+- Escaping a warning origin before its removal.
+- Final match result.
+
+Reliability is separate from presence coverage: double-jump intended landing was
+confirmed in 3 of 22 completed attempts; 19 effect assertions failed. An 8/11
+coverage result must not be reported as 72.7% controller reliability or as a win.
+These failed assertions are useful test results and remain in the trace.
+
+Evidence
+--------
+coverage-first.json, summary-first.json and trace-first.jsonl archive the live
+run from /Volumes/overdare-newgame/.overdare/playtests/1790911600854-717a1e95/.
+The dev-cross-repair-fresh recorder observed a new real tool call and fresh
+coverage, rather than importing an old run as proof. Its enclosing 15-minute
+authoring/report turn timed out after gameplay had completed and stopped; that
+attempt remains recorded as turn_timeout/pass=false. Report completion is a
+separate continuation in the same task, without replaying the game.
+
+Verification
+------------
+62 targeted runtime, coverage, harness-tool, MCP and bootstrap-manifest tests
+passed. Sidecar TypeScript and Biome passed. skill-creator quick_validate passed.
+Independent skill forward-testing is in skill-forward-test.txt: it produced an
+objective-specific coin/debounce inventory, preserved unresolved evidence, and
+did not equate RPC timeout with absence or claim an unexecuted game result.
+
+Remaining work
+--------------
+Improve reliable traversal and targeted scheduling for the uncovered checks,
+using actual timing/physics evidence and bounded matched trials. A catalog alone
+does not make Laya exercise every target. Preserve meaningful effect assertions
+rather than lowering them to inflate coverage. Full-match evaluation needs an
+appropriate budget/setup for the game's multi-round rules.
+
+Final adapter and deadline correction
+------------------------------------
+After the first episode, Diligent diagnosed late native Jumping callbacks and
+saved another validated adapter revision. It captures the first upward impulse
+from a real recent grounded Heartbeat sample, keeping the landing assertions.
+Final installed SHA-256:
+  13e1a9ea7dc47bae8119afbc9a04334ab4260beb061fa09c5be29b0ca0b5a55c
+Source archive: maintained-hexfall-latest.luau.
+
+That exact version was exercised in a new real bounded 100-second episode:
+581 observations, 38 model requests, 92 dispatched inputs, 4 invalidated choices,
+0 observation errors, and verified same-session stop. It established 9/11 targets
+(81.8%), including single_safe_land. warning_escape and match_result remained
+uncovered. Single intended landings: 2 confirmed / 18 completed; double intended
+landings: 6 confirmed / 16 completed. Presence coverage is not success-rate proof.
+
+The final replay revealed a runtime boundary bug: when the episode deadline
+expired while awaiting the first newer post-input frame, the runtime reported
+an effect-frame error instead of timeout. The original pre-fix result is
+preserved in summary-final-before-deadline-fix.json and trace-final.jsonl.
+The code now returns timeout only when the episode budget has actually expired;
+a missing newer frame before that boundary remains an error. Two new regression
+tests verify both cases. A real passive-only Studio probe with a controlled
+1100ms local reply delay exercised this exact boundary, reported timeout, and
+stopped its owned session; see deadline-boundary-probe.json. This probe is not
+a model-performance measurement or another claimed gameplay success.
+
+The same Diligent session completed its final replay/report turn. Its recorder
+required a new current-turn playtest and positive declared coverage; pass=true
+means lifecycle/evidence gates passed, not that the game was won. Fresh replay
+evidence is dev-cross-final-run.summary.json. The backend was updated after the
+deadline correction so subsequent episodes use the fixed classification.
