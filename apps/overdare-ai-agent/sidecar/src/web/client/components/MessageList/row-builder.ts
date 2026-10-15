@@ -94,6 +94,7 @@ export function buildGroupedRows(items: RenderItem[]): VirtualMessageRow[] {
         }
         break;
       case "context":
+      case "error":
       case "user":
         flushCollab();
         flushTools();
