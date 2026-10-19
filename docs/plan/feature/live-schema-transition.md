@@ -22,9 +22,13 @@ Status: implementation draft stacked on native RPC restoration PR #441
   descriptions, creatable/service and schemaVersion but omitting property payloads.
   The tool adds `view: "classes"` and a hint to request classes for details. This is
   a local output projection, not a new Studio RPC parameter.
-- Targeted lookup preserves the full returned property schemas and descriptions.
-  No wildcard probing, alternate endpoints, local replacement catalog, persistent
-  cache, or automatic property-schema injection is added.
+- Targeted lookup preserves the full returned property schemas and descriptions and
+  merges the sidecar schema overlay: notes migrated from the retired upsert catalog
+  (units, contextual limits), Luau value-type guidance, sentinel enum removal, and
+  `source:"sidecar"` properties Studio omits (VFXRecipe layers, VFXPreset.PresetName
+  and others) because Studio-side schema changes are not available. Studio fields
+  stay authoritative. No wildcard probing, alternate endpoints, persistent cache, or
+  prompt-level property-schema injection is added.
 - Preserve Korean UTF-8 descriptions through JSON and chunked TCP responses. Measure
   RPC diagnostics in UTF-8 bytes. Oversized model output uses head truncation and
   the common full-output store; neither truncation nor empty results prove that

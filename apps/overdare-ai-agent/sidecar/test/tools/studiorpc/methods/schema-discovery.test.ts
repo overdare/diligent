@@ -65,7 +65,7 @@ describe("live class discovery", () => {
     expect(calls).toEqual([
       { method: "instance.schema.search", params: { classes: ["FutureWidget"], query: "Material" } },
     ]);
-    expect(JSON.parse(result.output)).toEqual(response);
+    expect(JSON.parse(result.output)).toMatchObject(response);
   });
 
   test("large full results omit property payloads instead of flooding the class catalog", async () => {
@@ -105,7 +105,7 @@ describe("live class discovery", () => {
         },
       },
     );
-    expect(JSON.parse(saved)).toEqual(large);
+    expect(JSON.parse(saved).classes).toMatchObject(large.classes);
     expect(result.metadata?.truncated).toBe(true);
     expect(result.metadata?.truncatedFrom).toEqual({ bytes: Buffer.byteLength(saved) });
     expect(result.output).not.toContain("\uFFFD");

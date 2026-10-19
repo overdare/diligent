@@ -37,15 +37,55 @@ a literal class/property substring; no wildcard, limit, or cursor is invented.
 Full discovery returns schemaVersion and a compact class catalog: class names,
 descriptions (including Korean), creatable/service and other class metadata are
 preserved, while property payloads are omitted. The adapter labels this output
-`view: "classes"`. Request `classes` to retrieve the detailed properties, with an
-optional property query. Targeted results preserve all response fields unchanged.
-This separation keeps all property definitions out of the initial class list.
+`view: "classes"` and adds the sidecar class `note` where the overlay has one.
+Request `classes` to retrieve the detailed properties, with an optional property
+query. This separation keeps all property definitions out of the initial class list.
 
 UTF-8 descriptions are preserved through TCP decoding and JSON serialization.
 RPC byte diagnostics use UTF-8 byte lengths. If a tool output exceeds the common
 limit, keep its beginning and provide the persisted full output when available;
 a truncated catalog must not be treated as complete. There is no persistent schema
 cache or automatic injection of an exhaustive property catalog into the prompt.
+
+## Sidecar schema overlay
+
+Studio's schema states shapes but not meaning: the tested build has no class or
+property descriptions, no units, and omits several properties that Editor Luau
+reads and writes. The sidecar merges an annotation table
+(`methods/instance-schema-overlay.table.ts`) into every targeted result instead:
+
+- `note` on classes and properties: units (cm, degrees, seconds), asset ID format,
+  and contextual limits that `writeCondition` cannot express (Mobility only on
+  direct Workspace children, UIStroke Contextual only on text elements, internal
+  condition flags such as `bActivePivotOffset`). Property notes are keyed by
+  `<Class>.<Property>` or by the declaring class, so an inherited property is
+  annotated once; the exact class key wins.
+- `source: "sidecar"` properties for values Studio omits: VFXRecipe
+  `BaseLayer`/`DetailLayer`/`ExtraLayer`/`LoopDuration`, VFXPreset `PresetName`,
+  `Color`, `Alpha`, `Size`, `Transparency`, `Importance`, MaterialVariant
+  `UseCustomPhysicsProperties`, SimulationBall `BallSimParams` and
+  `MicroBounceThresholdMult`. They follow Studio's property query filtering, and
+  a property query Studio cannot match still returns them in a `source: "sidecar"`
+  class entry. If Studio starts publishing one, Studio's entry wins and keeps only
+  the sidecar note.
+- `valueTypes`: for each value shape present in the result (Color3, CFrame,
+  UDim2, enums, instance references, …), how to write it in Editor Luau.
+- Engine sentinel enum members (`Max`, `LastMaterial` in material enums) are
+  removed from `valueSchema.enum`.
+
+Every overlay entry was checked against a live Studio build (schemaVersion
+`blake3:9c5e427e…`), including Editor Luau writes. Notable findings: Color3 JSON
+0-255 equals `Color3.fromRGB`, while `Color3.new` takes linear values; VFXPreset
+`PresetName` accepts the presets.md DisplayName and silently ignores Resource
+names; a Luau read of a VFXRecipe layer item omits its per-source parameters, so
+edits read the JSON with `studiorpc_instance_read` and assign complete items; VFX
+`Texture` overrides need the `{ Content = ... }` table. Studio reports VFXRecipe
+as `creatable: false`, yet `Instance.new("VFXRecipe")` works in the Editor VM.
+
+`test/fixtures/studio-schema-property-index.json` records the class → property →
+declaredOn index of that build. The overlay tests fail when a note key no longer
+names a published property or a supplement duplicates one; re-record the index
+from targeted `instance.schema.search` lookups when Studio's schema changes.
 
 The updated Studio contract is reported to support empty-query full search. The
 currently connected build still returned `-32602` for that request during draft
@@ -57,7 +97,8 @@ build and may support a documented operation even when full discovery is unavail
 The previous upsert class validators, automatic defaults, ObjectType insertion,
 VFX short-name expansion and upsert-only diagnostics/file recovery are retired
 with that tool. Editor assignments must use supported Luau values and exact asset
-names/paths. Existing hierarchy move protections and Mobility normalization remain.
+names/paths; the overlay documents them but does not convert or validate values.
+Existing hierarchy move protections and Mobility normalization remain.
 
 Readback is independent of writable schemas and preserves WorldTransform/Size
 when supplied by Studio or the saved file. These are useful spatial observations,
@@ -226,7 +267,9 @@ this PR does not authorize an automatic preview/main merge or deployment.
 ## Verification boundaries
 
 Tests exercise empty-query full search through the shared tool executor and MCP,
-compact class catalogs, unchanged targeted schemas, Korean descriptions split
+compact class catalogs, overlay merging on targeted schemas (inherited notes,
+sentinel removal, supplements and their query filtering, Studio precedence,
+valueTypes), overlay keys against the recorded Studio index, Korean descriptions split
 across TCP chunks, UTF-8 byte accounting, and persisted truncated results. They
 also verify that upsert is absent while Editor error/save handling and retained
 instance/Source tools continue to work. The bundled registry exposes the active

@@ -37,7 +37,7 @@ describe("live Editor tools", () => {
     const result = await tools
       .find((tool) => tool.name === "studiorpc_instance_schema_search")!
       .execute({ classes: ["FutureClass"] }, context);
-    expect(JSON.parse(result.output)).toEqual({ schemaVersion: "live", classes: [] });
+    expect(JSON.parse(result.output)).toMatchObject({ schemaVersion: "live", classes: [] });
     expect(approvals).toBe(0);
     expect(calls).toEqual(["instance.schema.search"]);
   });
@@ -98,7 +98,7 @@ describe("live Editor tools", () => {
     const result = await tools
       .find((t) => t.name === "studiorpc_instance_schema_search")!
       .execute({ classes: ["FutureClass"], query: "FutureProperty" }, context);
-    expect(JSON.parse(result.output)).toEqual(reply);
+    expect(JSON.parse(result.output)).toMatchObject(reply);
     expect(calls).toEqual([
       { method: "instance.schema.search", args: { classes: ["FutureClass"], query: "FutureProperty" } },
     ]);
