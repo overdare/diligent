@@ -288,7 +288,10 @@ export async function callRegistryTool(
   rawArgs: unknown,
   options: { signal?: AbortSignal } = {},
 ): Promise<McpToolCallResult> {
-  const tool = registries.tools.get(name);
+  // Accept older saved image-import calls while advertising only the unified asset tool.
+  const tool = registries.tools.get(
+    name === "studiorpc_asset_manager_image_import" ? "studiorpc_asset_manager_import" : name,
+  );
   if (!tool) {
     return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
   }

@@ -29,6 +29,7 @@ function makeHandlerDeps(overrides: Partial<CommandHandlerDeps> = {}): CommandHa
   const configManager: ConfigManager = {
     setMode: () => {},
     setEffort: async () => {},
+    setFastMode: async () => {},
     setModel: async () => {},
     reloadConfig: async () => {},
   };
@@ -41,6 +42,7 @@ function makeHandlerDeps(overrides: Partial<CommandHandlerDeps> = {}): CommandHa
     getSkills: () => [],
     getCurrentMode: () => "default",
     getCurrentEffort: () => "medium",
+    getCurrentFastMode: () => false,
     getIsProcessing: () => false,
     setIsProcessing: () => {},
     setPendingTurn: () => {},
@@ -145,6 +147,15 @@ describe("CommandRegistry", () => {
     registry.register(makeCommand({ name: "help" }));
 
     expect(registry.complete("z")).toEqual([]);
+  });
+
+  it("keeps hidden reserved commands callable but out of completion", () => {
+    const registry = new CommandRegistry();
+    registry.register(makeCommand({ name: "goal", hidden: true }));
+
+    expect(registry.get("goal")).toBeDefined();
+    expect(registry.complete("go")).toEqual([]);
+    expect(registry.completeDetailed("go")).toEqual([]);
   });
 
   describe("completeDetailed", () => {

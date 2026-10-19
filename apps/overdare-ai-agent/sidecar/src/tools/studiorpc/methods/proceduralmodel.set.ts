@@ -5,6 +5,8 @@ import { z } from "zod";
 import type { CallRpc } from "../tools/pie-input/target";
 
 export const method = "proceduralmodel.set";
+// Bound the agent's wait; Studio may continue the native run after the socket closes.
+export const timeoutMs = 30_000;
 
 export const description =
   "Author and bake a ProceduralModel from a Python geometry recipe: write its recipe, Size and parameters, " +
@@ -79,6 +81,7 @@ export const params = z
       .boolean()
       .optional()
       .describe("Bake now and return the run report. Set true after changing source, size, or attributes."),
+    bake: z.boolean().optional().describe("Request an explicit native bake and wait for its run report."),
   })
   .strict();
 
@@ -180,6 +183,7 @@ export function normalizeArgs(args: Args): Args {
   if (args.attributes !== undefined) out.attributes = args.attributes;
   if (args.autoRebuild !== undefined) out.autoRebuild = args.autoRebuild;
   if (args.rebuild !== undefined) out.rebuild = args.rebuild;
+  if (args.bake !== undefined) out.bake = args.bake;
   return out;
 }
 

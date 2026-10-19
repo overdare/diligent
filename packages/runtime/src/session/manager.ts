@@ -7,6 +7,7 @@ import type { Mode } from "../agent/mode";
 import type { AgentEvent } from "../agent-event";
 import { CollabSessionHandler, type HistoricalCollabAgent } from "./collab-session-handler";
 import { buildSessionContext, buildSessionTranscript } from "./context-builder";
+import { getSessionExecutionContext, resolveSessionRoot, runWithSessionExecutionContext } from "./execution-context";
 import { SessionPersistence, type SessionReconcileResult } from "./persistence";
 import { SessionCache } from "./session-cache";
 import { SessionStateStore } from "./state-store";
@@ -20,6 +21,8 @@ import type {
   SessionEntry,
   SessionInfo,
   SessionManagerConfig,
+  SessionRunOptions,
+  SessionRunOutcome,
 } from "./types";
 import { generateEntryId } from "./types";
 
@@ -36,8 +39,11 @@ export class SessionManager {
   private collabHandler: CollabSessionHandler;
   private orchestrator: TurnOrchestrator;
   private logger: Logger;
+  private resumed = false;
+  private readonly sessionsDir: string;
 
   constructor(config: SessionManagerConfig) {
+    this.sessionsDir = config.paths.sessions;
     this.persistence = new SessionPersistence({
       sessionsDir: config.paths.sessions,
       cwd: config.cwd,
@@ -64,6 +70,7 @@ export class SessionManager {
 
   /** Create a new session */
   async create(): Promise<void> {
+    this.resumed = false;
     this.state.reset();
     this.sessionCache.reset();
     this.orchestrator.resetAgentState();
@@ -77,6 +84,7 @@ export class SessionManager {
     this.orchestrator.resetAgentState();
     const entries = await this.persistence.resume(options);
     if (!entries) return false;
+    this.resumed = true;
 
     this.state.replaceCommitted(entries);
 
@@ -188,6 +196,10 @@ export class SessionManager {
     return buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {}).currentEffort;
   }
 
+  getCurrentFastMode(): boolean | undefined {
+    return buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {}).currentFastMode;
+  }
+
   getCurrentMode(): Mode | undefined {
     return buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {}).currentMode;
   }
@@ -228,8 +240,28 @@ export class SessionManager {
    * Persists user message and agent response to session.
    * Compaction is handled by the Agent internally.
    */
-  async run(userMessage: Message, opts?: { signal?: AbortSignal; userMessageId?: string }): Promise<void> {
-    await this.orchestrator.run(userMessage, opts);
+  async run(userMessage: Message, options?: SessionRunOptions): Promise<void> {
+    await this.runWithOutcome(userMessage, options);
+    if (options?.signal?.aborted) {
+      throw new Error("Aborted");
+    }
+  }
+
+  async runWithOutcome(userMessage: Message, options?: SessionRunOptions): Promise<SessionRunOutcome> {
+    // Root runs must announce busy synchronously, before the host returns turn/start.
+    // Only child runs need asynchronous persisted ancestry resolution.
+    const rootSessionId = this.persistence.parentSession
+      ? await resolveSessionRoot(this.sessionId, this.persistence.parentSession, this.sessionsDir)
+      : this.sessionId;
+    const ambient = getSessionExecutionContext();
+    const rootRequest =
+      this.persistence.parentSession && ambient?.rootSessionId === rootSessionId
+        ? ambient.rootRequest
+        : { sessionId: rootSessionId, requestId: crypto.randomUUID() };
+    return runWithSessionExecutionContext(
+      { sessionId: this.sessionId, rootSessionId, resumed: this.resumed, rootRequest },
+      () => this.orchestrator.runWithOutcome(userMessage, options),
+    );
   }
 
   /** Wait for all pending writes to complete. */
@@ -286,6 +318,16 @@ export class SessionManager {
       changedBy,
     };
     this.appendAndPersist(entry);
+  }
+
+  appendFastModeChange(fastMode: boolean): void {
+    this.appendAndPersist({
+      type: "fast_mode_change",
+      id: generateEntryId(),
+      parentId: this.state.getCommittedLeafId(),
+      timestamp: new Date().toISOString(),
+      fastMode,
+    });
   }
 
   appendError(error: ErrorEntry["error"], options?: { fatal?: boolean; turnId?: string; persist?: boolean }): void {

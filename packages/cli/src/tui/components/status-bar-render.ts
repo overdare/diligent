@@ -89,6 +89,7 @@ export function renderStatusBar(store: StatusBarStore, width: number): string[] 
   if (info.model) {
     leftParts.push(info.model);
   }
+  if (info.fastMode && info.supportsFastMode) leftParts.push("Fast");
 
   if (info.contextWindow) {
     const used = info.tokensUsed ?? 0;
@@ -104,6 +105,13 @@ export function renderStatusBar(store: StatusBarStore, width: number): string[] 
 
   if (info.effortLabel ?? info.effort) {
     leftParts.push(`thinking:${info.effortLabel ?? info.effort}`);
+  }
+
+  if (info.goal) {
+    const tokens = info.goal.tokenBudget
+      ? `${formatTokensCompact(info.goal.tokensUsed)}/${formatTokensCompact(info.goal.tokenBudget)}`
+      : `${formatTokensCompact(info.goal.tokensUsed)} tokens`;
+    leftParts.push(`goal:${info.goal.status} ${tokens} ${info.goal.turnsUsed}/${info.goal.maxTurns} runs`);
   }
 
   const statusHint = info.status === "busy" ? "ctrl+c to cancel" : info.status === "retry" ? "retrying..." : "";

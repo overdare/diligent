@@ -16,6 +16,7 @@ import type { SessionManagerConfig } from "@diligent/runtime/session";
 import { readSessionFile, SessionManager } from "@diligent/runtime/session";
 import { z } from "zod";
 import type { AgentEvent } from "../../src/agent-event";
+import { getSessionExecutionContext, runWithSessionExecutionContext } from "../../src/session/execution-context";
 
 const TEST_ROOT = join(tmpdir(), `diligent-sm-test-${Date.now()}`);
 const COMPACTION_MIN_INPUT_TOKENS = 50_000;
@@ -106,6 +107,22 @@ function makeManagerConfig(dir: string, streamFn: StreamFunction): SessionManage
   };
 }
 
+test.each([
+  "run",
+  "runWithOutcome",
+] as const)("%s announces busy synchronously before yielding to turn-start dispatch", async (method) => {
+  const dir = await setupDir();
+  const manager = new SessionManager(makeManagerConfig(dir, createMockStreamFn([makeAssistant()])));
+  await manager.create();
+  const events: AgentEvent[] = [];
+  manager.subscribe((event) => events.push(event));
+  const running = manager[method]({ role: "user", content: "work", timestamp: Date.now() });
+  const first = events[0];
+  await running;
+  await manager.waitForWrites();
+  expect(first).toMatchObject({ type: "status_change", status: "busy" });
+});
+
 /** Collect events via subscribe, run, return events. */
 async function runCollecting(mgr: SessionManager, userMsg: Message): Promise<AgentEvent[]> {
   const events: AgentEvent[] = [];
@@ -123,6 +140,53 @@ afterEach(async () => {
 });
 
 describe("SessionManager", () => {
+  test.each([
+    "run",
+    "runWithOutcome",
+  ] as const)("%s gives shared tools actual identity and resolves resumed child ancestry", async (method) => {
+    const dir = await setupDir();
+    const observed: Array<{ sessionId: string; rootSessionId: string; resumed: boolean }> = [];
+    const tool: Tool = {
+      name: "observe_identity",
+      description: "Observe execution identity",
+      parameters: z.object({}),
+      async execute() {
+        const scope = getSessionExecutionContext()!;
+        observed.push({ sessionId: scope.sessionId, rootSessionId: scope.rootSessionId, resumed: scope.resumed });
+        return { output: "observed" };
+      },
+    };
+    const build = (parentSession?: string) => ({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      parentSession,
+      agent: new Agent(TEST_MODEL, [], [tool], {
+        llmMsgStreamFn: createMockStreamFn([
+          makeAssistantMessage([{ type: "tool_call", id: "identity", name: tool.name, input: {} }], "tool_use"),
+          makeAssistant(),
+        ]),
+      }),
+    });
+    const parent = new SessionManager(build());
+    await parent.create();
+    const child = new SessionManager(build(parent.sessionId));
+    await child.create();
+    await child.waitForWrites();
+    const resumed = new SessionManager(build());
+    expect(await resumed.resume({ sessionId: child.sessionId })).toBe(true);
+    await runWithSessionExecutionContext(
+      {
+        sessionId: "unrelated",
+        rootSessionId: "unrelated",
+        resumed: false,
+        rootRequest: { sessionId: "unrelated", requestId: "unrelated" },
+      },
+      () => resumed[method]({ role: "user", content: "observe", timestamp: Date.now() }),
+    );
+    expect(observed).toEqual([{ sessionId: child.sessionId, rootSessionId: parent.sessionId, resumed: true }]);
+    await resumed.waitForWrites();
+  });
+
   test("create() starts with empty session", async () => {
     const dir = await setupDir();
     const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));
@@ -156,6 +220,16 @@ describe("SessionManager", () => {
 
     // Events should include turn lifecycle
     expect(events.some((e) => e.type === "turn_start")).toBe(true);
+  });
+
+  test("runWithOutcome() reports normal completion", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([makeAssistant("done")])));
+    await mgr.create();
+
+    const outcome = await mgr.runWithOutcome({ role: "user", content: "hello", timestamp: Date.now() });
+
+    expect(outcome).toEqual({ status: "completed" });
   });
 
   test("Stop lifecycle output never becomes a user turn or provider rerun", async () => {
@@ -252,7 +326,7 @@ describe("SessionManager", () => {
     expect(ctx.length).toBeGreaterThanOrEqual(4); // user, assistant, user, assistant
   });
 
-  test("run() persists staged user message and non-fatal error when the turn fails before streaming", async () => {
+  test("runWithOutcome() reports and persists a provider failure before streaming", async () => {
     const dir = await setupDir();
     const logs: LogRecord[] = [];
     setDefaultLogSink((record) => logs.push(record));
@@ -268,8 +342,13 @@ describe("SessionManager", () => {
     });
     await mgr.create();
 
-    await mgr.run({ role: "user", content: "will fail", timestamp: Date.now() });
+    const outcome = await mgr.runWithOutcome({ role: "user", content: "will fail", timestamp: Date.now() });
     await mgr.waitForWrites();
+
+    expect(outcome.status).toBe("failed");
+    if (outcome.status === "failed") {
+      expect(outcome.error.message).toBe("provider failed");
+    }
 
     expect(mgr.entryCount).toBe(2);
     expect(mgr.getContext()).toEqual([{ role: "user", content: "will fail", timestamp: expect.any(Number) }]);
@@ -293,6 +372,24 @@ describe("SessionManager", () => {
         error: expect.objectContaining({ message: "provider failed" }),
       }),
     );
+  });
+
+  test("run() compatibility wrapper resolves after a recorded provider failure", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
+        effort: "medium",
+        retry: { maxRetries: 0, baseDelayMs: 1, maxDelayMs: 1 },
+        llmMsgStreamFn: () => {
+          throw new Error("provider failed");
+        },
+      }),
+    });
+    await mgr.create();
+
+    await expect(mgr.run({ role: "user", content: "will fail", timestamp: Date.now() })).resolves.toBeUndefined();
   });
 
   test("run() persists user message before provider response completes", async () => {
@@ -865,9 +962,9 @@ describe("SessionManager", () => {
     mgr.steer("queued while aborting");
 
     // run() should throw (aborted), not hang
-    await mgr
-      .run({ role: "user", content: "hi", timestamp: Date.now() }, { signal: controller.signal })
-      .catch(() => {});
+    await expect(
+      mgr.run({ role: "user", content: "hi", timestamp: Date.now() }, { signal: controller.signal }),
+    ).rejects.toThrow("Aborted");
 
     const settled = await Promise.race([
       mgr.waitForWrites().then(() => true),
@@ -876,6 +973,74 @@ describe("SessionManager", () => {
 
     expect(settled).toBe(true);
     expect(stopCalls).toBe(1);
+  });
+
+  test("runWithOutcome() reports an external abort as interrupted", async () => {
+    const dir = await setupDir();
+    const controller = new AbortController();
+    controller.abort();
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([makeAssistant("unused")])));
+    await mgr.create();
+
+    const outcome = await mgr.runWithOutcome(
+      { role: "user", content: "hi", timestamp: Date.now() },
+      { signal: controller.signal },
+    );
+
+    expect(outcome).toEqual({ status: "interrupted" });
+  });
+
+  test("tool-requested abort reports interrupted while run() remains compatible", async () => {
+    const dir = await setupDir();
+    let stopCalls = 0;
+    const abortTool: Tool = {
+      name: "stop_work",
+      description: "Stop the current outer run",
+      parameters: z.object({}),
+      async execute() {
+        return { output: "stopped", abortRequested: true };
+      },
+    };
+    const toolCall = makeAssistantMessage(
+      [{ type: "tool_call", id: "stop-1", name: "stop_work", input: {} }],
+      "tool_use",
+    );
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [abortTool], {
+        effort: "medium",
+        llmMsgStreamFn: createMockStreamFn([toolCall, toolCall]),
+      }),
+      onStop: async () => {
+        stopCalls += 1;
+      },
+    });
+    await mgr.create();
+
+    const outcome = await mgr.runWithOutcome({ role: "user", content: "stop", timestamp: Date.now() });
+    expect(outcome).toEqual({ status: "interrupted" });
+    await expect(mgr.run({ role: "user", content: "stop again", timestamp: Date.now() })).resolves.toBeUndefined();
+    await mgr.waitForWrites();
+    expect(stopCalls).toBe(2);
+  });
+
+  test("Stop lifecycle exceptions still reject runWithOutcome() and run()", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager({
+      ...makeManagerConfig(dir, createMockStreamFn([makeAssistant("first"), makeAssistant("second")])),
+      onStop: async () => {
+        throw new Error("stop hook failed");
+      },
+    });
+    await mgr.create();
+
+    await expect(mgr.runWithOutcome({ role: "user", content: "first", timestamp: Date.now() })).rejects.toThrow(
+      "stop hook failed",
+    );
+    await expect(mgr.run({ role: "user", content: "second", timestamp: Date.now() })).rejects.toThrow(
+      "stop hook failed",
+    );
   });
 
   test("unexpected turn errors do not run the Stop lifecycle", async () => {

@@ -1,6 +1,6 @@
 // @summary Renderer-agnostic status bar state container
 
-import type { Mode, ThinkingEffort } from "@diligent/protocol";
+import type { GoalStatus, Mode, ThinkingEffort } from "@diligent/protocol";
 
 export interface StatusBarInfo {
   model?: string;
@@ -12,6 +12,15 @@ export interface StatusBarInfo {
   mode?: Mode;
   effort?: ThinkingEffort;
   effortLabel?: string;
+  fastMode?: boolean;
+  supportsFastMode?: boolean;
+  goal?: {
+    status: GoalStatus;
+    tokensUsed: number;
+    tokenBudget?: number;
+    turnsUsed: number;
+    maxTurns: number;
+  };
 }
 
 export class StatusBarStore {

@@ -217,8 +217,10 @@ export function useAppBootstrap({
   dispatch,
   setCwd,
   setEffortState,
+  setFastModeState,
   setSkills,
   setRuntimeVersion,
+  setGoalsSupported,
   setConsent,
   setInitialModel,
   applySessionModel,
@@ -231,8 +233,10 @@ export function useAppBootstrap({
   dispatch: Dispatch<AppAction>;
   setCwd: Dispatch<SetStateAction<string>>;
   setEffortState: Dispatch<SetStateAction<ThinkingEffort>>;
+  setFastModeState: Dispatch<SetStateAction<boolean>>;
   setSkills: Dispatch<SetStateAction<SkillInfo[]>>;
   setRuntimeVersion: Dispatch<SetStateAction<string>>;
+  setGoalsSupported: Dispatch<SetStateAction<boolean>>;
   setConsent: (consent: ConsentState | null) => void;
   setInitialModel: (model: ModelRef | undefined, models?: InitializeResponse["availableModels"]) => void;
   applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
@@ -258,6 +262,7 @@ export function useAppBootstrap({
       if (cancelled) return false;
       dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode, history } });
       setEffortState(history.currentEffort);
+      setFastModeState(history.currentFastMode ?? false);
       replaceThreadUrl(resumed.threadId);
       await applySessionModel(history.currentModel);
       await refreshThreadList(rpc);
@@ -275,8 +280,10 @@ export function useAppBootstrap({
 
         setCwd(meta.cwd ?? "");
         setEffortState(meta.effort ?? "medium");
+        setFastModeState(meta.fastMode ?? false);
         setSkills(meta.skills ?? []);
         setRuntimeVersion(meta.serverVersion ?? "");
+        setGoalsSupported(meta.capabilities.goals === true);
         setConsent(meta.consent ?? null);
         setInitialModel(meta.currentModel, meta.availableModels ?? []);
         rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
@@ -303,6 +310,7 @@ export function useAppBootstrap({
 
         dispatch({ type: "reset_draft", payload: { mode: "default" } });
         setEffortState(meta.effort ?? "medium");
+        setFastModeState(meta.fastMode ?? false);
         replaceDraftUrl();
         await refreshThreadList(rpc);
       } catch (error) {
@@ -327,8 +335,10 @@ export function useAppBootstrap({
     dispatch,
     setCwd,
     setEffortState,
+    setFastModeState,
     setSkills,
     setRuntimeVersion,
+    setGoalsSupported,
     setConsent,
     setInitialModel,
     applySessionModel,

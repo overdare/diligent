@@ -22,6 +22,7 @@ export interface CommandHandlerDeps {
   getSkills: () => SkillMetadata[];
   getCurrentMode: () => ProtocolMode;
   getCurrentEffort: () => ThinkingEffort;
+  getCurrentFastMode: () => boolean;
   getIsProcessing: () => boolean;
   setIsProcessing: (val: boolean) => void;
   setPendingTurn: (turn: { resolve: () => void; reject: (error: Error) => void } | null) => void;
@@ -179,6 +180,8 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
         setMode: (mode) => deps.configManager.setMode(mode),
         currentEffort: deps.getCurrentEffort(),
         setEffort: (effort) => deps.configManager.setEffort(effort),
+        currentFastMode: deps.getCurrentFastMode(),
+        setFastMode: (fastMode) => deps.configManager.setFastMode(fastMode),
         setModel: (modelId) => deps.configManager.setModel(modelId),
         clearChatHistory: () => deps.clearChatHistory(),
         clearScreenAndResetRenderer: () => deps.clearScreenAndResetRenderer(),

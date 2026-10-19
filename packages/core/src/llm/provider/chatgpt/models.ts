@@ -17,6 +17,7 @@ export const CHATGPT_MODELS = defineProviderModels("chatgpt", [
     supportsThinking: true,
     supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
     supportsVision: true,
+    supportsFastMode: true,
   },
   {
     modelId: "gpt-6-astra",
@@ -26,6 +27,7 @@ export const CHATGPT_MODELS = defineProviderModels("chatgpt", [
     supportsThinking: true,
     supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
     supportsVision: true,
+    supportsFastMode: true,
     aliases: ["gpt-6", "astra"],
   },
   {
@@ -36,6 +38,7 @@ export const CHATGPT_MODELS = defineProviderModels("chatgpt", [
     supportsThinking: true,
     supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
     supportsVision: true,
+    supportsFastMode: true,
   },
   {
     modelId: "gpt-6-luna",
@@ -45,5 +48,6 @@ export const CHATGPT_MODELS = defineProviderModels("chatgpt", [
     supportsThinking: true,
     supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
     supportsVision: true,
+    supportsFastMode: true,
   },
 ]);

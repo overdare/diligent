@@ -33,6 +33,8 @@ function makeCtx(overrides?: Partial<CommandContext>): CommandContext {
     setMode: () => {},
     currentEffort: "medium",
     setEffort: async () => {},
+    currentFastMode: false,
+    setFastMode: async () => {},
     setModel: async () => {},
     clearChatHistory: () => {},
     clearScreenAndResetRenderer: () => {},
@@ -61,6 +63,14 @@ describe("skill commands", () => {
     registerBuiltinCommands(registry, [makeSkill("help")]);
 
     expect(registry.get("help")?.hidden).toBeUndefined();
+  });
+
+  it("reserves goal ahead of a dynamic skill while hiding unsupported controls", () => {
+    const registry = new CommandRegistry();
+    registerBuiltinCommands(registry, [makeSkill("goal")]);
+
+    expect(registry.get("goal")?.hidden).toBe(true);
+    expect(registry.complete("go")).toEqual([]);
   });
 
   it("delegates /skillName invocation through unified slash path", async () => {

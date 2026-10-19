@@ -15,6 +15,7 @@ import { getBuiltinAgentDefinitions } from "../../src/agent/agent-types";
 import { resolveAgentDefinition, resolveAvailableAgentDefinitions } from "../../src/agent/resolved-agent";
 import type { AgentEvent } from "../../src/agent-event";
 import { resolveChildToolAccess } from "../../src/collab/registry";
+import { type ChildForkableTool, FORK_TOOL_FOR_CHILD } from "../../src/tools/child-fork";
 import {
   makeAssistant,
   makeCollabDeps,
@@ -78,6 +79,77 @@ function makeInspectingSessionManagerFactory(observer: (agent: RuntimeAgent) => 
 }
 
 describe("AgentRegistry", () => {
+  it("retains captured goal usage ownership after the parent's run scope changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "goal-child-usage-"));
+    try {
+      const samples: unknown[] = [];
+      const live = new Set<string>();
+      let scope: import("../../src/goals/controller").GoalWorkScope | undefined = {
+        identity: { goalId: "goal", epoch: 1, outerRunId: "outer" },
+        signal: new AbortController().signal,
+        startedAt: 0,
+        recordUsage: (sample) => {
+          samples.push(sample);
+        },
+        childStarted: (id) => {
+          live.add(id);
+        },
+        childFinished: (id) => {
+          live.delete(id);
+        },
+      };
+      const registry = new AgentRegistry(
+        makeCollabDeps({
+          cwd: root,
+          paths: await ensureDiligentDir(root),
+          streamFn: makeStreamFn([makeAssistant("child")]),
+          getGoalScope: () => scope,
+        }),
+      );
+      const originalScope = scope;
+      const child = registry.spawn({ prompt: "Inspect", description: "Inspection" });
+      expect(live.has(child.threadId)).toBe(true);
+      scope = undefined;
+      await registry.wait([child.threadId], 1000);
+      expect(samples).toHaveLength(1);
+      expect(samples[0]).toMatchObject({ sessionId: child.threadId, inputTokens: 10, outputTokens: 5 });
+      expect(live.size).toBe(0);
+      scope = originalScope;
+      const resumed = registry.spawn({
+        prompt: "Inspect again",
+        description: "Resumed inspection",
+        resumeId: child.threadId,
+      });
+      await registry.wait([resumed.threadId], 1000);
+      expect(samples).toHaveLength(2);
+      const executions = samples as Array<{ executionId?: string }>;
+      expect(executions[0].executionId).toBeDefined();
+      expect(executions[1].executionId).not.toBe(executions[0].executionId);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("never inherits root goal closures even when nesting and allow-lists request them", () => {
+    const definition = resolveAvailableAgentDefinitions(getBuiltinAgentDefinitions(), [])[0]!;
+    const result = resolveChildToolAccess(
+      [
+        makeTool("create_goal"),
+        makeTool("get_goal"),
+        makeTool("update_goal"),
+        makeTool("read"),
+        makeTool("spawn_agent"),
+      ],
+      {
+        allowNestedAgents: true,
+        allowedTools: ["create_goal", "get_goal", "update_goal", "read", "spawn_agent"],
+      },
+      { ...definition, readonly: false },
+    );
+    expect(result.childTools.map((tool) => tool.name)).toEqual(["read"]);
+    expect(result.allowedChildToolNames.has("create_goal")).toBe(false);
+    expect(result.allowedChildToolNames.has("get_goal")).toBe(false);
+    expect(result.allowedChildToolNames.has("update_goal")).toBe(false);
+  });
   it("uses lifecycle-only Stop semantics for child agents", async () => {
     const root = await mkdtemp(join(tmpdir(), "diligent-child-stop-lifecycle-"));
     try {
@@ -1254,11 +1326,13 @@ describe("AgentRegistry", () => {
   it("creates distinct bundled loop-hook instances for each child with child context", async () => {
     const instances: object[] = [];
     const kinds: string[] = [];
+    const sessionIds: Array<string | undefined> = [];
     const registry = new AgentRegistry(
       makeCollabDeps({
         agentLoopHookFactories: [
           (context) => {
             kinds.push(context.agentKind);
+            sessionIds.push(context.sessionId);
             const hook = { id: `child-${instances.length}` };
             instances.push(hook);
             return [hook];
@@ -1273,6 +1347,7 @@ describe("AgentRegistry", () => {
     await registry.wait([first.threadId, second.threadId], 5000);
 
     expect(kinds).toEqual(["child", "child"]);
+    expect(sessionIds).toEqual([first.threadId, second.threadId]);
     expect(instances).toHaveLength(2);
     expect(instances[0]).not.toBe(instances[1]);
   });
@@ -1300,6 +1375,61 @@ describe("AgentRegistry", () => {
 // ─── resolveChildToolAccess (pure function) edge-case tests ────────────────────
 
 describe("resolveChildToolAccess", () => {
+  it("passes the fully decorated inherited tool to the child fork", async () => {
+    const agentDef = resolveAgentDefinition(getBuiltinAgentDefinitions(), "general");
+    if (!agentDef) throw new Error("general agent definition not found");
+    const base: ChildForkableTool = {
+      ...makeTool("checkpoint"),
+      [FORK_TOOL_FOR_CHILD]: (inheritedTool) => ({ ...inheritedTool }),
+    };
+    let wrapperCalls = 0;
+    const decorated: ChildForkableTool = {
+      ...base,
+      execute: async () => {
+        wrapperCalls++;
+        return { output: "decorated" };
+      },
+    };
+
+    const child = resolveChildToolAccess([decorated], {}, agentDef).childTools[0];
+
+    expect(await child?.execute({}, {} as never)).toEqual({ output: "decorated" });
+    expect(wrapperCalls).toBe(1);
+  });
+
+  it("forks allowed inherited tools at each child boundary", () => {
+    const agentDef = resolveAgentDefinition(getBuiltinAgentDefinitions(), "general");
+    if (!agentDef) throw new Error("general agent definition not found");
+    let currentTurn = "turn-a";
+    let forks = 0;
+    const base = makeTool("checkpoint");
+    const frozenTool = (turn: string): ChildForkableTool => ({
+      ...base,
+      description: turn,
+      [FORK_TOOL_FOR_CHILD]: () => {
+        forks++;
+        return frozenTool(turn);
+      },
+    });
+    const parent: ChildForkableTool = {
+      ...base,
+      [FORK_TOOL_FOR_CHILD]: () => {
+        forks++;
+        return frozenTool(currentTurn);
+      },
+    };
+
+    const first = resolveChildToolAccess([parent], {}, agentDef).childTools[0];
+    currentTurn = "turn-b";
+    const nested = resolveChildToolAccess([first], {}, agentDef).childTools[0];
+
+    expect(first).not.toBe(parent);
+    expect(nested).not.toBe(first);
+    expect(first?.description).toBe("turn-a");
+    expect(nested?.description).toBe("turn-a");
+    expect(forks).toBe(2);
+  });
+
   it("readonly (plan-mode) agent definition excludes write tools from child", () => {
     const parentTools = [makeTool("read"), makeTool("bash"), makeTool("edit"), makeTool("grep")];
     const agentDef = resolveAgentDefinition(getBuiltinAgentDefinitions(), "explore");

@@ -74,7 +74,7 @@ Visible artwork in a requested blank cell makes the sheet's layout incorrect eve
 
 ## Import, bind, and verify
 
-Import each reusable asset once using `studiorpc_asset_manager_image_import` with its returned absolute `file`; retain `asset.assetid`. For grid results, use each selected `grid.cells[].file`; the top-level `file` is the whole sheet. Follow [studio-ui.md](studio-ui.md) for hierarchy and image sizing.
+Import each reusable asset once using `studiorpc_asset_manager_import` with its returned absolute `file`; retain `asset.assetid`. For grid results, use each selected `grid.cells[].file`; the top-level `file` is the whole sheet. Follow [studio-ui.md](studio-ui.md) for hierarchy and image sizing.
 
 `ImageButton` and `ImageLabel` are native GUI instances. Bind the generated shell/backplate/glyph IDs to their `Image` properties; keep text, live values, and input behavior separate. For `ProgressBar`, bind track/fill artwork to `TrackImage`/`FillImage` and update `Value` independently; see [gui-types.md](gui-types.md). A native hit target can contain image and text children. Do not flatten the entire guide behind invisible buttons or replace all artwork with plain Frames merely because the GUI must remain editable.
 

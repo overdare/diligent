@@ -17,15 +17,17 @@ import {
   nextCycledMode,
 } from "@diligent/protocol";
 import { type DiligentPaths, formatModelRef, type SkillMetadata } from "@diligent/runtime";
+import { applyGoalSnapshot } from "@diligent/runtime/client";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
 import { AppDialogs } from "./app-dialogs";
 import { AppEventController } from "./app-event-controller";
 import { buildShutdownMessage, buildTurnTimingLine, buildWelcomeBanner } from "./app-presenter";
-import { AppRuntimeState } from "./app-runtime-state";
+import { AppRuntimeState, shouldInterruptForCancel } from "./app-runtime-state";
 import { AppSessionLifecycle } from "./app-session-lifecycle";
 import { type CommandHandler, createCommandHandler } from "./command-handler";
 import { registerBuiltinCommands } from "./commands/builtin/index";
+import { parseCommand } from "./commands/parser";
 import { CommandRegistry } from "./commands/registry";
 import { BottomPane } from "./components/bottom-pane";
 import { ChatView } from "./components/chat-view";
@@ -135,7 +137,7 @@ export class App {
     this.inputEditor = new InputEditor(
       {
         onSubmit: (text) => {
-          if (this.runtime.isProcessing) {
+          if (this.runtime.isProcessing && !parseCommand(text)) {
             this.commandHandler.handleSteering(text);
           } else {
             this.commandHandler.handleSubmit(text);
@@ -223,7 +225,12 @@ export class App {
     this.threadManager = createThreadManager({
       getRpcClient: () => this.rpcClient,
       getCurrentMode: () => this.runtime.currentMode,
+      getCurrentFastMode: () => this.runtime.currentFastMode,
       setCurrentThreadId: (id) => {
+        if (this.runtime.currentThreadId !== id) {
+          this.runtime.goalSnapshot = { goal: null, sequence: 0 };
+          this.statusBar.update({ goal: undefined });
+        }
         this.runtime.currentThreadId = id;
         this.updateAppServerLogSession(id);
       },
@@ -244,6 +251,9 @@ export class App {
       setCurrentEffort: (effort) => {
         this.runtime.currentEffort = effort;
       },
+      setCurrentFastMode: (fastMode) => {
+        this.runtime.currentFastMode = fastMode;
+      },
       restartRpcClient: async () => {
         await this.restartRpcClient();
       },
@@ -258,6 +268,7 @@ export class App {
         this.chatView.addLines([`  ${t.error}${msg}${t.reset}`]);
       },
       requestRender: () => this.renderer.requestRender(),
+      getGoalsSupported: () => this.runtime.goalsSupported,
     });
 
     this.commandHandler = createCommandHandler({
@@ -268,6 +279,7 @@ export class App {
       getSkills: () => this.skills,
       getCurrentMode: () => this.runtime.currentMode,
       getCurrentEffort: () => this.runtime.currentEffort,
+      getCurrentFastMode: () => this.runtime.currentFastMode,
       getIsProcessing: () => this.runtime.isProcessing,
       setIsProcessing: (val) => {
         this.runtime.isProcessing = val;
@@ -320,7 +332,10 @@ export class App {
       promptInline: (o) => this.dialogs.promptInline(o),
       shutdown: () => this.shutdown(),
       onModelChanged: (model) => {
-        this.statusBar.update({ model: formatModelRef(model) });
+        this.statusBar.update({
+          model: formatModelRef(model),
+          supportsFastMode: this.config.model.supportsFastMode,
+        });
         this.renderer.requestRender();
       },
       onEffortChanged: (effort, label) => {
@@ -372,6 +387,12 @@ export class App {
       restartRpcClient: () => this.restartRpcClient(),
       options: this.options,
       pkgVersion,
+      setGoalsSupported: (supported) => {
+        this.runtime.goalsSupported = supported;
+        const registry = new CommandRegistry();
+        registerBuiltinCommands(registry, this.skills, { goals: supported });
+        this.commandRegistry = registry;
+      },
     });
   }
 
@@ -535,7 +556,12 @@ export class App {
   }
 
   private handleCancel(): void {
-    if (this.runtime.isProcessing && this.rpcClient && this.runtime.currentThreadId) {
+    const goalStatus = this.runtime.goalSnapshot.goal?.status ?? null;
+    if (
+      shouldInterruptForCancel(this.runtime.isProcessing, goalStatus) &&
+      this.rpcClient &&
+      this.runtime.currentThreadId
+    ) {
       if (this.runtime.cancelRequested) {
         this.runtime.cancelRequested = false;
         this.runtime.isProcessing = false;
@@ -675,6 +701,27 @@ export class App {
 
   private async handleServerNotification(notification: DiligentServerNotification): Promise<void> {
     await this.eventController.handleServerNotification(notification);
+
+    if (
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_GOAL_UPDATED &&
+      notification.params.threadId === this.runtime.currentThreadId
+    ) {
+      this.runtime.goalSnapshot = applyGoalSnapshot(this.runtime.goalSnapshot, notification.params);
+      const goal = this.runtime.goalSnapshot.goal;
+      if (goal?.status !== "active") this.runtime.cancelRequested = false;
+      this.statusBar.update({
+        goal: goal
+          ? {
+              status: goal.status,
+              tokensUsed: goal.tokensUsed,
+              tokenBudget: goal.tokenBudget,
+              turnsUsed: goal.turnsUsed,
+              maxTurns: goal.maxTurns,
+            }
+          : undefined,
+      });
+      this.renderer.requestRender();
+    }
 
     if (
       notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED &&

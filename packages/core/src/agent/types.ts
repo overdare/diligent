@@ -12,11 +12,13 @@ import type { AgentLoopHook } from "./loop-hooks";
 
 export type { MessageDelta, SerializableError } from "@diligent/protocol";
 
+export type AgentStopReason = "completed" | "interrupted" | "failed";
+
 // Core events emitted by the reusable agent engine — D086: itemId on grouped subtypes, SerializableError
 export type CoreAgentEvent =
   // Lifecycle (2)
   | { type: "agent_start" }
-  | { type: "agent_end"; messages: Message[] }
+  | { type: "agent_end"; messages: Message[]; stopReason?: AgentStopReason }
   // Turn (2)
   | { type: "turn_start"; turnId: string }
   | { type: "turn_end"; turnId: string; message: AssistantMessage; toolResults: ToolResultMessage[] }
@@ -142,6 +144,7 @@ export const DEFAULT_LLM_RETRY_CONFIG: Readonly<LLMRetryConfig> = {
 // D008: Loop control configuration — timing and compaction knobs only
 export interface AgentOptions {
   effort?: ThinkingEffort;
+  fastMode?: boolean;
   /** Structured diagnostic logger. Defaults to the local console-compatible core logger. */
   logger?: Logger;
   /** Session correlation attached structurally to logs and provider requests. */

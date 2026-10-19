@@ -118,5 +118,6 @@ export function getModelInfoList(): ModelInfo[] {
     supportsThinking: model.supportsThinking,
     supportedEfforts: model.supportedEfforts,
     supportsVision: model.supportsVision,
+    supportsFastMode: model.supportsFastMode,
   }));
 }

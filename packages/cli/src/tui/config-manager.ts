@@ -17,17 +17,20 @@ export interface ConfigManagerDeps {
   getPaths: () => DiligentPaths | undefined;
   setCurrentMode: (mode: ProtocolMode) => void;
   setCurrentEffort: (effort: ThinkingEffort) => void;
+  setCurrentFastMode: (fastMode: boolean) => void;
   restartRpcClient: () => Promise<void>;
   setSkills: (skills: SkillMetadata[]) => void;
   setCommandRegistry: (registry: CommandRegistry) => void;
   updateStatusBar: (updates: Record<string, unknown>) => void;
   displayError: (msg: string) => void;
   requestRender: () => void;
+  getGoalsSupported?: () => boolean;
 }
 
 export interface ConfigManager {
   setMode: (mode: ProtocolMode) => void;
   setEffort: (effort: ThinkingEffort) => Promise<void>;
+  setFastMode: (fastMode: boolean) => Promise<void>;
   setModel: (model: ModelRef) => Promise<void>;
   reloadConfig: () => Promise<void>;
 }
@@ -55,6 +58,18 @@ export function createConfigManager(deps: ConfigManagerDeps): ConfigManager {
       deps.requestRender();
     },
 
+    async setFastMode(fastMode: boolean): Promise<void> {
+      const rpc = deps.getRpcClient();
+      const threadId = deps.getCurrentThreadId();
+      if (threadId) {
+        if (!rpc) throw new Error("App server is not initialized.");
+        await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.FAST_MODE_SET, { threadId, fastMode });
+      }
+      deps.setCurrentFastMode(fastMode);
+      deps.updateStatusBar({ fastMode });
+      deps.requestRender();
+    },
+
     async setModel(model: ModelRef): Promise<void> {
       const rpc = deps.getRpcClient();
       if (!rpc) return;
@@ -73,7 +88,7 @@ export function createConfigManager(deps: ConfigManagerDeps): ConfigManager {
 
         // Rebuild command registry with new skills
         const registry = new CommandRegistry();
-        registerBuiltinCommands(registry, newConfig.skills ?? []);
+        registerBuiltinCommands(registry, newConfig.skills ?? [], { goals: deps.getGoalsSupported?.() === true });
         deps.setCommandRegistry(registry);
 
         deps.updateStatusBar({ model: formatModelRef(newConfig.model), contextWindow: newConfig.model.contextWindow });

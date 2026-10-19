@@ -213,16 +213,19 @@ export interface SessionReconcileResult {
 }
 
 export class SessionPersistence {
+  private parentSessionId: string | undefined;
   private writer: SessionWriter;
   private writeQueue: Promise<void> = Promise.resolve();
   /** Monotonic per-session line counter; seeded from existing entries on resume. */
   private seq = 0;
 
   constructor(private readonly config: SessionPersistenceConfig) {
+    this.parentSessionId = config.parentSession;
     this.writer = this.createWriter(config.sessionId);
   }
 
   resetForCreate(): void {
+    this.parentSessionId = this.config.parentSession;
     this.writeQueue = Promise.resolve();
     this.seq = 0;
     this.writer = this.createWriter(this.config.sessionId ?? this.writer.id);
@@ -246,7 +249,8 @@ export class SessionPersistence {
 
     if (!sessionPath) return null;
 
-    const { entries } = await readSessionFile(sessionPath);
+    const { header, entries } = await readSessionFile(sessionPath);
+    this.parentSessionId = header.parentSession;
     this.writeQueue = Promise.resolve();
     // Seed seq from existing lines so resumed sessions keep (session_id, seq) unique.
     this.seq = entries.length;
@@ -409,6 +413,10 @@ export class SessionPersistence {
     return this.writer.id;
   }
 
+  get parentSession(): string | undefined {
+    return this.parentSessionId;
+  }
+
   private createWriter(sessionId?: string): SessionWriter {
     return new SessionWriter(
       this.config.sessionsDir,
@@ -432,6 +440,9 @@ export async function deleteSession(sessionsDir: string, sessionId: string): Pro
   const path = join(sessionsDir, `${sessionId}.jsonl`);
   const exists = await Bun.file(path).exists();
   if (!exists) return false;
+  await unlink(join(sessionsDir, "goals", `${sessionId}.jsonl`)).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+  });
   await unlink(path);
   return true;
 }

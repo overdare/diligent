@@ -114,6 +114,14 @@ export interface EffortChangeEntry {
   changedBy: "cli" | "command" | "config";
 }
 
+export interface FastModeChangeEntry {
+  type: "fast_mode_change";
+  id: string;
+  parentId: string | null;
+  timestamp: string;
+  fastMode: boolean;
+}
+
 export interface ErrorEntry {
   type: "error";
   id: string;
@@ -131,7 +139,8 @@ export type SessionEntry =
   | SessionInfoEntry
   | CompactionEntry
   | ModeChangeEntry
-  | EffortChangeEntry;
+  | EffortChangeEntry
+  | FastModeChangeEntry;
 
 /** Any line in a session file */
 export type SessionFileLine = SessionHeader | SessionEntry;
@@ -172,6 +181,17 @@ export interface AppendedEntryInfo {
   seq: number;
   userId?: string;
 }
+
+export interface SessionRunOptions {
+  internal?: { source: string };
+  signal?: AbortSignal;
+  userMessageId?: string;
+}
+
+export type SessionRunOutcome =
+  | { status: "completed" }
+  | { status: "interrupted" }
+  | { status: "failed"; error: SerializableError };
 
 export interface SessionManagerConfig {
   cwd: string;

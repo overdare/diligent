@@ -139,6 +139,7 @@ export function useThreadManager({
   applySessionModel,
   resetDraftModel,
   setEffortState,
+  setFastModeState,
   activateThreadPrompts,
   shelveThreadPrompts,
   clearAttention,
@@ -150,6 +151,7 @@ export function useThreadManager({
   applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
   resetDraftModel: () => void;
   setEffortState: (effort: ThinkingEffort) => void;
+  setFastModeState: (fastMode: boolean) => void;
   activateThreadPrompts: (threadId: string) => void;
   shelveThreadPrompts: () => void;
   clearAttention: (threadId: string) => void;
@@ -259,6 +261,7 @@ export function useThreadManager({
 
         dispatch({ type: "hydrate", payload: { threadId: resumedId, mode: "default", history } });
         setEffortState(history.currentEffort);
+        setFastModeState(history.currentFastMode ?? false);
         if (typeof window !== "undefined") {
           replaceThreadUrl(resumedId);
         }
@@ -277,6 +280,7 @@ export function useThreadManager({
       rpcRef,
       dispatch,
       setEffortState,
+      setFastModeState,
       refreshThreadList,
       applySessionModel,
       clearAttention,
@@ -300,6 +304,7 @@ export function useThreadManager({
           const history = await activateServerThread(resumed.threadId);
           dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: "default", history } });
           setEffortState(history.currentEffort);
+          setFastModeState(history.currentFastMode ?? false);
           if (typeof window !== "undefined") {
             replaceThreadUrl(resumed.threadId);
           }
@@ -327,6 +332,7 @@ export function useThreadManager({
     dispatch,
     resetDraftModel,
     setEffortState,
+    setFastModeState,
     refreshThreadList,
     activateServerThread,
     deactivateServerThread,

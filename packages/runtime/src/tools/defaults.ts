@@ -8,11 +8,12 @@ import type { AgentRegistry, CollabToolDeps } from "../collab";
 import { createCollabTools } from "../collab";
 import { getGlobalConfigPath } from "../config";
 import type { DiligentConfig } from "../config/schema";
+import { createGoalTools, type GoalToolHost } from "../goals/tools";
 import type { DiligentPaths } from "../infrastructure";
 import type { SkillMetadata } from "../skills";
 import { createApplyPatchTool } from "./apply-patch";
 import { createBashTool } from "./bash";
-import type { BundledToolProvider } from "./bundled-provider";
+import type { BundledToolProvider, TextGenerationFn } from "./bundled-provider";
 import type { RuntimeToolHost } from "./capabilities";
 import type { PluginLoadError, PluginStateEntry, ToolStateEntry } from "./catalog";
 import { buildToolCatalog } from "./catalog";
@@ -40,6 +41,7 @@ export interface BuildDefaultToolsResult {
 }
 
 export interface BuildDefaultToolsOptions {
+  goalHost?: GoalToolHost;
   cwd: string;
   paths?: DiligentPaths;
   collabDeps?: Omit<CollabToolDeps, "cwd" | "paths" | "parentTools">;
@@ -58,6 +60,8 @@ export interface BuildDefaultToolsOptions {
   disabledToolNames?: ReadonlySet<string>;
   provider?: ProviderName;
   generateImage?: ImageGenerationFn;
+  generateText?: TextGenerationFn;
+  sessionId?: string;
   /** Whether plugin assembly includes globally discovered packages (default `global`). */
   pluginDiscovery?: PluginDiscoveryMode;
   /** External MCP servers whose tools are exposed to the agent (P069). */
@@ -159,6 +163,7 @@ export async function buildDefaultTools(options: BuildDefaultToolsOptions): Prom
           createGrepTool(cwd),
           createPlanTool(),
           createRequestUserInputTool(host),
+          ...(options.goalHost ? createGoalTools(options.goalHost) : []),
         ];
 
         if (webEnabled) {
@@ -174,6 +179,8 @@ export async function buildDefaultTools(options: BuildDefaultToolsOptions): Prom
           bundledProviders: providers,
           modelProvider: provider,
           generateImage: options.generateImage,
+          generateText: options.generateText,
+          sessionId: options.sessionId,
           disabledToolNames,
           pluginDiscovery,
         });

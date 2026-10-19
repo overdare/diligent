@@ -2,11 +2,12 @@
 
 import { describe, expect, mock, test } from "bun:test";
 import { resolveModel } from "@diligent/runtime";
+import { AppRuntimeState } from "../../src/tui/app-runtime-state";
 import { AppSessionLifecycle } from "../../src/tui/app-session-lifecycle";
 
 const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
 
-function createLifecycleWithThreadRead(threadRead: unknown) {
+function createLifecycleWithThreadRead(threadRead: unknown, runtime = new AppRuntimeState("default", "medium")) {
   const addUserMessage = mock(() => {});
   const addAssistantMessage = mock(() => {});
   const addThinkingMessage = mock(() => {});
@@ -21,7 +22,7 @@ function createLifecycleWithThreadRead(threadRead: unknown) {
       diligent: {},
       providerManager: { hasKeyFor: () => true },
     } as never,
-    runtime: { currentMode: "default", currentEffort: "medium" } as never,
+    runtime,
     terminal: { columns: 100 } as never,
     renderer: { setFocus: () => {}, start: () => {}, requestRender: () => {} } as never,
     inputHistory: { load: async () => {} } as never,
@@ -59,6 +60,32 @@ function createLifecycleWithThreadRead(threadRead: unknown) {
 }
 
 describe("AppSessionLifecycle", () => {
+  test("stale hydration cannot roll back a goal notification or cross a thread switch", async () => {
+    const runtime = new AppRuntimeState("default", "medium");
+    runtime.currentThreadId = "thread";
+    runtime.goalSnapshot = { goal: null, sequence: 9 };
+    const history = {
+      currentEffort: "medium",
+      currentMode: "default",
+      currentModel: resolveModel({ provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID }),
+      goal: null,
+      goalSequence: 2,
+    };
+    const { lifecycle } = createLifecycleWithThreadRead(history, runtime);
+    await lifecycle.syncActiveThreadState();
+    expect(runtime.goalSnapshot.sequence).toBe(9);
+    let resolveRead!: (value: unknown) => void;
+    const pendingRead = new Promise((resolve) => {
+      resolveRead = resolve;
+    });
+    const delayed = createLifecycleWithThreadRead(pendingRead, runtime).lifecycle;
+    const sync = delayed.syncActiveThreadState();
+    runtime.currentThreadId = "another";
+    runtime.goalSnapshot = { goal: null, sequence: 1 };
+    resolveRead(history);
+    await sync;
+    expect(runtime.goalSnapshot.sequence).toBe(1);
+  });
   test("start falls back to a connected provider model when configured provider is missing", async () => {
     const setupWizardRun = mock(async () => {});
     const statusBarUpdate = mock(() => {});

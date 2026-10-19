@@ -57,6 +57,8 @@ function makeContext(config: AppConfig, overrides?: Partial<CommandContext>): Co
     setMode: () => {},
     currentEffort: "medium",
     setEffort: async () => {},
+    currentFastMode: false,
+    setFastMode: async () => {},
     setModel: async () => {},
     clearChatHistory: () => {},
     clearScreenAndResetRenderer: () => {},
@@ -97,7 +99,7 @@ describe("modelCommand picker", () => {
     await modelCommand.handler(undefined, ctx);
 
     expect(capturedItems.length).toBeGreaterThan(0);
-    const modelItems = capturedItems.filter((item) => !item.header);
+    const modelItems = capturedItems.filter((item) => !item.header && item.value !== "fast-mode");
     expect(modelItems.filter((item) => item.value).every((item) => item.value.startsWith("openai/"))).toBe(true);
     expect(capturedItems.some((item) => item.header && item.label.includes("OpenAI"))).toBe(true);
     expect(capturedItems.some((item) => item.header && item.label.includes("Anthropic"))).toBe(false);

@@ -24,6 +24,7 @@ export class Agent {
   systemPrompt: SystemSection[];
   tools: Tool[];
   effort: ThinkingEffort;
+  fastMode: boolean;
   private llmMsgStreamFn: StreamFunction;
   private llmCompactionFn?: NativeCompactFn;
   private retryConfig: LLMRetryConfig;
@@ -45,6 +46,7 @@ export class Agent {
     this.systemPrompt = systemPrompt;
     this.tools = tools;
     this.effort = opts?.effort ?? "medium";
+    this.fastMode = opts?.fastMode ?? false;
     this.logger = opts?.logger ?? createLogger({ scope: "agent" });
     this.loopHooks = new AgentLoopHookDispatcher(opts?.loopHooks ?? [], this.logger);
     this.sessionId = opts?.sessionId;
@@ -128,6 +130,7 @@ export class Agent {
         systemPrompt: this.systemPrompt,
         tools: this.tools,
         effort: this.effort,
+        fastMode: this.fastMode,
         compaction: this.compactionConfig,
         localImageLoader: this.localImageLoader,
       },
@@ -197,6 +200,10 @@ export class Agent {
 
   setEffort(effort: ThinkingEffort): void {
     this.effort = effort;
+  }
+
+  setFastMode(fastMode: boolean): void {
+    this.fastMode = fastMode;
   }
 
   setCompactionConfig(compaction: CompactionConfig): void {

@@ -8,6 +8,7 @@ import { ErrorBanner } from "./components/ErrorBanner";
 import type { FeedbackReportSubmission } from "./components/FeedbackReportModal";
 import { FeedbackReportModal } from "./components/FeedbackReportModal";
 import { FirstRunNoticeModal } from "./components/FirstRunNoticeModal";
+import { GoalStatus } from "./components/GoalStatus";
 import { InputDock } from "./components/InputDock";
 import { KnowledgeManagerModal } from "./components/KnowledgeManagerModal";
 import { McpServersModal } from "./components/McpServersModal";
@@ -31,6 +32,7 @@ import type { RenderItem } from "./lib/thread-store";
 import { hasPendingUserInputTool } from "./lib/thread-utils";
 import { useAgentNativeBridge } from "./lib/use-agent-native-bridge";
 import { useAppState } from "./lib/use-app-state";
+import { useChatFileDrop } from "./lib/use-chat-file-drop";
 import { useProviderManager } from "./lib/use-provider-manager";
 import { useRpcClient } from "./lib/use-rpc";
 
@@ -87,6 +89,7 @@ export function App() {
     desktopNotificationsEnabled,
     setDesktopNotificationsEnabled,
     slashCommands,
+    goalsSupported,
     activeInput,
     activeContextItems,
     setActiveInput,
@@ -99,6 +102,7 @@ export function App() {
     threadTitle,
     pendingImagePreviews,
     effort,
+    fastMode,
     isUploadingImages,
     showImageUploadIndicator,
     threadMgr,
@@ -142,6 +146,9 @@ export function App() {
     handleAddImagesToDock,
     handleRemovePendingImage,
     handleSlashCommand,
+    handleGoalPause,
+    handleGoalResume,
+    handleGoalClear,
   } = actions;
 
   useAgentNativeBridge({ updateContextItems: updateActiveContextItems });
@@ -150,6 +157,22 @@ export function App() {
   const mainContentIsInert = sidebarOpen && sidebarIsOverlay;
   const sidebarTriggerRef = useRef<HTMLElement | null>(null);
   const [feedbackReport, setFeedbackReport] = useState<FeedbackReportSelection | null>(null);
+  const handleChatFileDrop = useChatFileDrop({
+    enabled:
+      providerMgr.hasProvider &&
+      connection === "connected" &&
+      !isUploadingImages &&
+      !mainContentIsInert &&
+      !showProviderModal &&
+      !showToolModal &&
+      !showKnowledgeModal &&
+      !showMcpModal &&
+      !showConnectionModal &&
+      !threadMgr.pendingDeleteThreadId &&
+      !feedbackReport &&
+      !(consent && !consent.noticeAcknowledged),
+    onAddImages: handleAddImagesToDock,
+  });
   const closeSidebar = useCallback(() => setSidebarOpen(false), [setSidebarOpen]);
   const handleSidebarNewThread = useCallback(() => {
     void startNewThread();
@@ -240,6 +263,7 @@ export function App() {
         </ResponsiveSidebar>
 
         <Panel
+          onDrop={handleChatFileDrop}
           aria-hidden={mainContentIsInert ? true : undefined}
           inert={mainContentIsInert}
           className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-dark !rounded-none !border-0"
@@ -287,6 +311,15 @@ export function App() {
 
           {state.planState?.steps.some((s) => s.status !== "done") && <PlanPanel planState={state.planState!} />}
 
+          {goalsSupported && state.goal ? (
+            <GoalStatus
+              goal={state.goal}
+              onPause={handleGoalPause}
+              onResume={handleGoalResume}
+              onClear={handleGoalClear}
+            />
+          ) : null}
+
           <SteeringQueuePanel
             pendingSteers={state.pendingSteers}
             onCancelSteer={cancelSteer}
@@ -317,10 +350,13 @@ export function App() {
             canSend={canSend}
             canSteer={canSteer}
             threadStatus={state.threadStatus}
+            goalStatus={goalsSupported ? state.goal?.status : undefined}
             mode={state.mode}
             onModeChange={handleModeChange}
             effort={effort}
             onEffortChange={handleEffortChange}
+            fastMode={fastMode}
+            onFastModeChange={actions.handleFastModeChange}
             currentModel={providerMgr.currentModel ? modelOptionKey(providerMgr.currentModel) : ""}
             availableModels={providerMgr.availableModels}
             onModelChange={handleModelChange}

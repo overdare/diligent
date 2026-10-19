@@ -1,19 +1,33 @@
 ---
 name: asset-pack-import
-description: Import and place themed asset packs (pack_* collections) from the Asset Store. Use when a request needs many related assets at once — building a themed scene ("build a subway station", "add a forest", "fill this area with props"), or when an overdaresearch asset picker returns a pack member list instead of a single assetId.
+description: Import and place themed asset packs (pack_* collections) from the Asset Store. Use when a request needs many related assets at once — building a themed scene ("build a subway station", "add a forest", "fill this area with props"), or when overdaresearch detects a suitable pack for autonomous selection.
 ---
 
 # Asset Pack Import
 
 Workflow for turning a themed request into imported, placed Asset Store content.
 
-## 1. Search normally; the picker surfaces packs
+## 1. Discover and choose a palette
 
-Search with `overdaresearch(source=assets)` as usual. When the results belong to a
-themed pack (shared `pack_*` keyword), the picker automatically offers an
-"Import full pack" option alongside the single assets. If the user picks it, the tool
-returns the full member list JSON (`{ pack, memberCount, members }`) instead of a
-single assetId. **That member list is your palette — do not re-search per item.**
+Search with `overdaresearch(source="assets")`. By default, it returns asset
+candidates with descriptions and image URLs, plus detected packs. Choose suitable
+assets yourself. A themed pack may fit a scene better than the individual search
+matches. Read its entire palette with
+`overdaresearch_deep(action="asset-pack", packKeyword="pack_...")`.
+
+Use descriptions to compare members. If appearance matters, inspect one to four
+candidate `imageUrl` values with
+`overdaresearch_deep(action="asset-preview", urls=[...])`. This returns actual
+images; an image URL or a gallery alone does not mean you have seen the image.
+If a preview fails, use the descriptions or try another candidate.
+
+Set `requestUserInput=true` on asset search only when you want to offer the user
+a choice. A user-selected pack returns the same palette. None, cancellation, or
+free-text feedback does not select an importable asset; use that feedback to
+choose the next approach. If no candidates fit, refine the search or build from
+other content without requiring a picker.
+
+**The member list is your palette — do not re-search per item.**
 
 ## 2. Select a subset; a pack is a palette, not a prefab
 
@@ -24,8 +38,9 @@ scene. Composition is your job:
   need 15 of 145 metro assets; never blind-import the whole pack just because it exists.
 - Balance categories: structure first (floors, walls, pillars), then fixtures
   (machines, signs), then scatter props (cans, posters).
-- If the request is ambiguous about scale ("add some metro stuff" vs "build a
-  station"), ask before importing dozens of assets.
+- Match the subset to the requested scale. Choose a modest, relevant subset when
+  the request leaves room for interpretation; offer the user a choice when it
+  helps clarify their intended result.
 
 ## 3. Branch on subset size
 

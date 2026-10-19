@@ -64,6 +64,8 @@ function createMockContext(pm: ProviderManager): {
     setMode: () => {},
     currentEffort: "medium",
     setEffort: async () => {},
+    currentFastMode: false,
+    setFastMode: async () => {},
     setModel: async () => {},
     clearChatHistory: () => {},
     clearScreenAndResetRenderer: () => {},

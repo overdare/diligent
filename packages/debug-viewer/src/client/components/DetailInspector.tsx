@@ -14,6 +14,7 @@ function getEntryType(entry: Record<string, unknown>): string {
   if (entry.type === "session_info") return "Session Info";
   if (entry.type === "mode_change") return "Mode Change";
   if (entry.type === "effort_change") return "Effort Change";
+  if (entry.type === "fast_mode_change") return "Fast Mode Change";
   if (entry.type === "steering") return "Steering";
   if (entry.type === "error") return "Error";
   if (entry.role === "user") return "User Message";

@@ -1,9 +1,12 @@
-// @summary Tests Studio RPC transport cancellation.
+// @summary Tests Studio RPC transport cancellation and execution-scoped wire attribution.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { createServer, type Server, type Socket } from "node:net";
+import readline from "node:readline";
+import { runWithSessionExecutionContext } from "@diligent/runtime";
 import { createStudioRpcToolProvider } from "../../../src/tools/studiorpc";
 import { call } from "../../../src/tools/studiorpc/rpc";
+import { studioRpcSessionId } from "../../../src/tools/studiorpc/rpc-context";
 
 let server: Server | undefined;
 let accepted: Socket | undefined;
@@ -22,6 +25,63 @@ afterEach(async () => {
 });
 
 describe("Studio RPC cancellation", () => {
+  test("direct RPCs isolate overlapping roots and children without leaking identity after the run", async () => {
+    const requests: Array<{ params: { label: string }; meta?: { sessionId: string } }> = [];
+    server = createServer((socket) => {
+      accepted = socket;
+      const lines = readline.createInterface({ input: socket });
+      lines.on("line", (line) => {
+        const request = JSON.parse(line);
+        requests.push(request);
+        socket.write(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result: {} })}\n`);
+      });
+    });
+    await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("no TCP port");
+    process.env.STUDIO_HOST = "127.0.0.1";
+    process.env.STUDIO_PORT = String(address.port);
+
+    const rootA = {
+      sessionId: "A",
+      rootSessionId: "A",
+      resumed: false,
+      rootRequest: { sessionId: "A", requestId: "request-A" },
+    };
+    let releaseB!: () => void;
+    const bDone = new Promise<void>((resolve) => {
+      releaseB = resolve;
+    });
+    await Promise.all([
+      runWithSessionExecutionContext(rootA, async () => {
+        await bDone;
+        await runWithSessionExecutionContext({ ...rootA, sessionId: "A1" }, () =>
+          call("instance.update", { label: "child" }, { sessionId: "B" }),
+        );
+        await call("instance.read", { label: "main" });
+      }),
+      runWithSessionExecutionContext(
+        { ...rootA, sessionId: "B", rootSessionId: "B", rootRequest: { sessionId: "B", requestId: "request-B" } },
+        async () => {
+          try {
+            await call("instance.update", { label: "other" }, { sessionId: "A" });
+          } finally {
+            releaseB();
+          }
+        },
+      ),
+    ]);
+    await call("instance.read", { label: "unscoped" });
+    expect(requests.map((request) => [request.params.label, request.meta?.sessionId])).toEqual([
+      ["other", "B"],
+      ["child", "A1"],
+      ["main", "A"],
+      ["unscoped", studioRpcSessionId()],
+    ]);
+    expect(requests[3].meta?.sessionId).not.toBe("A");
+    expect(requests[3].meta?.sessionId).not.toBe("B");
+  });
+
   test("session metadata remains stable across separate TCP calls", async () => {
     const sessions: string[] = [];
     server = createServer((socket) => {
