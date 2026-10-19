@@ -43,7 +43,9 @@ export const runParams = z
     decisionProvider: z
       .enum(["laya", "openai-decisions"])
       .optional()
-      .describe("Decision backend; default laya. OpenAI Decisions requires OPENAI_API_KEY on the sidecar host."),
+      .describe(
+        "Decision backend; omit to use the sidecar host's configured default named in the tool description. OpenAI Decisions requires OPENAI_API_KEY on the sidecar host.",
+      ),
     observationMode: z
       .enum(["structured", "structured+image"])
       .optional()

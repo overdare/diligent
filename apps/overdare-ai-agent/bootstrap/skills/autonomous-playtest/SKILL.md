@@ -5,7 +5,7 @@ description: Generate and maintain a game-specific Luau playtest controller from
 
 # Autonomous Playtest
 
-Diligent generates and repairs the game's observation, control and verification adapter; the configured decision provider makes the intended play decisions at runtime (Laya by default). Keep game bindings and outcome checks in Studio code and use the shared runner for physical input. Respect the user's scope and budget. A playtest request does not authorize changing gameplay rules to make it pass.
+Diligent generates and repairs the game's observation, control and verification adapter; the configured decision provider makes the intended play decisions at runtime (Laya unless the host configures another default). Keep game bindings and outcome checks in Studio code and use the shared runner for physical input. Respect the user's scope and budget. A playtest request does not authorize changing gameplay rules to make it pass.
 
 ## Establish the objective
 
@@ -39,11 +39,11 @@ Keep Source writes in the harness tool. Install creates the adapter and managed 
 
 ## Run and assess
 
-Use `studiorpc_game_playtest` for an owned start/play/stop episode. It refuses existing PIE; do not take over another session. For Laya, verify native Ollaya on the request host: dev-cross localhost refers to the sidecar host, which may differ from Studio. For OpenAI Decisions, configure server-side API credentials and select the provider explicitly; existing ChatGPT sign-in is not automatically reused. Preserve unrelated services/settings.
+Use `studiorpc_game_playtest` for an owned start/play/stop episode. It refuses existing PIE; do not take over another session. Omit `decisionProvider`, `model` and `decisionUrl` to use the host's configured default named in the tool description; set them only when the user asks for a specific provider or a comparison requires one. For Laya, verify native Ollaya on the request host: dev-cross localhost refers to the sidecar host, which may differ from Studio. OpenAI Decisions uses server-side API credentials; existing ChatGPT sign-in is not automatically reused. Preserve unrelated services/settings.
 
 Choose the observation mode explicitly for visual comparisons. `structured+image` captures actual PNGs at model-decision boundaries and requires an image-capable provider, one targeted client and sidecar-readable captures. Check screenshot roots when hosts differ. A missing or stale image is not a successful visual run, and retained/singleton input steps still use structured checks. Keep pixel evidence separate from game-authoritative outcomes; switching providers does not repair unavailable harness capabilities.
 
-Record and reuse explicit run arguments when comparing revisions or resuming a task, including the decision interval, model/endpoint and watchdog. Record adapter assistance separately: run arguments do not automatically change Studio configuration. Preparation/reporting time and the owned gameplay deadline are different budgets.
+Record and reuse explicit run arguments when comparing revisions or resuming a task, including the decision interval and watchdog. Carry an earlier provider, model or endpoint forward only for a user-requested provider or an explicit comparison; otherwise follow the host's current default. Record adapter assistance separately: run arguments do not automatically change Studio configuration. Preparation/reporting time and the owned gameplay deadline are different budgets.
 
 The default watchdog stops after 15 seconds without meaningful progress. Supply game-specific progress and bounded normal-wait signals; follow any explicit user timeout. Diagnose stuck results before further bounded runs.
 

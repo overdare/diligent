@@ -9,7 +9,7 @@ owned-session cleanup. A model/provider never directly sends Studio input.
 
 | Argument | Behavior |
 | --- | --- |
-| `decisionProvider` | `laya` (default) or `openai-decisions` |
+| `decisionProvider` | `laya` or `openai-decisions`. Omitted: sidecar host's `DILIGENT_DECISION_PROVIDER`, else `laya` |
 | `observationMode` | `structured` (default) or `structured+image` |
 | `model` | Laya model/configured default, or currently `gpt-6-luna` for Decisions |
 | `decisionUrl` | Existing Laya override. Decisions accepts only its official HTTPS endpoint. |
