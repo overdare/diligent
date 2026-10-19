@@ -12,14 +12,43 @@ preserved. Reporting also requires telemetry consent; turning the experiment on 
 ## Runtime-owned context
 
 The Gateway provider supplies the executing session ID, project ID, latest observed sequence, timestamp, working
-directory, optional runtime version, and up to five short recent entries. It retains context separately for each
+directory, optional runtime version, and up to five short execution records. It retains context separately for each
 session and rejects conflicting attribution. Reports use the same project attribution as session telemetry. Before
 any entry exists, an explicitly configured project is sufficient; without either source, reporting is unavailable.
 The tool never scans the filesystem for a session or asks the model to supply identities or authentication.
 
-Recent excerpts omit reasoning and raw user prompts, mask secrets before clipping, and exclude the reporting tool's
-own calls/results. The stable client report ID derives from the session and tool call, so replaying one call does not
-create another report.
+The append observer retains only binding metadata: user/project identity, durable sequence and the exact transcript
+path supplied by the runtime. It does not build or maintain a report-excerpt cache. Only when `agent_report` is
+executed does the tool open that bound session's JSONL file, verify its header identity/version, and stream entries
+through the observed durable sequence. It never chooses the newest file or guesses another session's path. Later
+incomplete writes are outside that snapshot. The read is cancellable and limited to two seconds; missing, invalid or
+incomplete bound files fail the report without falling back to cached or unrelated evidence. A changed transcript
+path invalidates that session's binding; identity and path are rechecked after reading and immediately before sending,
+including after asynchronous token resolution.
+
+During that request only, a temporary working set keeps the latest 50 execution candidates. User placeholders,
+assistant prose and skill-loading/reporting traffic do not count. Calls retain tool names and short masked
+arguments; results retain explicit success/error labels. An absent outcome is labeled as a result, not inferred to
+be successful. Private reasoning and raw user prompts are not excerpted. These attachment filters do not filter the
+regular `/v1/records` telemetry stream. No transcript is read for a report while the report tool is unused.
+
+At submission, `payload.evidence.tool` names the operation being reported, such as `instance_upsert`, rather than
+the reporting tool. Its most recent matching execution anchors selection. The provider attaches nearby execution
+records, retaining call/response pairs by their actual tool call IDs, in chronological order and within the existing
+five-record limit. This can preserve a successful write and its subsequent unchanged read-back. Without a matching
+tool, selection falls back to the latest execution neighborhood; this is a deterministic heuristic, not semantic
+relevance judgment. If no execution exists, the attachment is empty. Candidate excerpts are discarded after the
+request. When a resumed session re-establishes its runtime binding, an on-demand read can include its persisted
+history from before the process restart. All excerpts are masked before clipping.
+
+When the anchor has a correlated call/response pair, unpaired neighboring responses do not fill unused attachment
+slots. For parallel calls, the excerpts identify the exact invocations of selected results, including when several
+calls use the same tool name. The 400-character budget is shared across visible calls; fewer pairs are selected if
+their tool names cannot all fit. A long sibling call cannot hide the invocation that produced an attached result.
+
+Correlation IDs stay local. Success/error labels and short calls use the existing `excerpt` field, so the Gateway
+API and database need no change for this behavior. The stable client report ID derives from the session and tool
+call, so replaying one call does not create another report.
 
 ## Transport and results
 

@@ -12,7 +12,7 @@
 import { createLogger } from "@diligent/logging";
 import type { BundledToolProvider, HookInput, PluginHookFn } from "@diligent/runtime";
 import type { StudioToolProviderOptions } from "../hello-world";
-import { createAgentReportTool, previewSessionEntry, type SessionReportContext } from "./agent-report";
+import { createAgentReportTool, type SessionReportContext } from "./agent-report";
 import { maskValue } from "./masking";
 import { DEBUG, resolveEndpoint, resolveGatewayProjectId, resolveToken } from "./shared";
 
@@ -49,18 +49,20 @@ export function createGatewayToolProvider(options: GatewayToolProviderOptions): 
     // `:`, `/` and `\` are replaced with `_` so the id stays free of path/separator characters.
     const projectId = resolveGatewayProjectId(explicitProjectId, userId, cwd);
     const previous = reportContexts.get(input.session_id);
-    if (previous === null || (previous && (previous.projectId !== projectId || previous.userId !== userId))) {
+    if (
+      previous === null ||
+      (previous &&
+        (previous.projectId !== projectId ||
+          previous.userId !== userId ||
+          previous.transcriptPath !== input.transcript_path))
+    ) {
       reportContexts.set(input.session_id, null);
     } else {
-      const preview = previewSessionEntry(input);
-      const recentRecords = (previous?.recentRecords ?? []).filter((item) => item.seq !== preview?.seq);
-      if (preview) recentRecords.push(preview);
-      recentRecords.sort((a, b) => a.seq - b.seq);
       reportContexts.set(input.session_id, {
         userId,
         projectId,
         seq: Math.max(previous?.seq ?? 0, typeof input.seq === "number" ? input.seq : 0),
-        recentRecords: recentRecords.slice(-5),
+        transcriptPath: input.transcript_path,
       });
     }
     if (reportContexts.size > 256) {
