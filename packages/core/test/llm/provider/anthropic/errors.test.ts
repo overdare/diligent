@@ -1,7 +1,7 @@
 // @summary Tests for Anthropic API error classification and retry logic
 import { describe, expect, test } from "bun:test";
 import Anthropic from "@anthropic-ai/sdk";
-import type { APIError } from "@anthropic-ai/sdk/core/error.mjs";
+import { APIConnectionError, APIConnectionTimeoutError, type APIError } from "@anthropic-ai/sdk/core/error.mjs";
 import { classifyAnthropicError } from "../../../../src/llm/provider/anthropic";
 import { CONTEXT_OVERFLOW_ERROR_MESSAGE, ProviderError } from "../../../../src/llm/types";
 
@@ -148,9 +148,11 @@ describe("classifyAnthropicError", () => {
     expect(result.isRetryable).toBe(true);
   });
 
+  // Construct SDK errors from the error module: other files in the same test process replace the
+  // `@anthropic-ai/sdk` default export with a client mock that does not carry every static error class.
   test.each([
-    ["request timeout", () => new Anthropic.APIConnectionTimeoutError()],
-    ["connection failure", () => new Anthropic.APIConnectionError({ cause: new TypeError("fetch failed") })],
+    ["request timeout", () => new APIConnectionTimeoutError()],
+    ["connection failure", () => new APIConnectionError({ cause: new TypeError("fetch failed") })],
   ])("classifies SDK %s as retryable network error", (_label, createError) => {
     const err = createError();
     const result = classifyAnthropicError(err);
