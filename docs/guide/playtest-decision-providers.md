@@ -19,6 +19,10 @@ Existing `harnessName`, `goal`, duration, decision interval and stuck timeout ke
 their behavior. Laya's existing defaults and wire format remain intact; visual
 mode with Laya is rejected instead of silently dropping images.
 
+These settings apply to `mode: "autonomous"` (the default). `mode: "verification"`
+creates no provider, so it needs neither Ollaya nor `OPENAI_API_KEY`; the arguments
+above are rejected in that mode and `decisionConfig.provider` is recorded as `none`.
+
 Example for an already installed, validated harness:
 
 ```json

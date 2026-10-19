@@ -1,11 +1,11 @@
 ---
 name: autonomous-playtest
-description: Generate and maintain a game-specific Luau playtest controller from the current OVERDARE project's code, with observed state transitions and meaningful runtime model decisions. Use to play a game autonomously, exercise gameplay scenarios, or improve an editable harness. Not for GUI-only styling or offline unit tests.
+description: Generate and maintain a game-specific Luau playtest controller from the current OVERDARE project's code, with observed state transitions, declared requirement checks and, for autonomous play, meaningful runtime model decisions. Use to play a game autonomously, verify a feature through real play, exercise gameplay scenarios, or improve an editable harness. Not for GUI-only styling or offline unit tests.
 ---
 
 # Autonomous Playtest
 
-Diligent generates and repairs the game's observation, control and verification adapter; the configured decision provider makes the intended play decisions at runtime (Laya unless the host configures another default). Keep game bindings and outcome checks in Studio code and use the shared runner for physical input. Respect the user's scope and budget. A playtest request does not authorize changing gameplay rules to make it pass.
+Diligent generates and repairs the game's observation, control and verification adapter. In autonomous mode the configured decision provider makes the intended play decisions at runtime (Laya unless the host configures another default); in verification mode the runner executes the adapter's scripted scenario without a provider. Keep game bindings and outcome checks in Studio code and use the shared runner for physical input. Respect the user's scope and budget. A playtest request does not authorize changing gameplay rules to make it pass.
 
 ## Establish the objective
 
@@ -18,6 +18,14 @@ For play/survive/clear requests, prioritize productive gameplay. Control demonst
 For exploratory player simulation, preserve discovery, uncertainty and recovery choices. Use game code to understand controls and verify results without supplying a hidden solution route to the policy. Distinguish player-observable decision facts from privileged verification facts; code access alone does not justify giving the model every hidden item or hazard. Successful scripted traversal does not establish autonomous exploration or representative human behavior.
 
 Derive a small test inventory: source/symbol, setup, relevant behavior and evidence. Cover what matters to this objective. Input completion, displacement, intended landing and goal completion are different claims.
+
+## Choose the mode and the checks
+
+Use `mode: "verification"` to accept a feature or catch a regression: the adapter offers the scenario's next step first and the runner executes it without a decision provider. Use `mode: "autonomous"` when the user asks for play, exploration or model-mediated decisions. Do not add artificial alternatives to a verification scenario just to produce decisionEvidence; it is `not_applicable` there.
+
+Turn every acceptance criterion in the user's spec into a `requirement` check, quoting or citing its source. Anything the harness adds for its own reliability (instantaneous speed thresholds, intermediate poses, timing margins, sensor sanity) is an `auxiliary` check and must never decide a requirement verdict. When a criterion is ambiguous, verify the observable behavior the spec names and state the interpretation; do not tighten it into a stricter auxiliary rule and then report the feature as failed.
+
+Report checks from authoritative facts at the moment they are decided, with a small detail record, through `api.check` or observe() `checks`. Never accumulate proofs, samples or logs in state: the frame is capped at 256 KiB and the runner already latches each check transition. Use `api.emit` for transient logs.
 
 ## Design the controller
 
@@ -39,7 +47,7 @@ Keep Source writes in the harness tool. Install creates the adapter and managed 
 
 ## Run and assess
 
-Use `studiorpc_game_playtest` for an owned start/play/stop episode. It refuses existing PIE; do not take over another session. Omit `decisionProvider`, `model` and `decisionUrl` to use the host's configured default named in the tool description; set them only when the user asks for a specific provider or a comparison requires one. For Laya, verify native Ollaya on the request host: dev-cross localhost refers to the sidecar host, which may differ from Studio. OpenAI Decisions uses server-side API credentials; existing ChatGPT sign-in is not automatically reused. Preserve unrelated services/settings.
+Use `studiorpc_game_playtest` for an owned start/play/stop episode. It refuses existing PIE; do not take over another session. In verification mode pass no provider arguments; nothing is prepared or called. In autonomous mode omit `decisionProvider`, `model` and `decisionUrl` to use the host's configured default named in the tool description; set them only when the user asks for a specific provider or a comparison requires one. For Laya, verify native Ollaya on the request host: dev-cross localhost refers to the sidecar host, which may differ from Studio. OpenAI Decisions uses server-side API credentials; existing ChatGPT sign-in is not automatically reused. Preserve unrelated services/settings.
 
 Choose the observation mode explicitly for visual comparisons. `structured+image` captures actual PNGs at model-decision boundaries and requires an image-capable provider, one targeted client and sidecar-readable captures. Check screenshot roots when hosts differ. A missing or stale image is not a successful visual run, and retained/singleton input steps still use structured checks. Keep pixel evidence separate from game-authoritative outcomes; switching providers does not repair unavailable harness capabilities.
 
@@ -47,12 +55,18 @@ Record and reuse explicit run arguments when comparing revisions or resuming a t
 
 The default watchdog stops after 15 seconds without meaningful progress. Supply game-specific progress and bounded normal-wait signals; follow any explicit user timeout. Diagnose stuck results before further bounded runs.
 
-Inspect summaryPath, tracePath and coveragePath. Separate game outcomes, execution errors, missing coverage and decisionEvidence. For model-mediated play, verify a genuine candidate -> model choice -> dispatch -> observed effect chain at an intended decision point. A successful episode with not_exercised still leaves model participation unverified. Diagnose collapsed branches; duplicate candidates or unnecessary forced-step calls do not fix this.
+Inspect the result's `verification`, `diagnostics` and `repeatedFailure` first, then summaryPath, tracePath and coveragePath. Report game outcome, requirement verdict, execution errors, missing coverage and decisionEvidence as separate facts: a terminal success with a failed or pending requirement check is not a verified feature, and a requirement that passed in a run that later errored is still recorded. For model-mediated play, verify a genuine candidate -> model choice -> dispatch -> observed effect chain at an intended decision point. A successful autonomous episode with not_exercised still leaves model participation unverified. Diagnose collapsed branches; duplicate candidates or unnecessary forced-step calls do not fix this.
+
+Read `diagnostics.unmetExpectations` even when the outcome is success. Classify each unmet expectation as a normal wait, a mistimed assertion or a missing effect before calling the run clean.
 
 Coverage is over declared targets only. Availability, selection, input completion and confirmed effects are distinct. A win does not prove every target, and tested mechanics do not prove a win.
 
 ## Improve from evidence
 
 Locate the responsible boundary, repair it between runs, revalidate and rerun when warranted within the authorized budget. Preserve actual outcomes and source versions. Track saved/validated, offered, selected, dispatched and confirmed separately: a run that never reaches the changed behavior does not verify it. Earlier successes do not certify the final source. Report the concrete blocker instead of repeatedly retrying unchanged failures or relaxing assertions.
+
+Before another full episode on a failing behavior, test the suspected primitive in isolation: a single action in a short verification run, a read-only observation, or a bounded diagnostic adapter path. A full episode is the acceptance check, not the debugging loop. When `repeatedFailure` appears, stop: change the hypothesis with new evidence, narrow the probe, or report the blocker with its run ids. Tuning the same parameter again is not a new hypothesis. Respect the host's character and authoring rules (for example supported movement APIs) even when a workaround seems faster.
+
+Report counts and provenance exactly. Count attempts from the run ids and summary paths the tool returned in this task, including failures, not from memory or progress notes. Label every number by source: given by the user, stated in the spec, or chosen by you as a reversible default. Rewrite the current verdict of a report when newer runs supersede it, keeping earlier failures as history. A known defect in shipped code (for example an unsupported API on an error path) is fixed or listed as open; it is never omitted to keep earlier run results identical.
 
 For better play or a reported weakness, read [references/improvement.md](references/improvement.md). For discovery, service, startup, timing, stuck or effect-analysis failures, read [references/diagnosis.md](references/diagnosis.md). Report measured timing scopes and actual model participation, not a universal FPS or latency claim.

@@ -32,6 +32,9 @@ The harness is code inside Studio: a ModuleScript at
 `StarterPlayer.StarterPlayerScripts.DiligentPlaytestDriver_<name>`. Installation saves the project, reads
 the source back, and validates both scripts. These assets remain available for the next maintenance run.
 
+Harness installation and updates await the request's rollback-baseline capture before acquiring the
+harness write lock. Snapshot capture uses that same lock, so it must finish before the edit holds it.
+
 Use `game_playtest_harness` with `operation: "describe"` for the authoring contract. The adapter returns
 `observe()` and optional `start()`. It owns compact state, up to 16 useful candidate input batches, their
 validity/expiry, expected state changes, real game events, and terminal rules. `start()` can subscribe to
@@ -39,8 +42,8 @@ accepted snapshots and feedback. `observe()` must not perform gameplay actions. 
 plain JSON facts; the common driver supplies revision, harness identity, and game time.
 
 During PIE, the driver publishes `workspace.DiligentPlaytestFrame_<name>`. The native TypeScript runner
-continuously reads it through `game.observe`, even while the decision provider runs or an input batch runs. Only
-multiple-candidate decisions call the configured provider; a single candidate runs directly. Before dispatch, the runner
+continuously reads it through `game.observe`, even while the decision provider runs or an input batch runs. In the
+default `autonomous` mode only multiple-candidate decisions call the configured provider; a single candidate runs directly. Before dispatch, the runner
 rechecks the latest frame, action identity, validity key, expiry, and PIE client. Effects are reported from
 subsequent state, and success requires an observed adapter terminal. A completed input RPC alone does not
 establish a gameplay result.
@@ -48,9 +51,10 @@ establish a gameplay result.
 The maintenance loop is:
 
 1. Inspect the current game's scripts and visible GUI; author/install an adapter.
-2. Run `game_playtest` with its `harnessName`, objective, and bounded duration (up to 180 seconds).
-3. Read the returned `tracePath` and `summaryPath`; compare observations, decisions, input replies, effects,
-   and game feedback.
+2. Run `game_playtest` with its `harnessName`, objective, mode, and bounded duration (up to 180 seconds for one
+   player, 900 seconds for two).
+3. Read `verification`, `diagnostics` and `repeatedFailure` in the result, then the returned `tracePath` and
+   `summaryPath`; compare observations, decisions, input replies, effects, checks and game feedback.
 4. Read the installed source, improve it using `operation: "update"` and its `expectedSourceHash`, then
    rerun. Source comparison also happens inside the editor transaction to detect intervening edits.
 
@@ -60,6 +64,73 @@ errors, and session replacement are recorded as runtime failures rather than gam
 under `<cwd>/.overdare/playtests/`. Web and TUI use the existing tool progress/result protocol; MCP exposes
 the same registered tools and final results, with the live trace available on disk.
 Game-specific candidate quality and truthful terminal rules remain the adapter author's responsibility.
+
+### Run modes
+
+`mode: "autonomous"` (default) is model-mediated play: frames with several meaningful candidates call the decision
+provider, and `decisionEvidence` measures whether the model's choices were dispatched and had confirmed effects.
+
+`mode: "verification"` is scripted acceptance for a feature or regression. No decision provider is created,
+warmed or called, and provider arguments (`decisionProvider`, `model`, `decisionUrl`, `maxVisualAgeMs`,
+`observationMode: "structured+image"`) are rejected. When several candidates are offered the runner dispatches the
+first one in adapter order and records a `scenario_choice`; singletons and retained intents behave as in autonomous
+mode. `decisionEvidence.status` is `not_applicable`, so the harness does not need artificial choice points to look
+model-driven. The verdict comes from requirement checks and the game terminal.
+
+### Requirement checks and the driver api
+
+The managed driver (v5) passes an `api` table to `start(api)`:
+
+- `api.declareCheck(id, basis, description?)` declares a checkpoint with status `pending`. `basis` is
+  `requirement` for an acceptance criterion from the user's spec, or `auxiliary` for a harness diagnostic such as
+  timing or an intermediate pose.
+- `api.check(id, status, detail?)` reports `pass` or `fail` (or back to `pending`) with at most 2 KiB of the facts
+  that decided it.
+- `api.emit(level, message, data?)` logs a game event. The driver assigns ids and republishes each event for
+  3 seconds (newest 32), so adapters never keep a growing log in the frame.
+
+Adapters may instead return `checks` from `observe()`; then the driver registry is not published. At most 32 checks
+per frame, unique ids. The runner latches each status transition with its detail and returns
+`verification = {status, requirement, auxiliary, checks}`. `status` is `passed`, `failed`, `incomplete` or
+`not_declared` and covers requirement checks only; auxiliary checks never decide it. Verification is reported next
+to the game terminal, never folded into `outcome`: a terminal success with a failed requirement is reported as both.
+
+The frame JSON stays capped at 256 KiB. An oversized frame fails the run with the five largest sections (top-level
+keys and `state.*` keys) and their byte counts. Publish current facts; report verdicts through checks and logs
+through events instead of accumulating proofs or samples in `state`.
+
+Integer input fields (`durationMs`, `timeoutMs`) are rounded to whole milliseconds before validation, because Luau
+arithmetic produces fractions.
+
+### Diagnostics and repeated failures
+
+Every result carries `diagnostics`: the episode phase reached (`startup` or `running`), frames observed, the most
+frequent readiness waits, the last dispatched action with its input status and failed expectations, counts of action
+results with unmet expectations (top keys), the last observer error and plain-language hints. Hints point at the next
+thing to check, for example which readiness condition kept a startup from completing, or that a terminal success
+came with failed requirement checks. They are never a verdict.
+
+After writing a run, the tool compares it with the newest saved runs of the same harness under
+`.overdare/playtests/`. When the same failure signature (outcome plus reason with measured values such as `25030ms`
+normalized, step numbers kept) appears in at least three consecutive runs, the result includes
+`repeatedFailure = {count, signature, sameSourceHash, runIds, guidance}`. It does not block the run; it tells the
+agent to stop rerunning the same hypothesis and to probe the responsible boundary narrowly.
+
+### Two players
+
+`numberOfPlayer: 2` owns two real injectable PIE clients. The adapter's root frame keeps `actions` empty and
+publishes `state.multiplayerActors` with exactly two actors, as an array (Luau numeric-key tables accepted) or as a
+map keyed by each actor's `actorId`. Initial `game.character.read` positions (or native user ids) bind clients to
+actors once. Each actor then runs its own decision/input loop with separate history, intent, watchdog, coverage and
+decision evidence; `actorGoals` overrides the goal per actor. Physical batches must fit
+`maxPhysicalBatchDurationMs` (default 2000, 250..5000) and use keys, unconditional waits or normalized pointer
+positions. Results add `perActorEvidence` and `concurrencyEvidence`; the latter separates model and input RPC
+overlap from native input overlap, which the transport does not report. The authoritative root terminal, or both
+actor terminals, end the episode.
+
+`invoke-server.ts` in the playtest tool folder calls the same registered tools through an already running
+sidecar's authenticated `/mcp-router` route, using that sidecar's provider configuration. It requires an explicit
+`--approve` flag and a router token, accepts loopback origins only, and never restarts or reconfigures the backend.
 
 The authoring skill's `references/controller-design.md` separates game bindings,
 state/event reduction, parameterized action capabilities, model decision points
@@ -128,14 +199,13 @@ covers native GUI/recipient correlation, shared-key effects, pending/blocked sta
 and compact memory. These are adapter authoring patterns, not additional RPCs or
 a callback from Laya to Lua.
 
-Results include `decisionEvidence`, separate from game outcome and coverage:
-`not_exercised`, `selected_not_dispatched`, `dispatched_unverified`, or
-`effects_observed`. Counts distinguish model requests, returned choices, matching
-dispatches, confirmed effects and automatic dispatches. A shared `decisionId`
-correlates those stages in the trace even when observation revisions advance or
-action IDs repeat. The model-start record includes candidate descriptions as well
-as IDs. Evidence is aggregated before trace truncation; it verifies participation
-and declared effects, not strategy quality or a game win.
+Results include `decisionEvidence`, separate from game outcome, verification and coverage:
+`not_exercised`, `selected_not_dispatched`, `dispatched_unverified`, `effects_observed`, or `not_applicable` in
+verification mode. Counts distinguish model requests, returned choices, matching dispatches, confirmed effects,
+automatic (singleton) dispatches and scenario dispatches. A shared `decisionId` correlates those stages in the trace
+even when observation revisions advance or action IDs repeat. The model-start record includes candidate
+descriptions as well as IDs. Evidence is aggregated before trace truncation; it verifies participation and declared
+effects, not strategy quality or a game win.
 
 For agent-led preparation and maintenance, load the bundled `autonomous-playtest` skill. It derives the
 test inventory from the current project's code and the user's objective rather than copying a sample

@@ -42,6 +42,25 @@ Check the complete chooser envelope: outer goal, decisionState, runner context a
 
 Terminal evidence must match the test objective. Distinguish a lost round from a lost multi-round match, temporary respawn from final elimination, and a survival-duration objective from winning the game. Do not alter win rules or label timeout as success to make a report green.
 
+Declare verification checks in `start(api)` and decide them from authoritative facts:
+
+```lua
+function M.start(api)
+    api.declareCheck("cp01-carry-20s", "requirement", "GDD F-18 CP01: carried continuously for 20 s")
+    api.declareCheck("grip-error-under-20cm", "auxiliary", "Harness: claw-to-grip error stays below 20 cm")
+    carrySignal.OnClientEvent:Connect(function(report)
+        if report.kind == "carry_end" then
+            local passed = report.durationSeconds >= 20 and report.maxGapCm <= 20
+            api.check("cp01-carry-20s", passed and "pass" or "fail",
+                {durationSeconds = report.durationSeconds, maxGapCm = report.maxGapCm})
+            api.emit("info", "carry ended", {reason = report.reason})
+        end
+    end)
+end
+```
+
+Use the spec's own wording for requirement predicates. When the harness needs an extra reliability condition, give it its own auxiliary check instead of folding it into a requirement. Keep `detail` to the values that decided the verdict; the runner stores each transition, so the adapter does not need a proof history. In verification mode list the scenario's next step first among the published actions; keep later alternatives for autonomous runs.
+
 For a test that requests a retained approach assist, the following example
 annotates the game's approach function. A direct-control test would instead offer
 its executable movement/look choices without this intent wrapper:
