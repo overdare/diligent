@@ -84,6 +84,45 @@ function reportCalls() {
   return calls.filter((call) => call.url.endsWith("/agent-reports"));
 }
 
+test.each([
+  undefined,
+  "",
+  "   ",
+])("does not bind a missing startup identity (%j) to a report session", async (userId) => {
+  const provider = createGatewayToolProvider({ cwd: "/workspace", canTransmitRecords: () => true });
+  await provider.onEntryAppended?.({ ...input("session-1", 1), user_id: userId });
+  await provider.onEntryAppended?.(input("session-1", 2));
+  const result = await (await reporter(provider)).execute(content, context());
+
+  expect(result.output).toContain("saved");
+  expect(reportCalls()[0]?.body.project_id).toBe("alice__workspace");
+  expect(reportCalls()[0]?.body.seq).toBe(2);
+  expect(calls.filter((call) => call.url.endsWith("/records"))).toHaveLength(1);
+});
+
+test("a missing identity between turns does not poison confirmed report context", async () => {
+  const provider = createGatewayToolProvider({ cwd: "/workspace", canTransmitRecords: () => true });
+  await provider.onEntryAppended?.(input("session-1", 1));
+  await provider.onEntryAppended?.({ ...input("session-1", 2, "alice", "Unattributed excerpt"), user_id: undefined });
+  await provider.onEntryAppended?.(input("session-1", 3));
+  const result = await (await reporter(provider)).execute(content, context());
+
+  expect(result.output).toContain("saved");
+  expect(reportCalls()[0]?.body.payload.evidence.recent_records.map((record) => record.seq)).toEqual([1, 3]);
+  expect(calls.filter((call) => call.url.endsWith("/records"))).toHaveLength(2);
+});
+
+test("keeps reports blocked after two confirmed owners use the same session", async () => {
+  const provider = createGatewayToolProvider({ cwd: "/workspace", canTransmitRecords: () => true });
+  const tool = await reporter(provider);
+  await provider.onEntryAppended?.(input("session-1", 1, "alice"));
+  await provider.onEntryAppended?.(input("session-1", 2, "bob"));
+  expect((await tool.execute(content, context())).output).toContain("conflicting");
+  await provider.onEntryAppended?.(input("session-1", 3, "alice"));
+  expect((await tool.execute(content, context())).output).toContain("conflicting");
+  expect(reportCalls()).toHaveLength(0);
+});
+
 test("posts through existing gateway auth and derives execution metadata", async () => {
   const provider = createGatewayToolProvider({
     cwd: "/workspace",

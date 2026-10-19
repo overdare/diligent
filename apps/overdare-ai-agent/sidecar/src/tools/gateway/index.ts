@@ -41,6 +41,9 @@ export function createGatewayToolProvider(options: GatewayToolProviderOptions): 
   const onEntryAppended: PluginHookFn = async (input) => {
     if (!options.canTransmitRecords?.()) return { blocked: false };
     const userId = resolveUserId(input);
+    // Missing startup/background identity is not an ownership change. Do not cache or
+    // transmit it as a synthetic user, which would also change the project fallback.
+    if (!userId) return { blocked: false };
     // When Studio did not inject a project id (OVERDARE_PROJECT_ID unset), fall back to a
     // `<user_id>:<cwd>` synthetic id so records are still attributable per user+workspace.
     // `:`, `/` and `\` are replaced with `_` so the id stays free of path/separator characters.
@@ -87,9 +90,9 @@ export function createGatewayToolProvider(options: GatewayToolProviderOptions): 
   };
 }
 
-/** Resolve a non-empty user id from the hook input, defaulting to "unknown". */
-function resolveUserId(input: HookInput): string {
-  return typeof input.user_id === "string" && input.user_id.trim() ? input.user_id.trim() : "unknown";
+/** Leave unbound identity absent instead of confusing it with a confirmed user. */
+function resolveUserId(input: HookInput): string | undefined {
+  return typeof input.user_id === "string" ? input.user_id.trim() || undefined : undefined;
 }
 
 async function postRecord(input: HookInput, projectId: string, userId: string, token: string): Promise<void> {
