@@ -1,7 +1,7 @@
 // @summary In-process grep/glob fallback used when no ripgrep binary can be resolved
 import type { Dirent, Stats } from "node:fs";
-import { existsSync } from "node:fs";
-import { lstat, readdir, readFile } from "node:fs/promises";
+import { constants, existsSync } from "node:fs";
+import { lstat, open, readdir, readFile } from "node:fs/promises";
 
 /**
  * In-process replacement for the ripgrep invocations made by the `grep` and
@@ -170,9 +170,16 @@ function appendFileMatches(out: string[], lines: string[], regex: RegExp, contex
 async function readTextLines(absPath: string): Promise<string[] | undefined> {
   let buffer: Buffer;
   try {
-    const info = await lstat(absPath);
-    if (!info.isFile() || info.size > SEARCH_FALLBACK_LIMITS.maxFileBytes) return undefined;
-    buffer = await readFile(absPath);
+    // Check and read through one handle so the file cannot be swapped in between. O_NOFOLLOW keeps symlinks
+    // unread like `lstat` did (Windows has no O_NOFOLLOW; the walk does not yield links there either).
+    const handle = await open(absPath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    try {
+      const info = await handle.stat();
+      if (!info.isFile() || info.size > SEARCH_FALLBACK_LIMITS.maxFileBytes) return undefined;
+      buffer = await handle.readFile();
+    } finally {
+      await handle.close();
+    }
   } catch {
     return undefined;
   }
