@@ -1,6 +1,6 @@
 // @summary Acquires bounded PNG evidence for an owned single-client PIE session without provider-specific capture.
 import { createHash } from "node:crypto";
-import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, realpath, writeFile } from "node:fs/promises";
 import { isAbsolute, join, posix, relative, sep, win32 } from "node:path";
 import type { call } from "../../rpc";
 import type { PlaytestFrame } from "./frame";
@@ -99,10 +99,17 @@ export function createVisualObserver(options: VisualObserverOptions): VisualObse
       if (suffix === ".." || suffix.startsWith(`..${sep}`) || isAbsolute(suffix))
         throw new Error("Screenshot resolves outside the local shared root");
     }
-    const info = await stat(file);
-    if (!info.isFile() || info.size > MAX_BYTES)
-      throw new Error("Screenshot exceeds the 10 MiB image limit or is not a file");
-    const bytes = await readFile(file, { signal });
+    // Check and read through one handle so the file cannot be swapped between the size check and the read.
+    const handle = await open(file, "r");
+    let bytes: Buffer;
+    try {
+      const info = await handle.stat();
+      if (!info.isFile() || info.size > MAX_BYTES)
+        throw new Error("Screenshot exceeds the 10 MiB image limit or is not a file");
+      bytes = await handle.readFile({ signal });
+    } finally {
+      await handle.close();
+    }
     if (
       bytes.length > MAX_BYTES ||
       bytes.length < 24 ||
@@ -127,7 +134,7 @@ export function createVisualObserver(options: VisualObserverOptions): VisualObse
       const directory = join(options.directory, "images");
       await mkdir(directory, { recursive: true });
       artifactPath = join(directory, `${sha256}.png`);
-      await writeFile(artifactPath, bytes, { signal });
+      await writeFile(artifactPath, bytes, { signal, mode: 0o600 });
     }
     signal.throwIfAborted();
     return {

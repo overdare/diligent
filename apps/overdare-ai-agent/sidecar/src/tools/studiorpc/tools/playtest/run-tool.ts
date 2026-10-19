@@ -106,10 +106,11 @@ export function createRunTool(options: PlaytestToolOptions): Tool {
         stuckTimeoutMs,
         intentDecisionIntervalMs: parsed.intentDecisionIntervalMs ?? DEFAULT_INTENT_DECISION_INTERVAL_MS,
       };
+      // The first append creates the trace; run artifacts stay owner-only like summary.json below.
       await appendFile(
         tracePath,
         `${JSON.stringify({ at: new Date().toISOString(), type: "decision_configuration", decisionConfig, runConfig })}\n`,
-        "utf8",
+        { encoding: "utf8", mode: 0o600 },
       );
       let pending = Promise.resolve();
       let writeFailure: unknown;
@@ -185,8 +186,9 @@ export function createRunTool(options: PlaytestToolOptions): Tool {
         coveragePath,
         tracePath,
       };
-      await writeFile(coveragePath, JSON.stringify(coverageResult, null, 2), "utf8");
-      await writeFile(summaryPath, JSON.stringify(evidence, null, 2), "utf8");
+      // Run artifacts carry game state and decision context; keep them readable by the owner only.
+      await writeFile(coveragePath, JSON.stringify(coverageResult, null, 2), { encoding: "utf8", mode: 0o600 });
+      await writeFile(summaryPath, JSON.stringify(evidence, null, 2), { encoding: "utf8", mode: 0o600 });
       return {
         output: JSON.stringify({ ...evidence, summaryPath }, null, 2),
         metadata: { ...evidence, summaryPath },
