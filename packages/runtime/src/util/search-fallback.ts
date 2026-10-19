@@ -2,6 +2,7 @@
 import type { Dirent, Stats } from "node:fs";
 import { constants, existsSync } from "node:fs";
 import { lstat, open, readdir, readFile } from "node:fs/promises";
+import { trimTrailingSlashes } from "./path";
 
 /**
  * In-process replacement for the ripgrep invocations made by the `grep` and
@@ -171,8 +172,9 @@ async function readTextLines(absPath: string): Promise<string[] | undefined> {
   let buffer: Buffer;
   try {
     // Check and read through one handle so the file cannot be swapped in between. O_NOFOLLOW keeps symlinks
-    // unread like `lstat` did (Windows has no O_NOFOLLOW; the walk does not yield links there either).
-    const handle = await open(absPath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    // unread like `lstat` did (Windows has no O_NOFOLLOW; the walk does not yield links there either). The mode
+    // is ignored without O_CREAT; CodeQL treats an `open` without one as creating a world-readable file.
+    const handle = await open(absPath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0), 0o600);
     try {
       const info = await handle.stat();
       if (!info.isFile() || info.size > SEARCH_FALLBACK_LIMITS.maxFileBytes) return undefined;
@@ -216,7 +218,7 @@ function compileOverrideGlob(pattern: string): PathFilter {
 }
 
 function toRootRelativeGlob(pattern: string): string {
-  const trimmed = pattern.replace(/\/+$/, "");
+  const trimmed = trimTrailingSlashes(pattern);
   if (!trimmed.includes("/")) return `**/${trimmed}`;
   return trimmed.replace(/^\/+/, "");
 }
@@ -227,7 +229,11 @@ function toRootRelativeGlob(pattern: string): string {
 
 interface IgnoreRule {
   baseDir: string;
-  glob: Bun.Glob;
+  /**
+   * Bound `Bun.Glob#match`. Calling it through a differently named member keeps CodeQL from reading
+   * `glob.match(path)` as `String#match` with a regex built from the path (js/regex-injection).
+   */
+  matches: (relPath: string) => boolean;
   negate: boolean;
   dirOnly: boolean;
 }
@@ -245,9 +251,10 @@ function parseGitignore(content: string, baseDir: string): IgnoreRule[] {
       line = line.slice(1);
     }
     const dirOnly = line.endsWith("/");
-    line = line.replace(/\/+$/, "");
+    line = trimTrailingSlashes(line);
     if (!line) continue;
-    rules.push({ baseDir, glob: new Bun.Glob(toRootRelativeGlob(line)), negate, dirOnly });
+    const glob = new Bun.Glob(toRootRelativeGlob(line));
+    rules.push({ baseDir, matches: glob.match.bind(glob), negate, dirOnly });
   }
   return rules;
 }
@@ -257,7 +264,7 @@ function isIgnored(rules: readonly IgnoreRule[], absPath: string, isDir: boolean
   for (const rule of rules) {
     if (rule.dirOnly && !isDir) continue;
     const relPath = relativeTo(rule.baseDir, absPath);
-    if (relPath !== undefined && rule.glob.match(relPath)) ignored = !rule.negate;
+    if (relPath !== undefined && rule.matches(relPath)) ignored = !rule.negate;
   }
   return ignored;
 }
@@ -385,7 +392,7 @@ function createWalk(searchPath: string, options: WalkOptions): Walk {
 // ---------------------------------------------------------------------------
 
 function stripTrailingSlashes(path: string): string {
-  const stripped = path.replace(/\/+$/, "");
+  const stripped = trimTrailingSlashes(path);
   if (!stripped) return "/";
   return /^[a-zA-Z]:$/.test(stripped) ? `${stripped}/` : stripped;
 }

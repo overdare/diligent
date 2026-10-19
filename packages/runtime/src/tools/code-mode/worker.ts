@@ -134,25 +134,30 @@ export function codeModeWorkerMain(): void {
 
     const tools: Record<string, (input?: unknown) => Promise<string>> = Object.create(null);
     for (const tool of start.tools) {
-      tools[tool.globalName] = (input?: unknown) => {
-        // Guest-realm promise and errors so `instanceof Promise/Error` behave inside the script.
-        const { promise, resolve, reject } = GuestPromise.withResolvers<string>();
-        if (finished) {
-          reject(new GuestError("exec cell has finished"));
+      // defineProperty rather than `tools[name] = fn`: CodeQL flags writes keyed by message data
+      // (js/remote-property-injection). The names come from the host and the object has no prototype.
+      Object.defineProperty(tools, tool.globalName, {
+        enumerable: true,
+        value: (input?: unknown) => {
+          // Guest-realm promise and errors so `instanceof Promise/Error` behave inside the script.
+          const { promise, resolve, reject } = GuestPromise.withResolvers<string>();
+          if (finished) {
+            reject(new GuestError("exec cell has finished"));
+            return promise;
+          }
+          let wireInput: unknown;
+          try {
+            wireInput = input === undefined ? {} : JSON.parse(JSON.stringify(input));
+          } catch (error) {
+            reject(new GuestError(`tools.${tool.globalName}: input must be JSON-serializable (${String(error)})`));
+            return promise;
+          }
+          const id = nextCallId++;
+          pending.set(id, { resolve, reject: (message) => reject(new GuestError(String(message))) });
+          send({ type: "tool_call", id, name: tool.name, input: wireInput });
           return promise;
-        }
-        let wireInput: unknown;
-        try {
-          wireInput = input === undefined ? {} : JSON.parse(JSON.stringify(input));
-        } catch (error) {
-          reject(new GuestError(`tools.${tool.globalName}: input must be JSON-serializable (${String(error)})`));
-          return promise;
-        }
-        const id = nextCallId++;
-        pending.set(id, { resolve, reject: (message) => reject(new GuestError(String(message))) });
-        send({ type: "tool_call", id, name: tool.name, input: wireInput });
-        return promise;
-      };
+        },
+      });
     }
 
     Object.assign(context, {

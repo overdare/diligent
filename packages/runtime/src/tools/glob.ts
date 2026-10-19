@@ -3,7 +3,7 @@
 import { stat } from "node:fs/promises";
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
-import { isAbsolute, stripExtendedLengthPrefix } from "../util/path";
+import { isAbsolute, stripExtendedLengthPrefix, trimTrailingSlashes } from "../util/path";
 import { spawnCollect } from "../util/process";
 import { type RgBinaryResolver, resolveRgBinary } from "../util/ripgrep";
 import { globFilesFallback } from "../util/search-fallback";
@@ -166,7 +166,7 @@ function findFirstGlobMetaIndex(pattern: string): number {
 
 function buildRelativePatternSuggestion(pattern: string, searchPath: string): string {
   const normalizedPattern = stripExtendedLengthPrefix(pattern).replace(/\\/g, "/");
-  const normalizedSearchPath = stripExtendedLengthPrefix(searchPath).replace(/\\/g, "/").replace(/\/+$/, "");
+  const normalizedSearchPath = trimTrailingSlashes(stripExtendedLengthPrefix(searchPath).replace(/\\/g, "/"));
   if (normalizedPattern === normalizedSearchPath) return "**/*";
   const prefix = `${normalizedSearchPath}/`;
   if (normalizedPattern.startsWith(prefix)) return normalizedPattern.slice(prefix.length) || "**/*";
