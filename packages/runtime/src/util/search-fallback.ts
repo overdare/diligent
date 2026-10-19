@@ -12,8 +12,9 @@ import { lstat, readdir, readFile } from "node:fs/promises";
  * Output mirrors what the tools receive from ripgrep:
  * - glob: absolute file paths (`<searchPath>/<relative path>`), like `rg --files`.
  * - grep: `path:line:text` for matches, `path-line-text` for context lines,
- *   `--` between non-contiguous context groups of one file, and no path prefix
- *   when `searchPath` is a single file, like `rg -n [-C N]`.
+ *   `--` between non-contiguous context groups (including groups in different
+ *   files), and no path prefix when `searchPath` is a single file, like
+ *   `rg -n [-C N]`.
  *
  * Known limits compared with ripgrep:
  * - Patterns use JavaScript `RegExp` syntax, not the Rust `regex` crate. Most
@@ -158,7 +159,9 @@ function appendFileMatches(out: string[], lines: string[], regex: RegExp, contex
   for (const index of matchLines) {
     const start = Math.max(0, index - context, lastEmitted + 1);
     const end = Math.min(lines.length - 1, index + context);
-    if (lastEmitted >= 0 && start > lastEmitted + 1) out.push("--");
+    // With context, rg also separates the first group of a file from the previous file's output.
+    const separated = lastEmitted >= 0 ? start > lastEmitted + 1 : out.length > 0;
+    if (separated) out.push("--");
     for (let i = start; i <= end; i++) out.push(format(i, isMatch.has(i) ? ":" : "-"));
     lastEmitted = Math.max(lastEmitted, end);
   }
