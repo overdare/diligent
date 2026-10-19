@@ -43,18 +43,6 @@ export const params = z
   })
   .strict();
 
-export const method = "instance.upsert";
-
-export const description =
-  "Upsert instances in batch. Use it for simple, fixed changes to a few instances; use studiorpc_execute_luau for anything that needs procedural logic. The bundled input schema supplies validation, defaults, and JSON conversions for this tool only; it may not match the running Studio, so do not use it to plan Editor Luau. " +
-  "Do not mix adds and updates in a single call — use one call for all adds, another for all updates. " +
-  "Start with a small number of items first, then increase up to 100 if needed. " +
-  "For StringValue, NumberValue, BoolValue, and IntValue, supply Value as a plain string, number, boolean, or integer; the tool converts it to Studio tagged JSON automatically. Empty strings, zero, and false are valid values. " +
-  "Each item is inferred by its fields: add uses parentGuid/class/name/properties, update uses guid with optional name and properties. " +
-  "To create nested hierarchies, add the parent first so its GUID is returned, then add children using that GUID as parentGuid in subsequent items. " +
-  "Services (Workspace, Lighting, Atmosphere, Players, StarterPlayer, MaterialService, etc.) are singletons — they cannot be added, only updated by guid. " +
-  "To reparent an existing instance (change its hierarchy), use studiorpc_instance_move instead of delete + re-add. ";
-
 export type InstanceUpsertAddArgs = z.infer<typeof addParams>;
 export type InstanceUpsertUpdateArgs = z.infer<typeof updateParams>;
 export type InstanceUpsertItemArgs = InstanceUpsertAddArgs | InstanceUpsertUpdateArgs;
@@ -90,11 +78,6 @@ const inputEnvelope = z
       .max(100),
   })
   .strict();
-
-/** Do not run the advertised cross-class union's defaults before class-bound parsing. */
-export function parseInput(value: unknown) {
-  return inputEnvelope.parse(value);
-}
 
 export function parseArgs(value: Record<string, unknown>): InstanceUpsertArgs {
   const result = inputEnvelope.safeParse(value);

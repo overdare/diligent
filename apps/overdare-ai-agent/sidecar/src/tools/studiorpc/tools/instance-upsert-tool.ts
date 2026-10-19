@@ -6,7 +6,7 @@ import * as instanceUpsert from "../methods/instance.upsert";
 import { collectUiDiagnostics } from "../methods/instance.upsert";
 import { buildInstanceUpsertRender } from "../render";
 import { applyLevelChanges as applyLevelChangesDefault } from "../rpc";
-import type { Tool, ToolContext, ToolResult } from "../types";
+import type { ToolContext, ToolResult } from "../types";
 import type { WriteLock } from "../write-lock";
 import {
   addInstancesInDocument,
@@ -18,10 +18,6 @@ import {
 import { resultFromInstanceToolStatusError } from "./instance-status";
 import { type OvdrjmNode, readAndWriteOvdrjm, resolveOvdrjmPathFromUmap } from "./ovdrjm-utils";
 import { upsertInstancesViaRpc } from "./v2/instance-upsert";
-
-function toToolName(method: string): string {
-  return `studiorpc_${method.replace(/\./g, "_")}`;
-}
 
 export async function executeInstanceUpsert(
   args: Record<string, unknown>,
@@ -165,22 +161,6 @@ export async function executeInstanceUpsertInner(
       added: fileResult.added,
       ...(diag.warnings.length > 0 && { warnings: diag.warnings }),
       ...(diag.info.length > 0 && { info: diag.info }),
-    },
-  };
-}
-
-export function createInstanceUpsertTool(
-  cwd: string,
-  writeLock: WriteLock,
-  applyLevelChanges: () => Promise<unknown> = applyLevelChangesDefault,
-): Tool {
-  return {
-    name: toToolName(instanceUpsert.method),
-    description: instanceUpsert.description,
-    parameters: instanceUpsert.params,
-    parseArgs: instanceUpsert.parseInput,
-    async execute(args, ctx) {
-      return executeInstanceUpsert(args, ctx, cwd, writeLock, applyLevelChanges);
     },
   };
 }

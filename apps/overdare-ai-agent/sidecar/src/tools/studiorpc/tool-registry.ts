@@ -37,14 +37,13 @@ import {
   buildInstanceDeleteRender,
   buildInstanceMoveRender,
   buildInstanceReadRender,
-  buildInstanceUpsertRender,
   buildLevelBrowseRender,
   buildLevelPublishRender,
   buildLevelSaveFileRender,
   buildViewportCameraReadRender,
 } from "./render";
 import type { CallRpc } from "./tools/pie-input/target";
-import type { ToolRenderPayload } from "./types";
+import type { ToolRenderPayload, ToolResult } from "./types";
 
 type MethodModule = {
   method: string;
@@ -52,6 +51,7 @@ type MethodModule = {
   params: z.ZodType;
   readOnly?: boolean;
   serialize?: boolean;
+  truncateDirection?: ToolResult["truncateDirection"];
   timeoutMs?: number;
   resolveMethod?: (args: Record<string, unknown>) => string;
   normalizeArgs?: (args: Record<string, unknown>) => Record<string, unknown>;
@@ -107,7 +107,6 @@ export const renderBuilders: Record<string, RenderBuilder> = {
   studiorpc_level_browse: ({ args, result }) => buildLevelBrowseRender(result, args),
   studiorpc_level_save_file: ({ output }) => buildLevelSaveFileRender(output),
   studiorpc_instance_read: ({ normalizedArgs, output }) => buildInstanceReadRender(normalizedArgs, output),
-  studiorpc_instance_upsert: ({ normalizedArgs, output }) => buildInstanceUpsertRender(normalizedArgs, output),
   studiorpc_instance_delete: ({ normalizedArgs, output }) => buildInstanceDeleteRender(normalizedArgs, output),
   studiorpc_instance_move: ({ normalizedArgs, output }) => buildInstanceMoveRender(normalizedArgs, output),
   studiorpc_game_play: ({ normalizedArgs, output }) => buildGamePlayRender(normalizedArgs, output),
