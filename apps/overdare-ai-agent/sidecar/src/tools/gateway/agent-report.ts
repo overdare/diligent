@@ -2,21 +2,15 @@
 
 import { createHash } from "node:crypto";
 import type { Tool } from "@diligent/core/tool-contract";
-import type { HookInput } from "@diligent/runtime";
-import {
-  AgentReportPostError,
-  AgentReportToolInputSchema,
-  postAgentReport,
-  type RecentRecord,
-  RecentRecordSchema,
-} from "./agent-report-client";
+import { AgentReportPostError, AgentReportToolInputSchema, postAgentReport } from "./agent-report-client";
 import { maskValue } from "./masking";
+import { type ReportEvidenceCandidate, selectReportEvidence } from "./report-evidence";
 
 export interface SessionReportContext {
   projectId: string;
   userId: string;
   seq?: number;
-  recentRecords: RecentRecord[];
+  recentRecords: ReportEvidenceCandidate[];
 }
 
 interface AgentReportToolOptions {
@@ -28,46 +22,6 @@ interface AgentReportToolOptions {
 
 function clip(text: string, max: number): string {
   return Array.from(text).slice(0, max).join("");
-}
-
-export function previewSessionEntry(input: HookInput): RecentRecord | undefined {
-  const entry = maskValue(input.entry) as Record<string, unknown> | undefined;
-  if (!entry || typeof input.seq !== "number") return undefined;
-  const message = entry.message as Record<string, unknown> | undefined;
-  let role: string;
-  let tool: string | undefined;
-  let excerpt: string;
-  if (entry.type === "error") {
-    role = "error";
-    excerpt = typeof entry.error === "string" ? entry.error : JSON.stringify(entry.error ?? "");
-  } else if (entry.type === "message" && message) {
-    role = String(message.role ?? "");
-    if (role === "tool_result") {
-      tool = typeof message.toolName === "string" ? message.toolName : undefined;
-      if (tool === "agent_report") return undefined;
-      excerpt = typeof message.output === "string" ? message.output : "";
-    } else if (role === "user") {
-      excerpt = "[user request]";
-    } else if (role === "assistant") {
-      const content = message.content;
-      if (typeof content === "string") excerpt = content;
-      else if (Array.isArray(content)) {
-        if (content.some((block) => block?.type === "tool_call" && block?.name === "agent_report")) return undefined;
-        excerpt = content
-          .filter((block) => block?.type === "text")
-          .map((block) => block.text ?? "")
-          .join("\n");
-      } else excerpt = "";
-    } else return undefined;
-  } else return undefined;
-  const parsed = RecentRecordSchema.safeParse({
-    seq: input.seq,
-    event_ts: entry.timestamp,
-    role,
-    ...(tool ? { tool } : {}),
-    excerpt: clip(excerpt, 400),
-  });
-  return parsed.success ? parsed.data : undefined;
 }
 
 export function createAgentReportTool(options: AgentReportToolOptions): Tool<typeof AgentReportToolInputSchema> {
@@ -103,7 +57,10 @@ export function createAgentReportTool(options: AgentReportToolOptions): Tool<typ
               ...args.payload,
               cwd: clip(maskValue(options.cwd), 512),
               ...(version ? { version: clip(version, 64) } : {}),
-              evidence: { ...args.payload.evidence, recent_records: snapshot?.recentRecords ?? [] },
+              evidence: {
+                ...args.payload.evidence,
+                recent_records: selectReportEvidence(snapshot?.recentRecords ?? [], args.payload.evidence?.tool),
+              },
             },
           },
           ctx.signal,

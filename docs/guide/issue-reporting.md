@@ -12,14 +12,33 @@ preserved. Reporting also requires telemetry consent; turning the experiment on 
 ## Runtime-owned context
 
 The Gateway provider supplies the executing session ID, project ID, latest observed sequence, timestamp, working
-directory, optional runtime version, and up to five short recent entries. It retains context separately for each
+directory, optional runtime version, and up to five short execution records. It retains context separately for each
 session and rejects conflicting attribution. Reports use the same project attribution as session telemetry. Before
 any entry exists, an explicitly configured project is sufficient; without either source, reporting is unavailable.
 The tool never scans the filesystem for a session or asks the model to supply identities or authentication.
 
-Recent excerpts omit reasoning and raw user prompts, mask secrets before clipping, and exclude the reporting tool's
-own calls/results. The stable client report ID derives from the session and tool call, so replaying one call does not
-create another report.
+The provider keeps a bounded in-memory window of 50 execution records per session, rather than counting user
+placeholders, assistant prose, or skill-loading/reporting traffic as evidence. Calls retain tool names and short
+masked arguments; results retain explicit success/error labels. An absent outcome is labeled as a result, not
+inferred to be successful. Private reasoning and raw user prompts are not excerpted. These attachment filters do
+not filter the regular `/v1/records` telemetry stream.
+
+At submission, `payload.evidence.tool` names the operation being reported, such as `instance_upsert`, rather than
+the reporting tool. Its most recent matching execution anchors selection. The provider attaches nearby execution
+records, retaining call/response pairs by their actual tool call IDs, in chronological order and within the existing
+five-record limit. This can preserve a successful write and its subsequent unchanged read-back. Without a matching
+tool, selection falls back to the latest execution neighborhood; this is a deterministic heuristic, not semantic
+relevance judgment. If no execution has been observed, the attachment is empty. The window is process-local and
+does not recover earlier history after a restart. All excerpts are masked before clipping.
+
+When the anchor has a correlated call/response pair, unpaired neighboring responses do not fill unused attachment
+slots. For parallel calls, the excerpts identify the exact invocations of selected results, including when several
+calls use the same tool name. The 400-character budget is shared across visible calls; fewer pairs are selected if
+their tool names cannot all fit. A long sibling call cannot hide the invocation that produced an attached result.
+
+Correlation IDs stay local. Success/error labels and short calls use the existing `excerpt` field, so the Gateway
+API and database need no change for this behavior. The stable client report ID derives from the session and tool
+call, so replaying one call does not create another report.
 
 ## Transport and results
 

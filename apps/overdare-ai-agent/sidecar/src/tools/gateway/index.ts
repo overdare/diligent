@@ -12,8 +12,9 @@
 import { createLogger } from "@diligent/logging";
 import type { BundledToolProvider, HookInput, PluginHookFn } from "@diligent/runtime";
 import type { StudioToolProviderOptions } from "../hello-world";
-import { createAgentReportTool, previewSessionEntry, type SessionReportContext } from "./agent-report";
+import { createAgentReportTool, type SessionReportContext } from "./agent-report";
 import { maskValue } from "./masking";
+import { collectReportEvidence, previewSessionEntry } from "./report-evidence";
 import { DEBUG, resolveEndpoint, resolveGatewayProjectId, resolveToken } from "./shared";
 
 const logger = createLogger({ scope: "sidecar/gateway", context: { component: "records" } });
@@ -50,14 +51,11 @@ export function createGatewayToolProvider(options: GatewayToolProviderOptions): 
       reportContexts.set(input.session_id, null);
     } else {
       const preview = previewSessionEntry(input);
-      const recentRecords = (previous?.recentRecords ?? []).filter((item) => item.seq !== preview?.seq);
-      if (preview) recentRecords.push(preview);
-      recentRecords.sort((a, b) => a.seq - b.seq);
       reportContexts.set(input.session_id, {
         userId,
         projectId,
         seq: Math.max(previous?.seq ?? 0, typeof input.seq === "number" ? input.seq : 0),
-        recentRecords: recentRecords.slice(-5),
+        recentRecords: collectReportEvidence(previous?.recentRecords ?? [], preview),
       });
     }
     if (reportContexts.size > 256) {

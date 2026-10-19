@@ -115,8 +115,8 @@ test("isolates two interleaved session project fallbacks and evidence", async ()
   const [a, b] = reportCalls();
   expect(a?.body.project_id).toBe("alice__workspace");
   expect(b?.body.project_id).toBe("bob__workspace");
-  expect(a?.body.payload.evidence.recent_records[0]?.excerpt).toBe("Alice evidence");
-  expect(b?.body.payload.evidence.recent_records[0]?.excerpt).toBe("Bob evidence");
+  expect(a?.body.payload.evidence.recent_records[0]?.excerpt).toBe("[결과] Alice evidence");
+  expect(b?.body.payload.evidence.recent_records[0]?.excerpt).toBe("[결과] Bob evidence");
   expect(a?.body.session_id).toBe("session-a");
   expect(b?.body.session_id).toBe("session-b");
 });
