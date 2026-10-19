@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { z } from "zod";
 
 export const method = "proceduralmodel.validate";
+export const readOnly = true;
 
 export const description =
   "Statically check a Python geometry recipe against the contract before baking it — cheaper than a full " +

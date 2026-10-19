@@ -2,6 +2,7 @@
 import { z } from "zod";
 
 export const method = "game.character.read";
+export const readOnly = true;
 
 export const description =
   "Read where the play-test character is, whether it is moving, and what it is standing on. " +

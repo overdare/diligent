@@ -4,6 +4,7 @@ import { isRecord } from "../camera-response";
 import { dropPlaceholders, postProcess as nameMissesInInstances } from "./live-instance-names";
 
 export const method = "game.observe";
+export const readOnly = true;
 
 export const description =
   "Read character, UI, and live instance state from one game-thread observation. Ask for at least one " +

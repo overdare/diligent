@@ -3,6 +3,7 @@ import { MAX_OUTPUT_BYTES } from "@diligent/core/tool-contract";
 import { z } from "zod";
 
 export const method = "proceduralmodel.api";
+export const readOnly = true;
 
 export const description =
   "Fetch the live Python geometry-recipe API for baking ProceduralModel MeshParts. " +

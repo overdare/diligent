@@ -4,6 +4,24 @@ The OVERDARE bundled Studio tool provider serves the Web runtime and the MCP ser
 argument validation, approval, write serialization, and error mapping. Connected clients consume
 the resulting tool output through their existing tool rendering paths.
 
+## Approval
+
+Generic method tools ask for `execute` approval before reaching Studio unless their method module
+declares `export const readOnly = true`. Read-only methods only report Studio state and run without
+a prompt:
+
+- `game.settings.read`, `instance.schema.search`
+- `game.character.read`, `game.observe`, `viewport.camera.read`, `level.browse`
+- `game.screenshot` (writes only its PNG capture; a one-shot `camera` is restored after capture)
+- `proceduralmodel.api`, `proceduralmodel.validate` (static recipe check; never touches the scene)
+
+Everything else stays gated: methods that edit or save the level, import assets, change game
+settings, aim the camera, start or stop play, write draft recipes (`proceduralmodel.run`), and
+`hub.token.read`, which returns a secret. A method must not be both read-only and in
+`mutatingMethods` or `serialize`d. Custom read tools (`studiorpc_instance_read`,
+`studiorpc_script_read`, `studiorpc_script_grep`) never prompt; custom write tools request their own
+`write` or `execute` approval.
+
 ## Unified asset import
 
 Use `studiorpc_asset_manager_import` for image, model, and audio files. Studio selects the importer
