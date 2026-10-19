@@ -28,6 +28,7 @@ describe("playtest decision evidence", () => {
       modelDispatches: 0,
       modelEffectsConfirmed: 0,
       automaticDispatches: 0,
+      scenarioDispatches: 0,
     });
   });
 
@@ -43,6 +44,7 @@ describe("playtest decision evidence", () => {
       modelDispatches: 0,
       modelEffectsConfirmed: 0,
       automaticDispatches: 0,
+      scenarioDispatches: 0,
     });
   });
 
@@ -59,6 +61,7 @@ describe("playtest decision evidence", () => {
       modelDispatches: 0,
       modelEffectsConfirmed: 0,
       automaticDispatches: 1,
+      scenarioDispatches: 0,
     });
   });
 
@@ -75,6 +78,7 @@ describe("playtest decision evidence", () => {
       modelDispatches: 0,
       modelEffectsConfirmed: 0,
       automaticDispatches: 0,
+      scenarioDispatches: 0,
     });
   });
 
@@ -92,6 +96,7 @@ describe("playtest decision evidence", () => {
       modelDispatches: 1,
       modelEffectsConfirmed: 1,
       automaticDispatches: 0,
+      scenarioDispatches: 0,
     });
   });
 
@@ -144,6 +149,7 @@ describe("playtest decision evidence", () => {
       modelDispatches: 1,
       modelEffectsConfirmed: 1,
       automaticDispatches: 0,
+      scenarioDispatches: 0,
     });
   });
 
@@ -235,6 +241,7 @@ describe("playtest decision evidence", () => {
       modelDispatches: 0,
       modelEffectsConfirmed: 0,
       automaticDispatches: 2,
+      scenarioDispatches: 0,
     });
   });
 
@@ -276,6 +283,7 @@ describe("playtest decision evidence", () => {
       modelDispatches: 0,
       modelEffectsConfirmed: 0,
       automaticDispatches: 0,
+      scenarioDispatches: 0,
     });
   });
 
@@ -328,6 +336,7 @@ describe("playtest decision evidence", () => {
       modelDispatches: 0,
       modelEffectsConfirmed: 0,
       automaticDispatches: 0,
+      scenarioDispatches: 0,
     });
   });
 
@@ -347,6 +356,7 @@ describe("playtest decision evidence", () => {
       modelDispatches: 2,
       modelEffectsConfirmed: 2,
       automaticDispatches: 0,
+      scenarioDispatches: 0,
     });
   });
 
@@ -370,6 +380,7 @@ describe("playtest decision evidence", () => {
       modelDispatches: 1,
       modelEffectsConfirmed: 1,
       automaticDispatches: 0,
+      scenarioDispatches: 0,
     });
   });
 
@@ -396,6 +407,7 @@ describe("playtest decision evidence", () => {
       modelDispatches: 4,
       modelEffectsConfirmed: 0,
       automaticDispatches: 0,
+      scenarioDispatches: 0,
     });
   });
 
@@ -413,6 +425,7 @@ describe("playtest decision evidence", () => {
       modelDispatches: 0,
       modelEffectsConfirmed: 0,
       automaticDispatches: 0,
+      scenarioDispatches: 0,
     });
   });
 });

@@ -17,9 +17,18 @@ export function luaString(value: string): string {
   return `"${escaped}"`;
 }
 
+const DRIVER_EVENT_RETAIN_SECONDS = 3;
+const MAX_DRIVER_EVENTS = 32;
+const MAX_DECLARED_CHECKS = 32;
+
+/**
+ * The managed LocalScript publishes adapter frames. It also owns two bounded channels so adapters
+ * never accumulate history in state: api.emit keeps log events for a few seconds, and declared
+ * checks republish only their current status for the runner to latch.
+ */
 export function createDriverSource(name: string): string {
   return `--!nonstrict
--- Diligent playtest driver v4. Adapter code remains editable in ReplicatedStorage.
+-- Diligent playtest driver v5. Adapter code remains editable in ReplicatedStorage.
 local RunService=game:GetService('RunService')
 local HttpService=game:GetService('HttpService')
 local ReplicatedStorage=game:GetService('ReplicatedStorage')
@@ -29,12 +38,58 @@ value.Value=HttpService:JSONEncode({protocolVersion=1,harnessId=${luaString(name
 local revision=0
 local adapter=nil
 local adapterError=nil
+local outbox={}
+local emitted=0
+local checks={}
+local checkOrder={}
+local api={}
+function api.emit(level,message,data)
+\tif level~='info' and level~='warning' and level~='error' then error('api.emit level must be info, warning or error') end
+\tif type(message)~='string' or message=='' then error('api.emit message must be a non-empty string') end
+\temitted+=1
+\ttable.insert(outbox,{id='driver-'..tostring(emitted),level=level,message=string.sub(message,1,1024),data=data,at=os.clock()})
+\twhile #outbox>${MAX_DRIVER_EVENTS} do table.remove(outbox,1) end
+end
+function api.declareCheck(id,basis,description)
+\tif type(id)~='string' or id=='' then error('api.declareCheck id must be a non-empty string') end
+\tif basis~='requirement' and basis~='auxiliary' then error('api.declareCheck basis must be requirement or auxiliary') end
+\tif checks[id] then error('check '..id..' is already declared') end
+\tif #checkOrder>=${MAX_DECLARED_CHECKS} then error('at most ${MAX_DECLARED_CHECKS} checks can be declared') end
+\tchecks[id]={id=id,basis=basis,description=description,status='pending'}
+\ttable.insert(checkOrder,id)
+end
+function api.check(id,status,detail)
+\tlocal entry=checks[id]
+\tif not entry then error('check '..tostring(id)..' must be declared with api.declareCheck first') end
+\tif status~='pending' and status~='pass' and status~='fail' then error('api.check status must be pending, pass or fail') end
+\tentry.status=status; entry.detail=detail
+end
+local function driverEvents(limit)
+\tlocal now=os.clock()
+\tlocal kept={}
+\tfor _,entry in ipairs(outbox) do if now-entry.at<=${DRIVER_EVENT_RETAIN_SECONDS} then table.insert(kept,entry) end end
+\toutbox=kept
+\tlocal list={}
+\tfor _,entry in ipairs(kept) do
+\t\tif #list>=limit then break end
+\t\ttable.insert(list,{id=entry.id,level=entry.level,message=entry.message,data=entry.data})
+\tend
+\treturn list
+end
+local function declaredChecks()
+\tlocal list={}
+\tfor _,id in ipairs(checkOrder) do
+\t\tlocal entry=checks[id]
+\t\ttable.insert(list,{id=entry.id,basis=entry.basis,description=entry.description,status=entry.status,detail=entry.detail})
+\tend
+\treturn list
+end
 local ok,result=pcall(function()
 \tlocal folder=ReplicatedStorage:WaitForChild('${ADAPTER_FOLDER}')
 \tlocal module=folder:WaitForChild(${luaString(name)})
 \tlocal loaded=require(module)
 \tif type(loaded)~='table' or type(loaded.observe)~='function' then error('Adapter must return a table with observe()') end
-\tif type(loaded.start)=='function' then loaded.start() end
+\tif type(loaded.start)=='function' then loaded.start(api) end
 \treturn loaded
 end)
 if ok then adapter=result else adapterError=tostring(result) end
@@ -46,12 +101,19 @@ local function publish()
 \t\tlocal observed,data=pcall(adapter.observe)
 \t\tif not observed then adapterError=tostring(data); frame.error={message=adapterError}
 \t\telseif type(data)~='table' then adapterError='observe() must return a table'; frame.error={message=adapterError}
-\t\telse frame.state=data.state or {}; frame.decisionState=data.decisionState; frame.actions=data.actions or {}; frame.terminal=data.terminal; frame.events=data.events; frame.error=data.error; frame.coverage=data.coverage; frame.progress=data.progress end
+\t\telse
+\t\t\tframe.ready=data.ready~=false; frame.state=data.state or {}; frame.decisionState=data.decisionState; frame.actions=data.actions or {}; frame.terminal=data.terminal; frame.error=data.error; frame.coverage=data.coverage; frame.progress=data.progress
+\t\t\tlocal events={}
+\t\t\tfor _,entry in ipairs(data.events or {}) do table.insert(events,entry) end
+\t\t\tfor _,entry in ipairs(driverEvents(64-#events)) do table.insert(events,entry) end
+\t\t\tif #events>0 then frame.events=events end
+\t\t\tif data.checks~=nil then frame.checks=data.checks elseif #checkOrder>0 then frame.checks=declaredChecks() end
+\t\tend
 \tend
 \tlocal encoded,json=pcall(function() return HttpService:JSONEncode(frame) end)
 \tif encoded then value.Value=json
 \telse
-\t\tframe.state={}; frame.decisionState=nil; frame.actions={}; frame.events=nil; frame.terminal=nil; frame.coverage=nil; frame.progress=nil
+\t\tframe.state={}; frame.decisionState=nil; frame.actions={}; frame.events=nil; frame.checks=nil; frame.terminal=nil; frame.coverage=nil; frame.progress=nil
 \t\tframe.error={message='Adapter returned non-JSON values: '..tostring(json)}
 \t\tvalue.Value=HttpService:JSONEncode(frame)
 \tend
@@ -161,7 +223,8 @@ return {updated=true,name=${luaString(name)}}`;
 }
 
 export const HARNESS_CONTRACT = `Author a game-specific Luau ModuleScript returning a table with observe() and optional start().
-start() may bind accepted server snapshot/feedback signals. observe() returns {state={}, decisionState?, actions={}, terminal?, events?, coverage?, progress?}.
+start(api) may bind accepted server snapshot/feedback signals and receives the driver api: api.emit(level, message, data?) logs a game event that the driver republishes for ${DRIVER_EVENT_RETAIN_SECONDS} seconds (newest ${MAX_DRIVER_EVENTS}) so the adapter never keeps a growing log; api.declareCheck(id, basis, description?) and api.check(id, status, detail?) report verification checks (below). observe() returns {state={}, decisionState?, actions={}, terminal?, events?, checks?, coverage?, progress?}.
+The whole frame is JSON at most 256 KiB. Publish current facts only; never accumulate proofs, samples or logs in state. An oversized frame fails the run with the largest sections named.
 state: compact JSON facts; do not treat client defaults as authoritative. No Instances/Vector3/userdata in JSON: convert to plain tables.
 decisionState?: optional compact JSON record sent to the chooser instead of state. Keep only policy-relevant facts here when state includes verification tables/counters. Step/intent expectations still evaluate full state. Without decisionState the legacy full-state request remains unchanged. Keep goal text and candidate descriptions concise too.
 actions: up to 16 currently useful candidates {id, description, events, validityKey?, expiresAtGameTime?, expectations?}.
@@ -173,12 +236,13 @@ With alternatives present, the runner reconsiders at input boundaries after inte
 Generate next steps independently for each goal from observed facts; do not mutate a global chosen target while generating alternatives. Goal-specific route caches are fine. The model receives the runner's active goal/age separately from game facts. No new Studio RPC or Lua callback is required for this mode.
 For both ordinary and intent actions, the chooser receives up to three recent completed inputs as controller.recentActions: {actionId,intentId?,result}. Results are effect_confirmed when fresh healthy post-input expectations pass, effect_unconfirmed when they do not, and not_checked without checks or a healthy result frame. Unconfirmed is not proof of no effect; checks use the first newer post-input frame. This bounded episode-local history contains no raw verification values and does not update Lua-private state. Use concise semantic action IDs; raw feedback remains in the trace.
 Preserve working game-specific executors and add state/memory, parameterized actions and explicit decision points where useful. A small table and ordinary functions can suffice; a formal state-machine framework or new protocol is not required. Guards remove illegal options; distance/risk/return preferences should distinguish useful alternatives for the decision model rather than preselect every strategy in code.
-Only genuinely forced continuations should collapse to one action. Multiple meaningful candidates call the configured decision provider; duplicate renamed inputs do not establish model-mediated play. Keep policy/timing/retry configuration separate from game rules and bindings.
+Only genuinely forced continuations should collapse to one action. In mode=autonomous, multiple meaningful candidates call the configured decision provider; duplicate renamed inputs do not establish model-mediated play. In mode=verification no provider is called: the runner dispatches the first offered candidate, so list the scenario's next step first and keep alternatives for autonomous runs. Keep policy/timing/retry configuration separate from game rules and bindings.
 events use existing balanced game.input events (key, pointer, look, bounded wait). Never directly perform a gameplay action from observe().
 validityKey binds an action to a round/phase/objective; expiresAtGameTime uses os.clock() seconds.
 expectations are {key: state dot-path, op: change|increase|decrease|equals, value?}; report only observed effects.
 terminal: {outcome: success|failure, reason?} only when actual game state establishes the outcome.
-events: bounded real game logs {id:string, level?:info|warning|error, message, data?}; unique id allows deduplication.
+events: bounded real game logs {id:string, level?:info|warning|error, message, data?}; unique id allows deduplication. Prefer api.emit: the driver assigns ids and drops old entries, so frames stay small.
+checks: verification checkpoints derived from the requested spec, each {id, basis='requirement'|'auxiliary', description?, status='pending'|'pass'|'fail', detail?}. requirement = an acceptance criterion from the user's spec; auxiliary = a harness diagnostic (timing, intermediate pose, sensor sanity) that must never decide a requirement verdict. Declare every check at start() with status pending, then report pass/fail from authoritative facts when the criterion is decided. detail is at most 2 KiB of the facts that decided it (positions, ids, counts), not a history. At most 32 checks. The runner latches each status transition with its detail and returns verification={status, requirement, auxiliary, checks}; it is reported next to, never folded into, the game terminal outcome. Use api.declareCheck/api.check, or return checks from observe() yourself (then the driver registry is not published).
 Reduce actual correlated feedback into controller state once per event/revision. Candidate publication is not selection, and selection/input completion is not a successful game effect.
 Current boundary: the driver invokes start()/observe() only. The selected ID is NOT sent to an adapter onDecision callback; game.input.inject carries physical inputs only. Use action.intent for runner-owned goal commitment and compute each goal's next step from facts. If private Lua state must consume selection itself, that separate callback is still unsupported; do not invent it or use Editor-only execute.luau during PIE.
 For test-goal coverage, declare coverage={targets={{id,kind='action'|'state'|'event',description,source?}},observed={...}}.
@@ -194,8 +258,18 @@ stuck is a runtime result, not an adapter success/failure terminal. It records l
 Keep game-specific observation, candidate generation and outcome rules in this module so Diligent can maintain them between runs.
 The generic driver owns protocolVersion=1, harnessId, revision and gameTimeSeconds; runtime owns provider selection, input, cancellation and session cleanup.
 The same adapter can run with decisionProvider=laya or openai-decisions; omitting decisionProvider uses the sidecar host's configured default (DILIGENT_DECISION_PROVIDER, else laya). observationMode=structured is default; structured+image requires an image-capable provider, accessible PNG captures and one targeted owned PIE client. Image bytes are captured by the sidecar at model-decision boundaries, not returned by Lua or put in StringValue. maxVisualAgeMs bounds image age before a new choice dispatch; retained/singleton steps still use fresh structured state. Missing/stale images never silently become a text-only run. OpenAI credentials come from server-side OPENAI_API_KEY; do not put credentials in Source or tool arguments. See the tool schema for options and host screenshot mapping configuration.
-Results include decisionEvidence: model requests/choices/dispatches/confirmed effects and automatic dispatches. not_exercised is possible even with a successful game outcome; it does not satisfy a request to verify model-mediated decisions. Correlate the trace by decisionId and verify the intended controller transition, not just call counts.
-Workflow: list/read actual installed names -> inspect game Lua/GUI and test objective -> describe contract -> author/install -> validate -> game_playtest -> inspect trace/coverage -> read/update using sourceHash -> rerun.
+Results include decisionEvidence: model requests/choices/dispatches/confirmed effects, automatic (singleton) dispatches and scenario dispatches. In autonomous mode not_exercised is possible even with a successful game outcome; it does not satisfy a request to verify model-mediated decisions. Correlate the trace by decisionId and verify the intended controller transition, not just call counts. In verification mode decisionEvidence is not_applicable; use verification and coverage.
+Results also include diagnostics: startup readiness waits, the last action with its failed expectations, unmet-expectation counts and hints. Read them before changing the adapter. repeatedFailure appears when the same harness failed the same way in consecutive runs; stop rerunning and narrow the hypothesis.
+Integer input fields (durationMs, timeoutMs) are rounded to whole milliseconds, so Luau arithmetic may produce fractions.
+Workflow: list/read actual installed names -> inspect game Lua/GUI and test objective -> describe contract -> author/install -> validate -> game_playtest -> inspect verification/diagnostics/trace/coverage -> read/update using sourceHash -> rerun.
 read found:false is a normal new-project branch; author/install. RPC failure is not evidence that a harness is absent.
 update refreshes the generated common driver too; keep game-specific behavior in the adapter rather than customizing the managed driver.
 Do not patch an adapter during PIE. For UGC, derive bindings from the current project, not an unrelated example.`;
+
+export const MULTIPLAYER_CONTRACT = `Two-player extension (numberOfPlayer=2, structured only):
+Main frame actions must be empty. state.multiplayerActors holds exactly two actors as an array (Luau numeric-key tables accepted) or as a map keyed by each actor's actorId:
+{actorId:'Player0', userId:<unique string>, position:{x,y,z}, state:<actor-local JSON object>, decisionState:<actor-local JSON object>, actions:<existing PlaytestAction[]>, progress:{sequence,waiting?}, terminal?:{outcome,reason?}}.
+The parent adapter supplies an authoritative server snapshot and read-only per-client camera telemetry. Keep units, receipts, attack/victim/drop/owner and transfer/lock assertions in the actor-local state. Runtime does not copy main character/UI into peers.
+Initial game.character.read positions bind the two real injectable clientIds to unique actors within 150 cm (reject ambiguity); authoritative native userId wins when supplied. Bindings never follow moving positions or change user identities.
+Each actor runs an independent concurrent model/native input RPC loop with separate model calls, bounded history and retained intent context. Root ready=false and unavailable/stale shared frames withhold both actors' new inputs until fresh healthy observations resume; absent actors in unready frames are not a parser failure. In autonomous mode new choices require two or more meaningful alternatives; an unselected singleton is not scripted opponent policy. Verification mode dispatches singletons and the first offered candidate. Intent macro descriptions should select targets/goals, not per-tick steering. Retained steps use current actor cameraYaw and current action events; each balanced physical batch must fit maxPhysicalBatchDurationMs (default 2000 ms, explicitly configurable from 250 to 5000 ms in two-player mode). Keys and normalized pointer positions only; no target lookup, conditional waits, look, mouseDelta or scroll using the main viewport. The parent verifies the shared attack layout before running. Model/RPC overlap is not proof of native key/pointer overlap; retain actor-specific native input spans and authoritative simultaneous-movement telemetry for live verification.
+The authoritative shared root terminal ends the episode; absent that, both actor-local terminals must be observed before aggregation. Root terminal never fabricates peer terminal facts. Each actor has an independent progress watchdog and effect/coverage evidence. Optional actorGoals overrides goal per actor. One owner stops only the same session it started. Multi maxDurationMs can be at most 900000; single-player stays capped at 180000.`;

@@ -1,25 +1,41 @@
 // @summary Counts model-choice participation separately from confirmed action effects.
-import type { PlaytestEvent } from "./runtime";
+import type { PlaytestEvent, PlaytestMode } from "./runtime-types";
 
 export type DecisionEvidenceStatus =
+  | "not_applicable"
   | "not_exercised"
   | "selected_not_dispatched"
   | "dispatched_unverified"
   | "effects_observed";
 
 export interface DecisionEvidenceSummary {
+  /** not_applicable: verification mode never consults a decision provider. */
   status: DecisionEvidenceStatus;
   modelRequests: number;
   modelChoices: number;
   modelDispatches: number;
   modelEffectsConfirmed: number;
   automaticDispatches: number;
+  scenarioDispatches: number;
 }
+
+export interface DecisionEvidenceTracker {
+  event(event: PlaytestEvent): void;
+  summary(): DecisionEvidenceSummary;
+}
+
+type DecisionSource = "model" | "automatic" | "scenario";
+
+const CHOICE_SOURCE_BY_EVENT: Record<string, DecisionSource> = {
+  model_choice: "model",
+  singleton_choice: "automatic",
+  scenario_choice: "scenario",
+};
 
 interface DecisionRecord {
   modelRequestSeen?: true;
   choiceSeen?: true;
-  choiceSource?: "model" | "automatic";
+  choiceSource?: DecisionSource;
   choiceActionId?: string;
   modelDispatchSeen?: true;
   modelEffectSeen?: true;
@@ -29,11 +45,15 @@ interface DecisionRecord {
 
 interface PhysicalExecution {
   dispatchSeen: true;
-  dispatchSource?: "model" | "automatic";
+  dispatchSource?: DecisionSource;
   actionId?: string;
   intentId?: string;
   dispatchMatchesChoice: boolean;
   resultSeen?: true;
+}
+
+function isDecisionSource(value: unknown): value is DecisionSource {
+  return value === "model" || value === "automatic" || value === "scenario";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -73,18 +93,17 @@ function expectationsPassed(event: PlaytestEvent): boolean {
   );
 }
 
-export function createDecisionEvidenceTracker(): {
-  event(event: PlaytestEvent): void;
-  summary(): DecisionEvidenceSummary;
-} {
+export function createDecisionEvidenceTracker(options: { mode?: PlaytestMode } = {}): DecisionEvidenceTracker {
   const decisions = new Map<number, DecisionRecord>();
   let modelRequests = 0;
   let modelChoices = 0;
   let modelDispatches = 0;
   let modelEffectsConfirmed = 0;
   let automaticDispatches = 0;
+  let scenarioDispatches = 0;
 
   const decisionStatus = (): DecisionEvidenceStatus => {
+    if (options.mode === "verification") return "not_applicable";
     if (modelChoices === 0) return "not_exercised";
     if (modelDispatches === 0) return "selected_not_dispatched";
     if (modelEffectsConfirmed === 0) return "dispatched_unverified";
@@ -113,14 +132,15 @@ export function createDecisionEvidenceTracker(): {
         return;
       }
 
-      if (event.type === "model_choice" || event.type === "singleton_choice") {
+      const choiceSource = CHOICE_SOURCE_BY_EVENT[event.type];
+      if (choiceSource) {
         if (decision.choiceSeen) return;
         const actionId = actionIdOf(event);
         if (!actionId) return;
         decision.choiceSeen = true;
-        decision.choiceSource = event.type === "model_choice" ? "model" : "automatic";
+        decision.choiceSource = choiceSource;
         decision.choiceActionId = actionId;
-        if (decision.choiceSource === "model") modelChoices += 1;
+        if (choiceSource === "model") modelChoices += 1;
         return;
       }
 
@@ -129,13 +149,12 @@ export function createDecisionEvidenceTracker(): {
         if (!executionKey || decision.dispatchStages.has(executionKey)) return;
         decision.dispatchStages.add(executionKey);
         const actionId = actionIdOf(event);
-        const decisionSource = event.decisionSource;
+        const decisionSource = isDecisionSource(event.decisionSource) ? event.decisionSource : undefined;
         const intent = intentIdOf(event);
-        const validSource = decisionSource === "model" || decisionSource === "automatic";
         const validCorrelation =
           actionId !== undefined &&
           intent !== undefined &&
-          validSource &&
+          decisionSource !== undefined &&
           !(intent.present && executionKey === "legacy");
         const dispatchMatchesChoice =
           validCorrelation &&
@@ -144,7 +163,7 @@ export function createDecisionEvidenceTracker(): {
           decision.choiceActionId === (intent.present ? intent.id : actionId);
         decision.executions.set(executionKey, {
           dispatchSeen: true,
-          ...(decisionSource === "model" || decisionSource === "automatic" ? { dispatchSource: decisionSource } : {}),
+          ...(decisionSource ? { dispatchSource: decisionSource } : {}),
           ...(actionId ? { actionId } : {}),
           ...(intent?.present && intent.id ? { intentId: intent.id } : {}),
           dispatchMatchesChoice,
@@ -155,6 +174,8 @@ export function createDecisionEvidenceTracker(): {
             decision.modelDispatchSeen = true;
             modelDispatches += 1;
           }
+        } else if (decisionSource === "scenario") {
+          scenarioDispatches += 1;
         } else {
           automaticDispatches += 1;
         }
@@ -199,6 +220,7 @@ export function createDecisionEvidenceTracker(): {
         modelDispatches,
         modelEffectsConfirmed,
         automaticDispatches,
+        scenarioDispatches,
       };
     },
   };

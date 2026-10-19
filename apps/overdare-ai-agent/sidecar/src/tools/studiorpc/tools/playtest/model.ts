@@ -55,7 +55,7 @@ export function createLayaChooser(options: LayaChooserOptions) {
         {
           model: options.model,
           state: {
-            goal: options.goal,
+            goal: context?.goal ?? options.goal,
             game: frame.decisionState ?? frame.state,
             ...(context === undefined ? {} : { controller: context }),
           },

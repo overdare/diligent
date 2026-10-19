@@ -1,11 +1,22 @@
 // @summary Episode contracts shared by the runner, decision providers and observers.
 import type { call } from "../../rpc";
+import type { createCheckTracker } from "./checks";
+import type { createConcurrencyTracker } from "./concurrency";
+import type { createCoverageTracker } from "./coverage";
 import type { createDecisionEvidenceTracker } from "./decision-evidence";
+import type { PlaytestDiagnostics } from "./diagnostics";
 import type { PlaytestDecisionCandidate, PlaytestDecisionContext, PlaytestFrame } from "./frame";
+import type { ActorBinding } from "./multiplayer";
 import type { createProgressWatchdog } from "./progress";
 import type { PlaytestVisual, VisualObserver } from "./visual-observation";
 
 type CallRpc = typeof call;
+
+/**
+ * autonomous: multi-candidate frames call the decision provider (model-mediated play).
+ * verification: no decision provider; the first available candidate in adapter order runs (scripted acceptance).
+ */
+export type PlaytestMode = "autonomous" | "verification";
 
 export interface PlaytestClock {
   /** Monotonic milliseconds. */
@@ -54,25 +65,51 @@ export interface PlaytestCleanup {
   reason: string;
 }
 
+type DecisionEvidenceSummary = ReturnType<ReturnType<typeof createDecisionEvidenceTracker>["summary"]>;
+
+export interface PerActorEvidence {
+  binding: ActorBinding;
+  decisionEvidence: DecisionEvidenceSummary;
+  coverage: ReturnType<ReturnType<typeof createCoverageTracker>["summary"]>;
+  terminal?: PlaytestFrame["terminal"];
+  observationSource: "main_shared_authoritative_harness_actor_projection";
+  goal?: string;
+  source?: { harnessName: string; sourceHash: string };
+  config?: Record<string, unknown>;
+}
+
 export interface PlaytestResult {
   outcome: "success" | "failure" | "timeout" | "stuck" | "cancelled" | "input_cancelled" | "session_changed" | "error";
   reason: string;
+  mode: PlaytestMode;
   terminal?: PlaytestFrame["terminal"];
   stuck?: ReturnType<ReturnType<typeof createProgressWatchdog>["status"]> & {
     lastActionId?: string;
+    actorId?: string;
     revision?: number;
     state?: unknown;
     progress?: PlaytestFrame["progress"];
     observationHealth?: string;
   };
+  /** Declared requirement/auxiliary checks, latched from adapter frames; independent of `outcome`. */
+  verification: ReturnType<ReturnType<typeof createCheckTracker>["summary"]>;
+  diagnostics: PlaytestDiagnostics;
   stats: PlaytestStats;
-  decisionEvidence: ReturnType<ReturnType<typeof createDecisionEvidenceTracker>["summary"]>;
+  decisionEvidence: DecisionEvidenceSummary;
   cleanup: PlaytestCleanup;
+  concurrencyEvidence?: ReturnType<ReturnType<typeof createConcurrencyTracker>["summary"]>;
+  perActorEvidence?: Record<string, PerActorEvidence>;
 }
 
 export interface RunPlaytestOptions {
   callRpc: CallRpc;
-  choose: (
+  mode?: PlaytestMode;
+  numberOfPlayer?: 1 | 2;
+  /** Two-player only: actorId -> goal; missing actors use goal. */
+  actorGoals?: Record<string, string>;
+  goal?: string;
+  /** Required in autonomous mode; unused in verification mode. */
+  choose?: (
     frame: PlaytestFrame,
     actions: PlaytestDecisionCandidate[],
     signal: AbortSignal,
@@ -88,6 +125,8 @@ export interface RunPlaytestOptions {
   harnessId: string;
   frameName: string;
   maxDurationMs?: number;
+  /** Two-player only: longest balanced physical batch per step. */
+  maxPhysicalBatchDurationMs?: number;
   startupTimeoutMs?: number;
   stuckTimeoutMs?: number;
   intentDecisionIntervalMs?: number;

@@ -1,11 +1,19 @@
 // @summary Defines the Studio playtest harness authoring and maintenance tool.
 import type { Tool } from "../../types";
-import { HARNESS_CONTRACT, installCode, listHarnesses, readHarness, sourceHash, updateCode } from "./harness";
+import {
+  HARNESS_CONTRACT,
+  installCode,
+  listHarnesses,
+  MULTIPLAYER_CONTRACT,
+  readHarness,
+  sourceHash,
+  updateCode,
+} from "./harness";
 import { approve, harnessParams, type PlaytestToolOptions, validate, withSignal } from "./tool-shared";
 
 const toolName = "studiorpc_game_playtest_harness";
 const description =
-  "Author and maintain the current UGC game's playtest controller as editable Luau code inside Studio. describe returns the contract; list discovers installed names; read returns current source/hash or found:false with the author/install next step. A missing harness is normal for a new project. install persists an adapter and common driver; update checks expectedSourceHash and refreshes the driver. Derive bindings, state/event transitions, parameterized actions, actual effect checks and meaningful model decision points from this game's scripts/GUI and the user's objective. Expose direct controls and optional bounded assists according to the test; keep user-adjustable assistance separate from test goals and game rules. For player exploration, preserve unknowns and route/recovery choices instead of supplying a hidden solution. Optional intent-tagged steps support model-selected goals spanning multiple inputs; the adapter computes each goal independently and receives no semantic choice callback. Validate, run game_playtest, inspect decisionEvidence/effects/coverage and improve between runs. Edits save the project and are refused during PIE. Game-specific logic stays in Studio.";
+  "Author and maintain the current UGC game's playtest controller as editable Luau code inside Studio. describe returns the contract; list discovers installed names; read returns current source/hash or found:false with the author/install next step. A missing harness is normal for a new project. install persists an adapter and common driver; update checks expectedSourceHash and refreshes the driver. Derive bindings, state/event transitions, parameterized actions, actual effect checks and meaningful model decision points from this game's scripts/GUI and the user's objective. Declare requirement checks (the spec's acceptance criteria) separately from auxiliary harness diagnostics so a run reports which requirement passed or failed. Expose direct controls and optional bounded assists according to the test; keep user-adjustable assistance separate from test goals and game rules. For player exploration, preserve unknowns and route/recovery choices instead of supplying a hidden solution. Optional intent-tagged steps support model-selected goals spanning multiple inputs; the adapter computes each goal independently and receives no semantic choice callback. Validate, run game_playtest, inspect verification/diagnostics/decisionEvidence/coverage and improve between runs. Edits save the project and are refused during PIE. Game-specific logic stays in Studio.";
 
 export function createHarnessTool(options: PlaytestToolOptions): Tool {
   return {
@@ -14,7 +22,8 @@ export function createHarnessTool(options: PlaytestToolOptions): Tool {
     parameters: harnessParams,
     async execute(args, ctx) {
       const parsed = harnessParams.parse(args);
-      if (parsed.operation === "describe") return { output: HARNESS_CONTRACT, metadata: { protocolVersion: 1 } };
+      if (parsed.operation === "describe")
+        return { output: `${HARNESS_CONTRACT}\n\n${MULTIPLAYER_CONTRACT}`, metadata: { protocolVersion: 1 } };
       const rpc = withSignal(options.callRpc, ctx);
       if (parsed.operation === "list") {
         const harnesses = await listHarnesses(rpc);
@@ -54,9 +63,12 @@ export function createHarnessTool(options: PlaytestToolOptions): Tool {
       ) {
         return { output: "[Rejected by user]", metadata: { error: true } };
       }
+      // Snapshot capture takes the same write lock, so it must finish before this edit holds it.
+      const warning = await options.beforeMutation?.(ctx);
+      ctx.signal.throwIfAborted();
       const release = await options.writeLock?.acquire();
       try {
-        const warning = options.beforeMutation?.();
+        ctx.signal.throwIfAborted();
         const code =
           parsed.operation === "install"
             ? installCode(parsed.name, parsed.source)
