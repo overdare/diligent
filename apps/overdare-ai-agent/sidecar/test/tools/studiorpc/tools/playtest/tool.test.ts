@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPlaytestTools } from "../../../../../src/tools/studiorpc/tools/playtest";
 import { luaString } from "../../../../../src/tools/studiorpc/tools/playtest/harness";
+import { createWriteLock } from "../../../../../src/tools/studiorpc/write-lock";
 
 const context = {
   toolCallId: "call",
@@ -128,16 +129,19 @@ describe("editable playtest tools", () => {
     ).rejects.toThrow(/PIE|running/i);
     expect(calls).toEqual(["game.pie.status"]);
   });
-  test("update saves the edited source, verifies readback and reports both scripts' validation", async () => {
+  test("update captures the rollback baseline before editing, then saves and validates both scripts", async () => {
     let source = "return {observe=function() return {state={},actions={}} end}";
     const next = `${source}\n-- Improved game observation`;
     const calls: string[] = [];
+    const writeLock = createWriteLock();
+    let baseline: string | undefined;
     const rpc = async (method: string, args?: Record<string, unknown>) => {
       calls.push(method);
       if (method === "game.pie.status") return { running: false };
       if (method === "level.browse") return tree;
       if (method === "instance.read") return { instance: { Name: "sample", Source: source } };
       if (method === "execute.luau") {
+        expect(baseline).toBe(source);
         expect(args?.code).toContain(`module.Source~=${luaString(source)}`);
         expect(args?.code).toContain(`module.Source=${luaString(next)}`);
         source = next;
@@ -150,7 +154,20 @@ describe("editable playtest tools", () => {
       }
       throw Error(method);
     };
-    const tool = createPlaytestTools({ callRpc: rpc as never, cwd: "/tmp" })[0];
+    const tool = createPlaytestTools({
+      callRpc: rpc as never,
+      cwd: "/tmp",
+      writeLock,
+      beforeMutation: async () => {
+        const release = await writeLock.acquire();
+        try {
+          baseline = source;
+        } finally {
+          release();
+        }
+        return undefined;
+      },
+    })[0];
     const current = await tool!.execute({ operation: "read", name: "sample" }, context);
     const result = await tool!.execute(
       { operation: "update", name: "sample", source: next, expectedSourceHash: current.metadata?.sourceHash },
@@ -371,6 +388,102 @@ test("shared playtest tool switches to Decisions with pixels and persists provid
     expect(trace).toContain('"type":"visual_observation"');
     expect(trace).not.toContain("test-secret");
     expect(trace).not.toContain("base64");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("verification mode runs scripted acceptance without any decision provider and rejects provider settings", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "playtest-verification-"));
+  try {
+    let running = false;
+    let revision = 0;
+    const injectedEvents: unknown[] = [];
+    const rpc = async (method: string, params?: Record<string, unknown>) => {
+      if (method === "level.browse") return tree;
+      if (method === "instance.read") return { instance: { Name: "sample", Source: "return {}" } };
+      if (method === "lua.validate") return { output: "SUMMARY scripts=2 errors=0 warnings=0" };
+      if (method === "game.pie.status")
+        return {
+          running,
+          pieSessionId: running ? "owned" : undefined,
+          clients: running ? [{ clientId: "client", injectable: true, targeted: true }] : [],
+        };
+      if (method === "game.play") {
+        running = true;
+        return { started: true };
+      }
+      if (method === "game.stop") {
+        running = false;
+        return { stopped: true };
+      }
+      if (method === "game.input.inject") {
+        injectedEvents.push(params?.events);
+        return { status: "completed" };
+      }
+      if (method === "game.observe") {
+        const name = (params?.instances as { targets: string[] }).targets[0];
+        const done = injectedEvents.length > 0;
+        const snapshot = {
+          protocolVersion: 1,
+          harnessId: "sample",
+          revision: ++revision,
+          gameTimeSeconds: revision,
+          state: { opened: done },
+          actions: done
+            ? []
+            : [
+                {
+                  id: "open-door",
+                  description: "Open the door",
+                  events: [{ type: "key", key: "E", action: "press", durationMs: 1 }],
+                  expectations: [{ key: "opened", op: "equals", value: true }],
+                },
+                { id: "leave", description: "Leave", events: [{ type: "wait", durationMs: 1 }] },
+              ],
+          checks: [{ id: "door-opens", basis: "requirement", status: done ? "pass" : "pending" }],
+          ...(done ? { terminal: { outcome: "success", reason: "Door opened" } } : {}),
+        };
+        return {
+          character: { data: { clientId: "client" } },
+          instances: { data: { instances: [{ name, Value: { Type: "String", String: JSON.stringify(snapshot) } }] } },
+        };
+      }
+      throw Error(method);
+    };
+    const run = createPlaytestTools({
+      cwd: dir,
+      callRpc: rpc as never,
+      decisionOptions: {
+        resolveApiKey: async () => {
+          throw Error("verification must not resolve provider credentials");
+        },
+        fetch: async () => {
+          throw Error("verification must not call a decision provider");
+        },
+      },
+    })[1]!;
+    expect(() =>
+      run.parameters.parse({ harnessName: "sample", goal: "open", mode: "verification", decisionProvider: "laya" }),
+    ).toThrow(/verification mode never calls a decision provider/);
+
+    const result = await run.execute(
+      { harnessName: "sample", goal: "open", mode: "verification", maxDurationMs: 3000 },
+      context,
+    );
+    const output = JSON.parse(result.output);
+    expect(injectedEvents).toHaveLength(1);
+    expect(injectedEvents[0]).toEqual(expect.arrayContaining([expect.objectContaining({ type: "key", key: "E" })]));
+    expect(output).toMatchObject({
+      outcome: "success",
+      mode: "verification",
+      decisionConfig: { provider: "none" },
+      decisionEvidence: { status: "not_applicable", scenarioDispatches: 1 },
+      verification: { status: "passed" },
+    });
+    const summary = JSON.parse(await readFile(output.summaryPath, "utf8"));
+    expect(summary.runConfig.mode).toBe("verification");
+    expect(running).toBe(false);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

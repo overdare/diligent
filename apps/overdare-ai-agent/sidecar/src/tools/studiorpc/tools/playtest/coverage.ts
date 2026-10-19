@@ -1,6 +1,6 @@
 // @summary Aggregates declared test-goal coverage without equating input dispatch with verified behavior.
 import type { PlaytestCoverageTarget, PlaytestFrame } from "./frame";
-import type { PlaytestEvent } from "./runtime";
+import type { PlaytestEvent } from "./runtime-types";
 
 interface TargetProgress extends PlaytestCoverageTarget {
   observedSamples: number;
@@ -12,7 +12,36 @@ interface TargetProgress extends PlaytestCoverageTarget {
   effectsFailed: number;
 }
 
-function targetCoverageStatus(progress: TargetProgress) {
+const SELECTION_EVENTS: Record<string, true> = {
+  model_choice: true,
+  singleton_choice: true,
+  scenario_choice: true,
+  intent_step: true,
+};
+
+type TargetCoverageStatus = "covered" | "completed_unverified" | "dispatched" | "selected" | "offered" | "uncovered";
+
+export interface CoverageTargetSummary extends TargetProgress {
+  status: TargetCoverageStatus;
+  covered: boolean;
+}
+
+export interface CoverageSummary {
+  scope: "declared_test_targets";
+  status: "not_declared" | "complete" | "partial";
+  totalTargets: number;
+  coveredTargets: number;
+  percentage?: number;
+  targets: CoverageTargetSummary[];
+}
+
+export interface CoverageTracker {
+  observe(frame: PlaytestFrame): void;
+  event(event: PlaytestEvent): void;
+  summary(): CoverageSummary;
+}
+
+function targetCoverageStatus(progress: TargetProgress): TargetCoverageStatus {
   const confirmations = progress.kind === "action" ? progress.effectsConfirmed : progress.observedSamples;
   if (confirmations > 0) return "covered";
   if (progress.completed > 0) return "completed_unverified";
@@ -22,13 +51,13 @@ function targetCoverageStatus(progress: TargetProgress) {
   return "uncovered";
 }
 
-function inventoryCoverageStatus(total: number, covered: number) {
+function inventoryCoverageStatus(total: number, covered: number): CoverageSummary["status"] {
   if (total === 0) return "not_declared";
   if (covered === total) return "complete";
   return "partial";
 }
 
-export function createCoverageTracker() {
+export function createCoverageTracker(): CoverageTracker {
   const targets = new Map<string, TargetProgress>();
   function requireTarget(id: string, kind?: PlaytestCoverageTarget["kind"]) {
     const progress = targets.get(id);
@@ -73,8 +102,7 @@ export function createCoverageTracker() {
     event(event: PlaytestEvent) {
       if (typeof event.coverageKey !== "string") return;
       const progress = requireTarget(event.coverageKey, "action");
-      if (event.type === "model_choice" || event.type === "singleton_choice" || event.type === "intent_step")
-        progress.selected++;
+      if (SELECTION_EVENTS[event.type]) progress.selected++;
       if (event.type === "action_dispatch") progress.dispatched++;
       if (event.type === "input_reply" && event.status === "completed") progress.completed++;
       if (
@@ -89,7 +117,7 @@ export function createCoverageTracker() {
         else progress.effectsFailed++;
       }
     },
-    summary() {
+    summary(): CoverageSummary {
       const rows = [...targets.values()].map((progress) => {
         const status = targetCoverageStatus(progress);
         const covered = status === "covered";

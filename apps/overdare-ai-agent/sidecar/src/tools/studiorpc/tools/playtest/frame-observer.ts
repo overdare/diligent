@@ -28,6 +28,11 @@ interface FrameObserverOptions {
   stats: PlaytestStats;
   emit: (type: string, fields?: Record<string, unknown>) => void;
   onFrame?: RunPlaytestOptions["onFrame"];
+  /** Episode-level terminal: the root terminal, or an aggregate of actor terminals in two-player mode. */
+  episodeTerminal: (frame: PlaytestFrame) => PlaytestFrame["terminal"];
+  /** Validates a parsed, error-free frame before it becomes `latest`; throwing fails the observer. */
+  inspectFrame?: (frame: PlaytestFrame, receivedAtMs: number) => void;
+  /** Called for every healthy frame, terminal or not. */
   onHealthyFrame: (frame: PlaytestFrame, receivedAtMs: number) => void;
   refreshSessionIfDue: (signal: AbortSignal) => Promise<void>;
   verifyOwnedSession: (signal: AbortSignal) => Promise<void>;
@@ -65,7 +70,7 @@ export function createFrameObserver(options: FrameObserverOptions) {
     });
   };
   const terminalFrameUsable = (snapshot: FrameSnapshot, now = clock.now()): boolean => {
-    if (!snapshot.frame.terminal || !snapshot.frameReady) return false;
+    if (!options.episodeTerminal(snapshot.frame) || !snapshot.frameReady) return false;
     if (unavailableFrameObservation && unavailableFrameObservation.receivedAtMs >= snapshot.receivedAtMs) return false;
     return now - snapshot.receivedAtMs <= FRESHNESS_LIMIT_MS;
   };
@@ -125,6 +130,7 @@ export function createFrameObserver(options: FrameObserverOptions) {
           throw new AdapterError(`frame harnessId mismatch: expected ${options.harnessId}, got ${frame.harnessId}`);
         }
         if (frame.error) throw new AdapterError(frame.error.message);
+        options.inspectFrame?.(frame, receivedAtMs);
         if (lastRevision !== undefined && frame.revision < lastRevision) {
           throw new AdapterError(`adapter revision regressed (${frame.revision} < ${lastRevision})`);
         }
@@ -158,9 +164,7 @@ export function createFrameObserver(options: FrameObserverOptions) {
         const cadenceMs = previousObservationAt === undefined ? undefined : receivedAtMs - previousObservationAt;
         previousObservationAt = receivedAtMs;
         latest = { sequence: observerSequence, receivedAtMs, observeLatencyMs, clientReady, frameReady, frame };
-        if (!frame.terminal && !snapshotHealthError(latest)) {
-          options.onHealthyFrame(frame, receivedAtMs);
-        }
+        if (!snapshotHealthError(latest)) options.onHealthyFrame(frame, receivedAtMs);
         stats.observations += 1;
         stats.maxObserveLatencyMs = Math.max(stats.maxObserveLatencyMs, observeLatencyMs);
         stats.lastRevision = frame.revision;

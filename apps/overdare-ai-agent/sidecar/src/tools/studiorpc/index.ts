@@ -465,9 +465,12 @@ export async function createStudioRpcTools(ctx: {
     // write lock and no rollback snapshot.
     ...createPieInputTools(callRpc),
     ...createPerformanceTools(ctx.cwd, callRpc),
-    ...createPlaytestTools({ callRpc, cwd: ctx.cwd, writeLock, beforeMutation: ensureSnapshot }).map((tool) =>
-      wrapTool(tool, ctx.host),
-    ),
+    ...createPlaytestTools({
+      callRpc,
+      cwd: ctx.cwd,
+      writeLock,
+      beforeMutation: (toolCtx) => ensureSnapshot(getTurnState(toolCtx), toolCtx.signal),
+    }).map((tool) => wrapTool(tool, ctx.host)),
   ];
 
   for (const mod of methodModules) {

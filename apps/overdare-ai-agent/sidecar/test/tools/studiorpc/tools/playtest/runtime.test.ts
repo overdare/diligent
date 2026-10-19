@@ -1537,3 +1537,88 @@ test("candidate changes while capturing invalidate evidence before the provider 
   expect(f.calls.some((c) => c.method === "game.input.inject")).toBe(false);
   expect(result.cleanup.stopped).toBe(true);
 });
+
+describe("verification mode, requirement checks and diagnostics", () => {
+  test("verification mode dispatches the first offered candidate without consulting a chooser", async () => {
+    const f = createRpc({
+      beforeInputFrame: (n) => {
+        const base = frame({ revision: n, gameTimeSeconds: 10 + n });
+        return { ...base, actions: [base.actions[1]!, base.actions[0]!] };
+      },
+    });
+    const events: PlaytestEvent[] = [];
+    const result = await runPlaytest(
+      optionsFor(f, {
+        mode: "verification",
+        choose: undefined,
+        onEvent: (event: PlaytestEvent) => events.push(event),
+      }),
+    );
+    const inputs = f.calls.filter((call) => call.method === "game.input.inject");
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]!.params?.events).toEqual([{ type: "wait", durationMs: 80 }]);
+    expect(result.outcome).toBe("success");
+    expect(result.mode).toBe("verification");
+    expect(result.stats.modelCalls).toBe(0);
+    expect(result.decisionEvidence).toMatchObject({ status: "not_applicable", modelChoices: 0, scenarioDispatches: 1 });
+    expect(events.find((event) => event.type === "scenario_choice")).toMatchObject({
+      actionId: "wait",
+      decisionSource: "scenario",
+      alternatives: 1,
+    });
+  });
+
+  test("requirement checks are latched and reported next to a successful terminal", async () => {
+    let after = 0;
+    const f = createRpc({
+      beforeInputFrame: (n) =>
+        frame({
+          revision: n,
+          gameTimeSeconds: 10 + n,
+          checks: [
+            { id: "boss-damaged", basis: "requirement", status: "pending" },
+            { id: "aim-time", basis: "auxiliary", status: "pass", detail: { aimMs: 120 } },
+          ],
+        }),
+      afterInputFrame: () => {
+        after += 1;
+        return frame({
+          revision: 100 + after,
+          gameTimeSeconds: 100 + after,
+          state: { phase: "VICTORY", ammo: 2, bossHp: 100 },
+          actions: [],
+          terminal: { outcome: "success", reason: "Round timer expired" },
+          checks: [
+            { id: "boss-damaged", basis: "requirement", status: "fail", detail: { bossHp: 100 } },
+            { id: "aim-time", basis: "auxiliary", status: "pass" },
+          ],
+        });
+      },
+    });
+    const events: PlaytestEvent[] = [];
+    const result = await runPlaytest(optionsFor(f, { onEvent: (event: PlaytestEvent) => events.push(event) }));
+    expect(result.outcome).toBe("success");
+    expect(result.verification.status).toBe("failed");
+    expect(result.verification.requirement).toEqual({ total: 1, passed: 0, failed: 1, pending: 0 });
+    expect(result.verification.auxiliary).toEqual({ total: 1, passed: 1, failed: 0, pending: 0 });
+    const requirement = result.verification.checks.find((check) => check.id === "boss-damaged");
+    expect(requirement).toMatchObject({ status: "fail", everFailed: true, detail: { bossHp: 100 } });
+    expect(requirement?.transitions.map((transition) => transition.status)).toEqual(["fail"]);
+    expect(events.filter((event) => event.type === "check" && event.checkId === "boss-damaged")).toHaveLength(1);
+    expect(result.diagnostics.hints.some((hint) => hint.includes("requirement checks are failed"))).toBe(true);
+  });
+
+  test("a startup timeout reports which readiness condition never cleared", async () => {
+    const f = createRpc({
+      beforeInputFrame: (n) => frame({ revision: n, gameTimeSeconds: 10 + n, ready: false }),
+    });
+    const result = await runPlaytest(optionsFor(f, { maxDurationMs: 5_000, startupTimeoutMs: 1_500 }));
+    expect(result.outcome).toBe("timeout");
+    expect(result.diagnostics.phase).toBe("startup");
+    expect(result.diagnostics.framesObserved).toBeGreaterThan(0);
+    expect(result.diagnostics.readinessWaits[0]).toMatchObject({ section: "adapter", phase: "startup" });
+    expect(result.diagnostics.hints[0]).toContain("never became ready");
+    expect(f.calls.some((call) => call.method === "game.input.inject")).toBe(false);
+    expect(result.cleanup.stopped).toBe(true);
+  });
+});

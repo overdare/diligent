@@ -91,7 +91,7 @@ export async function createDecisionProvider(
         {
           type: "input_text",
           text: JSON.stringify({
-            goal: config.goal,
+            goal: context?.goal ?? config.goal,
             game: frame.decisionState ?? frame.state,
             ...(context ? { controller: context } : {}),
             ...(visual ? { visual: { ...visual.metadata, artifactPath: undefined } } : {}),
