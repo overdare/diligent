@@ -48,6 +48,19 @@ Some built-ins are immutable and always stay enabled:
 
 These appear as locked in the UI and stay enabled even if config tries to disable them.
 
+### `grep` and `glob` search backend
+
+`grep` and `glob` run ripgrep when it can be resolved, in this order: `DILIGENT_RG_PATH`, a bundled `assets/bin/rg[.exe]` next to the running executable, then `rg` on `PATH`. When none exists (for example a dev sidecar started with `bun run` on a host without ripgrep), both tools switch to an in-process fallback (`packages/runtime/src/util/search-fallback.ts`) instead of failing. The fallback returns the same output shape as ripgrep (absolute paths for `glob`; `path:line:text`, `path-line-text` context lines and `--` group separators for `grep`), so results look the same to the model and the UI.
+
+Fallback limits compared with ripgrep:
+
+- `grep` patterns use JavaScript `RegExp` syntax, not Rust `regex`. Leading `(?i)`, `(?m)` and `(?s)` are translated; other Rust-only syntax may be rejected or behave differently (`\w` and `\b` are ASCII-only). Invalid patterns return an error instead of "No matches found."
+- `.gitignore` handling is simplified: only `.gitignore` files inside a git work tree (repository root down to each visited directory) are honored for `grep`; `.ignore`, `.rgignore`, `.git/info/exclude` and global excludes are not. `glob` ignores `.gitignore`, matching its `--no-ignore` ripgrep invocation.
+- `.git` is always skipped. `node_modules` is always skipped by `grep`, and by `glob` unless the pattern mentions `node_modules`. `grep` also skips hidden files, like ripgrep's default.
+- Symlinks are not followed. `grep` skips files containing a NUL byte and files larger than 8 MiB.
+- Work is bounded (100,000 visited directory entries, 20,000 scanned files, 5,000 collected `grep` output lines). When a bound is hit, the result ends with a `search stopped early` note and overflow counts are lower bounds.
+- `glob` and `grep` `include` patterns containing `/` are anchored to the search path (`src/*.ts` matches `<path>/src/*.ts`). ripgrep, given the absolute search path these tools pass, only matches such patterns when they start with `**/`.
+
 ## Bundled product tools
 
 Product variants can register first-party bundled tool providers in-process. For example, the OVERDARE packaged sidecar assembles its local Web host and injects OVERDARE-owned providers from `apps/overdare-ai-agent/sidecar/src/tools`.

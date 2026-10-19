@@ -19,7 +19,7 @@ The architecture is organized around four product goals:
 - **Language:** TypeScript with strict mode
 - **Workspace model:** Bun workspaces / monorepo packages
 - **Validation:** Zod schemas across config, tools, and protocol boundaries
-- **External CLI dependency:** `rg` (ripgrep) for `glob` and `grep` tools
+- **External CLI dependency:** `rg` (ripgrep) for `glob` and `grep` tools; an in-process fallback runs when no `rg` can be resolved (see `docs/guide/tool-settings.md`)
 
 ## Repository Structure
 
