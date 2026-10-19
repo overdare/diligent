@@ -2,21 +2,15 @@
 
 import { createHash } from "node:crypto";
 import type { Tool } from "@diligent/core/tool-contract";
-import type { HookInput } from "@diligent/runtime";
-import {
-  AgentReportPostError,
-  AgentReportToolInputSchema,
-  postAgentReport,
-  type RecentRecord,
-  RecentRecordSchema,
-} from "./agent-report-client";
+import { AgentReportPostError, AgentReportToolInputSchema, postAgentReport } from "./agent-report-client";
 import { maskValue } from "./masking";
+import { readReportEvidence } from "./report-evidence";
 
 export interface SessionReportContext {
   projectId: string;
   userId: string;
   seq?: number;
-  recentRecords: RecentRecord[];
+  transcriptPath: string;
 }
 
 interface AgentReportToolOptions {
@@ -26,48 +20,10 @@ interface AgentReportToolOptions {
   getSessionContext: (sessionId: string) => SessionReportContext | null | undefined;
 }
 
+class AgentReportContextError extends Error {}
+
 function clip(text: string, max: number): string {
   return Array.from(text).slice(0, max).join("");
-}
-
-export function previewSessionEntry(input: HookInput): RecentRecord | undefined {
-  const entry = maskValue(input.entry) as Record<string, unknown> | undefined;
-  if (!entry || typeof input.seq !== "number") return undefined;
-  const message = entry.message as Record<string, unknown> | undefined;
-  let role: string;
-  let tool: string | undefined;
-  let excerpt: string;
-  if (entry.type === "error") {
-    role = "error";
-    excerpt = typeof entry.error === "string" ? entry.error : JSON.stringify(entry.error ?? "");
-  } else if (entry.type === "message" && message) {
-    role = String(message.role ?? "");
-    if (role === "tool_result") {
-      tool = typeof message.toolName === "string" ? message.toolName : undefined;
-      if (tool === "agent_report") return undefined;
-      excerpt = typeof message.output === "string" ? message.output : "";
-    } else if (role === "user") {
-      excerpt = "[user request]";
-    } else if (role === "assistant") {
-      const content = message.content;
-      if (typeof content === "string") excerpt = content;
-      else if (Array.isArray(content)) {
-        if (content.some((block) => block?.type === "tool_call" && block?.name === "agent_report")) return undefined;
-        excerpt = content
-          .filter((block) => block?.type === "text")
-          .map((block) => block.text ?? "")
-          .join("\n");
-      } else excerpt = "";
-    } else return undefined;
-  } else return undefined;
-  const parsed = RecentRecordSchema.safeParse({
-    seq: input.seq,
-    event_ts: entry.timestamp,
-    role,
-    ...(tool ? { tool } : {}),
-    excerpt: clip(excerpt, 400),
-  });
-  return parsed.success ? parsed.data : undefined;
 }
 
 export function createAgentReportTool(options: AgentReportToolOptions): Tool<typeof AgentReportToolInputSchema> {
@@ -86,11 +42,32 @@ export function createAgentReportTool(options: AgentReportToolOptions): Tool<typ
       if (!projectId)
         return { output: "Report unavailable: exact session/project context missing. Continue the task." };
       const snapshot = context ? structuredClone(context) : undefined;
+      const assertBinding = () => {
+        const current = options.getSessionContext(ctx.sessionId!);
+        if (
+          current === null ||
+          (current && current.projectId !== projectId) ||
+          (snapshot &&
+            (!current || current.userId !== snapshot.userId || current.transcriptPath !== snapshot.transcriptPath))
+        ) {
+          throw new AgentReportContextError("Session binding changed");
+        }
+      };
       const clientReportId = createHash("sha256")
         .update(JSON.stringify([ctx.sessionId, ctx.toolCallId]))
         .digest("hex");
       const version = (process.env.OVERDARE_AI_AGENT_VERSION ?? process.env.DILIGENT_SERVER_VERSION)?.trim();
       try {
+        const recentRecords = snapshot
+          ? await readReportEvidence({
+              sessionId: ctx.sessionId,
+              transcriptPath: snapshot.transcriptPath,
+              throughSeq: snapshot.seq ?? 0,
+              reportedTool: args.payload.evidence?.tool,
+              signal: AbortSignal.any([ctx.signal, AbortSignal.timeout(2_000)]),
+            })
+          : [];
+        assertBinding();
         const receipt = await postAgentReport(
           {
             client_report_id: clientReportId,
@@ -103,11 +80,18 @@ export function createAgentReportTool(options: AgentReportToolOptions): Tool<typ
               ...args.payload,
               cwd: clip(maskValue(options.cwd), 512),
               ...(version ? { version: clip(version, 64) } : {}),
-              evidence: { ...args.payload.evidence, recent_records: snapshot?.recentRecords ?? [] },
+              evidence: {
+                ...args.payload.evidence,
+                recent_records: recentRecords,
+              },
             },
           },
           ctx.signal,
-          options.canTransmitRecords,
+          () => {
+            const allowed = options.canTransmitRecords?.() ?? false;
+            assertBinding();
+            return allowed;
+          },
         );
         if (!receipt.stored) {
           const reason =
@@ -128,6 +112,9 @@ export function createAgentReportTool(options: AgentReportToolOptions): Tool<typ
         };
       } catch (error) {
         if (ctx.signal.aborted) return { output: "Report canceled. Continue the task." };
+        if (error instanceof AgentReportContextError) {
+          return { output: "Report unavailable: conflicting session context. Continue the task." };
+        }
         if (error instanceof AgentReportPostError && error.reason === "no_consent") {
           return { output: "Report skipped: consent not granted. Continue the task." };
         }
