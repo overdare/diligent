@@ -19,6 +19,8 @@ import { createLocalImageLoader, toolOutputStore } from "../infrastructure";
 import { SessionManager } from "../session/manager";
 import { isSafeSessionId } from "../session/types";
 import { forkToolForChild } from "../tools/child-fork";
+import { CodeModeSession } from "../tools/code-mode/session";
+import { applyCodeMode } from "../tools/code-mode/tools";
 import { buildDefaultTools } from "../tools/defaults";
 import { COLLAB_TOOL_NAMES, TOOL_CAPABILITIES } from "../tools/tool-metadata";
 import { NicknamePool } from "./nicknames";
@@ -195,6 +197,7 @@ export class AgentRegistry {
       onChildStop: next.onChildStop,
       userId: next.userId,
       agentLoopHookFactories: next.agentLoopHookFactories,
+      codeMode: next.codeMode,
     };
     // Sync the collab event handler if it was updated
     if (next.onCollabEvent !== undefined) {
@@ -322,6 +325,8 @@ export class AgentRegistry {
     // after the manager has been fully constructed and run() settles.
     const onChildStop = this.deps.onChildStop;
     let childManager: SessionManager;
+    // The child agent is rebuilt per turn; one session keeps its yielded exec cells and store across turns.
+    const childCodeModeSession = new CodeModeSession();
 
     const childManagerConfig: Parameters<typeof factory>[0] = {
       cwd: this.deps.cwd,
@@ -374,13 +379,18 @@ export class AgentRegistry {
         });
 
         const filteredTools = result.tools.filter((tool) => allowedChildToolNames.has(tool.name));
+        const exposedTools = applyCodeMode(filteredTools, {
+          codeMode: this.deps.codeMode ?? "off",
+          session: childCodeModeSession,
+          outputStore: this.deps.toolOutputStore ?? toolOutputStore,
+        });
         const loopHooks =
           this.deps.agentLoopHookFactories?.flatMap((createHooks) =>
             createHooks({
               cwd: this.deps.cwd,
               agentKind: "child",
               model: childModel,
-              tools: filteredTools,
+              tools: exposedTools,
               parentSessionId: this.deps.getParentSessionId?.(),
               sessionId: childManager.sessionId,
               logger: logger.child({ scope: "runtime.collab.agent-loop-hooks" }),
@@ -390,7 +400,7 @@ export class AgentRegistry {
         return new RuntimeAgent(
           childModel,
           childSystemPrompt,
-          filteredTools,
+          exposedTools,
           {
             effort: childEffort,
             fastMode: this.deps.fastMode,
@@ -400,6 +410,7 @@ export class AgentRegistry {
             loopHooks,
           },
           result.registry,
+          childCodeModeSession,
         );
       },
       parentSession: this.deps.getParentSessionId?.(),

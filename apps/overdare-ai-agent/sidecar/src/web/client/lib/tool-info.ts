@@ -73,6 +73,16 @@ const TOOL_MAP: Record<string, ToolInfo> = {
     running: "Running command",
     failed: "Command failed",
   }),
+  exec: tool("Script", "terminal", "action", {
+    done: "Ran script",
+    running: "Running script",
+    failed: "Script failed",
+  }),
+  exec_wait: tool("Script", "clock", "action", {
+    done: "Waited on script",
+    running: "Waiting on script",
+    failed: "Script wait failed",
+  }),
   write: tool("Write", "edit", "action", {
     done: "Wrote file",
     running: "Writing file",

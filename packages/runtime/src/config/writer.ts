@@ -18,6 +18,7 @@ const JSONC_FORMAT_OPTIONS = {
 } as const;
 
 type ConflictPolicy = NonNullable<NonNullable<DiligentConfig["tools"]>["conflictPolicy"]>;
+type CodeMode = NonNullable<NonNullable<DiligentConfig["tools"]>["codeMode"]>;
 
 interface BasePluginConfig {
   package: string;
@@ -47,6 +48,7 @@ export interface StoredToolsConfig {
     tools?: Record<string, false>;
   }>;
   conflictPolicy?: Exclude<ConflictPolicy, "error">;
+  codeMode?: Exclude<CodeMode, "off">;
 }
 
 export interface WriteToolsConfigResult {
@@ -133,7 +135,7 @@ export async function saveGlobalExperimentOverrides(overrides: Record<string, bo
 }
 
 export function normalizeStoredToolsConfig(
-  tools: DiligentConfig["tools"] | ToolConfigPatch | undefined,
+  tools: DiligentConfig["tools"] | (ToolConfigPatch & { codeMode?: CodeMode }) | undefined,
 ): StoredToolsConfig | undefined {
   if (!tools) return undefined;
 
@@ -141,8 +143,9 @@ export function normalizeStoredToolsConfig(
   const normalizedBuiltin = normalizeFalseOnlyMap(tools.builtin);
   const plugins = normalizePluginConfigs(tools.plugins);
   const conflictPolicy = tools.conflictPolicy && tools.conflictPolicy !== "error" ? tools.conflictPolicy : undefined;
+  const codeMode = tools.codeMode && tools.codeMode !== "off" ? tools.codeMode : undefined;
 
-  if (webAction === undefined && !normalizedBuiltin && !plugins && !conflictPolicy) {
+  if (webAction === undefined && !normalizedBuiltin && !plugins && !conflictPolicy && !codeMode) {
     return undefined;
   }
 
@@ -151,6 +154,7 @@ export function normalizeStoredToolsConfig(
     ...(normalizedBuiltin ? { builtin: normalizedBuiltin } : {}),
     ...(plugins ? { plugins } : {}),
     ...(conflictPolicy ? { conflictPolicy } : {}),
+    ...(codeMode ? { codeMode } : {}),
   };
 }
 
@@ -163,11 +167,13 @@ export function applyToolConfigPatch(
   const mergedPlugins = mergePluginPatches(current?.plugins ?? [], patch.plugins ?? []);
   const nextConflictPolicy = patch.conflictPolicy ?? current?.conflictPolicy;
 
+  // Code mode is file-config only; tool-settings patches must keep the stored value intact.
   return normalizeStoredToolsConfig({
     web_action: nextWebAction,
     builtin: mergedBuiltin,
     plugins: mergedPlugins,
     conflictPolicy: nextConflictPolicy,
+    codeMode: current?.codeMode,
   });
 }
 

@@ -31,7 +31,28 @@ export interface ToolContext {
   signal: AbortSignal;
   abort: () => void;
   onUpdate?: (partialResult: string) => void;
+  /**
+   * Emits lifecycle events for tool calls this call executes on behalf of the model
+   * (e.g. code mode `exec`). The runner tags each event with this call's id as `parentToolCallId`.
+   */
+  emitNestedToolEvent?: (event: NestedToolEvent) => void;
 }
+
+/** Lifecycle event of a tool call executed inside another tool call. Never persisted as a tool_result. */
+export type NestedToolEvent =
+  | { type: "tool_start"; itemId: string; toolCallId: string; toolName: string; input: unknown }
+  | { type: "tool_update"; itemId: string; toolCallId: string; toolName: string; partialResult: string }
+  | {
+      type: "tool_end";
+      itemId: string;
+      toolCallId: string;
+      toolName: string;
+      output: string;
+      outputImages?: ImageBlock[];
+      isError: boolean;
+      render?: ToolRenderPayloadLike;
+      metadata?: Record<string, unknown>;
+    };
 
 // D020: Tool result
 export interface ToolResult {

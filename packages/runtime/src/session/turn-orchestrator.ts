@@ -478,6 +478,6 @@ function shouldFlushTurnProgress(event: CoreAgentEvent): boolean {
   return (
     event.type === "turn_start" ||
     (event.type === "message_end" && event.message.stopReason === "tool_use") ||
-    event.type === "tool_end"
+    (event.type === "tool_end" && !event.parentToolCallId)
   );
 }

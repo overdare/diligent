@@ -31,6 +31,39 @@ export interface RenderStrategy {
  */
 const RENDER_STRATEGIES: Map<string, RenderStrategy> = new Map([
   [
+    "exec",
+    {
+      startInputSummary: (parsedInput) => {
+        const code = typeof parsedInput?.code === "string" ? parsedInput.code : "";
+        const firstLine = code.split("\n").find((line) => line.trim().length > 0);
+        return summarizeRenderText(firstLine?.trim(), 120);
+      },
+      endRender: (parsedInput, output, isError) => {
+        const code = typeof parsedInput?.code === "string" ? parsedInput.code : "";
+        const firstLine = code.split("\n").find((line) => line.trim().length > 0);
+        return {
+          inputSummary: summarizeRenderText(firstLine?.trim(), 120),
+          // The first output line is the script status ("Script completed", "Script running with cell ID 1", ...).
+          outputSummary: output.split("\n", 1)[0],
+          blocks: [
+            { type: "file", filePath: "exec.js", content: code },
+            { type: "text", title: "Output", text: output, isError },
+          ],
+        };
+      },
+    },
+  ],
+  [
+    "exec_wait",
+    {
+      startInputSummary: (parsedInput) => {
+        const cellId = typeof parsedInput?.cell_id === "string" ? parsedInput.cell_id : undefined;
+        if (!cellId) return undefined;
+        return parsedInput?.terminate === true ? `terminate cell ${cellId}` : `cell ${cellId}`;
+      },
+    },
+  ],
+  [
     "apply_patch",
     {
       startInputSummary: (parsedInput) => {

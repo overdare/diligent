@@ -264,6 +264,8 @@ export const AgentEventSchema = z.union([
     timestamp: z.number().int().optional(),
     startedAt: z.number().int().optional(),
     childThreadId: z.string().optional(),
+    /** Set for calls executed inside another tool call (code mode `exec`); render nested under that call. */
+    parentToolCallId: z.string().optional(),
     nickname: z.string().optional(),
   }),
   z.object({
@@ -273,6 +275,7 @@ export const AgentEventSchema = z.union([
     toolName: z.string(),
     partialResult: z.string(),
     childThreadId: z.string().optional(),
+    parentToolCallId: z.string().optional(),
     nickname: z.string().optional(),
   }),
   z.object({
@@ -288,6 +291,7 @@ export const AgentEventSchema = z.union([
     timestamp: z.number().int().optional(),
     durationMs: z.number().int().nonnegative().optional(),
     childThreadId: z.string().optional(),
+    parentToolCallId: z.string().optional(),
     nickname: z.string().optional(),
   }),
   z.object({
@@ -414,6 +418,8 @@ export const ThreadItemSchema = z.union([
     isError: z.boolean().optional(),
     render: ToolRenderPayloadSchema.optional(),
     metadata: z.record(z.unknown()).optional(),
+    /** Set for calls executed inside another tool call (code mode `exec`). */
+    parentToolCallId: z.string().optional(),
   }),
   z.object({
     type: z.literal("compaction"),

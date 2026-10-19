@@ -119,6 +119,8 @@ Normalization rules:
 - plugin tools store only `false` overrides
 - default `conflictPolicy: "error"` is omitted when possible
 
+`tools.codeMode` (`off` | `on` | `only`) switches tool calling to JavaScript `exec` scripts; it is file-only and preserved by tool-settings writes. See `docs/guide/code-mode.md`.
+
 ## Conflict policy
 
 Supported policies:

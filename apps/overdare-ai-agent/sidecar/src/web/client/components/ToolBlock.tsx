@@ -121,7 +121,8 @@ export function ToolBlock({
   }, [assetGalleryAutoOpened, shouldAutoOpen]);
 
   return (
-    <div>
+    // Calls made from a code mode `exec` script hang under that exec row.
+    <div className={item.parentToolCallId ? "ml-3 border-l border-border/30 pl-3" : undefined}>
       <div className="min-w-0">
         <ToolActivityRow
           title={rowTitle}
