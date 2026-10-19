@@ -229,6 +229,33 @@ test("missing OpenAI credentials and unsupported visual provider fail before Stu
   expect(calls).toBe(0);
 });
 
+test("DILIGENT_DECISION_PROVIDER sets the default provider while explicit arguments still win", async () => {
+  const original = process.env.DILIGENT_DECISION_PROVIDER;
+  const tool = createPlaytestTools({
+    cwd: "/tmp",
+    callRpc: async () => {
+      throw Error("unexpected RPC");
+    },
+    decisionOptions: { resolveApiKey: async () => undefined },
+  })[1]!;
+  try {
+    process.env.DILIGENT_DECISION_PROVIDER = "openai-decisions";
+    await expect(tool.execute({ harnessName: "sample", goal: "inspect" }, context)).rejects.toThrow(/OPENAI_API_KEY/);
+    await expect(
+      tool.execute({ harnessName: "sample", goal: "inspect", decisionProvider: "laya" }, context),
+    ).rejects.toThrow(/unexpected RPC/);
+    process.env.DILIGENT_DECISION_PROVIDER = "unknown";
+    await expect(tool.execute({ harnessName: "sample", goal: "inspect" }, context)).rejects.toThrow(
+      /DILIGENT_DECISION_PROVIDER/,
+    );
+    delete process.env.DILIGENT_DECISION_PROVIDER;
+    await expect(tool.execute({ harnessName: "sample", goal: "inspect" }, context)).rejects.toThrow(/unexpected RPC/);
+  } finally {
+    if (original === undefined) delete process.env.DILIGENT_DECISION_PROVIDER;
+    else process.env.DILIGENT_DECISION_PROVIDER = original;
+  }
+});
+
 test("shared playtest tool switches to Decisions with pixels and persists provider and capture evidence", async () => {
   const dir = await mkdtemp(join(tmpdir(), "playtest-provider-"));
   try {

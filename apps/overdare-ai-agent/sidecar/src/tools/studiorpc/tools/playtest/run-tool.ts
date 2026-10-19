@@ -3,26 +3,36 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Tool } from "../../types";
 import { createCoverageTracker } from "./coverage";
-import { createDecisionProvider } from "./decision-provider";
+import { createDecisionProvider, defaultDecisionProvider } from "./decision-provider";
 import { readHarness } from "./harness";
 import { DEFAULT_INTENT_DECISION_INTERVAL_MS, DEFAULT_STUCK_TIMEOUT_MS, runPlaytest } from "./runtime";
 import { approve, type PlaytestToolOptions, runParams, validate, withSignal } from "./tool-shared";
 import { createVisualObserver } from "./visual-observation";
 
 const toolName = "studiorpc_game_playtest";
-const description =
-  "Start a fresh Studio play session, run an editable UGC harness with the selected decision provider, observe effects, then stop the same session. Default Laya uses structured state; OpenAI Decisions supports structured state plus actual viewport images. OpenAI requests use server-side OPENAI_API_KEY and may transmit game observations/images to the official API. Visual mode requires one targeted client and screenshot files readable by the sidecar, with optional STUDIO_SCREENSHOT_REMOTE_ROOT/LOCAL_ROOT mapping. Continuous observation, stale-choice checks, bounded input, retained intents and the 15-second progress watchdog remain active. Captures happen at model-decision boundaries, not every input step; singleton and retained steps are automatic. Records provider settings, visual metadata/artifacts and actual results. Requires stopped PIE and a validated harness. Success comes only from the adapter's observed game terminal, not a model estimate.";
+
+function configuredProviderNote(): string {
+  try {
+    return `Omit decisionProvider, model and decisionUrl to use this host's configured default provider (currently ${defaultDecisionProvider()}) with its default model/endpoint; set them only when the user asks for a specific provider.`;
+  } catch (error) {
+    return `${error instanceof Error ? error.message : String(error)}; pass decisionProvider explicitly until the host setting is fixed.`;
+  }
+}
+
+function describeRunTool(): string {
+  return `Start a fresh Studio play session, run an editable UGC harness with the selected decision provider, observe effects, then stop the same session. ${configuredProviderNote()} Laya uses structured state only; OpenAI Decisions supports structured state plus actual viewport images. OpenAI requests use server-side OPENAI_API_KEY and may transmit game observations/images to the official API. Visual mode requires one targeted client and screenshot files readable by the sidecar, with optional STUDIO_SCREENSHOT_REMOTE_ROOT/LOCAL_ROOT mapping. Continuous observation, stale-choice checks, bounded input, retained intents and the 15-second progress watchdog remain active. Captures happen at model-decision boundaries, not every input step; singleton and retained steps are automatic. Records provider settings, visual metadata/artifacts and actual results. Requires stopped PIE and a validated harness. Success comes only from the adapter's observed game terminal, not a model estimate.`;
+}
 
 export function createRunTool(options: PlaytestToolOptions): Tool {
   return {
     name: toolName,
-    description,
+    description: describeRunTool(),
     parameters: runParams,
     async execute(args, ctx) {
       const parsed = runParams.parse(args);
       const chooser = await createDecisionProvider(
         {
-          provider: parsed.decisionProvider ?? "laya",
+          provider: parsed.decisionProvider ?? defaultDecisionProvider(),
           observationMode: parsed.observationMode ?? "structured",
           goal: parsed.goal,
           model: parsed.model,

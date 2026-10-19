@@ -33,6 +33,14 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Provider used when the caller omits one: DILIGENT_DECISION_PROVIDER on the sidecar host, else Laya. */
+export function defaultDecisionProvider(): DecisionProviderId {
+  const configured = process.env.DILIGENT_DECISION_PROVIDER?.trim();
+  if (!configured) return "laya";
+  if (configured === "laya" || configured === "openai-decisions") return configured;
+  throw new Error(`DILIGENT_DECISION_PROVIDER must be "laya" or "openai-decisions", got "${configured}"`);
+}
+
 export async function createDecisionProvider(
   config: DecisionProviderConfig,
   options: DecisionProviderOptions = {},
