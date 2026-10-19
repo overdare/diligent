@@ -245,7 +245,8 @@ export function reduceCollabEvent(state: ThreadState, event: CollabAgentEvent): 
           next,
           agent.threadId,
           normalizeSpawnStatusFromWait(agent.status, event.timedOut),
-          agent.message,
+          // A running agent's message is a point-in-time progress digest; it belongs to the wait row only.
+          agent.status === "running" ? undefined : agent.message,
         );
       }
       return next;

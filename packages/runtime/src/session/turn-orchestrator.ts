@@ -190,6 +190,11 @@ export class TurnOrchestrator {
     }
   }
 
+  /** Aborts the active agent's running tool batch so queued steering is delivered on its next turn. */
+  interruptTools(): void {
+    this._agent?.interruptTools();
+  }
+
   cancelPendingMessage(id: string): boolean {
     if (this._agent?.cancelPendingMessage(id)) return true;
     const index = this.pendingMessages.findIndex((entry) => entry.id === id);

@@ -150,6 +150,10 @@ export function makeMockSessionManagerFactory(
 export interface DeferredChildControl {
   started: Promise<void>;
   complete(output: string): void;
+  /** Delivers a child event to the registry's subscription. */
+  emit(event: AgentEvent): void;
+  /** Steering messages received, with whether each was followed by a tool interrupt. */
+  steering: Array<{ message: string; interrupted: boolean }>;
 }
 
 /** Create child managers whose completion order is controlled explicitly by a test. */
@@ -167,8 +171,10 @@ export function makeDeferredSessionManagerFactory(): {
     const started = new Promise<void>((resolve) => {
       markStarted = resolve;
     });
+    const steering: DeferredChildControl["steering"] = [];
     controls.push({
       started,
+      steering,
       complete(output: string) {
         if (!finishRun) throw new Error(`Deferred child ${sessionId} has not started.`);
         const assistant = makeAssistant(output);
@@ -177,6 +183,9 @@ export function makeDeferredSessionManagerFactory(): {
           listener({ type: "message_end", itemId: `${sessionId}-item`, message: assistant });
         }
         finishRun();
+      },
+      emit(event: AgentEvent) {
+        for (const listener of listeners) listener(event);
       },
     });
 
@@ -198,7 +207,13 @@ export function makeDeferredSessionManagerFactory(): {
         });
       },
       waitForWrites: async () => {},
-      steer: () => {},
+      steer: (message: string) => {
+        steering.push({ message, interrupted: false });
+      },
+      interruptTools: () => {
+        const last = steering.at(-1);
+        if (last) last.interrupted = true;
+      },
       hasPendingMessages: () => false,
       popPendingMessages: () => null,
       appendModeChange: () => {},

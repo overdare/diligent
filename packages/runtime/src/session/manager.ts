@@ -274,6 +274,11 @@ export class SessionManager {
     return this.orchestrator.steer(message, id);
   }
 
+  /** Aborts the running tool batch so queued steering reaches the model on the next turn. */
+  interruptTools(): void {
+    this.orchestrator.interruptTools();
+  }
+
   cancelPendingMessage(id: string): boolean {
     return this.orchestrator.cancelPendingMessage(id);
   }

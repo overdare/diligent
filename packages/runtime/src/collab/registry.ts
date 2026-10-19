@@ -24,6 +24,7 @@ import { applyCodeMode } from "../tools/code-mode/tools";
 import { buildDefaultTools } from "../tools/defaults";
 import { COLLAB_TOOL_NAMES, TOOL_CAPABILITIES } from "../tools/tool-metadata";
 import { NicknamePool } from "./nicknames";
+import { type AgentProgress, AgentProgressTracker, formatAgentProgress } from "./progress";
 import type { AgentEntry, AgentStatus, CollabAgentEvent, CollabResumePolicy, CollabToolDeps } from "./types";
 import { isFinal } from "./types";
 
@@ -444,6 +445,7 @@ export class AgentRegistry {
       status: { kind: "pending" },
       abortController,
       createdAt: Date.now(),
+      progress: new AgentProgressTracker(),
       resumePolicy: effectivePolicy,
     };
 
@@ -487,6 +489,7 @@ export class AgentRegistry {
       let coreTurnId = "";
 
       const unsub = childManager.subscribe((event) => {
+        entry.progress.record(event);
         if (event.type === "turn_start") {
           coreTurnId = event.turnId;
           turnNumber++;
@@ -607,11 +610,13 @@ export class AgentRegistry {
         agentStatuses: ids.map((id) => {
           const entry = this.agents.get(id)!;
           const status = statuses[id] ?? entry.status;
+          const progress = status.kind === "running" ? entry.progress.snapshot() : undefined;
           return {
             threadId: id,
             nickname: entry.nickname,
             status: toCollabStatus(status),
-            message: statusMessage(status),
+            // A running agent reports its progress digest instead of a final message.
+            message: statusMessage(status) ?? (progress ? formatAgentProgress(progress) : undefined),
           };
         }),
         timedOut,
@@ -687,11 +692,19 @@ export class AgentRegistry {
     return { status: result, timedOut };
   }
 
-  /** Send a steering message to a running agent. */
-  async sendInput(threadId: string, message: string): Promise<void> {
+  /**
+   * Send a steering message to a running agent. With `interrupt`, the child's running tool batch is aborted
+   * (or its next batch skipped while the model streams) so the message reaches the model on its next turn.
+   */
+  async sendInput(threadId: string, message: string, options?: { interrupt?: boolean }): Promise<void> {
     const entry = this.agents.get(threadId);
     if (!entry) throw new Error(`Unknown agent: ${threadId}`);
-    if (isFinal(entry.status)) throw new Error(`Agent ${entry.nickname} is not running (${entry.status.kind})`);
+    if (isFinal(entry.status)) {
+      throw new Error(
+        `Agent ${entry.nickname} is not running (${entry.status.kind}). ` +
+          `To continue it with this message, call spawn_agent with resume_id "${threadId}" and the message.`,
+      );
+    }
 
     const callId = `interaction-${threadId}-${Date.now()}`;
     this.emit({
@@ -703,6 +716,7 @@ export class AgentRegistry {
     });
 
     entry.sessionManager.steer(message);
+    if (options?.interrupt) entry.sessionManager.interruptTools();
 
     this.emit({
       type: "collab_interaction_end",
@@ -752,6 +766,12 @@ export class AgentRegistry {
     return entry.status;
   }
 
+  /** Progress digest of a running agent; undefined for unknown or finished agents. */
+  getProgress(threadId: string): AgentProgress | undefined {
+    const entry = this.agents.get(threadId);
+    return entry && entry.status.kind === "running" ? entry.progress.snapshot() : undefined;
+  }
+
   getNickname(threadId: string): string | undefined {
     return this.agents.get(threadId)?.nickname;
   }
@@ -789,6 +809,7 @@ export class AgentRegistry {
       status: { kind: "shutdown" },
       abortController: new AbortController(),
       createdAt: 0,
+      progress: new AgentProgressTracker(),
       ...(resumePolicy && { resumePolicy }),
     });
   }

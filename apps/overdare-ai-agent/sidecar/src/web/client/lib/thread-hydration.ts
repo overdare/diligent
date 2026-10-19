@@ -26,13 +26,17 @@ function parseWaitOutput(
     const parsed = JSON.parse(output) as {
       status?: Record<string, { kind?: string; output?: string; error?: string }>;
       timed_out?: boolean;
+      summary?: unknown;
     };
     if (!parsed.status) return null;
-    const agents = Object.entries(parsed.status).map(([threadId, s]) => ({
-      threadId,
-      status: s.kind,
-      message: s.output ?? s.error,
-    }));
+    const summary = Array.isArray(parsed.summary) ? parsed.summary : [];
+    const agents = Object.entries(parsed.status).map(([threadId, s], index) => {
+      // Summary lines follow the status order; a running agent's line carries its progress digest
+      // after the em dash ("Cleo: Still running — turn 3, ...").
+      const line = summary[index];
+      const progress = s.kind === "running" && typeof line === "string" ? line.split(" — ").slice(1).join(" — ") : "";
+      return { threadId, status: s.kind, message: s.output ?? s.error ?? (progress || undefined) };
+    });
     return { agents, timedOut: parsed.timed_out ?? false };
   } catch {
     return null;

@@ -12,6 +12,7 @@ import type { SessionManager } from "../session/manager";
 import type { AgentLoopHookFactory } from "../tools/bundled-provider";
 import type { CodeMode } from "../tools/code-mode/tools";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
+import type { AgentProgressTracker } from "./progress";
 
 export interface ChildStopInfo {
   sessionId: string;
@@ -45,6 +46,8 @@ export interface AgentEntry {
   status: AgentStatus;
   abortController: AbortController;
   createdAt: number;
+  /** Live turn/tool/message progress, reported by `wait` while the agent runs. */
+  progress: AgentProgressTracker;
   resumePolicy?: CollabResumePolicy;
 }
 

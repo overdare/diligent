@@ -42,6 +42,9 @@ export interface LoopRuntime {
   hooks: {
     drainSteeringMessages: () => QueuedSteeringMessage[];
     pendingSteeringCount: () => number;
+    /** Receives an abort for the tool batch about to run; aborting it ends only that batch, not the loop. */
+    beginToolBatch?: (abort: () => void) => void;
+    endToolBatch?: () => void;
   };
 }
 
@@ -178,16 +181,20 @@ export async function runAgentLoop(
       stream.emit({ type: "usage", usage: assistantMessage.usage });
 
       const toolCalls = assistantMessage.content.filter((block): block is ToolCallBlock => block.type === "tool_call");
+      // An interrupt (Agent.interruptTools) aborts only this batch; the loop continues and the next turn
+      // injects the steering that triggered it.
+      const batchAbortController = new AbortController();
+      hooks.beginToolBatch?.(() => batchAbortController.abort());
       const { executions } = await runToolCalls(
         toolCalls,
-        signal,
+        AbortSignal.any([signal, batchAbortController.signal]),
         registry,
         stream,
         nextItemId,
         () => toolAbortController.abort(),
         runtime.toolOutputStore,
         runtime.sessionId,
-      );
+      ).finally(() => hooks.endToolBatch?.());
 
       // Always record tool results — including when the turn was aborted. Every
       // tool_use must be paired with its tool_result, otherwise the next request
