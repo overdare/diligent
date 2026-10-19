@@ -1,16 +1,25 @@
 // @summary Verifies report evidence keeps real execution context instead of report preparation.
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import type { HookInput } from "@diligent/runtime";
-import { createGatewayToolProvider } from "../../src/tools/gateway";
+import { createGatewayToolProvider as createRealGatewayToolProvider } from "../../src/tools/gateway";
+import { createAgentReportTool, type SessionReportContext } from "../../src/tools/gateway/agent-report";
 import type { AgentReportWire } from "../../src/tools/gateway/agent-report-client";
+import { ReportSessionFiles } from "../helpers/report-session";
 
 const savedFetch = globalThis.fetch;
 const savedUrl = process.env.DILIGENT_GATEWAY_URL;
 const savedToken = process.env.DILIGENT_GATEWAY_TOKEN;
 let reports: AgentReportWire[];
 let recordBodies: unknown[];
+let sessionFiles: ReportSessionFiles;
+
+function createGatewayToolProvider(options: Parameters<typeof createRealGatewayToolProvider>[0]) {
+  return sessionFiles.track(createRealGatewayToolProvider(options));
+}
 
 beforeEach(() => {
+  sessionFiles = new ReportSessionFiles();
   reports = [];
   recordBodies = [];
   process.env.DILIGENT_GATEWAY_URL = "https://gateway.example";
@@ -24,6 +33,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  sessionFiles.cleanup();
   globalThis.fetch = savedFetch;
   if (savedUrl === undefined) delete process.env.DILIGENT_GATEWAY_URL;
   else process.env.DILIGENT_GATEWAY_URL = savedUrl;
@@ -56,7 +66,7 @@ function call(
 function result(id: string, name: string, output: string, isError = false) {
   return { role: "tool_result", toolCallId: id, toolName: name, output, isError };
 }
-async function submit(p: Provider, tool?: string, session = "session-1") {
+async function executeReport(p: Provider, tool?: string, session = "session-1") {
   const reporter = (await p.createTools({ cwd: "/workspace" })).find((t) => t.name === "agent_report")!;
   const receipt = await reporter.execute(
     {
@@ -72,7 +82,10 @@ async function submit(p: Provider, tool?: string, session = "session-1") {
     },
     { sessionId: session, toolCallId: "report-1", signal: new AbortController().signal, abort() {} },
   );
-  expect(receipt.output).toContain("saved");
+  return receipt;
+}
+async function submit(p: Provider, tool?: string, session = "session-1") {
+  expect((await executeReport(p, tool, session)).output).toContain("saved");
   return reports.at(-1)!.payload.evidence.recent_records;
 }
 
@@ -259,4 +272,182 @@ test.each([false, true])("every selected parallel result has a visible call (lon
   }
   expect(caller.excerpt.length).toBeLessThanOrEqual(400);
   if (!longNames) expect(records).toHaveLength(5);
+});
+
+test("report evidence is read from the bound session file at submission time", async () => {
+  const p = provider();
+  await append(p, 1, result("a", "target_tool", "Value before submission"));
+  const path = sessionFiles.path("session-1");
+  const lines = readFileSync(path, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  lines[1].message.output = "Value read from disk at submission";
+  writeFileSync(path, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
+  const records = await submit(p, "target_tool");
+  expect(records[0]?.excerpt).toContain("Value read from disk at submission");
+  expect(records[0]?.excerpt).not.toContain("Value before submission");
+});
+
+test("a recreated provider can report earlier persisted execution history", async () => {
+  const previous = provider();
+  await append(previous, 1, call("a", "target_tool", { restored: true }));
+  await append(previous, 2, result("a", "target_tool", "Persisted before provider restart", true));
+  const restarted = provider();
+  await append(restarted, 3, { role: "assistant", content: "Preparing the report after restart" });
+  const records = await submit(restarted, "target_tool");
+  expect(records.map((record) => record.seq)).toEqual([1, 2]);
+  expect(records[1]?.excerpt).toContain("Persisted before provider restart");
+});
+
+test("a missing bound transcript cannot silently fall back to cached or another session", async () => {
+  const p = provider();
+  await append(p, 1, result("a", "target_tool", "Old cached value"));
+  await append(p, 1, result("b", "target_tool", "Other session value"), "session-2");
+  unlinkSync(sessionFiles.path("session-1"));
+  const receipt = await executeReport(p, "target_tool");
+  expect(receipt.output).toContain("failed");
+  expect(receipt.output).not.toContain(sessionFiles.root);
+  expect(reports).toHaveLength(0);
+});
+
+test("the persisted header must match the executing session identity", async () => {
+  const p = provider();
+  await append(p, 1, result("a", "target_tool", "Wrong file must not be reported"));
+  const path = sessionFiles.path("session-1");
+  const lines = readFileSync(path, "utf8").trim().split("\n");
+  const header = JSON.parse(lines[0]!);
+  header.id = "different-session";
+  lines[0] = JSON.stringify(header);
+  writeFileSync(path, `${lines.join("\n")}\n`);
+  expect((await executeReport(p, "target_tool")).output).toContain("failed");
+  expect(reports).toHaveLength(0);
+});
+
+test("incomplete later writes are outside the observed durable sequence", async () => {
+  const p = provider();
+  await append(p, 1, call("a", "target_tool"));
+  await append(p, 2, result("a", "target_tool", "Durable error", true));
+  const path = sessionFiles.path("session-1");
+  writeFileSync(path, `${readFileSync(path, "utf8")}{"type":"message"`);
+  const records = await submit(p, "target_tool");
+  expect(records.map((record) => record.seq)).toEqual([1, 2]);
+});
+
+test("internal records are excluded without renumbering the persisted sequence", async () => {
+  const p = provider();
+  await append(p, 1, result("a", "target_tool", "Visible first result"));
+  await p.onEntryAppended?.({
+    session_id: "session-1",
+    transcript_path: "/unused.jsonl",
+    cwd: "/workspace",
+    hook_event_name: "EntryAppended",
+    user_id: "alice",
+    seq: 3,
+    entry: {
+      type: "message",
+      timestamp: "2026-10-19T09:00:00Z",
+      visibility: "internal",
+      message: result("internal", "target_tool", "Internal-only result"),
+    },
+  });
+  await append(p, 4, result("b", "target_tool", "Visible last result"));
+  const records = await submit(p, "target_tool");
+  expect(records.map((record) => record.seq)).toEqual([1, 4]);
+  expect(JSON.stringify(records)).not.toContain("Internal-only result");
+});
+
+test("a user context change during disk reading prevents report transmission", async () => {
+  const p = provider();
+  await append(p, 1, result("a", "target_tool", "Alice's result"));
+  const tool = (await p.createTools({ cwd: "/workspace" })).find((t) => t.name === "agent_report")!;
+  const pending = tool.execute(
+    {
+      kind: "studio_bug",
+      payload: {
+        title: "Synthetic report",
+        task_context: "Synthetic context",
+        problem: "Synthetic problem",
+        report_reason: "Synthetic reason",
+        suggestion: "Synthetic suggestion",
+      },
+    },
+    { sessionId: "session-1", toolCallId: "report-1", signal: new AbortController().signal, abort() {} },
+  );
+  await p.onEntryAppended?.({
+    session_id: "session-1",
+    transcript_path: "/unused.jsonl",
+    cwd: "/workspace",
+    hook_event_name: "EntryAppended",
+    user_id: "bob",
+    seq: 2,
+    entry: { type: "message", timestamp: "2026-10-19T09:00:00Z", message: result("b", "target_tool", "Bob's result") },
+  });
+  expect((await pending).output).toContain("conflicting");
+  expect(reports).toHaveLength(0);
+});
+
+test("a binding change while authentication resolves prevents transmission", async () => {
+  const p = provider();
+  await append(p, 1, result("a", "target_tool", "Alice's result"));
+  let current: SessionReportContext | null = {
+    userId: "alice",
+    projectId: "project-1",
+    seq: 1,
+    transcriptPath: sessionFiles.path("session-1"),
+  };
+  let lookups = 0;
+  const tool = createAgentReportTool({
+    cwd: "/workspace",
+    canTransmitRecords: () => true,
+    getSessionContext: () => {
+      const snapshot = current;
+      if (++lookups === 2)
+        queueMicrotask(() => {
+          current = null;
+        });
+      return snapshot;
+    },
+  });
+  const receipt = await tool.execute(
+    {
+      kind: "studio_bug",
+      payload: {
+        title: "Synthetic report",
+        task_context: "Synthetic context",
+        problem: "Synthetic problem",
+        report_reason: "Synthetic reason",
+        suggestion: "Synthetic suggestion",
+      },
+    },
+    { sessionId: "session-1", toolCallId: "report-1", signal: new AbortController().signal, abort() {} },
+  );
+  expect(receipt.output).toContain("conflicting");
+  expect(reports).toHaveLength(0);
+});
+
+test("a changed transcript path permanently invalidates the session binding", async () => {
+  const p = createRealGatewayToolProvider({
+    cwd: "/workspace",
+    projectId: "project-1",
+    canTransmitRecords: () => true,
+  });
+  const input: HookInput = {
+    session_id: "session-1",
+    transcript_path: sessionFiles.path("session-1"),
+    cwd: "/workspace",
+    hook_event_name: "EntryAppended",
+    user_id: "alice",
+    seq: 1,
+    entry: { type: "message", timestamp: "2026-10-19T09:00:00Z", message: result("a", "target_tool", "Original file") },
+  };
+  sessionFiles.write(input);
+  const alternate = sessionFiles.path("alternate");
+  writeFileSync(alternate, readFileSync(input.transcript_path));
+  await p.onEntryAppended?.(input);
+  await p.onEntryAppended?.({ ...input, transcript_path: alternate });
+  expect((await executeReport(p)).output).toContain("conflicting");
+  await p.onEntryAppended?.(input);
+  expect((await executeReport(p)).output).toContain("conflicting");
+  expect(reports).toHaveLength(0);
 });

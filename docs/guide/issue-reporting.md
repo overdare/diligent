@@ -17,19 +17,29 @@ session and rejects conflicting attribution. Reports use the same project attrib
 any entry exists, an explicitly configured project is sufficient; without either source, reporting is unavailable.
 The tool never scans the filesystem for a session or asks the model to supply identities or authentication.
 
-The provider keeps a bounded in-memory window of 50 execution records per session, rather than counting user
-placeholders, assistant prose, or skill-loading/reporting traffic as evidence. Calls retain tool names and short
-masked arguments; results retain explicit success/error labels. An absent outcome is labeled as a result, not
-inferred to be successful. Private reasoning and raw user prompts are not excerpted. These attachment filters do
-not filter the regular `/v1/records` telemetry stream.
+The append observer retains only binding metadata: user/project identity, durable sequence and the exact transcript
+path supplied by the runtime. It does not build or maintain a report-excerpt cache. Only when `agent_report` is
+executed does the tool open that bound session's JSONL file, verify its header identity/version, and stream entries
+through the observed durable sequence. It never chooses the newest file or guesses another session's path. Later
+incomplete writes are outside that snapshot. The read is cancellable and limited to two seconds; missing, invalid or
+incomplete bound files fail the report without falling back to cached or unrelated evidence. A changed transcript
+path invalidates that session's binding; identity and path are rechecked after reading and immediately before sending,
+including after asynchronous token resolution.
+
+During that request only, a temporary working set keeps the latest 50 execution candidates. User placeholders,
+assistant prose and skill-loading/reporting traffic do not count. Calls retain tool names and short masked
+arguments; results retain explicit success/error labels. An absent outcome is labeled as a result, not inferred to
+be successful. Private reasoning and raw user prompts are not excerpted. These attachment filters do not filter the
+regular `/v1/records` telemetry stream. No transcript is read for a report while the report tool is unused.
 
 At submission, `payload.evidence.tool` names the operation being reported, such as `instance_upsert`, rather than
 the reporting tool. Its most recent matching execution anchors selection. The provider attaches nearby execution
 records, retaining call/response pairs by their actual tool call IDs, in chronological order and within the existing
 five-record limit. This can preserve a successful write and its subsequent unchanged read-back. Without a matching
 tool, selection falls back to the latest execution neighborhood; this is a deterministic heuristic, not semantic
-relevance judgment. If no execution has been observed, the attachment is empty. The window is process-local and
-does not recover earlier history after a restart. All excerpts are masked before clipping.
+relevance judgment. If no execution exists, the attachment is empty. Candidate excerpts are discarded after the
+request. When a resumed session re-establishes its runtime binding, an on-demand read can include its persisted
+history from before the process restart. All excerpts are masked before clipping.
 
 When the anchor has a correlated call/response pair, unpaired neighboring responses do not fill unused attachment
 slots. For parallel calls, the excerpts identify the exact invocations of selected results, including when several

@@ -2,8 +2,9 @@
 
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { HookInput } from "@diligent/runtime";
-import { createGatewayToolProvider } from "../../src/tools/gateway";
+import { createGatewayToolProvider as createRealGatewayToolProvider } from "../../src/tools/gateway";
 import type { AgentReportWire } from "../../src/tools/gateway/agent-report-client";
+import { ReportSessionFiles } from "../helpers/report-session";
 
 const previousFetch = globalThis.fetch;
 const previousUrl = process.env.DILIGENT_GATEWAY_URL;
@@ -29,8 +30,14 @@ interface Call {
 }
 let calls: Call[] = [];
 let reportResponse: unknown = receipt;
+let sessionFiles: ReportSessionFiles;
+
+function createGatewayToolProvider(options: Parameters<typeof createRealGatewayToolProvider>[0]) {
+  return sessionFiles.track(createRealGatewayToolProvider(options));
+}
 
 beforeEach(() => {
+  sessionFiles = new ReportSessionFiles();
   process.env.DILIGENT_GATEWAY_URL = "https://gateway.example";
   process.env.DILIGENT_GATEWAY_TOKEN = "synthetic-token";
   calls = [];
@@ -42,6 +49,7 @@ beforeEach(() => {
   }) as typeof fetch;
 });
 afterEach(() => {
+  sessionFiles.cleanup();
   globalThis.fetch = previousFetch;
   if (previousUrl === undefined) delete process.env.DILIGENT_GATEWAY_URL;
   else process.env.DILIGENT_GATEWAY_URL = previousUrl;

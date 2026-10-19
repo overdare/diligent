@@ -1,14 +1,17 @@
-// @summary Bounded execution evidence, paired by actual tool call IDs and selected near the reported tool.
-import type { HookInput } from "@diligent/runtime";
+// @summary Reads bound session evidence only during report submission, then selects actual execution pairs.
+import { open } from "node:fs/promises";
+import { createInterface } from "node:readline";
+import { type HookInput, SESSION_VERSION } from "@diligent/runtime";
 import { type RecentRecord, RecentRecordSchema } from "./agent-report-client";
 import { maskValue } from "./masking";
 
 /** Correlation stays local; only the existing RecentRecord shape goes over the wire. */
-export interface ReportEvidenceCandidate {
+interface ReportEvidenceCandidate {
   record: RecentRecord;
   calls: Array<{ id: string; name: string; excerpt?: string }>;
 }
 
+// Temporary request-local working set, never retained by the Gateway append observer.
 const CANDIDATE_LIMIT = 50;
 const ATTACHMENT_LIMIT = 5;
 const PREPARATION_TOOLS = new Set(["skill", "agent_report"]);
@@ -39,7 +42,7 @@ function clip(text: string, limit: number): string {
   return `${head}…`;
 }
 
-export function previewSessionEntry(input: HookInput): ReportEvidenceCandidate | undefined {
+function previewSessionEntry(input: Pick<HookInput, "entry" | "seq">): ReportEvidenceCandidate | undefined {
   const entry = maskValue(input.entry) as Record<string, unknown> | undefined;
   if (!entry || typeof input.seq !== "number") return undefined;
   const message = entry.message as Record<string, unknown> | undefined;
@@ -89,7 +92,7 @@ export function previewSessionEntry(input: HookInput): ReportEvidenceCandidate |
   return parsed.success ? { record: parsed.data, calls } : undefined;
 }
 
-export function collectReportEvidence(
+function collectReportEvidence(
   previous: ReportEvidenceCandidate[],
   candidate: ReportEvidenceCandidate | undefined,
 ): ReportEvidenceCandidate[] {
@@ -100,7 +103,7 @@ export function collectReportEvidence(
 }
 
 /** A deterministic neighborhood, not a claim of semantic relevance or a model-written log. */
-export function selectReportEvidence(candidates: ReportEvidenceCandidate[], reportedTool?: string): RecentRecord[] {
+function selectReportEvidence(candidates: ReportEvidenceCandidate[], reportedTool?: string): RecentRecord[] {
   if (!candidates.length) return [];
   let anchor = candidates.length - 1;
   if (reportedTool) {
@@ -149,4 +152,57 @@ export function selectReportEvidence(candidates: ReportEvidenceCandidate[], repo
       const excerpt = ordered.map((call) => clip(call.excerpt ?? "", minimumCallLength(call) + extra)).join(" ");
       return { ...item.record, excerpt: clip(excerpt, 400) };
     });
+}
+
+export async function readReportEvidence(options: {
+  sessionId: string;
+  transcriptPath: string;
+  throughSeq: number;
+  reportedTool?: string;
+  signal: AbortSignal;
+}): Promise<RecentRecord[]> {
+  options.signal.throwIfAborted();
+  const file = await open(options.transcriptPath, "r");
+  let input: ReturnType<typeof file.createReadStream> | undefined;
+  let lines: ReturnType<typeof createInterface> | undefined;
+  try {
+    const { size } = await file.stat();
+    if (!size) throw new Error("Empty session transcript");
+    input = file.createReadStream({ encoding: "utf8", end: size - 1, autoClose: false, signal: options.signal });
+    lines = createInterface({ input, crlfDelay: Infinity });
+    let headerSeen = false;
+    let seq = 0;
+    let candidates: ReportEvidenceCandidate[] = [];
+    for await (const line of lines) {
+      options.signal.throwIfAborted();
+      if (!line.trim()) continue;
+      if (!headerSeen) {
+        const header = JSON.parse(line) as { type?: unknown; id?: unknown; version?: unknown };
+        if (
+          header.type !== "session" ||
+          header.id !== options.sessionId ||
+          typeof header.version !== "number" ||
+          header.version > SESSION_VERSION
+        ) {
+          throw new Error("Session transcript identity or version mismatch");
+        }
+        headerSeen = true;
+        if (options.throughSeq === 0) break;
+        continue;
+      }
+      // The observer's sequence is a durable boundary: later/incomplete writes are not evidence yet.
+      seq += 1;
+      const entry = JSON.parse(line) as Record<string, unknown>;
+      if (entry.visibility !== "internal") {
+        candidates = collectReportEvidence(candidates, previewSessionEntry({ entry, seq }));
+      }
+      if (seq >= options.throughSeq) break;
+    }
+    if (!headerSeen || seq < options.throughSeq) throw new Error("Incomplete session transcript");
+    return selectReportEvidence(candidates, options.reportedTool);
+  } finally {
+    lines?.close();
+    input?.destroy();
+    await file.close();
+  }
 }
