@@ -65,6 +65,58 @@ export function codeModeWorkerMain(): void {
     return stringify(error);
   };
 
+  const field = (value: unknown, key: string): unknown =>
+    value !== null && typeof value === "object" ? Reflect.get(value, key) : undefined;
+
+  // Bun's SyntaxError carries only the line, so the location is recovered with Bun's own parser.
+  const describeSyntaxError = (code: string, prefix: string, error: unknown): string => {
+    const message = field(error, "message");
+    const header = `SyntaxError: ${typeof message === "string" ? message : String(error)}`;
+    let location: { line: number; column?: number; detail?: string } | undefined;
+    try {
+      new Bun.Transpiler({ loader: "js" }).transformSync(`${prefix}${code}\n})()`);
+    } catch (parseError) {
+      const errors = field(parseError, "errors");
+      const first = Array.isArray(errors) ? errors[0] : parseError;
+      const position = field(first, "position");
+      const line = field(position, "line");
+      const column = field(position, "column");
+      const detail = field(first, "message");
+      if (typeof line === "number" && typeof column === "number") {
+        location = {
+          line,
+          column: Math.max(1, line === 1 ? column - prefix.length : column),
+          ...(typeof detail === "string" ? { detail } : {}),
+        };
+      }
+    }
+    const engineLine = field(error, "line");
+    if (!location && typeof engineLine === "number" && engineLine > 0) location = { line: engineLine };
+    const lines = code.split("\n");
+    // Errors at end of input point at the wrapper's closing line; report the last source line instead.
+    if (location && location.line > lines.length) location = { line: lines.length, detail: location.detail };
+    const out = [header];
+    if (location) {
+      const at = `exec.js:${location.line}${location.column ? `:${location.column}` : ""}`;
+      out.push(`    at ${at}${location.detail ? ` (${location.detail})` : ""}`);
+      const width = String(location.line).length;
+      const clip = (text: string) => (text.length > 160 ? `${text.slice(0, 157)}...` : text);
+      if (location.line > 1) {
+        out.push(`  ${String(location.line - 1).padStart(width)} | ${clip(lines[location.line - 2])}`);
+      }
+      out.push(`  ${location.line} | ${clip(lines[location.line - 1])}`);
+      if (location.column && location.column <= 157) {
+        out.push(`  ${" ".repeat(width)} | ${" ".repeat(location.column - 1)}^`);
+      }
+    }
+    if (/Unterminated string|Unexpected EOF/.test(`${header} ${location?.detail ?? ""}`)) {
+      out.push(
+        "Hint: a \"...\" or '...' string cannot contain a raw line break. Use a template literal (`...`) for multi-line text (escape ` and ${ inside it), or write \\n.",
+      );
+    }
+    return out.join("\n");
+  };
+
   const finish = (error?: string) => {
     if (finished) return;
     finished = true;
@@ -162,17 +214,19 @@ export function codeModeWorkerMain(): void {
     });
     // Bun's vm exposes `console` by default; the guest contract has none (use text()).
     vm.runInContext("delete globalThis.console", context);
-
     let completion: unknown;
+    // The leading await moves the body out of the synchronous runInContext frame: Bun 1.3 crashes the
+    // process when a worker is terminated while blocked inside runInContext (e.g. `while (true) {}`).
+    // The prefix shares line 1 so reported line numbers match the model's source (Bun ignores lineOffset).
+    const prefix = "(async () => { await undefined; ";
     try {
-      // The leading await moves the body out of the synchronous runInContext frame: Bun 1.3 crashes the
-      // process when a worker is terminated while blocked inside runInContext (e.g. `while (true) {}`).
-      // The prefix shares line 1 so reported line numbers match the model's source (Bun ignores lineOffset).
-      const source = `(async () => { await undefined; ${start.code}\n})()`;
-      const script = new vm.Script(source, { filename: "exec.js" });
+      const script = new vm.Script(`${prefix}${start.code}\n})()`, { filename: "exec.js" });
       completion = script.runInContext(context);
     } catch (error) {
-      finish(describeError(error));
+      // The body runs after the leading await, so a synchronous throw here is a parse error.
+      finish(
+        field(error, "name") === "SyntaxError" ? describeSyntaxError(start.code, prefix, error) : describeError(error),
+      );
       return;
     }
     Promise.resolve(completion).then(

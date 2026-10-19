@@ -1,7 +1,15 @@
 // @summary Tests for code mode exec/exec_wait: tool exposure, nested dispatch, yielding, isolation, and termination
 import { afterEach, describe, expect, test } from "bun:test";
-import type { NestedToolEvent, Tool, ToolContext, ToolResult } from "@diligent/core/tool-contract";
-import { applyCodeMode, CodeModeSession } from "@diligent/runtime/tools";
+import {
+  executeTool,
+  type NestedToolEvent,
+  type Tool,
+  type ToolContext,
+  type ToolOutputFileStore,
+  type ToolRegistry,
+  type ToolResult,
+} from "@diligent/core/tool-contract";
+import { applyCodeMode, type CodeModeResultMetadata, CodeModeSession } from "@diligent/runtime/tools";
 import { z } from "zod";
 
 const sessions: CodeModeSession[] = [];
@@ -32,10 +40,10 @@ function makeCtx(
   return { toolCallId, signal, abort: () => {}, emitNestedToolEvent: (event) => events.push(event) };
 }
 
-function setup(tools: Tool[], codeMode: "on" | "only" = "only") {
+function setup(tools: Tool[], codeMode: "on" | "only" = "only", outputStore?: ToolOutputFileStore) {
   const session = new CodeModeSession();
   sessions.push(session);
-  const exposed = applyCodeMode(tools, { codeMode, session });
+  const exposed = applyCodeMode(tools, { codeMode, session, outputStore });
   const exec = exposed.find((tool) => tool.name === "exec")!;
   const execWait = exposed.find((tool) => tool.name === "exec_wait")!;
   return { exposed, exec, execWait };
@@ -107,6 +115,86 @@ describe("exec", () => {
     expect(thrown.metadata?.error).toBe(true);
     expect(thrown.output).toContain("Script failed\nbefore\nScript error:\nTypeError: bad input");
     expect(thrown.output).toContain("exec.js:2:");
+  });
+
+  test("reports guest syntax errors with line, column, source excerpt, and a template literal hint", async () => {
+    const { exec } = setup([]);
+    const rawNewline = await exec.execute(
+      { code: `const n = 1;\ntext("python3 - <<'PY'\nimport json\nPY");` },
+      makeCtx("call-1"),
+    );
+    expect(rawNewline.metadata?.error).toBe(true);
+    expect(rawNewline.output).toContain("exec.js:2:6");
+    expect(rawNewline.output).toContain(`  2 | text("python3 - <<'PY'\n    |      ^`);
+    expect(rawNewline.output).toContain("template literal");
+
+    const badObject = await exec.execute({ code: `const a = 1;\nlet x = {;\ntext(a);` }, makeCtx("call-2"));
+    expect(badObject.output).toContain("exec.js:2:10");
+    expect(badObject.output).toContain("  1 | const a = 1;\n  2 | let x = {;\n    |          ^");
+    expect(badObject.output).not.toContain("template literal");
+  });
+
+  test("scripts receive complete nested output while only the exec result is truncated for the model", async () => {
+    const items = Array.from({ length: 4_000 }, (_, index) => ({ index, label: `item-${index}` }));
+    const bigJson = JSON.stringify({ items });
+    const saved: string[] = [];
+    const outputStore: ToolOutputFileStore = {
+      save: async (output) => {
+        saved.push(output);
+        return `/tmp/full-output-${saved.length}.txt`;
+      },
+    };
+    const list = makeTool("list", async () => ({ output: bigJson }));
+    const { exec } = setup([list], "only", outputStore);
+    const events: NestedToolEvent[] = [];
+    const registry: ToolRegistry = new Map([[exec.name, exec]]);
+
+    const result = await executeTool(
+      registry,
+      {
+        type: "tool_call",
+        id: "call-1",
+        name: "exec",
+        input: {
+          code: `const data = JSON.parse(await tools.list({}));\ntext(data.items.length);\ntext(data.items.at(-1).label);\ntext("x".repeat(20000));`,
+          max_output_tokens: 1_000,
+        },
+      },
+      makeCtx("call-1", events),
+      { outputStore },
+    );
+
+    expect(bigJson.length).toBeGreaterThan(50_000);
+    expect(result.output).toStartWith("Script completed\n4000\nitem-3999\n");
+    expect(result.metadata?.truncated).toBe(true);
+
+    // History keeps a capped copy of the nested output and points at the complete one.
+    const codeMode = result.metadata?.codeMode as CodeModeResultMetadata;
+    const nested = codeMode.nestedCalls[0]!;
+    expect(nested.output.length).toBeLessThan(bigJson.length);
+    expect(saved).toContain(bigJson);
+    expect(nested.fullOutputPath).toBe(`/tmp/full-output-${saved.indexOf(bigJson) + 1}.txt`);
+    expect(nested.output).toContain(`full output at: ${nested.fullOutputPath}`);
+
+    const end = events.find((event) => event.type === "tool_end");
+    expect(end?.type === "tool_end" ? end.output : undefined).toBe(nested.output);
+  });
+
+  test("short nested outputs are persisted whole without saving a copy", async () => {
+    const saved: string[] = [];
+    const echo = makeTool("echo", async (args) => ({ output: `echo:${args.value}` }));
+    const outputStore: ToolOutputFileStore = {
+      save: async (output) => {
+        saved.push(output);
+        return "/tmp/unused.txt";
+      },
+    };
+    const { exec } = setup([echo], "only", outputStore);
+    const result = await exec.execute({ code: `text(await tools.echo({ value: "a" }));` }, makeCtx("call-1"));
+    const codeMode = result.metadata?.codeMode as CodeModeResultMetadata;
+    expect(codeMode.nestedCalls[0]).toMatchObject({ output: "echo:a" });
+    expect(codeMode.nestedCalls[0]?.fullOutputPath).toBeUndefined();
+    expect(saved).toEqual([]);
   });
 
   test("exposes no host globals to the guest", async () => {

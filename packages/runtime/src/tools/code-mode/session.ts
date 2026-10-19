@@ -8,8 +8,17 @@ import { type CodeModeHostMessage, type CodeModeWorkerMessage, codeModeWorkerMai
 
 /** Live (yielded) cells kept per session; starting another evicts the least recently driven one. */
 const MAX_LIVE_CELLS = 8;
-/** Nested outputs are persisted in the parent result for history rendering only, so they are capped. */
+/**
+ * Nested outputs are persisted in the parent result for history rendering only, so they are capped. Longer
+ * outputs are saved whole through the output store and the record keeps the file path.
+ */
 const MAX_PERSISTED_NESTED_OUTPUT_CHARS = 8_000;
+/**
+ * Byte cap for a nested result handed to the guest script. The model-facing 50 KB cap does not apply inside
+ * scripts (only the `exec` result the model sees is truncated); this bound only keeps worker memory finite.
+ * Larger outputs are truncated head+tail and spilled whole to the output store.
+ */
+export const MAX_GUEST_TOOL_OUTPUT_BYTES = 8 * 1024 * 1024;
 /**
  * When the yield deadline passes during a nested call, the script usually finishes right after that call
  * returns. Waiting briefly avoids an empty "running" result followed by an exec_wait that only collects it.
@@ -29,7 +38,10 @@ export interface CodeModeNestedCallRecord {
   toolCallId: string;
   toolName: string;
   input: unknown;
+  /** Output as shown in history; capped at MAX_PERSISTED_NESTED_OUTPUT_CHARS. */
   output: string;
+  /** Where the complete output was saved when `output` is capped. */
+  fullOutputPath?: string;
   isError: boolean;
   startedAt: number;
   durationMs: number;
@@ -276,32 +288,34 @@ class CodeModeCell {
           onUpdate: (partialResult) =>
             ctx.emitNestedToolEvent?.({ type: "tool_update", itemId, toolCallId, toolName: call.name, partialResult }),
         },
-        { outputStore: driver.outputStore },
+        { outputStore: driver.outputStore, maxOutputBytes: MAX_GUEST_TOOL_OUTPUT_BYTES },
       );
       const isError = !!result.metadata?.error;
+      const history = await capNestedOutputForHistory(result.output, result.metadata, driver.outputStore);
+      // Live clients get the same capped copy as history so a large script result never floods the UI.
       ctx.emitNestedToolEvent?.({
         type: "tool_end",
         itemId,
         toolCallId,
         toolName: call.name,
-        output: result.output,
+        output: history.output,
         outputImages: result.outputImages,
         isError,
         render: result.render,
-        metadata: result.metadata,
+        metadata: history.fullOutputPath
+          ? { ...result.metadata, fullOutputPath: history.fullOutputPath }
+          : result.metadata,
       });
       this.nestedCalls.push({
         toolCallId,
         toolName: call.name,
         input: call.input,
-        output:
-          result.output.length > MAX_PERSISTED_NESTED_OUTPUT_CHARS
-            ? `${result.output.slice(0, MAX_PERSISTED_NESTED_OUTPUT_CHARS)}\n…[truncated for history]`
-            : result.output,
+        ...history,
         isError,
         startedAt,
         durationMs: Date.now() - startedAt,
       });
+      // The script receives the complete output, not the history copy.
       this.post(
         isError
           ? { type: "tool_result", id: call.id, ok: false, error: `${call.name} failed: ${result.output}` }
@@ -311,6 +325,30 @@ class CodeModeCell {
       release();
     }
   }
+}
+
+/**
+ * Caps a nested output for history. The complete text stays retrievable: an executor spill path is reused,
+ * otherwise the output is saved through the output store. Saving is best-effort, like the executor's spill.
+ */
+async function capNestedOutputForHistory(
+  output: string,
+  metadata: Record<string, unknown> | undefined,
+  outputStore: ToolOutputFileStore | undefined,
+): Promise<{ output: string; fullOutputPath?: string }> {
+  if (output.length <= MAX_PERSISTED_NESTED_OUTPUT_CHARS) return { output };
+  let fullOutputPath = typeof metadata?.fullOutputPath === "string" ? metadata.fullOutputPath : undefined;
+  if (!fullOutputPath) {
+    try {
+      fullOutputPath = await outputStore?.save(output);
+    } catch {
+      // History keeps the capped copy; the script already received the complete output.
+    }
+  }
+  const head = output.slice(0, MAX_PERSISTED_NESTED_OUTPUT_CHARS);
+  return fullOutputPath
+    ? { output: `${head}\n…[truncated for history; full output at: ${fullOutputPath}]`, fullOutputPath }
+    : { output: `${head}\n…[truncated for history]` };
 }
 
 function parseImageDataUrl(imageUrl: string): ImageBlock | undefined {

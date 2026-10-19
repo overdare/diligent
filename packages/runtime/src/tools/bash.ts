@@ -1,7 +1,7 @@
 // @summary Shell command execution with timeout and output truncation
 
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
-import { MAX_OUTPUT_BYTES } from "@diligent/core/tool-contract";
+import { MAX_OUTPUT_BYTES, truncateTail } from "@diligent/core/tool-contract";
 import { existsSync } from "fs";
 import { z } from "zod";
 import { spawnProcess } from "../util/process";
@@ -133,27 +133,29 @@ export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof
       const stderr = Buffer.concat(stderrChunks).toString();
 
       let output = stdout;
-      let truncated = false;
       if (stderr) output += `${output ? "\n" : ""}[stderr]\n${stderr}`;
-      if (new TextEncoder().encode(output).length > MAX_OUTPUT_BYTES) {
-        output = output.slice(-MAX_OUTPUT_BYTES);
-        truncated = true;
-      }
 
       let header = "";
       if (timedOut) header = `[Timed out after ${timeout / 1000}s]\n`;
       if (aborted) header = `[Aborted by user]\n`;
       if (exitCode !== 0 && exitCode !== null) header += `[Exit code: ${exitCode}]\n`;
 
+      // The full output is returned so code mode scripts receive it whole; the executor truncates the
+      // model-facing copy (keeping the status header and the recent tail) and spills the rest to disk.
       const finalOutput = header + output;
+      const isError = timedOut || aborted || exitCode !== 0;
       return {
         output: finalOutput,
-        render: createCommandRenderPayload(args.command, finalOutput, timedOut || aborted || exitCode !== 0),
+        render: createCommandRenderPayload(
+          args.command,
+          header + truncateTail(output, MAX_OUTPUT_BYTES).output,
+          isError,
+        ),
+        truncateDirection: "head_tail",
         metadata: {
           exitCode,
           timedOut,
           aborted,
-          truncated,
           ...(args.description && { description: args.description }),
         },
       };

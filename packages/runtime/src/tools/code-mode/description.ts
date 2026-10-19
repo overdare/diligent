@@ -13,10 +13,11 @@ const MAX_SCHEMA_DEPTH = 6;
 const EXEC_DESCRIPTION = `Run JavaScript code to orchestrate/compose tool calls.
 - \`code\` is evaluated as the body of an async function in a fresh, isolated JavaScript context, so top-level \`await\` works.
 - Nested tools are available on the global \`tools\` object, for example \`await tools.read({ file_path: "/abs/path" })\`. Tool names are exposed as JavaScript identifiers (characters outside [A-Za-z0-9_$] become \`_\`).
-- Nested tool methods take one JSON-serializable object argument and resolve to the tool's text output. A failed tool call rejects with an Error whose message is the tool output; use try/catch to handle it.
+- Nested tool methods take one JSON-serializable object argument and resolve to the tool's complete text output (only this \`exec\` result is truncated to \`max_output_tokens\`). A failed tool call rejects with an Error whose message is the tool output; use try/catch to handle it.
+- Tool outputs are text, usually formatted for reading. Call \`JSON.parse\` only on output a tool documents as JSON; otherwise process it as a string.
 - Nested tools run with the same approvals and permissions as direct tool calls. Independent calls may run concurrently with \`Promise.all\`; tools that are not parallel-safe still run one at a time.
 - Runs plain JavaScript only: no Node or Bun APIs, no require/import, no file system, no network, no console. Do all I/O through \`tools\`.
-- \`code\` is raw JavaScript source, not JSON, quoted strings, or markdown code fences.
+- \`code\` is raw JavaScript source, not JSON, quoted strings, or markdown code fences. Write multi-line text (shell heredocs, file contents, patches, reports) as template literals (\`\` \`...\` \`\`); a raw line break inside "..." or '...' is a SyntaxError.
 - \`yield_time_ms\` makes \`exec\` return early while the script keeps running. Defaults to ${DEFAULT_YIELD_TIME_MS} ms.
 - \`max_output_tokens\` sets the token budget for the returned output. Defaults to ${DEFAULT_MAX_OUTPUT_TOKENS} tokens.
 - When the script finishes, its context ends and unawaited promises and pending nested calls are discarded.

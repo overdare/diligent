@@ -251,6 +251,7 @@ function buildNestedCodeModeItems(message: ToolResultMessage): ThreadItem[] {
         isError: call.isError,
       }),
     ),
+    ...(call.fullOutputPath ? { metadata: { fullOutputPath: call.fullOutputPath } } : {}),
     parentToolCallId: message.toolCallId,
   }));
 }

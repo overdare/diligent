@@ -38,7 +38,7 @@ Input (JSON function tool on every provider):
 
 Guest globals:
 
-- `tools.<name>(args)`: calls a nested tool; resolves to its text output, rejects with an `Error` when the tool result is an error. Names outside `[A-Za-z0-9_$]` become `_`.
+- `tools.<name>(args)`: calls a nested tool; resolves to its text output, rejects with an `Error` when the tool result is an error. Names outside `[A-Za-z0-9_$]` become `_`. Outputs are text; `JSON.parse` only works on tools that return JSON.
 - `text(value)`, `image(dataUrl | { image_url })`: append output items.
 - `store(key, value)` / `load(key)`: JSON values kept for the agent's lifetime, across `exec` calls.
 - `exit()`, `yield_control()`, `setTimeout`, `clearTimeout`, `ALL_TOOLS`.
@@ -47,6 +47,18 @@ Guest globals:
 There is no `console`, `require`, `import`, `process`, `Bun`, `fetch`, or file system; all side effects go through `tools`.
 
 The result's first line is the status: `Script completed`, `Script failed` (followed by `Script error:` and the error with `exec.js:<line>` frames), `Script terminated`, or `Script running with cell ID <id>`.
+
+Guest syntax errors report `exec.js:<line>:<column>`, the failing line with the previous one, and a caret. JavaScriptCore only reports the line, so the worker re-parses the source with `Bun.Transpiler` to recover the column and a parser message (it falls back to the engine line when the transpiler accepts the source). For unterminated strings or an unexpected end of input, the error adds a hint to use template literals: raw line breaks inside `"..."`/`'...'` were the most common guest syntax error in practice (for example `bash` heredocs).
+
+## Output limits
+
+| Output | Limit |
+|---|---|
+| Nested result handed to the script | 8 MiB (`MAX_GUEST_TOOL_OUTPUT_BYTES`). The model-facing 50 KB cap does not apply, so `JSON.parse(await tools.x())` sees the complete output. Larger results are truncated head+tail and the full text is saved through the output store. |
+| `exec`/`exec_wait` result the model sees | `max_output_tokens`/`max_tokens` × 4 bytes, head+tail, full text saved through the output store. |
+| Nested output in history and live `tool_end` events | 8000 characters. A longer output is saved through the output store (or the executor's spill file is reused); the record's `fullOutputPath` and a `full output at: <path>` marker point at the complete text. |
+
+`bash` returns its complete output and leaves model-facing truncation (head+tail, so the status header stays) and the spill file to the core executor; its render payload keeps the last 50 KB.
 
 ## `exec_wait`
 
@@ -66,7 +78,7 @@ While no `exec`/`exec_wait` call is waiting on a cell, the script keeps running 
 ## Events, persistence, and rendering
 
 - `ToolContext.emitNestedToolEvent` lets a tool emit `tool_start`/`tool_update`/`tool_end` for calls it runs. The core runner tags them with `parentToolCallId`, which `@diligent/protocol` carries on `AgentEvent` tool events and on `toolCall` thread items.
-- Nested `tool_end` events are not persisted as `tool_result` messages and are never sent to the provider. The parent result's `metadata.codeMode.nestedCalls` records them (outputs capped at 8000 characters), and `thread/read` rebuilds them as `toolCall` items with `parentToolCallId` after the parent item.
+- Nested `tool_end` events are not persisted as `tool_result` messages and are never sent to the provider. The parent result's `metadata.codeMode.nestedCalls` records them (outputs capped at 8000 characters, with `fullOutputPath` when longer), and `thread/read` rebuilds them as `toolCall` items with `parentToolCallId` after the parent item.
 - Web renders nested items indented under a left rule; TUI prefixes them with a `│` gutter. In TUI they appear above the `exec` result because items commit at `tool_end`.
 
 ## Known limits
