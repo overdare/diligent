@@ -98,6 +98,11 @@ only that marker; invalid queries and detail reads do not. Repeated queries
 without edits return no changes. Identical transactions appended later remain
 distinct occurrences. Recreating the live log does not reset a session marker.
 
+`view` alone selects the query mode and defaults to `new`. New queries ignore
+detail fields (`batchId`, `guid`, `changeType`, `offset`, and `limit`), including
+stale values left over from a previous detail read. Use `view: "details"`
+explicitly when reading retained detail rows.
+
 Summaries include a temporary `batchId`. Retrieve paginated detail rows with:
 
 ```json
@@ -112,8 +117,9 @@ Summaries include a temporary `batchId`. Retrieve paginated detail rows with:
 ```
 
 `changeType` accepts `added`, `addedThenRemoved`, `removed`, `moved`,
-`modified`, or `sourceChanged`. Supplying a filter or batch ID also selects
-detail mode. Follow the returned continuation offset with the same batch ID.
+`modified`, or `sourceChanged`. The optional `batchId`, `guid`, and `changeType`
+fields accept `null` for unused inputs, including calls from strict providers.
+Follow the returned continuation offset with the same batch ID.
 Details default to this consumer's latest retained batch, not another session's.
 IDs refer to fixed journal ranges and are restricted to their consumer. Partial
 eviction or restart expires the batch explicitly; there is no latest-batch
