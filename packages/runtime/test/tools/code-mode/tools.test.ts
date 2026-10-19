@@ -236,13 +236,19 @@ describe("exec", () => {
   });
 
   test("completes instead of yielding when the deadline passes during the script's last nested call", async () => {
-    // Real delay: the call must outlast yield_time_ms, which the cell measures on the wall clock.
+    // Real delay: the script runs in a real Worker thread and the cell measures yield_time_ms on the wall clock, so fake
+    // timers cannot order "call in flight" before "deadline passed". The call must start before the deadline (worker
+    // startup on a slow CI host takes tens of milliseconds) and still be running when it passes.
+    const yieldTimeMs = 300;
     const slow = makeTool("slow", async () => {
-      await Bun.sleep(60);
+      await Bun.sleep(yieldTimeMs + 100);
       return { output: "slow-done" };
     });
     const { exec } = setup([slow]);
-    const result = await exec.execute({ code: `text(await tools.slow({}));`, yield_time_ms: 10 }, makeCtx("call-1"));
+    const result = await exec.execute(
+      { code: `text(await tools.slow({}));`, yield_time_ms: yieldTimeMs },
+      makeCtx("call-1"),
+    );
     expect(result.output).toBe("Script completed\nslow-done");
   });
 });
