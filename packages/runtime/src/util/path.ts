@@ -28,13 +28,6 @@ export function stripExtendedLengthPrefix(path: string): string {
   return path;
 }
 
-/** Remove trailing `/` characters. A loop instead of `/\/+$/`, which backtracks quadratically on long runs of `/`. */
-export function trimTrailingSlashes(path: string): string {
-  let end = path.length;
-  while (end > 0 && path.charCodeAt(end - 1) === 47) end--;
-  return end === path.length ? path : path.slice(0, end);
-}
-
 function hasWindowsDrive(path: string): boolean {
   return /^[a-zA-Z]:/.test(stripExtendedLengthPrefix(path));
 }

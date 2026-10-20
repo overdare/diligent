@@ -1,11 +1,10 @@
-// @summary Content search via ripgrep (or an in-process fallback when rg is unavailable) with regex support
+// @summary Content search via ripgrep with regex support
 import { resolve } from "node:path";
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { isAbsolute, stripExtendedLengthPrefix } from "../util/path";
 import { spawnCollect } from "../util/process";
-import { type RgBinaryResolver, resolveRgBinary } from "../util/ripgrep";
-import { grepFallback } from "../util/search-fallback";
+import { resolveRgBinary } from "../util/ripgrep";
 import { createGrepRenderPayload, createTextRenderPayload } from "./render-payload";
 import { createSearchScopeErrorResult } from "./search-status";
 
@@ -23,13 +22,7 @@ const GrepParams = z.object({
 const MAX_MATCHES = 100;
 const MAX_LINE_LENGTH = 2000;
 
-export interface GrepToolOptions {
-  /** Overrides ripgrep resolution; returning `null` selects the in-process fallback. */
-  resolveRgBinary?: RgBinaryResolver;
-}
-
-export function createGrepTool(cwd: string, options: GrepToolOptions = {}): Tool<typeof GrepParams> {
-  const resolveRg = options.resolveRgBinary ?? resolveRgBinary;
+export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
   return {
     name: "grep",
     description:
@@ -37,7 +30,7 @@ export function createGrepTool(cwd: string, options: GrepToolOptions = {}): Tool
       "For a multi-round symbol or reference lookup across naming variants, use spawn_agent with agent_type='explore'; do not use it for review, audit, or open-ended analysis.",
     parameters: GrepParams,
     supportParallel: true,
-    async execute(args, ctx): Promise<ToolResult> {
+    async execute(args): Promise<ToolResult> {
       const rawPath = args.path ? (isAbsolute(args.path) ? args.path : resolve(cwd, args.path)) : cwd;
       const searchPath = stripExtendedLengthPrefix(rawPath)
         .replace(/\\/g, "/")
@@ -54,29 +47,17 @@ export function createGrepTool(cwd: string, options: GrepToolOptions = {}): Tool
         });
       }
 
+      const rgBin = resolveRgBinary();
+      const rgArgs: string[] = [rgBin, "-n"];
+
+      if (args.ignore_case) rgArgs.push("--ignore-case");
+      if (args.include) rgArgs.push("--glob", args.include);
+      if (args.context !== undefined) rgArgs.push("-C", String(args.context));
+
+      rgArgs.push(args.pattern, searchPath);
+
       try {
-        const rgBin = resolveRg();
-        let stdout: string;
-        let exitCode: number;
-        let fallbackTruncated = false;
-        if (rgBin) {
-          const rgArgs: string[] = [rgBin, "-n"];
-          if (args.ignore_case) rgArgs.push("--ignore-case");
-          if (args.include) rgArgs.push("--glob", args.include);
-          if (args.context !== undefined) rgArgs.push("-C", String(args.context));
-          rgArgs.push(args.pattern, searchPath);
-          [stdout, , exitCode] = await spawnCollect(rgArgs);
-        } else {
-          const fallback = await grepFallback(searchPath, args.pattern, {
-            include: args.include,
-            ignoreCase: args.ignore_case,
-            context: args.context,
-            signal: ctx.signal,
-          });
-          stdout = fallback.stdout;
-          exitCode = stdout ? 0 : 1;
-          fallbackTruncated = fallback.truncated;
-        }
+        const [stdout, , exitCode] = await spawnCollect(rgArgs);
 
         if (exitCode !== 0 && !stdout.trim()) {
           const output = "No matches found.";
@@ -99,10 +80,6 @@ export function createGrepTool(cwd: string, options: GrepToolOptions = {}): Tool
         let output = truncated.join("\n");
         if (overflow > 0) {
           output += `\n\n... (${overflow} more matches not shown)`;
-        }
-        if (fallbackTruncated) {
-          output +=
-            "\n\n... (search stopped early: in-process fallback scan limit reached; narrow the path or include)";
         }
 
         return {

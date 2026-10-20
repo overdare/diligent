@@ -1,9 +1,8 @@
 // @summary Tests for glob tool file pattern matching
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type { ToolContext } from "@diligent/core/tool-contract";
 import { createGlobTool } from "@diligent/runtime/tools";
 
@@ -174,104 +173,5 @@ describe("glob tool", () => {
         actionable: true,
       },
     });
-  });
-});
-
-describe("glob tool without ripgrep (in-process fallback)", () => {
-  const noRg = { resolveRgBinary: () => null };
-  let tmpDir: string;
-
-  beforeEach(async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "glob-fallback-test-"));
-    await mkdir(join(tmpDir, ".git"));
-    await mkdir(join(tmpDir, "src", "components"), { recursive: true });
-    await mkdir(join(tmpDir, "node_modules", "pkg"), { recursive: true });
-    await mkdir(join(tmpDir, ".config"));
-    await writeFile(join(tmpDir, ".gitignore"), "src/\n");
-    await writeFile(join(tmpDir, "root.ts"), "");
-    await writeFile(join(tmpDir, "readme.md"), "");
-    await writeFile(join(tmpDir, "src", "index.ts"), "");
-    await writeFile(join(tmpDir, "src", "components", "Button.ts"), "");
-    await writeFile(join(tmpDir, ".config", "settings.ts"), "");
-    await writeFile(join(tmpDir, ".git", "hook.ts"), "");
-    await writeFile(join(tmpDir, "node_modules", "pkg", "types.ts"), "");
-  });
-
-  afterEach(async () => {
-    await rm(tmpDir, { recursive: true, force: true });
-  });
-
-  test("matches basenames at any depth, includes hidden and gitignored files, skips .git and node_modules", async () => {
-    const tool = createGlobTool(tmpDir, noRg);
-
-    const result = await tool.execute({ pattern: "*.ts" }, makeCtx());
-
-    expect(result.output.split("\n").sort()).toEqual(
-      [".config/settings.ts", "root.ts", "src/components/Button.ts", "src/index.ts"].map((p) => `${tmpDir}/${p}`),
-    );
-    expect(result.render?.outputSummary).toBe("4 files found");
-  });
-
-  test("anchors patterns containing a slash to the search path", async () => {
-    const tool = createGlobTool(tmpDir, noRg);
-
-    const direct = await tool.execute({ pattern: "src/*.ts" }, makeCtx());
-    expect(direct.output).toBe(`${tmpDir}/src/index.ts`);
-
-    const rootAnchored = await tool.execute({ pattern: "/**/components/**/*.ts" }, makeCtx());
-    expect(rootAnchored.output).toBe(`${tmpDir}/src/components/Button.ts`);
-  });
-
-  test("searches node_modules only when the pattern names it", async () => {
-    const tool = createGlobTool(tmpDir, noRg);
-
-    const result = await tool.execute({ pattern: "node_modules/**/*.ts" }, makeCtx());
-
-    expect(result.output).toBe(`${tmpDir}/node_modules/pkg/types.ts`);
-  });
-
-  test("sorts newest first and reports overflow beyond the file limit", async () => {
-    await mkdir(join(tmpDir, "many"));
-    for (let i = 0; i < 105; i++) {
-      const file = join(tmpDir, "many", `f${i}.txt`);
-      await writeFile(file, "");
-      const time = new Date(Date.UTC(2020, 0, 1, 0, 0, i));
-      await utimes(file, time, time);
-    }
-    const tool = createGlobTool(tmpDir, noRg);
-
-    const result = await tool.execute({ pattern: "many/*.txt" }, makeCtx());
-
-    const [shown, overflow] = result.output.split("\n\n");
-    const paths = shown.split("\n");
-    expect(paths).toHaveLength(100);
-    expect(paths[0]).toBe(`${tmpDir}/many/f104.txt`);
-    expect(paths[99]).toBe(`${tmpDir}/many/f5.txt`);
-    expect(overflow).toBe("... (5 more files not shown)");
-  });
-
-  test("reports no files when nothing matches", async () => {
-    const tool = createGlobTool(tmpDir, noRg);
-
-    const result = await tool.execute({ pattern: "*.xyz" }, makeCtx());
-
-    expect(result.output).toBe("No files found matching pattern.");
-  });
-
-  test("falls back automatically when PATH has no rg and no override or bundle exists", async () => {
-    const bundled = join(dirname(process.execPath), "assets", "bin", process.platform === "win32" ? "rg.exe" : "rg");
-    if (existsSync(bundled)) return; // a bundled rg takes precedence on this host
-    const originalPath = process.env.PATH;
-    const originalRgPath = process.env.DILIGENT_RG_PATH;
-    process.env.PATH = join(tmpDir, "empty-bin");
-    delete process.env.DILIGENT_RG_PATH;
-    try {
-      const result = await createGlobTool(tmpDir).execute({ pattern: "**/index.ts" }, makeCtx());
-      expect(result.output).toBe(`${tmpDir}/src/index.ts`);
-    } finally {
-      process.env.PATH = originalPath;
-      if (originalRgPath === undefined) delete process.env.DILIGENT_RG_PATH;
-      else process.env.DILIGENT_RG_PATH = originalRgPath;
-    }
   });
 });

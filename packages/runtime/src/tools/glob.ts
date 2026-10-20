@@ -1,12 +1,11 @@
-// @summary Find files by glob pattern via ripgrep (or an in-process fallback when rg is unavailable)
+// @summary Find files by glob pattern via ripgrep
 
 import { stat } from "node:fs/promises";
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
-import { isAbsolute, stripExtendedLengthPrefix, trimTrailingSlashes } from "../util/path";
+import { isAbsolute, stripExtendedLengthPrefix } from "../util/path";
 import { spawnCollect } from "../util/process";
-import { type RgBinaryResolver, resolveRgBinary } from "../util/ripgrep";
-import { globFilesFallback } from "../util/search-fallback";
+import { resolveRgBinary } from "../util/ripgrep";
 import { createGlobRenderPayload, createTextRenderPayload } from "./render-payload";
 import { createSearchScopeErrorResult } from "./search-status";
 
@@ -21,14 +20,7 @@ const GlobParams = z.object({
 });
 
 const MAX_FILES = 100;
-
-export interface GlobToolOptions {
-  /** Overrides ripgrep resolution; returning `null` selects the in-process fallback. */
-  resolveRgBinary?: RgBinaryResolver;
-}
-
-export function createGlobTool(cwd: string, options: GlobToolOptions = {}): Tool<typeof GlobParams> {
-  const resolveRg = options.resolveRgBinary ?? resolveRgBinary;
+export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
   return {
     name: "glob",
     description:
@@ -79,19 +71,9 @@ export function createGlobTool(cwd: string, options: GlobToolOptions = {}): Tool
       }
 
       try {
-        const rgBin = resolveRg();
-        let stdout: string;
-        let exitCode: number;
-        let fallbackTruncated = false;
-        if (rgBin) {
-          const command = [rgBin, "--files", "--no-ignore", "--hidden", "--glob", args.pattern, searchPath];
-          [stdout, , exitCode] = await spawnCollect(command, { signal: ctx.signal });
-        } else {
-          const fallback = await globFilesFallback(searchPath, args.pattern, { signal: ctx.signal });
-          stdout = fallback.stdout;
-          exitCode = stdout ? 0 : 1;
-          fallbackTruncated = fallback.truncated;
-        }
+        const rgBin = resolveRgBinary();
+        const command = [rgBin, "--files", "--no-ignore", "--hidden", "--glob", args.pattern, searchPath];
+        const [stdout, , exitCode] = await spawnCollect(command, { signal: ctx.signal });
 
         if (exitCode !== 0 && !stdout.trim()) {
           const output = "No files found matching pattern.";
@@ -124,10 +106,6 @@ export function createGlobTool(cwd: string, options: GlobToolOptions = {}): Tool
         let output = paths.join("\n");
         if (overflow > 0) {
           output += `\n\n... (${overflow} more files not shown)`;
-        }
-        if (fallbackTruncated) {
-          output +=
-            "\n\n... (search stopped early: in-process fallback scan limit reached; narrow the path or pattern)";
         }
 
         return {
@@ -166,7 +144,7 @@ function findFirstGlobMetaIndex(pattern: string): number {
 
 function buildRelativePatternSuggestion(pattern: string, searchPath: string): string {
   const normalizedPattern = stripExtendedLengthPrefix(pattern).replace(/\\/g, "/");
-  const normalizedSearchPath = trimTrailingSlashes(stripExtendedLengthPrefix(searchPath).replace(/\\/g, "/"));
+  const normalizedSearchPath = stripExtendedLengthPrefix(searchPath).replace(/\\/g, "/").replace(/\/+$/, "");
   if (normalizedPattern === normalizedSearchPath) return "**/*";
   const prefix = `${normalizedSearchPath}/`;
   if (normalizedPattern.startsWith(prefix)) return normalizedPattern.slice(prefix.length) || "**/*";
