@@ -124,7 +124,10 @@ For example, the following command uses the documented instance creation path:
 
 Use live class/property hints. Create related containers before their children
 within one command, and return a small verification summary rather than the whole
-world. A focused readback proves properties, not visual appearance or gameplay.
+world. A result over 64 KiB fails with a serialization error and returns nothing:
+filter in Luau, return counts or only the needed fields, split broad reads by
+subtree, and read script text with the script tools instead of returning `Source`.
+A focused readback proves properties, not visual appearance or gameplay.
 
 Editor Size is `(X, Y, Z)` with Y vertical. In the tested Studio mapping, native
 Source receives `(Editor Z, Editor X, Editor Y)`, expressed as native
