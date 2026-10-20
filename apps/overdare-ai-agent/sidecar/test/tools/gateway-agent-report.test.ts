@@ -2,8 +2,9 @@
 
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { HookInput } from "@diligent/runtime";
-import { createGatewayToolProvider } from "../../src/tools/gateway";
+import { createGatewayToolProvider as createRealGatewayToolProvider } from "../../src/tools/gateway";
 import type { AgentReportWire } from "../../src/tools/gateway/agent-report-client";
+import { ReportSessionFiles } from "../helpers/report-session";
 
 const previousFetch = globalThis.fetch;
 const previousUrl = process.env.DILIGENT_GATEWAY_URL;
@@ -29,8 +30,14 @@ interface Call {
 }
 let calls: Call[] = [];
 let reportResponse: unknown = receipt;
+let sessionFiles: ReportSessionFiles;
+
+function createGatewayToolProvider(options: Parameters<typeof createRealGatewayToolProvider>[0]) {
+  return sessionFiles.track(createRealGatewayToolProvider(options));
+}
 
 beforeEach(() => {
+  sessionFiles = new ReportSessionFiles();
   process.env.DILIGENT_GATEWAY_URL = "https://gateway.example";
   process.env.DILIGENT_GATEWAY_TOKEN = "synthetic-token";
   calls = [];
@@ -42,6 +49,7 @@ beforeEach(() => {
   }) as typeof fetch;
 });
 afterEach(() => {
+  sessionFiles.cleanup();
   globalThis.fetch = previousFetch;
   if (previousUrl === undefined) delete process.env.DILIGENT_GATEWAY_URL;
   else process.env.DILIGENT_GATEWAY_URL = previousUrl;
@@ -84,6 +92,47 @@ function reportCalls() {
   return calls.filter((call) => call.url.endsWith("/agent-reports"));
 }
 
+test.each([
+  undefined,
+  "",
+  "   ",
+])("does not bind a missing startup identity (%j) to a report session", async (userId) => {
+  const provider = createGatewayToolProvider({ cwd: "/workspace", canTransmitRecords: () => true });
+  await provider.onEntryAppended?.({ ...input("session-1", 1), user_id: userId });
+  await provider.onEntryAppended?.(input("session-1", 2));
+  const result = await (await reporter(provider)).execute(content, context());
+
+  expect(result.output).toContain("saved");
+  expect(reportCalls()[0]?.body.project_id).toBe("alice__workspace");
+  expect(reportCalls()[0]?.body.seq).toBe(2);
+  expect(calls.filter((call) => call.url.endsWith("/records"))).toHaveLength(1);
+});
+
+test("a missing identity between turns does not poison confirmed report context", async () => {
+  const provider = createGatewayToolProvider({ cwd: "/workspace", canTransmitRecords: () => true });
+  await provider.onEntryAppended?.(input("session-1", 1));
+  await provider.onEntryAppended?.({ ...input("session-1", 2, "alice", "Unattributed excerpt"), user_id: undefined });
+  await provider.onEntryAppended?.(input("session-1", 3));
+  const result = await (await reporter(provider)).execute(content, context());
+
+  expect(result.output).toContain("saved");
+  // On-demand evidence comes from the confirmed session file, including its background entries.
+  // Missing hook identity still prevents that append from binding or transmitting a telemetry record.
+  expect(reportCalls()[0]?.body.payload.evidence.recent_records.map((record) => record.seq)).toEqual([1, 2, 3]);
+  expect(calls.filter((call) => call.url.endsWith("/records"))).toHaveLength(2);
+});
+
+test("keeps reports blocked after two confirmed owners use the same session", async () => {
+  const provider = createGatewayToolProvider({ cwd: "/workspace", canTransmitRecords: () => true });
+  const tool = await reporter(provider);
+  await provider.onEntryAppended?.(input("session-1", 1, "alice"));
+  await provider.onEntryAppended?.(input("session-1", 2, "bob"));
+  expect((await tool.execute(content, context())).output).toContain("conflicting");
+  await provider.onEntryAppended?.(input("session-1", 3, "alice"));
+  expect((await tool.execute(content, context())).output).toContain("conflicting");
+  expect(reportCalls()).toHaveLength(0);
+});
+
 test("posts through existing gateway auth and derives execution metadata", async () => {
   const provider = createGatewayToolProvider({
     cwd: "/workspace",
@@ -115,8 +164,8 @@ test("isolates two interleaved session project fallbacks and evidence", async ()
   const [a, b] = reportCalls();
   expect(a?.body.project_id).toBe("alice__workspace");
   expect(b?.body.project_id).toBe("bob__workspace");
-  expect(a?.body.payload.evidence.recent_records[0]?.excerpt).toBe("Alice evidence");
-  expect(b?.body.payload.evidence.recent_records[0]?.excerpt).toBe("Bob evidence");
+  expect(a?.body.payload.evidence.recent_records[0]?.excerpt).toBe("[결과] Alice evidence");
+  expect(b?.body.payload.evidence.recent_records[0]?.excerpt).toBe("[결과] Bob evidence");
   expect(a?.body.session_id).toBe("session-a");
   expect(b?.body.session_id).toBe("session-b");
 });

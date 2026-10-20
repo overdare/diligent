@@ -574,14 +574,14 @@ describe("createStudioChangesTool", () => {
     for (let i = 0; i < 100; i++) expect(all.split(`Tag: added ${i}:`)).toHaveLength(2);
   });
 
-  test("detail filters use a captured RAM batch without acknowledging it", async () => {
+  test("explicit details use a captured RAM batch without acknowledging it", async () => {
     const cwd = projectDir();
     writeEditLog(cwd, [
       envelope("SetProperty", [subject("Part", "p1", "Door", [{ Property: "Name", Before: "Old", After: "Door" }])]),
     ]);
     await consumeStudioChanges(cwd);
     const tool = createStudioChangesTool(cwd);
-    const page = await tool.execute({ guid: "p1" } as never, toolCtx());
+    const page = await tool.execute({ view: "details", guid: "p1" } as never, toolCtx());
     expect(page.output).toContain("Name: Old -> Door");
     expect(page.output).toContain("retained temporarily in RAM");
     expect((await tool.execute({} as never, toolCtx())).output).toContain("Name: Old -> Door");
