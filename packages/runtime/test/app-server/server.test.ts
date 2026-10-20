@@ -316,6 +316,46 @@ function makeFactoryRuntimeConfig(overrides?: {
 }
 
 describe("DiligentAppServer", () => {
+  it("passes append-time user identity to deferred hooks after turn state is cleared", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "entry-hook-identity-"));
+    const seen: Array<string | undefined> = [];
+    const server = new DiligentAppServer({
+      userId: "host-user",
+      resolvePaths: (dir) => ensureDiligentDir(dir),
+      createAgent: () => {
+        throw new Error("not used");
+      },
+      bundledToolProviders: [
+        {
+          id: "identity-observer",
+          createTools: () => [],
+          onEntryAppended: async (input) => {
+            seen.push(input.user_id);
+            return { blocked: false };
+          },
+        },
+      ],
+    });
+    try {
+      const runtime = await (
+        server as unknown as {
+          createThreadRuntime(id: string, cwd: string, mode: string, createNew: boolean): Promise<ThreadRuntime>;
+        }
+      ).createThreadRuntime("identity-session", cwd, "default", true);
+      runtime.manager.appendModelChange("anthropic", "synthetic-model");
+      runtime.currentTurnUserId = "turn-user";
+      runtime.manager.appendModelChange("anthropic", "another-synthetic-model");
+      runtime.currentTurnUserId = undefined;
+      await runtime.manager.waitForWrites();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(seen).toEqual([undefined, "turn-user"]);
+    } finally {
+      await server.shutdown();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("dispatches every registered EntryAppended hook without a product policy gate", async () => {
     const calls: string[] = [];
     const bundledToolProviders: BundledToolProvider[] = ["first", "second"].map((id) => ({
@@ -336,19 +376,16 @@ describe("DiligentAppServer", () => {
 
     (
       server as unknown as {
-        runEntryAppendedHooks(runtime: { currentTurnUserId?: string }, info: Record<string, unknown>): void;
+        runEntryAppendedHooks(info: Record<string, unknown>): void;
       }
-    ).runEntryAppendedHooks(
-      { currentTurnUserId: "user-1" },
-      {
-        sessionId: "session-1",
-        sessionPath: "/tmp/session-1.jsonl",
-        cwd: "/tmp/project",
-        userId: "user-1",
-        seq: 1,
-        entry: { type: "message" },
-      },
-    );
+    ).runEntryAppendedHooks({
+      sessionId: "session-1",
+      sessionPath: "/tmp/session-1.jsonl",
+      cwd: "/tmp/project",
+      userId: "user-1",
+      seq: 1,
+      entry: { type: "message" },
+    });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(calls).toEqual(["first", "second"]);

@@ -49,6 +49,7 @@ export class SessionManager {
       parentSession: config.parentSession,
       collabMeta: config.collabMeta,
       sessionId: config.sessionId,
+      getUserId: config.getUserId,
       onEntryAppended: config.onEntryAppended,
     });
     this.logger = logger.child({ component: "SessionManager" });

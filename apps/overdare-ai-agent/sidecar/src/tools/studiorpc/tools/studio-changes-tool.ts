@@ -14,14 +14,22 @@ import type { StudioChangeCollector } from "./studio-change-collector";
 import type { StudioChangeConsumer, StudioChangeRead } from "./studio-change-store";
 
 const params = z.object({
-  view: z.enum(["new", "details"]).default("new").describe("New changes or paginated temporary RAM details."),
+  view: z
+    .enum(["new", "details"])
+    .default("new")
+    .describe("New changes or paginated temporary RAM details. Detail filters and pagination are ignored for new."),
   batchId: z
     .string()
     .max(100)
+    .nullable()
     .optional()
-    .describe("Batch ID from a summary; details default to your latest retained batch."),
-  guid: z.string().max(1000).optional().describe("Limit details to one instance GUID."),
-  changeType: z.enum(Object.keys(SECTION_TITLES) as [StudioChangeType, ...StudioChangeType[]]).optional(),
+    .describe("Details only: batch ID from a summary; null or omission uses your latest retained batch."),
+  guid: z.string().max(1000).nullable().optional().describe("Details only: instance GUID filter, or null for all."),
+  changeType: z
+    .enum(Object.keys(SECTION_TITLES) as [StudioChangeType, ...StudioChangeType[]])
+    .nullable()
+    .optional()
+    .describe("Details only: change kind filter, or null for all."),
   offset: z.number().int().nonnegative().default(0),
   limit: z.number().int().min(1).max(20).default(20),
 });
@@ -87,14 +95,21 @@ export function createStudioChangesTool(
       "Explicit MCP edits from this session's main/child group are excluded; other sessions remain visible. " +
       "A legacy log does not identify who made them and may include this session's own work. " +
       "Summaries are bounded; use view=details with the batchId and offset/limit for omitted properties. " +
+      "Only view=details uses detail filters and pagination; view=new always collects unread changes. " +
       "Details are temporary RAM history, not disk archives. Expired history requires inspecting current Studio state. " +
       "The shared host collector owns source files; a query advances only this session's marker.",
     parameters: params,
     async execute(raw) {
       try {
-        const input = params.parse(raw);
+        const parsed = params.parse(raw);
+        const input = {
+          ...parsed,
+          batchId: parsed.batchId ?? undefined,
+          guid: parsed.guid ?? undefined,
+          changeType: parsed.changeType ?? undefined,
+        };
         const consumer = getConsumer();
-        if (input.view === "details" || input.batchId || input.guid || input.changeType || input.offset) {
+        if (input.view === "details") {
           const id = input.batchId ?? collector.store.latestBatch(consumer);
           if (!id)
             return {

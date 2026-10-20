@@ -171,7 +171,7 @@ export interface SessionInfo {
  * Context passed to {@link SessionManagerConfig.onEntryAppended} after a session
  * entry is durably written. `seq` is monotonic per session (seeded from the existing
  * line count on resume) — the dedup half-key for downstream sinks like diligent-gateway.
- * `userId` is filled in at the app-server layer before fan-out to observers.
+ * `userId` is captured when the entry is queued, before deferred observer dispatch.
  */
 export interface AppendedEntryInfo {
   sessionId: string;
@@ -208,6 +208,8 @@ export interface SessionManagerConfig {
   parentSession?: string;
   /** When spawned as a sub-agent, identity info persisted in session header */
   collabMeta?: CollabSessionMeta;
+  /** Supplies append-time identity for observers; it is not persisted in session entries. */
+  getUserId?: () => string | undefined;
   /**
    * Runs external Stop lifecycle work after a successful or user-interrupted turn, but not an unexpected error.
    * The callback is awaited, but its output cannot add messages or re-run the model.

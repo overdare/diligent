@@ -12,8 +12,9 @@
 import { createLogger } from "@diligent/logging";
 import type { BundledToolProvider, HookInput, PluginHookFn } from "@diligent/runtime";
 import type { StudioToolProviderOptions } from "../hello-world";
+import { createAgentReportTool, type SessionReportContext } from "./agent-report";
 import { maskValue } from "./masking";
-import { DEBUG, resolveEndpoint, resolveToken } from "./shared";
+import { DEBUG, resolveEndpoint, resolveGatewayProjectId, resolveToken } from "./shared";
 
 const logger = createLogger({ scope: "sidecar/gateway", context: { component: "records" } });
 
@@ -35,13 +36,39 @@ export function createGatewayToolProvider(options: GatewayToolProviderOptions): 
   const explicitProjectId = options.projectId?.trim() ?? "";
   const cwd = options.cwd?.trim() ?? "";
 
+  const reportContexts = new Map<string, SessionReportContext | null>();
+
   const onEntryAppended: PluginHookFn = async (input) => {
     if (!options.canTransmitRecords?.()) return { blocked: false };
     const userId = resolveUserId(input);
+    // Missing startup/background identity is not an ownership change. Do not cache or
+    // transmit it as a synthetic user, which would also change the project fallback.
+    if (!userId) return { blocked: false };
     // When Studio did not inject a project id (OVERDARE_PROJECT_ID unset), fall back to a
     // `<user_id>:<cwd>` synthetic id so records are still attributable per user+workspace.
     // `:`, `/` and `\` are replaced with `_` so the id stays free of path/separator characters.
-    const projectId = explicitProjectId || `${userId}:${cwd}`.replace(/[:/\\]/g, "_");
+    const projectId = resolveGatewayProjectId(explicitProjectId, userId, cwd);
+    const previous = reportContexts.get(input.session_id);
+    if (
+      previous === null ||
+      (previous &&
+        (previous.projectId !== projectId ||
+          previous.userId !== userId ||
+          previous.transcriptPath !== input.transcript_path))
+    ) {
+      reportContexts.set(input.session_id, null);
+    } else {
+      reportContexts.set(input.session_id, {
+        userId,
+        projectId,
+        seq: Math.max(previous?.seq ?? 0, typeof input.seq === "number" ? input.seq : 0),
+        transcriptPath: input.transcript_path,
+      });
+    }
+    if (reportContexts.size > 256) {
+      const oldest = reportContexts.keys().next().value;
+      if (oldest !== undefined) reportContexts.delete(oldest);
+    }
     const token = await resolveToken();
     if (!token || !options.canTransmitRecords?.()) return { blocked: false };
     await postRecord(input, projectId, userId, token);
@@ -53,14 +80,21 @@ export function createGatewayToolProvider(options: GatewayToolProviderOptions): 
   return {
     id: "@overdare/gateway-transmit",
     displayName: "OVERDARE Gateway Transmit",
-    createTools: () => [],
+    createTools: () => [
+      createAgentReportTool({
+        cwd,
+        projectId: explicitProjectId,
+        canTransmitRecords: options.canTransmitRecords,
+        getSessionContext: (sessionId) => reportContexts.get(sessionId),
+      }),
+    ],
     onEntryAppended,
   };
 }
 
-/** Resolve a non-empty user id from the hook input, defaulting to "unknown". */
-function resolveUserId(input: HookInput): string {
-  return typeof input.user_id === "string" && input.user_id.trim() ? input.user_id.trim() : "unknown";
+/** Leave unbound identity absent instead of confusing it with a confirmed user. */
+function resolveUserId(input: HookInput): string | undefined {
+  return typeof input.user_id === "string" ? input.user_id.trim() || undefined : undefined;
 }
 
 async function postRecord(input: HookInput, projectId: string, userId: string, token: string): Promise<void> {
