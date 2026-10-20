@@ -244,6 +244,9 @@ export function codeModeWorkerMain(): void {
   };
 
   self.onmessage = (event: MessageEvent<CodeModeHostMessage>) => {
+    const origin = event.origin;
+    if (origin && origin !== "null" && origin !== self.location.origin) return;
+
     const message = event.data;
     if (message.type === "start") {
       run(message);
