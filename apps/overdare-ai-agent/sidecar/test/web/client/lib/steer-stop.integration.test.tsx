@@ -268,7 +268,12 @@ for (const scenario of ["local", "hydrated", "failed", "empty", "already-idle"] 
           const users = JSON.parse(element.querySelector("pre")!.textContent!);
           expect(users).toHaveLength(1);
           expect(users[0].images).toEqual(
-            attachments.map((a) => ({ mediaType: a.mediaType, fileName: a.fileName, url: toWebImageUrl(a.path) })),
+            attachments.map((a) => ({
+              mediaType: a.mediaType,
+              fileName: a.fileName,
+              path: a.path,
+              url: toWebImageUrl(a.path),
+            })),
           );
           if (scenario === "local") {
             await act(async () => {

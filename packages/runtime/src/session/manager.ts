@@ -35,7 +35,6 @@ export class SessionManager {
   private persistence: SessionPersistence;
   private sessionCache = new SessionCache();
   private listeners = new Set<(event: AgentEvent) => void>();
-  private memoryErrors: ErrorEntry[] = [];
   private collabHandler: CollabSessionHandler;
   private orchestrator: TurnOrchestrator;
   private logger: Logger;
@@ -165,10 +164,6 @@ export class SessionManager {
   getTranscript() {
     const { entries, leafId } = this.state.getVisibleState();
     return buildSessionTranscript(entries, leafId);
-  }
-
-  getErrors(): ErrorEntry[] {
-    return this.memoryErrors;
   }
 
   getCurrentModel(): import("@diligent/core/provider-contract").ModelRef | undefined {
@@ -331,8 +326,8 @@ export class SessionManager {
     });
   }
 
-  appendError(error: ErrorEntry["error"], options?: { fatal?: boolean; turnId?: string; persist?: boolean }): void {
-    const entry: ErrorEntry = {
+  appendError(error: ErrorEntry["error"], options?: { fatal?: boolean; turnId?: string }): void {
+    this.appendAndPersist({
       type: "error",
       id: generateEntryId(),
       parentId: this.state.getCommittedLeafId(),
@@ -340,11 +335,7 @@ export class SessionManager {
       turnId: options?.turnId,
       fatal: options?.fatal ?? false,
       error,
-    };
-    this.memoryErrors.push(entry);
-    if (options?.persist) {
-      this.appendAndPersist(entry);
-    }
+    });
   }
 
   private createMessageEntry(message: Message, parentId: string | null): SessionEntry {

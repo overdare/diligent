@@ -1,6 +1,12 @@
 // @summary MessageList prop and virtual row types shared across colocated modules
 
-import type { ApprovalRequest, ThreadReadResponse, ThreadStatus, UserInputRequest } from "@diligent/protocol";
+import type {
+  ApprovalRequest,
+  ErrorRecovery,
+  ThreadReadResponse,
+  ThreadStatus,
+  UserInputRequest,
+} from "@diligent/protocol";
 import type { RenderItem } from "../../lib/thread-store";
 
 export interface MessageListProps {
@@ -25,6 +31,8 @@ export interface MessageListProps {
   } | null;
   onLoadChildThread?: (childThreadId: string) => Promise<ThreadReadResponse>;
   onReportMessage?: (item: Extract<RenderItem, { kind: "user" | "assistant" }>) => void;
+  /** Runs an error item's recovery; offered only on a trailing failure while idle. */
+  onErrorRecovery?: (recovery: ErrorRecovery) => void;
 }
 
 export type CollabItem = Extract<RenderItem, { kind: "collab" }>;

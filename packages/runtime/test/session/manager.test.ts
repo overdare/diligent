@@ -352,7 +352,6 @@ describe("SessionManager", () => {
 
     expect(mgr.entryCount).toBe(2);
     expect(mgr.getContext()).toEqual([{ role: "user", content: "will fail", timestamp: expect.any(Number) }]);
-    expect(mgr.getErrors()).toHaveLength(1);
 
     const { entries } = await readSessionFile(mgr.sessionPath!);
     expect(entries).toHaveLength(2);
@@ -466,8 +465,6 @@ describe("SessionManager", () => {
     expect(context).toHaveLength(1);
     expect(context[0]?.role).toBe("user");
     expect(context[0]?.content).toBe("will partly fail");
-    expect(mgr.getErrors()).toHaveLength(1);
-    expect(mgr.getErrors()[0]?.fatal).toBe(false);
     expect(events.some((event) => event.type === "message_start")).toBe(true);
     expect(events.some((event) => event.type === "message_end")).toBe(false);
 

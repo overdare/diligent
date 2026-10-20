@@ -4,6 +4,7 @@ import type {
   AgentEvent,
   ApprovalRequest,
   AssistantMessage,
+  ClientError,
   ContentBlock,
   ConversationLiveState,
   DiligentServerNotification,
@@ -47,18 +48,14 @@ export interface ToastState {
   fatal?: boolean;
 }
 
-type ProviderErrorType = NonNullable<Extract<AgentEvent, { type: "error" }>["error"]["providerErrorType"]>;
+type ProviderErrorType = NonNullable<ClientError["providerErrorType"]>;
 
-export interface ActiveErrorState {
-  id: string;
-  message: string;
-  name?: string;
-  fatal: boolean;
-  turnId?: string;
-  timestamp: number;
-  providerErrorType?: ProviderErrorType;
-  recovery?: ErrorRecovery;
-  presented?: boolean;
+export interface UserImage {
+  url: string;
+  /** Local file path the image was submitted from; required to resend the request. */
+  path?: string;
+  fileName?: string;
+  mediaType?: string;
 }
 
 export interface UsageState {
@@ -85,7 +82,7 @@ export type RenderItem =
       messageId?: string;
       text: string;
       contextItems?: AgentContextItem[];
-      images: Array<{ url: string; fileName?: string; mediaType?: string }>;
+      images: UserImage[];
       timestamp: number;
     }
   | {
@@ -159,7 +156,31 @@ export type RenderItem =
           }
       >;
       timestamp: number;
+    }
+  | {
+      id: string;
+      kind: "error";
+      message: string;
+      name?: string;
+      providerErrorType?: ProviderErrorType;
+      recovery?: ErrorRecovery;
+      /** True when the runtime supplied the user-facing message. */
+      presented: boolean;
+      timestamp: number;
     };
+
+export function createErrorRenderItem(id: string, error: ClientError, timestamp: number): RenderItem {
+  return {
+    id,
+    kind: "error",
+    message: getUserFacingErrorMessage(error),
+    name: error.name,
+    providerErrorType: error.providerErrorType,
+    recovery: error.presentation?.recovery,
+    presented: error.presentation !== undefined,
+    timestamp,
+  };
+}
 
 export interface ThreadState {
   activeThreadId: string | null;
@@ -173,12 +194,10 @@ export interface ThreadState {
   pendingApproval: { requestId: number; request: ApprovalRequest } | null;
   pendingUserInput: { requestId: number; request: UserInputRequest; answers: Record<string, string | string[]> } | null;
   toast: ToastState | null;
-  activeError: ActiveErrorState | null;
   usage: UsageState;
   currentContextTokens: number; // latest turn's total input tokens including cache (not cumulative)
   planState: PlanState | null;
   pendingSteers: PendingSteer[];
-  activeTurnHadError: boolean;
   activeTurnId: string | null;
   activeTurnStartedAt: number | null;
   activeReasoningStartedAt: number | null;
@@ -211,12 +230,10 @@ export const initialThreadState: ThreadState = {
   pendingApproval: null,
   pendingUserInput: null,
   toast: null,
-  activeError: null,
   usage: zeroUsage,
   currentContextTokens: 0,
   planState: null,
   pendingSteers: [],
-  activeTurnHadError: false,
   activeTurnId: null,
   activeTurnStartedAt: null,
   activeReasoningStartedAt: null,
@@ -521,8 +538,6 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent, turnId?: string
 
     case "error": {
       const now = Date.now();
-      const message = getUserFacingErrorMessage(event.error);
-      const eventTurnId = turnId ?? merged.activeTurnId ?? undefined;
       const settled = settleInFlightItems({
         ...merged,
         threadStatus: "idle",
@@ -532,20 +547,11 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent, turnId?: string
         activeTurnStartedAt: null,
         activeReasoningStartedAt: null,
         activeReasoningDurationMs: 0,
-        activeTurnHadError: true,
-        activeError: {
-          id: `err-${now}`,
-          message,
-          name: event.error.name,
-          fatal: event.fatal,
-          ...(eventTurnId ? { turnId: eventTurnId } : {}),
-          timestamp: now,
-          providerErrorType: event.error.providerErrorType,
-          recovery: event.error.presentation?.recovery,
-          presented: event.error.presentation !== undefined,
-        },
       });
-      return settled;
+      return {
+        ...settled,
+        items: [...settled.items, createErrorRenderItem(`event:error:${now}:${++renderSeq}`, event.error, now)],
+      };
     }
 
     case "knowledge_saved":
@@ -626,7 +632,6 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent, turnId?: string
       }
       return {
         ...merged,
-        activeTurnHadError: false,
         activeTurnId: event.turnId,
         activeTurnStartedAt: Date.now(),
         activeReasoningStartedAt: null,
@@ -745,14 +750,12 @@ function handleTurnInterruptedNotification(state: ThreadState): ThreadState {
     activeTurnStartedAt: null,
     activeReasoningStartedAt: null,
     activeReasoningDurationMs: 0,
-    activeTurnHadError: false,
   });
   return applyLatestAssistantDurations(settled, turnDurationMs, reasoningDurationMs);
 }
 
 function handleTurnCompletedNotification(state: ThreadState, turnId: string): ThreadState {
   const { turnDurationMs, reasoningDurationMs } = getTurnTimingMetrics(state);
-  const shouldClearActiveError = !state.activeTurnHadError && state.activeError?.turnId !== turnId;
   const settled = settleInFlightItems({
     ...state,
     itemSlots: {},
@@ -760,8 +763,6 @@ function handleTurnCompletedNotification(state: ThreadState, turnId: string): Th
     activeTurnStartedAt: state.activeTurnId === turnId ? null : state.activeTurnStartedAt,
     activeReasoningStartedAt: null,
     activeReasoningDurationMs: 0,
-    activeTurnHadError: false,
-    activeError: shouldClearActiveError ? null : state.activeError,
   });
   return applyLatestAssistantDurations(settled, turnDurationMs, reasoningDurationMs);
 }

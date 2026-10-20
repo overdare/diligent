@@ -12,7 +12,7 @@ import type {
   ThreadGoalResponse,
   ThreadReadResponse,
 } from "@diligent/protocol";
-import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
+import { DILIGENT_CLIENT_REQUEST_METHODS, LocalImageBlockSchema } from "@diligent/protocol";
 import { parseGoalCommand } from "@diligent/runtime/client";
 import { type Dispatch, type MutableRefObject, type RefObject, type SetStateAction, useCallback, useRef } from "react";
 import { toWebImageUrl } from "../../shared/image-routes";
@@ -29,7 +29,7 @@ import {
 } from "./model-thinking-helpers";
 import type { WebRpcClient } from "./rpc-client";
 import { modeForCommand, parseSlashCommand, type SlashCommand } from "./slash-commands";
-import type { ThreadState } from "./thread-store";
+import type { RenderItem, ThreadState } from "./thread-store";
 import { createUuidV4 } from "./uuid";
 
 const IMAGE_UPLOAD_INDICATOR_DELAY_MS = 200;
@@ -166,25 +166,49 @@ export async function applyModeChange({
   await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET, { threadId: activeThreadId, mode });
 }
 
+/** Resend a previous request exactly as submitted: text, attached context, and images. */
 export async function retryLastUserMessage({
   rpc,
   threadId,
-  text,
+  item,
   model,
   dispatch,
 }: {
   rpc: WebRpcClient;
   threadId: string;
-  text: string;
+  item: Extract<RenderItem, { kind: "user" }>;
   model?: ModelRef;
   dispatch: Dispatch<AppAction>;
 }): Promise<void> {
+  const contextItems = item.contextItems ?? [];
+  const message = prependContextToMessage(item.text, contextItems);
+  const attachments = item.images.map((image) => {
+    const parsed = LocalImageBlockSchema.safeParse({
+      type: "local_image",
+      path: image.path,
+      mediaType: image.mediaType,
+      fileName: image.fileName,
+    });
+    if (!parsed.success) throw new Error(`The attached image ${image.fileName ?? image.url} can no longer be resent.`);
+    return parsed.data;
+  });
+  if (!message && attachments.length === 0) throw new Error("The last request has no content to retry.");
+
   const localItemId = `local-user-${createUuidV4()}`;
-  dispatch({ type: "local_user", payload: { id: localItemId, text, images: [] } });
+  dispatch({
+    type: "local_user",
+    payload: {
+      id: localItemId,
+      text: item.text,
+      contextItems,
+      images: attachments.map((attachment) => ({ ...attachment, webUrl: toWebImageUrl(attachment.path) })),
+    },
+  });
   const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
     threadId,
-    message: text,
-    content: [{ type: "text", text }],
+    message,
+    attachments,
+    content: [...(message ? [{ type: "text" as const, text: message }] : []), ...attachments],
     model,
   });
   if (started.userMessageId) {
@@ -842,18 +866,20 @@ export function useAppActions({
       const snapshot = stateRef.current;
       const threadId = snapshot.activeThreadId;
       if (!rpc || !threadId || snapshot.threadStatus === "busy") return;
-      const lastUser = [...snapshot.items].reverse().find((item) => item.kind === "user");
-      if (!lastUser || lastUser.kind !== "user" || !lastUser.text.trim()) return;
       try {
-        await retryLastUserMessage({
-          rpc,
-          threadId,
-          text: lastUser.text,
-          model: currentModelRef.current,
-          dispatch,
-        });
+        const lastUser = snapshot.items.findLast((item) => item.kind === "user");
+        if (lastUser?.kind !== "user") throw new Error("There is no previous request to retry.");
+        await retryLastUserMessage({ rpc, threadId, item: lastUser, model: currentModelRef.current, dispatch });
       } catch (error) {
         logger.error("turn.retry_failed", { message: "Failed to retry the last turn", error, threadId });
+        const reason = error instanceof Error ? error.message : String(error);
+        dispatch({
+          type: "client_error",
+          payload: {
+            id: `retry-error-${createUuidV4()}`,
+            error: { name: "RetryFailed", message: reason, presentation: { message: `Retry failed: ${reason}` } },
+          },
+        });
       }
     })();
   }, [currentModelRef, dispatch, rpcRef, stateRef]);

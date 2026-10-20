@@ -234,6 +234,35 @@ describe("AppSessionLifecycle", () => {
     expect(addLines.mock.calls.flat(2).join("\n")).toContain("Added: Ramp");
   });
 
+  test("hydrateThreadHistory restores persisted errors and hints recovery only for the latest failure", async () => {
+    const failure = (itemId: string) => ({
+      type: "error",
+      itemId,
+      timestamp: new Date(2026, 9, 1, 21, 39).getTime(),
+      error: {
+        name: "ProviderError",
+        message: `raw ${itemId}`,
+        presentation: { message: `Network failed ${itemId}`, recovery: { kind: "retry" } },
+      },
+    });
+    const { lifecycle, addLines } = createLifecycleWithThreadRead({
+      items: [
+        failure("e1"),
+        { type: "userMessage", itemId: "u2", message: { role: "user", content: "again", timestamp: 3 }, timestamp: 3 },
+        failure("e2"),
+      ],
+    });
+
+    await (lifecycle as never).hydrateThreadHistory();
+
+    const rendered = addLines.mock.calls.flat(2).join("\n");
+    expect(rendered).toContain("Network failed e1");
+    expect(rendered).toContain("2026-10-01 21:39");
+    expect(rendered).not.toContain("raw e1");
+    expect(rendered.match(/Submit the last prompt again to retry\./g)).toHaveLength(1);
+    expect(rendered.indexOf("Submit the last prompt again")).toBeGreaterThan(rendered.indexOf("Network failed e2"));
+  });
+
   test("hydrateThreadHistory restores provider-native web blocks as plain transcript lines", async () => {
     const { lifecycle, addAssistantMessage, addStructuredItem, addLines } = createLifecycleWithThreadRead({
       items: [

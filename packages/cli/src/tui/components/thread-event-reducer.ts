@@ -46,7 +46,7 @@ interface ThreadEventReducerDeps<TItem> {
   buildCompactionItem: (event: Extract<AgentEvent, { type: "compaction_end" }>) => TItem;
   buildKnowledgeSavedItem: () => TItem;
   buildContextNoticeItem: (event: Extract<AgentEvent, { type: "context_notice" }>) => TItem;
-  buildErrorItem: (error: ClientError) => TItem;
+  buildErrorItem: (error: ClientError, timestamp: number) => TItem;
   buildThinkingItem: (text: string, elapsedMs?: number) => TItem;
   buildAssistantChunkItem: (text: string, continued: boolean) => TItem;
   buildToolEndItem: (options: {
@@ -432,7 +432,7 @@ export function reduceThreadEvent<TItem>(
           toolCalls: {},
           collabByToolCallId: {},
           hasCommittedAssistantChunkInMessage: false,
-          items: [...state.items, deps.buildErrorItem(event.error)],
+          items: [...state.items, deps.buildErrorItem(event.error, deps.nowMs)],
         },
       };
 

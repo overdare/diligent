@@ -1,12 +1,13 @@
 // @summary Renders colocated MessageList virtual row descriptors into concrete row UI
 
-import type { ThreadReadResponse } from "@diligent/protocol";
+import type { ErrorRecovery, ThreadReadResponse } from "@diligent/protocol";
 import type { RenderItem } from "../../lib/thread-store";
 import { ApprovalCard } from "../ApprovalCard";
 import { AssistantMessage } from "../AssistantMessage";
 import { CollabGroup } from "../CollabGroup";
 import { CompactingIndicator } from "../CompactingIndicator";
 import { ContextMessage } from "../ContextMessage";
+import { ErrorMessage } from "../ErrorMessage";
 import { AgentLogo } from "../icons";
 import { QuestionCard } from "../QuestionCard";
 import { StreamingIndicator } from "../StreamingIndicator";
@@ -22,12 +23,16 @@ export function MessageListRowContent({
   onLoadChildThread,
   onReportMessage,
   lastCompletedResponseId,
+  actionableErrorId,
+  onErrorRecovery,
 }: {
   row: VirtualMessageRow;
   threadCwd?: string;
   onLoadChildThread?: (childThreadId: string) => Promise<ThreadReadResponse>;
   onReportMessage?: (item: Extract<RenderItem, { kind: "user" | "assistant" }>) => void;
   lastCompletedResponseId?: string;
+  actionableErrorId?: string;
+  onErrorRecovery?: (recovery: ErrorRecovery) => void;
 }) {
   switch (row.kind) {
     case "collab":
@@ -41,6 +46,13 @@ export function MessageListRowContent({
             <StudioChangesNotice summary={row.item.summary} />
           ) : (
             <ContextMessage summary={row.item.summary} label={row.item.title} />
+          );
+        case "error":
+          return (
+            <ErrorMessage
+              item={row.item}
+              onRecovery={row.item.id === actionableErrorId ? onErrorRecovery : undefined}
+            />
           );
         case "tool":
           return <ToolBlock item={row.item} threadCwd={threadCwd} />;

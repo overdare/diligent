@@ -154,7 +154,6 @@ export async function handleThreadRead(
 ): Promise<{
   cwd: string;
   items: ThreadItem[];
-  errors: unknown[];
   hasFollowUp: boolean;
   pendingSteers: Array<{ id: string; content: string }>;
   entryCount: number;
@@ -206,7 +205,6 @@ export async function handleThreadRead(
     goal: goalSnapshot?.goal,
     goalSequence: goalSnapshot?.sequence,
     items,
-    errors: runtime.manager.getErrors(),
     hasFollowUp: runtime.manager.hasPendingMessages(),
     pendingSteers: runtime.manager.getPendingSteers(),
     entryCount: runtime.manager.entryCount,

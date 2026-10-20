@@ -425,6 +425,12 @@ export const ThreadItemSchema = z.union([
     tokensAfter: z.number().int().nonnegative(),
   }),
   z.object({
+    type: z.literal("error"),
+    itemId: z.string(),
+    error: ClientErrorSchema,
+    timestamp: z.number().int().optional(),
+  }),
+  z.object({
     type: z.literal("knowledge"),
     itemId: z.string(),
     knowledgeId: z.string(),

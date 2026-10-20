@@ -2,6 +2,7 @@
 
 import type {
   AgentEvent,
+  ClientError,
   DiligentServerNotification,
   LocalImageBlock,
   Mode,
@@ -13,6 +14,7 @@ import type {
 import { applyGoalSnapshot } from "@diligent/runtime/client";
 import type { AgentContextItem } from "./agent-native-bridge";
 import {
+  createErrorRenderItem,
   hydrateFromThreadRead,
   initialThreadState,
   type RenderItem,
@@ -40,6 +42,7 @@ export type AppAction =
   | { type: "optimistic_thread"; payload: { threadId: string; message: string } }
   | { type: "show_info_toast"; payload: string }
   | { type: "clear_toast" }
+  | { type: "client_error"; payload: { id: string; error: ClientError } }
   | { type: "compaction_error" }
   | { type: "set_goal_snapshot"; payload: ThreadGoalResponse & { threadId: string } };
 
@@ -105,6 +108,7 @@ export function appReducer(state: ThreadState, action: AppAction): ThreadState {
       contextItems: action.payload.contextItems ?? [],
       images: action.payload.images.map((image) => ({
         url: image.webUrl,
+        path: image.path,
         fileName: image.fileName,
         mediaType: image.mediaType,
       })),
@@ -177,6 +181,12 @@ export function appReducer(state: ThreadState, action: AppAction): ThreadState {
     };
   }
   if (action.type === "clear_toast") return { ...state, toast: null };
+  if (action.type === "client_error") {
+    return {
+      ...state,
+      items: [...state.items, createErrorRenderItem(action.payload.id, action.payload.error, Date.now())],
+    };
+  }
   if (action.type === "compaction_error") return { ...state, isCompacting: false };
   if (action.type === "set_goal_snapshot") {
     if (action.payload.threadId !== state.activeThreadId) return state;
