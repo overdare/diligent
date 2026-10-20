@@ -19,6 +19,11 @@ export interface ToolOutputFileStore {
 
 export interface ExecuteToolOptions {
   outputStore?: ToolOutputFileStore;
+  /**
+   * Caller-imposed byte cap that replaces the result's model-facing cap (`ToolResult.maxOutputBytes` or
+   * MAX_OUTPUT_BYTES). Code mode passes a larger cap so scripts receive complete nested outputs.
+   */
+  maxOutputBytes?: number;
 }
 
 export async function executeTool(
@@ -67,8 +72,8 @@ export async function executeTool(
     };
   }
 
-  // D025: Auto-truncation safety net (honors a per-result byte cap when the tool sets one).
-  const maxBytes = result.maxOutputBytes ?? MAX_OUTPUT_BYTES;
+  // D025: Auto-truncation safety net (a caller cap wins over the per-result cap a tool sets).
+  const maxBytes = options?.maxOutputBytes ?? result.maxOutputBytes ?? MAX_OUTPUT_BYTES;
   if (shouldTruncate(result.output, maxBytes)) {
     const direction = result.truncateDirection ?? "tail";
     const truncated =

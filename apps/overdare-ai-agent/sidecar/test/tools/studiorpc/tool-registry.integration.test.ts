@@ -4,6 +4,7 @@ import { executeTool } from "@diligent/core/tool-contract";
 import { callRegistryTool, type McpRegistries } from "../../../src/mcp-server";
 import { createStudioRpcToolProvider } from "../../../src/tools/studiorpc";
 import type { StudioRpcCallOptions } from "../../../src/tools/studiorpc/rpc";
+import { methodModules, mutatingMethods } from "../../../src/tools/studiorpc/tool-registry";
 
 type RecordedCall = { method: string; params?: Record<string, unknown>; options?: StudioRpcCallOptions };
 
@@ -273,5 +274,46 @@ describe("native Studio method contracts", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("Native operation failed");
     expect(ctx.calls).toHaveLength(1);
+  });
+});
+
+describe("Studio RPC approval gate", () => {
+  const byMethod = new Map(methodModules.map((mod) => [mod.method, mod]));
+
+  test("read-only declarations exclude mutating, serialized, and secret-bearing methods", () => {
+    for (const mod of methodModules.filter((candidate) => candidate.readOnly)) {
+      expect({ method: mod.method, mutating: mutatingMethods.has(mod.method) }).toEqual({
+        method: mod.method,
+        mutating: false,
+      });
+      expect({ method: mod.method, serialize: mod.serialize === true }).toEqual({
+        method: mod.method,
+        serialize: false,
+      });
+    }
+    expect(byMethod.get("hub.token.read")?.readOnly).not.toBe(true);
+    // Audit regressions: these reads sat behind the approval prompt and were rejected.
+    expect(byMethod.get("game.character.read")?.readOnly).toBe(true);
+    expect(byMethod.get("game.screenshot")?.readOnly).toBe(true);
+  });
+
+  test.each(
+    methodModules.map((mod) => [mod.method, mod.readOnly === true] as const),
+  )("%s asks for approval only when it is not read-only (readOnly: %p)", async (method, readOnly) => {
+    const ctx = await setup({ success: true }, false);
+    const tool = ctx.registries.tools.get(`studiorpc_${method.replace(/\./g, "_")}`);
+    if (!tool) throw new Error(`No tool registered for ${method}`);
+
+    // Empty arguments bypass schema parsing so every tool reaches the gate; read-only tools may
+    // then fail their own argument checks (e.g. a recipe validation with no recipe), which is fine.
+    const result = await tool
+      .execute({}, { toolCallId: method, signal: new AbortController().signal, abort() {} })
+      .catch((error: unknown) => ({ output: String(error) }));
+
+    expect(ctx.approvals()).toBe(readOnly ? 0 : 1);
+    if (!readOnly) {
+      expect(result.output).toBe("[Rejected by user]");
+      expect(ctx.calls).toEqual([]);
+    }
   });
 });

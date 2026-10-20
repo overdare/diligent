@@ -26,21 +26,26 @@ export interface ToolCapabilities {
   collabExcluded?: true;
   /** Has custom render logic in render-payload.ts for richer UI display. */
   hasCustomRender?: true;
+  /**
+   * Stays a direct model tool and is not callable from code mode `exec`: its result drives client UI,
+   * user interaction, or image content that cannot cross the JSON-only guest bridge.
+   */
+  codeModeDirect?: true;
 }
 
 /** Central registry of built-in tool capabilities. */
 export const TOOL_CAPABILITIES: Record<string, ToolCapabilities> = {
-  create_goal: { immutable: true, rootOnly: true, planModeDisallowed: true },
-  get_goal: { immutable: true, rootOnly: true },
-  update_goal: { immutable: true, rootOnly: true, planModeDisallowed: true },
+  create_goal: { immutable: true, rootOnly: true, planModeDisallowed: true, codeModeDirect: true },
+  get_goal: { immutable: true, rootOnly: true, codeModeDirect: true },
+  update_goal: { immutable: true, rootOnly: true, planModeDisallowed: true, codeModeDirect: true },
   // Core agent tools
-  request_user_input: { immutable: true, executeModeDisallowed: true, hasCustomRender: true },
-  plan: { immutable: true, hasCustomRender: true },
-  skill: { immutable: true, hasCustomRender: true },
+  request_user_input: { immutable: true, executeModeDisallowed: true, hasCustomRender: true, codeModeDirect: true },
+  plan: { immutable: true, hasCustomRender: true, codeModeDirect: true },
+  skill: { immutable: true, hasCustomRender: true, codeModeDirect: true },
 
   // Read-only filesystem tools.
   read: { hasCustomRender: true },
-  read_image: {},
+  read_image: { codeModeDirect: true },
   glob: {},
   grep: {},
   ls: {},
@@ -56,10 +61,14 @@ export const TOOL_CAPABILITIES: Record<string, ToolCapabilities> = {
   update_knowledge: { planModeDisallowed: true, hasCustomRender: true },
 
   // Collab tools (excluded from child agents to prevent nesting)
-  spawn_agent: { collabExcluded: true },
-  wait: { collabExcluded: true },
-  send_input: { collabExcluded: true },
-  close_agent: { collabExcluded: true },
+  spawn_agent: { collabExcluded: true, codeModeDirect: true },
+  wait: { collabExcluded: true, codeModeDirect: true },
+  send_input: { collabExcluded: true, codeModeDirect: true },
+  close_agent: { collabExcluded: true, codeModeDirect: true },
+
+  // Code mode control tools (added by code mode assembly; never nested in themselves)
+  exec: { rootOnly: true, codeModeDirect: true, hasCustomRender: true },
+  exec_wait: { rootOnly: true, codeModeDirect: true, hasCustomRender: true },
 };
 
 /** Tools that cannot be disabled by user config. */

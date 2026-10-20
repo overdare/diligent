@@ -190,6 +190,11 @@ export class TurnOrchestrator {
     }
   }
 
+  /** Aborts the active agent's running tool batch so queued steering is delivered on its next turn. */
+  interruptTools(): void {
+    this._agent?.interruptTools();
+  }
+
   cancelPendingMessage(id: string): boolean {
     if (this._agent?.cancelPendingMessage(id)) return true;
     const index = this.pendingMessages.findIndex((entry) => entry.id === id);
@@ -478,6 +483,6 @@ function shouldFlushTurnProgress(event: CoreAgentEvent): boolean {
   return (
     event.type === "turn_start" ||
     (event.type === "message_end" && event.message.stopReason === "tool_use") ||
-    event.type === "tool_end"
+    (event.type === "tool_end" && !event.parentToolCallId)
   );
 }

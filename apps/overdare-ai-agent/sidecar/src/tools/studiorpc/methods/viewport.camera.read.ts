@@ -3,6 +3,7 @@ import { z } from "zod";
 import { withCameraAxes } from "../camera-response";
 
 export const method = "viewport.camera.read";
+export const readOnly = true;
 
 export const description =
   "Read the camera that is currently drawing the screen — where it sits, which way it faces, and what is " +

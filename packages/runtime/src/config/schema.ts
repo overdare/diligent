@@ -254,6 +254,9 @@ export const DiligentConfigSchema = z
           )
           .optional(),
         conflictPolicy: z.enum(["error", "builtin_wins", "plugin_wins"]).optional(),
+        // Code mode: `on` adds the JavaScript `exec`/`exec_wait` tools beside direct tools; `only` hides
+        // nested-callable tools behind `exec` (see docs/guide/code-mode.md). Default `off`.
+        codeMode: z.enum(["off", "on", "only"]).optional(),
       })
       .optional(),
 

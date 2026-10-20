@@ -2487,7 +2487,7 @@ test("collab_interaction_end creates interaction item", () => {
   expect(interaction && interaction.kind === "collab" ? interaction.status : "").toBe("completed");
 });
 
-test("collab_wait_end keeps spawn running when timed out snapshot reports running", () => {
+test("collab_wait_end keeps spawn running without copying the timed-out progress message", () => {
   resetAdapter();
   const threadId = "t1";
   const childThreadId = "child-running-timeout-1";
@@ -2536,7 +2536,8 @@ test("collab_wait_end keeps spawn running when timed out snapshot reports runnin
   const spawn = state.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
   expect(spawn).toBeDefined();
   expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("running");
-  expect(spawn && spawn.kind === "collab" ? spawn.message : "").toBe("still working");
+  // A running agent's wait message is a point-in-time progress digest shown on the wait row only.
+  expect(spawn && spawn.kind === "collab" ? spawn.message : "").toBeUndefined();
 });
 
 test("child assistant timeline keeps latest final message text on message_end", () => {
@@ -2759,6 +2760,38 @@ test("hydrateFromThreadRead stores full wait message text from status output", (
   expect(collabWait).toBeDefined();
   const firstAgent = collabWait && collabWait.kind === "collab" ? collabWait.agents?.[0] : undefined;
   expect(firstAgent?.message).toBe(veryLongMessage);
+});
+
+test("hydrateFromThreadRead restores a timed-out wait's progress digest for running agents", () => {
+  const digest = 'turn 2, 3 tool calls, running exec > bash for 42s, last message: "Checking tests"';
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    items: [
+      {
+        type: "toolCall",
+        itemId: "tool:tc-wait-2",
+        toolCallId: "tc-wait-2",
+        toolName: "wait",
+        input: { ids: ["ses-child-1"] },
+        output: JSON.stringify({
+          status: { "ses-child-1": { kind: "running" } },
+          timed_out: true,
+          summary: [`Cleo: Still running — ${digest}`],
+        }),
+        isError: false,
+        timestamp: 102,
+        startedAt: 101,
+        durationMs: 1,
+      },
+    ],
+    isRunning: true,
+    hasFollowUp: false,
+    entryCount: 1,
+    currentEffort: "medium",
+  });
+
+  const collabWait = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "wait");
+  const firstAgent = collabWait && collabWait.kind === "collab" ? collabWait.agents?.[0] : undefined;
+  expect(firstAgent).toMatchObject({ status: "running", message: digest });
 });
 
 // The wait tool embeds each child's full output inside its result JSON, which can be

@@ -30,7 +30,7 @@ export class ProtocolNotificationAdapter {
   private agentMessageByItemId = new Map<string, AssistantMessage>();
   private toolCallByItemId = new Map<
     string,
-    { toolCallId: string; toolName: string; input: unknown; render?: ToolRenderPayload }
+    { toolCallId: string; toolName: string; input: unknown; render?: ToolRenderPayload; parentToolCallId?: string }
   >();
 
   toAgentEvents(notification: DiligentServerNotification): AgentEvent[] {
@@ -207,6 +207,7 @@ export class ProtocolNotificationAdapter {
         toolName: item.toolName,
         input: item.input,
         render: item.render,
+        parentToolCallId: item.parentToolCallId,
       });
       return [
         {
@@ -219,6 +220,7 @@ export class ProtocolNotificationAdapter {
           ...(typeof item.timestamp === "number" ? { timestamp: item.timestamp } : {}),
           ...(typeof item.startedAt === "number" ? { startedAt: item.startedAt } : {}),
           ...(childThreadId ? { childThreadId, nickname } : {}),
+          ...(item.parentToolCallId ? { parentToolCallId: item.parentToolCallId } : {}),
         },
       ];
     }
@@ -261,6 +263,7 @@ export class ProtocolNotificationAdapter {
           toolName: tool.toolName,
           partialResult: delta.delta,
           ...(childThreadId ? { childThreadId, nickname } : {}),
+          ...(tool.parentToolCallId ? { parentToolCallId: tool.parentToolCallId } : {}),
         },
       ];
     }
@@ -309,6 +312,7 @@ export class ProtocolNotificationAdapter {
           ...(typeof item.timestamp === "number" ? { timestamp: item.timestamp } : {}),
           ...(typeof item.durationMs === "number" ? { durationMs: item.durationMs } : {}),
           ...(childThreadId ? { childThreadId, nickname } : {}),
+          ...(item.parentToolCallId ? { parentToolCallId: item.parentToolCallId } : {}),
         },
       ];
     }

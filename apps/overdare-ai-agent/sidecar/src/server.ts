@@ -15,6 +15,7 @@ import {
   runMcpServerMain,
   toCatalogSnapshot,
 } from "./mcp-server";
+import { applyRepoRipgrep } from "./repo-ripgrep";
 import { createRouterEndpoint } from "./router-endpoint";
 import { flushSentry } from "./sentry";
 import { startStudioChangeHost } from "./studio-change-lifecycle";
@@ -124,6 +125,7 @@ export async function startStudioServer(argv: string[] = process.argv.slice(2)):
   // ".overdare" — a split-brain in the same process. Only set when unset, so a
   // launcher-provided value (overdare / overdare-dev) still wins.
   process.env.DILIGENT_STORAGE_NAMESPACE ??= "overdare";
+  applyRepoRipgrep();
 
   const args = parseArgs(argv);
   const cwd = args.cwd ?? process.cwd();

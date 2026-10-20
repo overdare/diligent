@@ -1,13 +1,7 @@
 // @summary Tests for spawn_agent, wait, send_input, close_agent tool execute() methods
 import { describe, expect, it } from "bun:test";
 import type { ToolContext } from "@diligent/core/tool-contract";
-import {
-  type AgentRegistry,
-  createCollabTools,
-  createSendInputTool,
-  createSpawnAgentTool,
-  createWaitTool,
-} from "@diligent/runtime/collab";
+import { type AgentRegistry, createCollabTools, createSpawnAgentTool, createWaitTool } from "@diligent/runtime/collab";
 import {
   formatAgentTypeParameterDescription,
   formatSpawnAgentToolDescription,
@@ -202,6 +196,7 @@ describe("wait tool", () => {
         return { status: { "thread-1": { kind: "running" as const } }, timedOut: true };
       },
       getNickname: () => "Acacia",
+      getProgress: () => undefined,
     } as unknown as AgentRegistry;
     const waitTool = createWaitTool(registry);
 
@@ -218,12 +213,57 @@ describe("wait tool", () => {
         return { status: { "thread-1": { kind: "running" as const } }, timedOut: true };
       },
       getNickname: () => "Acacia",
+      getProgress: () => undefined,
     } as unknown as AgentRegistry;
     const waitTool = createWaitTool(registry);
 
     await waitTool.execute({ ids: ["thread-1"] }, makeCtx(updates));
 
     expect(updates).toEqual(["Acacia running"]);
+  });
+
+  it("reports a progress digest for agents still running when the wait times out", async () => {
+    const deferred = makeDeferredSessionManagerFactory();
+    const { tools, registry } = createCollabTools(makeCollabDeps({ sessionManagerFactory: deferred.factory }));
+    const waitTool = tools.find((tool) => tool.name === "wait")!;
+    const { threadId } = registry.spawn({ prompt: "work", description: "work", agentType: "general" });
+    await deferred.controls[0]!.started;
+    const child = deferred.controls[0]!;
+    child.emit({ type: "turn_start", turnId: "turn-1" });
+    child.emit({ type: "message_end", itemId: "m1", message: makeAssistant("Checking the failing test first.") });
+    child.emit({ type: "tool_start", itemId: "t1", toolCallId: "read-1", toolName: "read", input: {} });
+    child.emit({ type: "tool_end", itemId: "t1", toolCallId: "read-1", toolName: "read", output: "", isError: false });
+    child.emit({ type: "turn_start", turnId: "turn-2" });
+    child.emit({ type: "tool_start", itemId: "t2", toolCallId: "exec-1", toolName: "exec", input: {} });
+    child.emit({
+      type: "tool_start",
+      itemId: "t3",
+      toolCallId: "exec-1#1",
+      toolName: "bash",
+      input: {},
+      parentToolCallId: "exec-1",
+    });
+
+    // An aborted wait returns the same timed-out snapshot as an expired timeout, without a one-minute delay.
+    const controller = new AbortController();
+    controller.abort();
+    const result = await waitTool.execute({ ids: [threadId] }, { ...makeCtx(), signal: controller.signal });
+    const parsed = JSON.parse(result.output) as {
+      timed_out: boolean;
+      progress: Record<string, { turns: number; tool_calls: number; current_tool?: { name: string } }>;
+      summary: string[];
+    };
+
+    expect(parsed.timed_out).toBe(true);
+    expect(parsed.progress[threadId]).toMatchObject({
+      turns: 2,
+      tool_calls: 3,
+      current_tool: { name: "exec > bash" },
+      last_message: "Checking the failing test first.",
+    });
+    expect(parsed.summary[0]).toStartWith(`${registry.getNickname(threadId)}: Still running — turn 2, 3 tool calls`);
+    expect(parsed.summary[0]).toContain("running exec > bash for");
+    child.complete("done");
   });
 
   it("orders status keys and summary lines by requested ids, not reverse completion", async () => {
@@ -310,20 +350,47 @@ describe("send_input tool", () => {
     await expect(sendTool.execute({ id: "bad-id", message: "hello" }, makeCtx())).rejects.toThrow(/Unknown agent/);
   });
 
-  it("returns ok=true for running agent (steer called)", async () => {
-    let received: { id: string; message: string } | undefined;
-    const registry = {
-      getNickname: () => "Acacia",
-      sendInput: async (id: string, message: string) => {
-        received = { id, message };
-      },
-    } as unknown as AgentRegistry;
-    const sendTool = createSendInputTool(registry);
+  it("steers a running agent and interrupts its tools only when asked", async () => {
+    const deferred = makeDeferredSessionManagerFactory();
+    const { tools, registry } = createCollabTools(makeCollabDeps({ sessionManagerFactory: deferred.factory }));
+    const sendTool = tools.find((t) => t.name === "send_input")!;
+    const { threadId } = registry.spawn({ prompt: "work", description: "work", agentType: "general" });
+    await deferred.controls[0]!.started;
 
-    const result = await sendTool.execute({ id: "thread-1", message: "new guidance" }, makeCtx());
+    const queued = await sendTool.execute({ id: threadId, message: "after this step" }, makeCtx());
+    const urgent = await sendTool.execute({ id: threadId, message: "stop now", interrupt: true }, makeCtx());
 
-    expect(received).toEqual({ id: "thread-1", message: "new guidance" });
-    expect(JSON.parse(result.output)).toEqual({ ok: true, nickname: "Acacia", message: "new guidance" });
+    expect(JSON.parse(queued.output)).toEqual({
+      ok: true,
+      nickname: registry.getNickname(threadId),
+      message: "after this step",
+    });
+    expect(JSON.parse(urgent.output)).toMatchObject({ ok: true, interrupt_requested: true });
+    expect(deferred.controls[0]!.steering).toEqual([
+      { message: "after this step", interrupted: false },
+      { message: "stop now", interrupted: true },
+    ]);
+    deferred.controls[0]!.complete("done");
+  });
+
+  it("tells the caller to resume a finished agent with spawn_agent instead of failing opaquely", async () => {
+    const deferred = makeDeferredSessionManagerFactory();
+    const { tools, registry } = createCollabTools(makeCollabDeps({ sessionManagerFactory: deferred.factory }));
+    const sendTool = tools.find((t) => t.name === "send_input")!;
+    const { threadId } = registry.spawn({ prompt: "work", description: "work", agentType: "general" });
+    await deferred.controls[0]!.started;
+    deferred.controls[0]!.complete("done");
+    await registry.wait([threadId], 1_000);
+
+    const result = await sendTool.execute({ id: threadId, message: "one more thing" }, makeCtx());
+
+    expect(result.metadata?.error).toBe(true);
+    expect(JSON.parse(result.output)).toMatchObject({
+      ok: false,
+      status: "completed",
+      resume_with: { tool: "spawn_agent", resume_id: threadId, message: "one more thing" },
+    });
+    expect(deferred.controls[0]!.steering).toEqual([]);
   });
 });
 

@@ -15,5 +15,5 @@ export {
   truncateHeadTail,
   truncateTail,
 } from "../tool/truncation";
-export type { Tool, ToolContext, ToolRegistry, ToolResult } from "../tool/types";
+export type { NestedToolEvent, Tool, ToolContext, ToolRegistry, ToolResult } from "../tool/types";
 export type { ToolRenderPayloadLike } from "../types";

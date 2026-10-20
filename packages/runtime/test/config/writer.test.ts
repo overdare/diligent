@@ -128,6 +128,15 @@ describe("applyToolConfigPatch", () => {
       ],
     });
   });
+
+  it("keeps the file-only codeMode setting when a tool-settings patch is applied", () => {
+    expect(applyToolConfigPatch({ codeMode: "only", builtin: { bash: false } }, { builtin: { bash: true } })).toEqual({
+      codeMode: "only",
+    });
+    expect(applyToolConfigPatch({ codeMode: "off" }, { builtin: { bash: false } })).toEqual({
+      builtin: { bash: false },
+    });
+  });
 });
 
 describe("writeProjectToolsConfig", () => {

@@ -46,7 +46,8 @@ export class TurnStager {
       return { messageId };
     }
 
-    if (event.type === "tool_end") {
+    // Nested (code mode) calls are not conversation messages; their parent's result records them.
+    if (event.type === "tool_end" && !event.parentToolCallId) {
       this.stageMessage({
         role: "tool_result",
         toolCallId: event.toolCallId,

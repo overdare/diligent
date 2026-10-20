@@ -113,6 +113,8 @@ export type RenderItem =
       durationMs?: number;
       /** P040: optional structured render payload for richer presentation */
       render?: ToolRenderPayload;
+      /** Set when this call ran inside a code mode `exec` call; rendered nested under it. */
+      parentToolCallId?: string;
     }
   | {
       id: string;
@@ -136,6 +138,7 @@ export type RenderItem =
         inputText: string;
         outputText: string;
         outputImages?: ImageBlock[];
+        parentToolCallId?: string;
       }>;
       childMessages?: string[];
       childTimeline?: Array<
@@ -153,6 +156,8 @@ export type RenderItem =
             inputText: string;
             outputText: string;
             outputImages?: ImageBlock[];
+            /** Set when the child ran this call inside its own code mode `exec` call. */
+            parentToolCallId?: string;
           }
       >;
       timestamp: number;

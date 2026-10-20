@@ -5,6 +5,7 @@ import type { ContextPresentation, ProviderName, SerializableError, ToolRenderPa
 import { calculateUsageCost } from "../cost";
 import { presentRuntimeError } from "../errors/presentation";
 import type { AssistantMessage, ThreadItem, ToolResultMessage, UserMessage } from "../protocol/index";
+import { CODE_MODE_METADATA_KEY, type CodeModeResultMetadata } from "../tools/code-mode/tools";
 import { createToolEndRenderPayloadFromInput, createToolStartRenderPayload } from "../tools/render-strategies";
 import type { ThreadRuntime } from "./thread-handlers";
 
@@ -231,8 +232,38 @@ export function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): T
         render: mergeToolRenderPayload(startRender, message.render ?? derivedRender),
         ...(message.metadata ? { metadata: message.metadata } : {}),
       });
+      items.push(...buildNestedCodeModeItems(message));
     }
   }
 
   return items;
+}
+
+/** Code mode nested calls are not conversation messages; their parent result metadata carries them. */
+function buildNestedCodeModeItems(message: ToolResultMessage): ThreadItem[] {
+  const codeMode = message.metadata?.[CODE_MODE_METADATA_KEY] as Partial<CodeModeResultMetadata> | undefined;
+  if (!codeMode || !Array.isArray(codeMode.nestedCalls)) return [];
+  return codeMode.nestedCalls.map((call) => ({
+    type: "toolCall",
+    itemId: `tool:${call.toolCallId}`,
+    toolCallId: call.toolCallId,
+    toolName: call.toolName,
+    input: call.input,
+    timestamp: call.startedAt + call.durationMs,
+    startedAt: call.startedAt,
+    durationMs: call.durationMs,
+    output: call.output,
+    isError: call.isError,
+    render: mergeToolRenderPayload(
+      createToolStartRenderPayload(call.toolName, call.input),
+      createToolEndRenderPayloadFromInput({
+        toolName: call.toolName,
+        input: call.input,
+        output: call.output,
+        isError: call.isError,
+      }),
+    ),
+    ...(call.fullOutputPath ? { metadata: { fullOutputPath: call.fullOutputPath } } : {}),
+    parentToolCallId: message.toolCallId,
+  }));
 }

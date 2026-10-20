@@ -26,6 +26,8 @@ import {
   createBundledAgentLoopHooks,
   type TextGenerationFn,
 } from "../tools/bundled-provider";
+import { CodeModeSession } from "../tools/code-mode/session";
+import { applyCodeMode } from "../tools/code-mode/tools";
 import { buildDefaultTools } from "../tools/defaults";
 import { buildMcpNeedsAuthNote, getMcpManager } from "../tools/mcp";
 import type { PluginDiscoveryMode } from "../tools/plugin-loader";
@@ -174,6 +176,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
       .map((block) => block.text)
       .join("\n");
   };
+  const codeMode = runtimeConfig.diligent.tools?.codeMode ?? "off";
   const toolsResult = await buildDefaultTools({
     cwd,
     paths,
@@ -193,6 +196,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
       agentLoopHookFactories: bundledToolProviders
         ?.map((provider) => provider.createAgentLoopHooks)
         .filter((factory) => factory !== undefined),
+      codeMode,
     },
     toolsConfig: runtimeConfig.diligent.tools,
     skills: runtimeConfig.skills,
@@ -236,9 +240,17 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
       streamFn: runtimeConfig.streamFunction,
       onChildStop,
       userId,
+      codeMode,
     });
   }
-  return { tools: filteredTools, registry: toolsResult.registry };
+  // `filteredTools` stays the direct list: children inherit it and apply code mode to their own copy.
+  const codeModeSession = existingAgent?.codeModeSession ?? new CodeModeSession();
+  const tools = applyCodeMode(filteredTools, {
+    codeMode,
+    session: codeModeSession,
+    outputStore: selectedOutputStore ?? toolOutputStore,
+  });
+  return { tools, registry: toolsResult.registry, codeModeSession };
 }
 
 async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAgent> {
@@ -251,7 +263,7 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
     await getPaths(),
     runtimeConfig.diligent.knowledge,
   );
-  const { tools, registry } = await buildRuntimeAgentTools(args);
+  const { tools, registry, codeModeSession } = await buildRuntimeAgentTools(args);
   // Tool assembly syncs MCP auth first; read that same cached status for the prompt note.
   const promptSections = await appendMcpNeedsAuthNote(systemPrompt, runtimeConfig.diligent.mcpServers);
   const llmCompactionFn = runtimeConfig.providerManager.createNativeCompactionForProvider(
@@ -291,6 +303,7 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
       loopHooks,
     },
     registry,
+    codeModeSession,
   );
 }
 
