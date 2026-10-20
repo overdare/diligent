@@ -160,7 +160,8 @@ describe("Studio RPC cancellation", () => {
       accepted = socket;
       socket.once("data", (bytes) => {
         const request = JSON.parse(bytes.toString("utf8"));
-        expect(request.params).toEqual({ query: "" });
+        // The client omits an empty params object; Studio treats that as full discovery.
+        expect(request.params ?? {}).toEqual({});
         const response = Buffer.from(
           `${JSON.stringify({
             jsonrpc: "2.0",

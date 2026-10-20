@@ -1,4 +1,4 @@
-// @summary Verifies full discovery, compact catalogs, Unicode data, and empty-query normalization through the real tool executor.
+// @summary Verifies full discovery sends `{}`, compact catalogs, Unicode data, and empty-query normalization through the real tool executor.
 import { describe, expect, test } from "bun:test";
 import { executeTool } from "@diligent/core/tool-contract";
 import { createStudioRpcToolProvider } from "../../../../src/tools/studiorpc";
@@ -32,14 +32,14 @@ async function setup(reply: unknown = response) {
 }
 
 describe("live class discovery", () => {
-  test.each([{ query: "" }, {}])("forwards a full-search request after common optional cleanup: %j", async (input) => {
+  test.each([{ query: "" }, {}])("sends full discovery to Studio as an empty request: %j", async (input) => {
     const { calls, tools } = await setup();
     const result = await executeTool(
       tools,
       { type: "tool_call", id: "all", name: "studiorpc_instance_schema_search", input },
       context,
     );
-    expect(calls).toEqual([{ method: "instance.schema.search", params: { query: "" } }]);
+    expect(calls).toEqual([{ method: "instance.schema.search", params: {} }]);
     expect(result.metadata?.error).not.toBe(true);
     expect(JSON.parse(result.output)).toMatchObject({
       schemaVersion: "unicode-build",
@@ -127,6 +127,6 @@ describe("live class discovery", () => {
     );
     expect(result.metadata?.error).toBe(true);
     expect(result.output).toContain("query must be non-empty");
-    expect(calls).toEqual([{ method: "instance.schema.search", params: { query: "" } }]);
+    expect(calls).toEqual([{ method: "instance.schema.search", params: {} }]);
   });
 });

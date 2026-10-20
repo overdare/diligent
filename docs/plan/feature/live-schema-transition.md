@@ -15,9 +15,10 @@ Status: implementation draft stacked on native RPC restoration PR #441
   Mobility/singleton safeguards. Remove the procedural-builder skill/agent definitions. Rename the active geometry-recipe skill/agent inherited from #434 to
   procedural-model-builder and remove the old geometry-recipe entries here. The
   underlying native authoring guidance is restored by #434, not by this PR.
-- The schema tool accepts an empty query and no-filter calls. Normalize the latter
-  to `{"query":""}` after shared optional-input cleanup. Class-only and non-empty
-  property searches retain their existing Studio request shapes.
+- Full discovery is a request with no filters. Studio answers `{}` with the full
+  catalog and rejects `{"query":""}`, so the adapter drops an empty `query` and both
+  inputs reach Studio as the empty request. Class-only and non-empty property
+  searches retain their existing Studio request shapes.
 - Full search projects the Studio result to class metadata, retaining names,
   descriptions, creatable/service and schemaVersion but omitting property payloads.
   The tool adds `view: "classes"` and a hint to request classes for details. This is
@@ -41,21 +42,19 @@ Status: implementation draft stacked on native RPC restoration PR #441
 
 ## Contract and current server evidence
 
-Studio-side guidance says an empty query performs full search and descriptions
-may contain Korean text. The draft implements that contract. The connected Studio
-at 10.40.32.110:13378 still answered the following during implementation:
+Studio-side guidance says full search takes an empty request (`{}`) and descriptions
+may contain Korean text. The connected Studio at 10.40.32.110:13378 answered:
 
 | Request | Observed result |
 | --- | --- |
+| `{}` | Full catalog: 162 classes (about 212 KB raw) |
 | `{"query":""}` | `-32602`: query must be a non-empty string |
 | `{"classes":["ProceduralModel"]}` | One detailed class returned |
 | `{"classes":["MeshPart"],"query":"Material"}` | Material enum and MaterialVariant returned |
 
-The full-search rejection is retained as an old-build compatibility case. It does
-not invalidate the reported new contract, and must not be reported as a successful
-full-list live test. Missing-query, whitespace, and class-filter interactions on
-the updated engine still need confirmation; the draft's local normalization is
-explicit above rather than inferred as an engine guarantee.
+An earlier draft sent `{"query":""}` for full search and recorded the `-32602` reply as
+an old-build case; the empty request is the working contract. An error for `{}` is
+still reported as an unavailable catalog without invented fallback queries.
 
 ## Compatibility impact
 
@@ -75,15 +74,16 @@ usable compatibility option until this transition is verified sufficiently.
 Current draft checks: lint/typecheck and 2,448 package tests passed. The related
 Studio tool, MCP and packaging suites passed 290 tests across 21 isolated files.
 The shared executor live check confirmed upsert is absent and a MeshPart Material
-lookup returns detailed hints; full search still reports the connected server's
-`-32602` error. No successful live full-catalog test is claimed.
+lookup returns detailed hints. Full search through the shared executor returned all
+162 classes as a 20,207-byte compact catalog, below the output cap, for both `{}` and
+`{"query":""}` inputs.
 
 Deterministic tests must cover:
 
 - Upsert absence in bundled and MCP tool catalogs, with Editor and schema search
   still present; preserve retained instance/source tool tests.
-- Explicit empty query and no-filter inputs surviving agent and MCP entry points
-  to reach Studio as a full-search request, without changing global empty-input
+- Explicit empty query and no-filter inputs from agent and MCP entry points reaching
+  Studio as the empty full-search request, without changing global empty-input
   cleanup semantics for unrelated tools.
 - Complete class-name preservation while removing bulky property bodies from full
   responses; targeted lookup retains writeCondition/valueSchema and Korean text.

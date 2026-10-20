@@ -5,8 +5,8 @@ and `studiorpc_execute_luau`. These are product tools using the existing tool
 result/approval protocol, so Web and TUI receive the same output and error state.
 No client-specific RPC method or UI is required.
 
-If the appropriate class is unknown, discover available classes with
-`studiorpc_instance_schema_search` and an empty query. For a known class, request
+If the appropriate class is unknown, discover available classes by calling
+`studiorpc_instance_schema_search` with no filters. For a known class, request
 its details directly without fetching the full catalog first. Then author with
 `studiorpc_execute_luau` targeting Editor. Instance reads, hierarchy moves/deletes,
 and focused Source reads/edits remain available. The bulk JSON upsert tool and
@@ -27,10 +27,11 @@ can use when it satisfies the requested behavior.
 
 ## Discovering JSON properties
 
-The tool accepts `query` (including an empty string), `classes` containing 1-20
-exact non-empty names, or both. No filters is also accepted and normalizes to
-`{"query":""}`. The common executor removes empty optional strings; the adapter
-restores this explicit full-search request without changing global cleanup rules.
+The tool accepts `query`, `classes` containing 1-20 exact non-empty names, or
+both. Full discovery is a request with no filters: Studio answers an empty request
+(`{}`) with the full catalog and rejects `{"query":""}` (`-32602`, query must be a
+non-empty string). The adapter therefore drops an empty `query`, so `{}` and
+`{"query":""}` from the agent or MCP both reach Studio as the empty request.
 Class-only requests still reach Studio as class filters. A non-empty query remains
 a literal class/property substring; no wildcard, limit, or cursor is invented.
 

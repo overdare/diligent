@@ -240,12 +240,12 @@ describe("OVERDARE MCP server", () => {
     expect(skill.output).not.toContain("studiorpc_instance_upsert");
   });
 
-  test("MCP full discovery preserves the empty query and Korean catalog descriptions", async () => {
+  test("MCP full discovery reaches Studio as an empty request and keeps Korean catalog descriptions", async () => {
     schemaSearchMock.mockClear();
     const client = await connectClient(await makeBootstrapDir());
     try {
       const result = await client.callTool({ name: "studiorpc_instance_schema_search", arguments: { query: "" } });
-      expect(schemaSearchMock).toHaveBeenCalledWith({ query: "" });
+      expect(schemaSearchMock).toHaveBeenCalledWith({});
       const content = result.content as Array<{ type: string; text: string }>;
       const catalog = JSON.parse(content[0].text);
       expect(catalog.classes[0].description).toBe("\uD55C\uAE00 \uC124\uBA85");
