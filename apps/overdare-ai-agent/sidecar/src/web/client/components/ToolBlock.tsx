@@ -2,9 +2,10 @@
 
 import type { ToolRenderPayload } from "@diligent/protocol";
 import { useEffect, useState } from "react";
+import { toolDisclosureKey, useRememberedOpen } from "../lib/disclosure-state";
 import type { RenderItem } from "../lib/thread-store";
 import { normalizeToolName } from "../lib/thread-utils";
-import { formatDurationLabel } from "../lib/time-format";
+import { formatToolDurationLabel } from "../lib/time-format";
 import { getToolActivityLabel, getToolInfo, summarizeInput, summarizeOutput } from "../lib/tool-info";
 import { ContentText } from "./ContentText";
 import { ToolActivityRow } from "./ToolActivityRow";
@@ -94,7 +95,7 @@ export function ToolBlock({
   const renderPayload = item.render;
   const shouldAutoOpen = hasAssetGalleryBlock(renderPayload) || Boolean(item.outputImages?.length);
   const shouldInitiallyOpen = initialOpen ?? shouldAutoOpen;
-  const [open, setOpen] = useState(shouldInitiallyOpen);
+  const [open, setOpen] = useRememberedOpen(toolDisclosureKey(item.id), shouldInitiallyOpen);
   const [assetGalleryAutoOpened, setAssetGalleryAutoOpened] = useState(shouldAutoOpen);
   const toolInfo = getToolInfo(item.toolName);
   const activityTitle = getToolActivityLabel(item.toolName, item.status, item.isError);
@@ -107,7 +108,7 @@ export function ToolBlock({
   const isStreaming = item.status === "streaming";
   const isWebTool = normalizedToolName === "web_action";
   const isBusy = isStreaming && !isWebTool;
-  const durationLabel = !isBusy && !item.isError ? formatDurationLabel(item.durationMs) : null;
+  const durationLabel = !isBusy && !item.isError ? formatToolDurationLabel(item.durationMs) : null;
   const compactRow = nested && inlinePreviewWhenCollapsed;
   const inlinePreview = inlinePreviewWhenCollapsed
     ? [inputSummary, showOutputSummary ? outputSummary : ""].filter((part) => part.trim().length > 0).join(" · ")
@@ -118,7 +119,7 @@ export function ToolBlock({
     if (!shouldAutoOpen || assetGalleryAutoOpened) return;
     setOpen(true);
     setAssetGalleryAutoOpened(true);
-  }, [assetGalleryAutoOpened, shouldAutoOpen]);
+  }, [assetGalleryAutoOpened, setOpen, shouldAutoOpen]);
 
   return (
     // Calls made from a code mode `exec` script hang under that exec row.
@@ -143,7 +144,7 @@ export function ToolBlock({
           expandable={!isStreaming}
           showMeta={showPreviewWhenCollapsed}
           compact={compactRow}
-          onToggle={() => setOpen((v) => !v)}
+          onToggle={() => setOpen(!open)}
         />
 
         {open && (

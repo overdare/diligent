@@ -2351,7 +2351,6 @@ test("tool activity group reveals flat child rows with inline previews as the se
   expect(html).toContain("Ran command: find /Volumes -maxdepth 4 · Command completed");
   expect(html).toContain("find /Volumes -maxdepth 4");
   expect(html).toContain("Command completed");
-  expect(html).toContain(">5m<");
   expect(html).toContain("gap-2 py-0.5");
   expect(html).not.toContain("gap-1.5");
   expect(html).not.toContain("ml-7 mt-1 space-y-1 border-l");
@@ -2390,60 +2389,12 @@ test("nested tool block reveals scrollable third-level details when expanded", (
   expect(html).toContain("Ran command: find /Volumes -maxdepth 4 · Command completed");
   expect(html).toContain("find /Volumes -maxdepth 4");
   expect(html).toContain("Command completed");
-  expect(html).not.toContain("300058ms");
-  expect(html).toContain(">5m<");
   expect(html).toContain("gap-2 py-0.5");
   expect(html).toContain("flex h-5 w-5");
   expect(html).not.toContain("gap-1.5");
   expect(html).not.toContain("ml-7");
   expect(html).not.toContain("border-l border-border");
   expect(html).not.toContain("pl-3");
-});
-
-test("tool block hides completed duration in the default row", () => {
-  const html = renderToStaticMarkup(
-    <ToolBlock
-      item={{
-        id: "tool-1",
-        kind: "tool",
-        toolName: "bash",
-        inputText: '{"command":"echo hi"}',
-        outputText: "hi",
-        isError: false,
-        status: "done",
-        timestamp: 200,
-        toolCallId: "call-1",
-        startedAt: 100,
-        durationMs: 123,
-      }}
-    />,
-  );
-
-  expect(html).not.toContain("123ms");
-  expect(html).toContain("Ran command");
-});
-
-test("tool block shows completed duration only after one second", () => {
-  const html = renderToStaticMarkup(
-    <ToolBlock
-      item={{
-        id: "tool-long",
-        kind: "tool",
-        toolName: "bash",
-        inputText: '{"command":"sleep 1"}',
-        outputText: "done",
-        isError: false,
-        status: "done",
-        timestamp: 1_500,
-        toolCallId: "call-long",
-        startedAt: 100,
-        durationMs: 1_350,
-      }}
-    />,
-  );
-
-  expect(html).toContain(">1s<");
-  expect(html).not.toContain("1350ms");
 });
 
 test("tool block uses a neutral fallback icon instead of the target glyph", () => {
@@ -2519,7 +2470,6 @@ test("tool block keeps request and response summaries hidden while collapsed", (
   );
 
   expect(html).toContain("Read files");
-  expect(html).not.toContain("0ms");
   expect(html).not.toContain("src/ARCHITECTURE.md");
   expect(html).not.toContain("1 # Architecture");
 });

@@ -1,9 +1,15 @@
 // @summary Minimal grouped transcript row for consecutive tool activity items
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import {
+  getRememberedOpen,
+  toolDisclosureKey,
+  toolGroupDisclosureKey,
+  useRememberedOpen,
+} from "../lib/disclosure-state";
 import type { RenderItem } from "../lib/thread-store";
 import { normalizeToolName } from "../lib/thread-utils";
-import { formatDurationLabel } from "../lib/time-format";
+import { formatToolDurationLabel } from "../lib/time-format";
 import { getToolActivityLabel, getToolInfo } from "../lib/tool-info";
 import { ToolActivityRow } from "./ToolActivityRow";
 import { ToolBlock } from "./ToolBlock";
@@ -151,15 +157,31 @@ function chooseGroupIcon(items: ToolItem[]): ReturnType<typeof getToolInfo>["ico
   return getToolInfo(items[0]?.toolName ?? "tool").icon;
 }
 
+/** Wall time from the first call's start to the last call's end; nested code mode calls overlap their `exec`. */
+function groupElapsedMs(items: ToolItem[]): number | undefined {
+  let start = Number.POSITIVE_INFINITY;
+  let end = Number.NEGATIVE_INFINITY;
+  for (const item of items) {
+    if (item.durationMs === undefined) continue;
+    start = Math.min(start, item.startedAt);
+    end = Math.max(end, item.startedAt + item.durationMs);
+  }
+  return end >= start ? end - start : undefined;
+}
+
 export function ToolActivityGroup({ items, initialOpen = false }: { items: ToolItem[]; initialOpen?: boolean }) {
-  const [open, setOpen] = useState(initialOpen);
+  const firstItemId = items[0]?.id ?? "";
+  // A lone tool row the user opened becomes this group when the next call arrives; keep it open.
+  const [open, setOpen] = useRememberedOpen(
+    toolGroupDisclosureKey(firstItemId),
+    getRememberedOpen(toolDisclosureKey(firstItemId)) ?? initialOpen,
+  );
   const title = useMemo(() => summarizeToolGroup(items), [items]);
   const firstInfo = getToolInfo(items[0]?.toolName ?? "tool");
   const icon = chooseGroupIcon(items);
   const isBusy = items.some((item) => item.status === "streaming");
   const isError = items.some((item) => item.isError);
-  const durationLabel =
-    !isBusy && !isError ? formatDurationLabel(Math.max(0, ...items.map((item) => item.durationMs ?? 0))) : null;
+  const durationLabel = !isBusy && !isError ? formatToolDurationLabel(groupElapsedMs(items)) : null;
 
   return (
     <div className="flex justify-start">
@@ -170,10 +192,11 @@ export function ToolActivityGroup({ items, initialOpen = false }: { items: ToolI
           category={firstInfo.category}
           isError={isError}
           isBusy={isBusy}
+          metaLabel={`${items.length} calls`}
           durationLabel={durationLabel}
           expanded={open}
           expandable={items.length > 0}
-          onToggle={() => setOpen((value) => !value)}
+          onToggle={() => setOpen(!open)}
         />
 
         {open ? (
