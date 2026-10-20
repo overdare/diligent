@@ -340,6 +340,52 @@ describe("SessionPersistence onEntryAppended", () => {
   // Observers dispatch on a setImmediate macrotask (off the write tick), so wait one round.
   const flushImmediate = () => new Promise((resolve) => setImmediate(resolve));
 
+  it.each(["append", "appendMany"] as const)("captures user identity when %s queues an entry", async (method) => {
+    const dir = await setupDir();
+    const seen: AppendedEntryInfo[] = [];
+    let userId: string | undefined = "alice";
+    const persistence = new SessionPersistence({
+      sessionsDir: dir,
+      cwd: dir,
+      getUserId: () => userId,
+      onEntryAppended: (info) => seen.push(info),
+    });
+    await persistence.create();
+    const user = makeUserEntry();
+    if (method === "append") persistence.append(user, () => {});
+    else persistence.appendMany([user], () => {});
+    userId = "bob";
+    if (method === "append") persistence.append(makeAssistantEntry(user.id), () => {});
+    else persistence.appendMany([makeAssistantEntry(user.id)], () => {});
+    userId = undefined;
+    await persistence.waitForWrites();
+    await flushImmediate();
+
+    expect(seen.map((info) => info.userId)).toEqual(["alice", "bob"]);
+    expect(seen.map((info) => info.seq)).toEqual([1, 2]);
+  });
+
+  it("does not lose persisted entries when observer identity resolution throws", async () => {
+    const dir = await setupDir();
+    const seen: AppendedEntryInfo[] = [];
+    const persistence = new SessionPersistence({
+      sessionsDir: dir,
+      cwd: dir,
+      getUserId: () => {
+        throw new Error("identity unavailable");
+      },
+      onEntryAppended: (info) => seen.push(info),
+    });
+    await persistence.create();
+    persistence.append(makeUserEntry(), () => {});
+    persistence.appendMany([makeUserEntry()], () => {});
+    await persistence.waitForWrites();
+    await flushImmediate();
+
+    expect((await readSessionFile(persistence.sessionPath!)).entries).toHaveLength(2);
+    expect(seen.map((info) => info.userId)).toEqual([undefined, undefined]);
+  });
+
   it("fires once per append with a monotonic seq", async () => {
     const dir = await setupDir();
     const seen: AppendedEntryInfo[] = [];

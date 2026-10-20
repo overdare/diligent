@@ -756,6 +756,7 @@ export class DiligentAppServer {
     runtime.manager = new SessionManager({
       cwd,
       paths,
+      getUserId: () => runtime.currentTurnUserId,
       agent: async () => {
         const selectedModel = runtime.runningModelSnapshot ?? runtime.model;
         const request: CreateAgentArgs = {
@@ -820,7 +821,7 @@ export class DiligentAppServer {
           userId: runtime.currentTurnUserId,
           context,
         }),
-      onEntryAppended: (info) => this.runEntryAppendedHooks(runtime, info),
+      onEntryAppended: (info) => this.runEntryAppendedHooks(info),
     });
 
     if (createNew) {
@@ -966,7 +967,7 @@ export class DiligentAppServer {
   }
 
   /** Dispatch generic EntryAppended hooks off the write path; per-append hooks cannot block writes. */
-  private runEntryAppendedHooks(runtime: ThreadRuntime, info: AppendedEntryInfo): void {
+  private runEntryAppendedHooks(info: AppendedEntryInfo): void {
     const { onEntryAppended: entryHooks } = collectBundledHooks(this.config.bundledToolProviders);
     if (entryHooks.length === 0) return;
 
@@ -975,7 +976,7 @@ export class DiligentAppServer {
       transcript_path: info.sessionPath ?? "",
       cwd: info.cwd,
       hook_event_name: "EntryAppended",
-      user_id: info.userId ?? runtime.currentTurnUserId,
+      user_id: info.userId,
       seq: info.seq,
       entry: info.entry,
     };

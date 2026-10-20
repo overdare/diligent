@@ -194,6 +194,8 @@ export interface SessionPersistenceConfig {
   parentSession?: string;
   collabMeta?: CollabSessionMeta;
   sessionId?: string;
+  /** Snapshot identity when a write is queued, not when its observer runs later. */
+  getUserId?: () => string | undefined;
   /** Fire-and-forget observer invoked after each entry is durably written. */
   onEntryAppended?: (info: AppendedEntryInfo) => void;
 }
@@ -263,22 +265,33 @@ export class SessionPersistence {
   }
 
   append(entry: SessionEntry, onError: (error: unknown) => void): void {
+    const userId = this.captureObserverUserId();
     this.writeQueue = this.writeQueue
       .then(async () => {
         await this.writer.write(entry);
-        this.notifyAppended(entry);
+        this.notifyAppended(entry, userId);
       })
       .catch(onError);
   }
 
   appendMany(entries: SessionEntry[], onError: (error: unknown, entry: SessionEntry) => void): void {
     for (const entry of entries) {
+      const userId = this.captureObserverUserId();
       this.writeQueue = this.writeQueue
         .then(async () => {
           await this.writer.write(entry);
-          this.notifyAppended(entry);
+          this.notifyAppended(entry, userId);
         })
         .catch((error) => onError(error, entry));
+    }
+  }
+
+  private captureObserverUserId(): string | undefined {
+    try {
+      return this.config.getUserId?.();
+    } catch {
+      // Observability context must never break session persistence.
+      return undefined;
     }
   }
 
@@ -290,7 +303,7 @@ export class SessionPersistence {
    * transmission) never runs on the awaited write `.then` tick — `waitForWrites()` (and
    * therefore turn start/end) must never wait on telemetry. Never throws.
    */
-  private notifyAppended(entry: SessionEntry): void {
+  private notifyAppended(entry: SessionEntry, userId: string | undefined): void {
     this.seq += 1;
     const observer = this.config.onEntryAppended;
     if (!observer) return;
@@ -300,6 +313,7 @@ export class SessionPersistence {
       cwd: this.config.cwd,
       entry,
       seq: this.seq,
+      userId,
     };
     setImmediate(() => {
       try {
