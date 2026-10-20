@@ -5,6 +5,7 @@ import {
   formatDurationLabel,
   formatMessageTimestamp,
   formatMessageTimestampTooltip,
+  formatToolDurationLabel,
 } from "../../../../src/web/client/lib/time-format";
 
 test("formatDurationLabel hides sub-second durations", () => {
@@ -21,6 +22,18 @@ test("formatDurationLabel rounds meaningful durations to seconds and minutes", (
   expect(formatDurationLabel(59_900)).toBe("1m");
   expect(formatDurationLabel(72_100)).toBe("1m 12s");
   expect(formatDurationLabel(300_058)).toBe("5m");
+});
+
+test("formatToolDurationLabel keeps sub-second precision and rolls rounding into the next unit", () => {
+  expect(formatToolDurationLabel()).toBeNull();
+  expect(formatToolDurationLabel(-1)).toBeNull();
+  expect(formatToolDurationLabel(0)).toBe("0ms");
+  expect(formatToolDurationLabel(37.4)).toBe("37ms");
+  expect(formatToolDurationLabel(999.6)).toBe("1s");
+  expect(formatToolDurationLabel(1_000)).toBe("1s");
+  expect(formatToolDurationLabel(1_240)).toBe("1.2s");
+  expect(formatToolDurationLabel(72_100)).toBe("1m 12s");
+  expect(formatToolDurationLabel(125_000)).toBe("2m 05s");
 });
 
 test("formatMessageTimestamp uses relative labels for the first 24 hours without going negative", () => {

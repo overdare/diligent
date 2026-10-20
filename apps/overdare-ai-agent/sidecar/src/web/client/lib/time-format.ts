@@ -34,6 +34,18 @@ export function formatDurationLabel(durationMs?: number): string | null {
   return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
+/** Precise tool-call timing, matching the TUI: most Studio RPC calls finish well under a second. */
+export function formatToolDurationLabel(durationMs?: number): string | null {
+  if (durationMs === undefined || Number.isNaN(durationMs) || durationMs < 0) return null;
+
+  const roundedMs = Math.round(durationMs);
+  if (roundedMs < 1000) return `${roundedMs}ms`;
+  if (durationMs < 60_000) return `${(durationMs / 1000).toFixed(1).replace(/\.0$/, "")}s`;
+
+  const totalSeconds = Math.floor(durationMs / 1000);
+  return `${Math.floor(totalSeconds / 60)}m ${String(totalSeconds % 60).padStart(2, "0")}s`;
+}
+
 export function formatMessageTimestamp(timestamp: number, options: MessageTimestampFormatOptions = {}): string {
   const now = options.now ?? Date.now();
   const elapsed = Math.max(0, now - timestamp);

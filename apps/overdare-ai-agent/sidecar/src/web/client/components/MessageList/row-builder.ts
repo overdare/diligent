@@ -1,5 +1,6 @@
 // @summary Builds stable virtual row descriptors from thread render items and prompts
 
+import { toolGroupDisclosureKey } from "../../lib/disclosure-state";
 import type { RenderItem } from "../../lib/thread-store";
 import { normalizeToolName } from "../../lib/thread-utils";
 import { hasRenderableAssistantResponseContent } from "../AssistantContentBlocks";
@@ -66,10 +67,10 @@ export function buildGroupedRows(items: RenderItem[]): VirtualMessageRow[] {
     if (toolBuf.length === 1) {
       result.push(createMessageRow(toolBuf[0]));
     } else {
-      const groupKey = toolBuf.map((item) => item.id).join("+");
+      // Keyed by the first call: appending a call must not remount the group and reset its disclosure.
       result.push({
         kind: "toolGroup",
-        key: `tool-group:${groupKey}`,
+        key: toolGroupDisclosureKey(toolBuf[0].id),
         estimatedSize: estimateToolGroupHeight(toolBuf),
         items: [...toolBuf],
       });
