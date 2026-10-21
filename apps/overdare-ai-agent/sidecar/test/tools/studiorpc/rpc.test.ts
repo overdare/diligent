@@ -183,7 +183,7 @@ describe("Studio RPC cancellation", () => {
     const tools = await createStudioRpcToolProvider().createTools({ cwd: "/tmp/schema-discovery" });
     const result = await tools
       .find((t) => t.name === "studiorpc_instance_schema_search")!
-      .execute({ query: "" }, { toolCallId: "utf8", signal: new AbortController().signal, abort() {} });
+      .execute({}, { toolCallId: "utf8", signal: new AbortController().signal, abort() {} });
     expect(JSON.parse(result.output).classes[0].description).toBe(description);
     expect(result.output).not.toContain("\uFFFD");
   });

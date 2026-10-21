@@ -244,7 +244,7 @@ describe("OVERDARE MCP server", () => {
     schemaSearchMock.mockClear();
     const client = await connectClient(await makeBootstrapDir());
     try {
-      const result = await client.callTool({ name: "studiorpc_instance_schema_search", arguments: { query: "" } });
+      const result = await client.callTool({ name: "studiorpc_instance_schema_search", arguments: {} });
       expect(schemaSearchMock).toHaveBeenCalledWith({});
       const content = result.content as Array<{ type: string; text: string }>;
       const catalog = JSON.parse(content[0].text);
@@ -252,6 +252,21 @@ describe("OVERDARE MCP server", () => {
       expect(catalog.classes[0]).not.toHaveProperty("properties");
       const tools = await client.listTools();
       expect(tools.tools.map((t) => t.name)).not.toContain("studiorpc_instance_upsert");
+    } finally {
+      await client.close();
+    }
+  });
+
+  test.each([
+    { query: "" },
+    { classes: ["FutureWidget"], query: "" },
+  ])("MCP rejects an empty query before contacting Studio: %j", async (input) => {
+    schemaSearchMock.mockClear();
+    const client = await connectClient(await makeBootstrapDir());
+    try {
+      const result = await client.callTool({ name: "studiorpc_instance_schema_search", arguments: input });
+      expect(result.isError).toBe(true);
+      expect(schemaSearchMock).not.toHaveBeenCalled();
     } finally {
       await client.close();
     }

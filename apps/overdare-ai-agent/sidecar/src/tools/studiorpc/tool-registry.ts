@@ -49,6 +49,7 @@ type MethodModule = {
   method: string;
   description: string;
   params: z.ZodType;
+  inputSchema?: Record<string, unknown>;
   readOnly?: boolean;
   serialize?: boolean;
   truncateDirection?: ToolResult["truncateDirection"];

@@ -43,6 +43,8 @@ describe("live Editor tools", () => {
   });
   test("schema filters enforce the Studio contract", () => {
     for (const input of [
+      { query: "" },
+      { classes: ["FutureClass"], query: "" },
       { classes: [] },
       { classes: [""] },
       { classes: Array(21).fill("Part") },
@@ -51,7 +53,6 @@ describe("live Editor tools", () => {
     ]) {
       expect(schema.params.safeParse(input).success).toBe(false);
     }
-    expect(schema.params.parse({ query: "" })).toEqual({ query: "" });
     expect(schema.params.parse({})).toEqual({});
     expect(schema.params.parse({ classes: ["FutureClass"], query: "color" })).toEqual({
       classes: ["FutureClass"],

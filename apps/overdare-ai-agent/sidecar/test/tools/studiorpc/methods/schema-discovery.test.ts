@@ -1,4 +1,4 @@
-// @summary Verifies full discovery sends `{}`, compact catalogs, Unicode data, and empty-query normalization through the real tool executor.
+// @summary Verifies empty-request discovery, non-empty search validation, compact catalogs, and Unicode results through the real tool executor.
 import { describe, expect, test } from "bun:test";
 import { executeTool } from "@diligent/core/tool-contract";
 import { createStudioRpcToolProvider } from "../../../../src/tools/studiorpc";
@@ -32,11 +32,11 @@ async function setup(reply: unknown = response) {
 }
 
 describe("live class discovery", () => {
-  test.each([{ query: "" }, {}])("sends full discovery to Studio as an empty request: %j", async (input) => {
+  test("sends full discovery to Studio as an empty request", async () => {
     const { calls, tools } = await setup();
     const result = await executeTool(
       tools,
-      { type: "tool_call", id: "all", name: "studiorpc_instance_schema_search", input },
+      { type: "tool_call", id: "all", name: "studiorpc_instance_schema_search", input: {} },
       context,
     );
     expect(calls).toEqual([{ method: "instance.schema.search", params: {} }]);
@@ -50,7 +50,24 @@ describe("live class discovery", () => {
     expect(result.truncateDirection).toBe("head");
   });
 
-  test("targeted class lookup preserves property descriptions and exact value hints", async () => {
+  test.each([
+    { query: "" },
+    { classes: ["FutureWidget"], query: "" },
+  ])("rejects an empty query before contacting Studio: %j", async (input) => {
+    const { calls, tools } = await setup();
+    const result = await executeTool(
+      tools,
+      { type: "tool_call", id: "invalid", name: "studiorpc_instance_schema_search", input },
+      context,
+    );
+    expect(result.metadata?.error).toBe(true);
+    expect(calls).toEqual([]);
+  });
+
+  test.each([
+    { classes: ["FutureWidget"] },
+    { classes: ["FutureWidget"], query: "Material" },
+  ])("targeted lookup preserves property descriptions and exact value hints: %j", async (input) => {
     const { calls, tools } = await setup();
     const result = await executeTool(
       tools,
@@ -58,13 +75,11 @@ describe("live class discovery", () => {
         type: "tool_call",
         id: "detail",
         name: "studiorpc_instance_schema_search",
-        input: { classes: ["FutureWidget"], query: "Material" },
+        input,
       },
       context,
     );
-    expect(calls).toEqual([
-      { method: "instance.schema.search", params: { classes: ["FutureWidget"], query: "Material" } },
-    ]);
+    expect(calls).toEqual([{ method: "instance.schema.search", params: input }]);
     expect(JSON.parse(result.output)).toMatchObject(response);
   });
 
@@ -74,7 +89,7 @@ describe("live class discovery", () => {
     const { tools } = await setup(large);
     const result = await executeTool(
       tools,
-      { type: "tool_call", id: "compact", name: "studiorpc_instance_schema_search", input: { query: "" } },
+      { type: "tool_call", id: "compact", name: "studiorpc_instance_schema_search", input: {} },
       context,
     );
     expect(result.metadata?.truncated).not.toBe(true);
@@ -122,7 +137,7 @@ describe("live class discovery", () => {
     }).createTools({ cwd: "/tmp/schema-discovery" });
     const result = await executeTool(
       new Map(tools.map((t) => [t.name, t])),
-      { type: "tool_call", id: "old", name: "studiorpc_instance_schema_search", input: { query: "" } },
+      { type: "tool_call", id: "old", name: "studiorpc_instance_schema_search", input: {} },
       context,
     );
     expect(result.metadata?.error).toBe(true);

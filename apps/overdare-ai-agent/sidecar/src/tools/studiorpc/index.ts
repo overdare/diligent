@@ -459,6 +459,7 @@ export async function createStudioRpcTools(ctx: {
       name: toolName,
       description,
       parameters: params,
+      inputSchema: mod.inputSchema,
       async execute(args, toolCtx) {
         const ts = getTurnState(toolCtx);
         const warning = capturesBeforeRun ? await ensureSnapshot(ts, toolCtx.signal) : undefined;

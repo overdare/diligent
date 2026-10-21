@@ -15,10 +15,11 @@ Status: implementation draft stacked on native RPC restoration PR #441
   Mobility/singleton safeguards. Remove the procedural-builder skill/agent definitions. Rename the active geometry-recipe skill/agent inherited from #434 to
   procedural-model-builder and remove the old geometry-recipe entries here. The
   underlying native authoring guidance is restored by #434, not by this PR.
-- Full discovery is a request with no filters. Studio answers `{}` with the full
-  catalog and rejects `{"query":""}`, so the adapter drops an empty `query` and both
-  inputs reach Studio as the empty request. Class-only and non-empty property
-  searches retain their existing Studio request shapes.
+- Full discovery is a request with no filters: `{}`. Class-only requests use
+  `{"classes":[...]}` with no `query`; property searches add a non-empty query.
+  Empty queries are rejected before Studio dispatch, not silently normalized.
+  The validator distinguishes omission from malformed input while the model-facing
+  JSON Schema stays a flat object. System and code-mode prompts show all three forms.
 - Full search projects the Studio result to class metadata, retaining names,
   descriptions, creatable/service and schemaVersion but omitting property payloads.
   The tool adds `view: "classes"` and a hint to request classes for details. This is
@@ -82,9 +83,9 @@ Deterministic tests must cover:
 
 - Upsert absence in bundled and MCP tool catalogs, with Editor and schema search
   still present; preserve retained instance/source tool tests.
-- Explicit empty query and no-filter inputs from agent and MCP entry points reaching
-  Studio as the empty full-search request, without changing global empty-input
-  cleanup semantics for unrelated tools.
+- No-filter inputs from agent and MCP entry points reaching Studio as the empty
+  full-search request; empty queries with or without classes rejected before RPC.
+  Keep global empty-input cleanup semantics for unrelated tools unchanged.
 - Complete class-name preservation while removing bulky property bodies from full
   responses; targeted lookup retains writeCondition/valueSchema and Korean text.
 - UTF-8 character boundaries across TCP chunks and output caps, exact full-output

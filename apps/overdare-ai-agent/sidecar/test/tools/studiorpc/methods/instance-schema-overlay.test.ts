@@ -165,7 +165,7 @@ describe("schema overlay on targeted lookups", () => {
 describe("schema overlay on the full catalog", () => {
   test("adds class notes without property payloads or value types", async () => {
     const output = await search(
-      { query: "" },
+      {},
       {
         classes: [
           {

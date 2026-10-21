@@ -27,13 +27,23 @@ can use when it satisfies the requested behavior.
 
 ## Discovering JSON properties
 
-The tool accepts `query`, `classes` containing 1-20 exact non-empty names, or
-both. Full discovery is a request with no filters: Studio answers an empty request
-(`{}`) with the full catalog and rejects `{"query":""}` (`-32602`, query must be a
-non-empty string). The adapter therefore drops an empty `query`, so `{}` and
-`{"query":""}` from the agent or MCP both reach Studio as the empty request.
-Class-only requests still reach Studio as class filters. A non-empty query remains
-a literal class/property substring; no wildcard, limit, or cursor is invented.
+The tool accepts an optional **non-empty** `query`, `classes` containing 1-20 exact
+non-empty names, or both. Omit `query` when no substring filter is needed:
+
+```js
+await tools.studiorpc_instance_schema_search({}); // Compact full class catalog.
+await tools.studiorpc_instance_schema_search({ classes: ["TextLabel", "UIGridLayout", "Script"] }); // All properties.
+await tools.studiorpc_instance_schema_search({ classes: ["MeshPart"], query: "Material" }); // Filtered properties.
+```
+
+`{"query":""}` is invalid even when `classes` is present. Agent and MCP entry points
+reject it before contacting Studio and direct the caller to omit `query`; it is
+not silently converted into a successful lookup. The local validator distinguishes
+an omitted query from a malformed present query so shared optional-value cleanup
+cannot erase the mistake. The advertised input schema remains a flat object with
+an optional `query` whose `minLength` is 1, and code-mode descriptions include the
+same examples. Non-empty queries remain literal class/property substrings; no
+wildcard, limit, or cursor is invented.
 
 Full discovery returns schemaVersion and a compact class catalog: class names,
 descriptions (including Korean), creatable/service and other class metadata are
@@ -88,12 +98,10 @@ declaredOn index of that build. The overlay tests fail when a note key no longer
 names a published property or a supplement duplicates one; re-record the index
 from targeted `instance.schema.search` lookups when Studio's schema changes.
 
-The updated Studio contract is reported to support empty-query full search. The
-currently connected build still returned `-32602` for that request during draft
-verification. That error is surfaced; the agent must not invent a partial catalog
-using wildcard/alphabet probing. Full-list integration with an updated Studio
-remains a draft acceptance gate. Focused class/property queries work on the tested
-build and may support a documented operation even when full discovery is unavailable.
+The connected Studio successfully returned 162 classes for `{}` during live
+verification. The earlier `-32602` result came from `{"query":""}`, not from an
+unsupported full-catalog request. If Studio rejects a valid empty request, surface
+that error without wildcard/alphabet probing or inventing a partial catalog.
 
 The previous upsert class validators, automatic defaults, ObjectType insertion,
 VFX short-name expansion and upsert-only diagnostics/file recovery are retired
@@ -270,13 +278,14 @@ this PR does not authorize an automatic preview/main merge or deployment.
 
 ## Verification boundaries
 
-Tests exercise empty-query full search through the shared tool executor and MCP,
-compact class catalogs, overlay merging on targeted schemas (inherited notes,
+Tests exercise empty-request full search and empty-query rejection through the
+shared tool executor and MCP, compact class catalogs, overlay merging on targeted
+schemas (inherited notes,
 sentinel removal, supplements and their query filtering, Studio precedence,
 valueTypes), overlay keys against the recorded Studio index, Korean descriptions split
 across TCP chunks, UTF-8 byte accounting, and persisted truncated results. They
 also verify that upsert is absent while Editor error/save handling and retained
 instance/Source tools continue to work. The bundled registry exposes the active
 procedural-model-builder skill/agent while keeping procedural-builder and the
-retired local runner absent. Actual full-catalog discovery
-on the updated Studio and end-to-end model authoring remain draft gates.
+retired local runner absent. Live full-catalog transport and targeted lookups have
+been verified; end-to-end model authoring remains a draft gate.
