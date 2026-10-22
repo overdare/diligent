@@ -107,7 +107,6 @@ Notes:
 
 - `cwd`
 - `items`
-- `errors?`
 - `hasFollowUp`
 - `entryCount`
 - `isRunning`
@@ -118,9 +117,12 @@ Notes:
 Important behavior:
 
 - if thread is idle, runtime can reconcile memory from disk before producing the snapshot
-- `items` are built from transcript entries (`userMessage`, `agentMessage`, `toolCall`, `compaction`)
+- `items` are built from transcript entries (`userMessage`, `agentMessage`, `toolCall`, `compaction`, `error`)
 - live collaboration status can be overlaid onto persisted snapshot items
-- `errors` are runtime in-memory errors, not a persisted session entry family
+- a failed turn persists a raw `error` session entry on the parent chain; `thread/read` returns it as an
+  `error` item at the same transcript position with runtime presentation derived on read, using the
+  provider recorded on that path. Web and TUI render it as a timestamped transcript row and offer its
+  recovery action only when it is the trailing item of an idle thread
 
 ## Turn lifecycle hooks into thread lifecycle
 

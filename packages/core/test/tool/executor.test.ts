@@ -203,4 +203,32 @@ describe("executeTool", () => {
     expect(result.metadata?.truncated).toBeUndefined();
     expect(result.output).toHaveLength(60_000);
   });
+
+  test("a caller maxOutputBytes replaces both the default and the per-result cap", async () => {
+    const tools: Tool[] = [
+      {
+        name: "plain",
+        description: "",
+        parameters: z.object({}),
+        execute: async () => ({ output: "a".repeat(60_000) }),
+      },
+      {
+        name: "capped",
+        description: "",
+        parameters: z.object({}),
+        execute: async () => ({ output: "b".repeat(2_000), maxOutputBytes: 500 }),
+      },
+    ];
+    const builder = new ToolRegistryBuilder();
+    for (const tool of tools) builder.register(tool);
+    const registry = builder.build();
+
+    for (const tool of tools) {
+      const toolCall: ToolCallBlock = { type: "tool_call", id: "tc_1", name: tool.name, input: {} };
+      const uncapped = await executeTool(registry, toolCall, makeCtx(), { maxOutputBytes: 100_000 });
+      expect(uncapped.metadata?.truncated).toBeUndefined();
+      const tight = await executeTool(registry, toolCall, makeCtx(), { maxOutputBytes: 100 });
+      expect(tight.metadata?.truncated).toBe(true);
+    }
+  });
 });

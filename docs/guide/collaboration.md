@@ -63,7 +63,12 @@ Current parameters are:
 - a `timed_out` flag
 - a human-readable summary list derived from child status
 
-If some children are still running when the timeout or abort signal fires, the result preserves their current status rather than inventing a final one.
+If some children are still running when the timeout or abort signal fires, the result preserves their current status rather than inventing a final one. Each still-running child also gets a progress digest, tracked by the registry from the child's event stream:
+
+- `progress[<thread id>]`: `turns`, `tool_calls` (code mode nested calls included), `current_tool` (`name`, `running_ms`; nested calls are labelled `exec > bash`) or else `last_tool` (`name`, `ended_ms_ago`, `is_error?`), `last_message` (last assistant text, up to 160 characters), and `idle_ms` since the child's last event
+- the summary line reads `<nickname>: Still running — turn 3, 12 tool calls, running bash for 42s, last message: "..."`
+
+`collab_wait_end` carries the same one-line digest as the running agent's `message`. Web shows it on the wait row (and restores it from the summary line on reload) but does not copy it onto the spawn item, because it is a point-in-time snapshot; TUI shows the summary lines of the wait result.
 
 ### `send_input`
 
@@ -73,8 +78,13 @@ Current parameters are:
 
 - `id`: child thread ID
 - `message`: steering prompt
+- `interrupt?`: abort the child's running tool calls so the message is delivered right away
 
-This does not interrupt the child immediately. It queues steering through the child session manager so the child incorporates it on the next turn boundary.
+Without `interrupt`, the steering is queued through the child session manager and the child reads it at the next turn boundary, after its current tool calls finish.
+
+With `interrupt: true`, the runtime also calls `SessionManager.interruptTools()`, which reaches `Agent.interruptTools()` in core. That aborts only the running tool batch (each aborted call returns its aborted result, so every tool call still has a result); the agent loop keeps running and injects the steering at the start of the next turn. If the child model is still streaming, the tool batch it requests is skipped instead of run. The child's run is not cancelled: its conversation and code mode `store` stay intact, while an interrupted `exec` cell is terminated like any aborted call. Use `close_agent` to stop a child entirely.
+
+`send_input` to a finished child (completed, errored, or shutdown) returns an error result with `resume_with: { tool: "spawn_agent", resume_id, message }`; resuming through `spawn_agent` with `resume_id` is the supported way to continue a finished child.
 
 ### `close_agent`
 

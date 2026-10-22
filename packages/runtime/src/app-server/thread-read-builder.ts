@@ -1,9 +1,11 @@
 // @summary Thread read snapshot builder — assembles ThreadItem[] from transcript and applies live collab state.
 
 import { resolveModel } from "@diligent/core/model-registry";
-import type { ToolRenderPayload } from "@diligent/protocol";
+import type { ContextPresentation, ProviderName, SerializableError, ToolRenderPayload } from "@diligent/protocol";
 import { calculateUsageCost } from "../cost";
+import { presentRuntimeError } from "../errors/presentation";
 import type { AssistantMessage, ThreadItem, ToolResultMessage, UserMessage } from "../protocol/index";
+import { CODE_MODE_METADATA_KEY, type CodeModeResultMetadata } from "../tools/code-mode/tools";
 import { createToolEndRenderPayloadFromInput, createToolStartRenderPayload } from "../tools/render-strategies";
 import type { ThreadRuntime } from "./thread-handlers";
 
@@ -14,8 +16,9 @@ export type ThreadReadTranscriptEntry =
       id: string;
       timestamp: string;
       source: string;
-      presentation: import("@diligent/protocol").ContextPresentation;
+      presentation: ContextPresentation;
     }
+  | { type: "error"; id: string; timestamp: string; error: SerializableError; provider?: ProviderName }
   | { type: "message"; id: string; timestamp: string; message: UserMessage | AssistantMessage | ToolResultMessage };
 
 function toSnapshotCollabStatus(status: { kind: string }): "running" | "completed" | "errored" | "shutdown" {
@@ -150,6 +153,16 @@ export function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): T
       });
       continue;
     }
+    if (entry.type === "error") {
+      items.push({
+        type: "error",
+        itemId: entry.id,
+        // Persisted errors are raw diagnostics; presentation is derived on read like live turn errors.
+        error: presentRuntimeError(entry.error, { provider: entry.provider, operation: "agent_turn", retrySafe: true }),
+        timestamp: entryTimestamp,
+      });
+      continue;
+    }
 
     if (entry.type !== "message") continue;
     const message = entry.message;
@@ -219,8 +232,38 @@ export function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): T
         render: mergeToolRenderPayload(startRender, message.render ?? derivedRender),
         ...(message.metadata ? { metadata: message.metadata } : {}),
       });
+      items.push(...buildNestedCodeModeItems(message));
     }
   }
 
   return items;
+}
+
+/** Code mode nested calls are not conversation messages; their parent result metadata carries them. */
+function buildNestedCodeModeItems(message: ToolResultMessage): ThreadItem[] {
+  const codeMode = message.metadata?.[CODE_MODE_METADATA_KEY] as Partial<CodeModeResultMetadata> | undefined;
+  if (!codeMode || !Array.isArray(codeMode.nestedCalls)) return [];
+  return codeMode.nestedCalls.map((call) => ({
+    type: "toolCall",
+    itemId: `tool:${call.toolCallId}`,
+    toolCallId: call.toolCallId,
+    toolName: call.toolName,
+    input: call.input,
+    timestamp: call.startedAt + call.durationMs,
+    startedAt: call.startedAt,
+    durationMs: call.durationMs,
+    output: call.output,
+    isError: call.isError,
+    render: mergeToolRenderPayload(
+      createToolStartRenderPayload(call.toolName, call.input),
+      createToolEndRenderPayloadFromInput({
+        toolName: call.toolName,
+        input: call.input,
+        output: call.output,
+        isError: call.isError,
+      }),
+    ),
+    ...(call.fullOutputPath ? { metadata: { fullOutputPath: call.fullOutputPath } } : {}),
+    parentToolCallId: message.toolCallId,
+  }));
 }

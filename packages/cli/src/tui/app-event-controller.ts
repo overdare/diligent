@@ -15,7 +15,8 @@ export interface AppEventControllerDeps {
   runtime: AppRuntimeState;
   handleAgentEvent: (event: AgentEvent) => void;
   onTurnFinished: () => void;
-  onTurnErrored: (message: string) => void;
+  /** The error is already rendered from the event; settle the pending submit without rendering it again. */
+  onTurnErrored: () => void;
   onUserInputRequestResolved: () => void;
   onAccountLoginCompleted: (result: { success: boolean; error: string | null }) => void;
   onMcpLoginCompleted: (result: { server: string; success: boolean; toolCount?: number; error: string | null }) => void;
@@ -42,7 +43,7 @@ export class AppEventController {
       this.deps.handleAgentEvent(notification.params.event);
 
       if (notification.params.event.type === "error" && this.deps.runtime.pendingTurn) {
-        this.deps.onTurnErrored(notification.params.event.error.message);
+        this.deps.onTurnErrored();
       }
     }
 
@@ -99,7 +100,7 @@ export class AppEventController {
         fatal: notification.params.fatal,
       });
       if (this.deps.runtime.pendingTurn) {
-        this.deps.onTurnErrored(notification.params.error.message);
+        this.deps.onTurnErrored();
       }
     }
 

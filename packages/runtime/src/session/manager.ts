@@ -35,7 +35,6 @@ export class SessionManager {
   private persistence: SessionPersistence;
   private sessionCache = new SessionCache();
   private listeners = new Set<(event: AgentEvent) => void>();
-  private memoryErrors: ErrorEntry[] = [];
   private collabHandler: CollabSessionHandler;
   private orchestrator: TurnOrchestrator;
   private logger: Logger;
@@ -167,10 +166,6 @@ export class SessionManager {
     return buildSessionTranscript(entries, leafId);
   }
 
-  getErrors(): ErrorEntry[] {
-    return this.memoryErrors;
-  }
-
   getCurrentModel(): import("@diligent/core/provider-contract").ModelRef | undefined {
     return buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {}).currentModel;
   }
@@ -275,6 +270,11 @@ export class SessionManager {
     return this.orchestrator.steer(message, id);
   }
 
+  /** Aborts the running tool batch so queued steering reaches the model on the next turn. */
+  interruptTools(): void {
+    this.orchestrator.interruptTools();
+  }
+
   cancelPendingMessage(id: string): boolean {
     return this.orchestrator.cancelPendingMessage(id);
   }
@@ -331,8 +331,8 @@ export class SessionManager {
     });
   }
 
-  appendError(error: ErrorEntry["error"], options?: { fatal?: boolean; turnId?: string; persist?: boolean }): void {
-    const entry: ErrorEntry = {
+  appendError(error: ErrorEntry["error"], options?: { fatal?: boolean; turnId?: string }): void {
+    this.appendAndPersist({
       type: "error",
       id: generateEntryId(),
       parentId: this.state.getCommittedLeafId(),
@@ -340,11 +340,7 @@ export class SessionManager {
       turnId: options?.turnId,
       fatal: options?.fatal ?? false,
       error,
-    };
-    this.memoryErrors.push(entry);
-    if (options?.persist) {
-      this.appendAndPersist(entry);
-    }
+    });
   }
 
   private createMessageEntry(message: Message, parentId: string | null): SessionEntry {

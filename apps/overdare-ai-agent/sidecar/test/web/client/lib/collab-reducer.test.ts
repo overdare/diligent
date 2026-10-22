@@ -261,6 +261,27 @@ test("collab_wait_end updates spawn item status for each agent", () => {
   expect(spawnItem?.message).toBe("done");
 });
 
+test("collab_wait_end shows a running agent's progress on the wait row but not on its spawn item", () => {
+  const s0 = reduceCollabEvent(initialThreadState, {
+    type: "collab_spawn_begin",
+    callId: "t1",
+    prompt: "p",
+    agentType: "x",
+  });
+  const s1 = reduceCollabEvent(s0, { type: "collab_wait_begin", callId: "w2", agents: [{ threadId: "t1" }] });
+  const progress = "turn 2, 3 tool calls, running bash for 42s";
+  const next = reduceCollabEvent(s1, {
+    type: "collab_wait_end",
+    callId: "w2",
+    agentStatuses: [{ threadId: "t1", nickname: "A", status: "running", message: progress }],
+    timedOut: true,
+  });
+
+  const waitItem = next.items.find((i) => i.kind === "collab" && i.id === "collab:wait:w2");
+  expect(waitItem?.kind === "collab" ? waitItem.agents?.[0]?.message : undefined).toBe(progress);
+  expect(findCollabSpawnItem(next, "t1")?.message).toBeUndefined();
+});
+
 // ---------------------------------------------------------------------------
 // reduceCollabEvent — collab_close_begin / collab_close_end
 // ---------------------------------------------------------------------------

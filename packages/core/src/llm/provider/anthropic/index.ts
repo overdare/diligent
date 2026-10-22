@@ -338,6 +338,10 @@ function mapStopReason(reason: string | null): StopReason {
 
 // TODO: Track actual inputTokens for proactive compaction (D-compact)
 export function classifyAnthropicError(err: unknown): ProviderError {
+  // SDK connection and timeout errors extend APIError but carry no HTTP status.
+  if (err instanceof Anthropic.APIConnectionError) {
+    return new ProviderError(err.message, { errorType: ProviderErrorType.Network, isRetryable: true, cause: err });
+  }
   if (err instanceof Anthropic.APIError) {
     const status = err.status;
     if (status === 400 && err.message.includes("context length")) {

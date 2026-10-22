@@ -11,6 +11,7 @@ import type { ChatView } from "./components/chat-view";
 import type { InputEditor } from "./components/input-editor";
 import type { StatusBar } from "./components/status-bar";
 import { renderAssistantMessageBlocks, renderAssistantStructuredItems } from "./components/thread-store-utils";
+import { buildErrorTranscriptLines } from "./error-presentation";
 import type { TUIRenderer } from "./framework/renderer";
 import type { Terminal } from "./framework/terminal";
 import type { InputHistory } from "./input-history";
@@ -193,7 +194,16 @@ export class AppSessionLifecycle {
 
     this.deps.chatView.addLines([`  ${t.dim}─── Resuming session ───${t.reset}`, ""]);
 
+    const lastItem = thread.items.at(-1);
     for (const item of thread.items) {
+      if (item.type === "error") {
+        // Older failures stay as timeline history; only a trailing failure still offers recovery.
+        this.deps.chatView.addLines([
+          ...buildErrorTranscriptLines(item.error, item.timestamp ?? Date.now(), { includeHint: item === lastItem }),
+          "",
+        ]);
+        continue;
+      }
       if (item.type === "compaction") {
         this.deps.chatView.addLines([`  ${t.dim}[Compacted: ${item.displaySummary ?? item.summary}]${t.reset}`, ""]);
         continue;

@@ -14,6 +14,9 @@ import {
 import { StudioRpcError } from "../rpc";
 
 export const method = "game.screenshot";
+// The PNG lands in Studio's capture output and a one-shot `camera` is restored after
+// capture, so a screenshot leaves the level, instances and editor view unchanged.
+export const readOnly = true;
 
 export const description =
   "Capture the active OVERDARE Studio viewport and return the PNG with its file path, captured size, and " +

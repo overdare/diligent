@@ -10,7 +10,9 @@ import type { ApprovalRequest, ApprovalResponse } from "../approval/types";
 import type { DiligentPaths } from "../infrastructure";
 import type { SessionManager } from "../session/manager";
 import type { AgentLoopHookFactory } from "../tools/bundled-provider";
+import type { CodeMode } from "../tools/code-mode/tools";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
+import type { AgentProgressTracker } from "./progress";
 
 export interface ChildStopInfo {
   sessionId: string;
@@ -44,6 +46,8 @@ export interface AgentEntry {
   status: AgentStatus;
   abortController: AbortController;
   createdAt: number;
+  /** Live turn/tool/message progress, reported by `wait` while the agent runs. */
+  progress: AgentProgressTracker;
   resumePolicy?: CollabResumePolicy;
 }
 
@@ -97,4 +101,6 @@ export interface CollabToolDeps {
   onChildStop?: (info: ChildStopInfo) => Promise<void>;
   /** Product hook factories are retained through nesting; each child receives fresh hook instances. */
   agentLoopHookFactories?: readonly AgentLoopHookFactory[];
+  /** `tools.codeMode` applied to each child agent's tool list (each child gets its own cells and store). */
+  codeMode?: CodeMode;
 }

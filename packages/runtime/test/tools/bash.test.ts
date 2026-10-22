@@ -1,6 +1,6 @@
 // @summary Tests for bash tool execution, error handling, and env var filtering
 import { describe, expect, test } from "bun:test";
-import type { ToolContext } from "@diligent/core/tool-contract";
+import { executeTool, type ToolContext, type ToolRegistry } from "@diligent/core/tool-contract";
 import { createBashTool, filterSensitiveEnv } from "@diligent/runtime/tools";
 
 const bashTool = createBashTool(process.cwd());
@@ -52,13 +52,31 @@ describe("bash tool", () => {
     expect(result.output).toContain("err");
   });
 
-  test("large output → truncated", async () => {
-    // Generate output larger than 50KB
-    const result = await bashTool.execute(
-      { command: "bun --eval \"process.stdout.write('x'.repeat(60001))\"" },
+  test("large output stays whole for callers while the executor truncates the model copy", async () => {
+    const command = "bun --eval \"process.stdout.write('HEAD' + 'x'.repeat(60001) + 'TAIL')\"";
+    const direct = await bashTool.execute({ command }, makeCtx());
+    expect(direct.output).toHaveLength(60_009);
+    expect(direct.render?.blocks[0]).toMatchObject({ type: "command" });
+
+    const saved: string[] = [];
+    const viaExecutor = await executeTool(
+      new Map([[bashTool.name, bashTool]]) as ToolRegistry,
+      { type: "tool_call", id: "tc_bash", name: "bash", input: { command } },
       makeCtx(),
+      {
+        outputStore: {
+          save: async (output) => {
+            saved.push(output);
+            return "/tmp/full-output.txt";
+          },
+        },
+      },
     );
-    expect(result.metadata?.truncated).toBe(true);
+    expect(viaExecutor.metadata?.truncated).toBe(true);
+    expect(viaExecutor.output).toStartWith("HEAD");
+    expect(viaExecutor.output).toContain("TAIL");
+    expect(viaExecutor.output).toContain("Full output at: /tmp/full-output.txt");
+    expect(saved).toEqual([direct.output]);
   });
 
   test("description in metadata", async () => {

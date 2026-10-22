@@ -444,4 +444,40 @@ describe("buildSessionTranscript", () => {
     );
     expect(transcript[2] && transcript[2].type === "compaction" ? transcript[2].displaySummary : "").toBe("Compacted");
   });
+
+  it("attributes each persisted error to the provider active on its path, not a later switch", () => {
+    const entries: SessionEntry[] = [
+      {
+        type: "model_change",
+        id: "m1",
+        parentId: null,
+        timestamp: "2026-02-25T10:00:00.000Z",
+        provider: "anthropic",
+        modelId: "claude",
+      },
+      makeMsg("u1", "m1", "user", "first"),
+      {
+        type: "error",
+        id: "e1",
+        parentId: "u1",
+        timestamp: "2026-02-25T10:00:05.000Z",
+        fatal: false,
+        error: { name: "ProviderError", message: "rejected", providerErrorType: "auth" },
+      },
+      {
+        type: "model_change",
+        id: "m2",
+        parentId: "e1",
+        timestamp: "2026-02-25T10:01:00.000Z",
+        provider: "openai",
+        modelId: "gpt",
+      },
+      makeMsg("u2", "m2", "user", "second"),
+    ];
+
+    const transcript = buildSessionTranscript(entries);
+
+    expect(transcript.map((entry) => entry.type)).toEqual(["message", "error", "message"]);
+    expect(transcript[1]).toMatchObject({ type: "error", id: "e1", provider: "anthropic" });
+  });
 });

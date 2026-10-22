@@ -42,7 +42,7 @@ export interface TurnOrchestratorContext {
   emit: (event: AgentEvent) => void;
   appendEntries: (entries: SessionEntry[]) => void;
   appendAndPersist: (entry: SessionEntry) => void;
-  appendError: (error: ErrorEntry["error"], opts?: { fatal?: boolean; turnId?: string; persist?: boolean }) => void;
+  appendError: (error: ErrorEntry["error"], opts?: { fatal?: boolean; turnId?: string }) => void;
   repairEntries: () => void;
   getContext: () => Message[];
 }
@@ -188,6 +188,11 @@ export class TurnOrchestrator {
       this.pendingMessages.push({ id: steerId, message: msg });
       return steerId;
     }
+  }
+
+  /** Aborts the active agent's running tool batch so queued steering is delivered on its next turn. */
+  interruptTools(): void {
+    this._agent?.interruptTools();
   }
 
   cancelPendingMessage(id: string): boolean {
@@ -375,7 +380,7 @@ export class TurnOrchestrator {
       error: err,
       fields: { lastPersisted, serializedError: serializable, runContext },
     });
-    this.ctx.appendError(serializable, { fatal: false, turnId, persist: true });
+    this.ctx.appendError(serializable, { fatal: false, turnId });
     return serializable;
   }
 
@@ -478,6 +483,6 @@ function shouldFlushTurnProgress(event: CoreAgentEvent): boolean {
   return (
     event.type === "turn_start" ||
     (event.type === "message_end" && event.message.stopReason === "tool_use") ||
-    event.type === "tool_end"
+    (event.type === "tool_end" && !event.parentToolCallId)
   );
 }

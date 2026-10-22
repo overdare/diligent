@@ -46,6 +46,8 @@ export type CoreAgentEvent =
       toolCallId: string;
       toolName: string;
       input: unknown;
+      /** Set when the call runs inside another tool call (code mode); such calls are not conversation messages. */
+      parentToolCallId?: string;
     }
   | {
       type: "tool_update";
@@ -53,6 +55,7 @@ export type CoreAgentEvent =
       toolCallId: string;
       toolName: string;
       partialResult: string;
+      parentToolCallId?: string;
     }
   | {
       type: "tool_end";
@@ -64,6 +67,7 @@ export type CoreAgentEvent =
       isError: boolean;
       render?: ToolRenderPayloadLike;
       metadata?: Record<string, unknown>;
+      parentToolCallId?: string;
     }
   // Usage (1)
   | { type: "usage"; usage: Usage }

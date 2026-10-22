@@ -11,6 +11,7 @@ import type { RuntimeAgent } from "@diligent/runtime/agent/runtime-agent";
 import { AgentRegistry, isFinal } from "@diligent/runtime/collab";
 import { ensureDiligentDir } from "@diligent/runtime/infrastructure";
 import type { SessionManagerConfig } from "@diligent/runtime/session";
+import { z } from "zod";
 import { getBuiltinAgentDefinitions } from "../../src/agent/agent-types";
 import { resolveAgentDefinition, resolveAvailableAgentDefinitions } from "../../src/agent/resolved-agent";
 import type { AgentEvent } from "../../src/agent-event";
@@ -253,6 +254,26 @@ describe("AgentRegistry", () => {
       label: "runtime_context",
       content: "Current working directory: /Users/devbv/git/diligent",
     });
+  });
+
+  it("applies the configured code mode to child agents with their own exec session", async () => {
+    let inspectedAgent: RuntimeAgent | undefined;
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        // Code mode renders input schemas into the exec description, so these tools need real Zod parameters.
+        parentTools: ["read", "plan"].map((name) => ({ ...makeTool(name), parameters: z.object({}) })),
+        codeMode: "only",
+        sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
+          inspectedAgent = agent;
+        }),
+      }),
+    );
+
+    const { threadId } = registry.spawn({ prompt: "inspect", description: "inspect", agentType: "general" });
+    await registry.wait([threadId], 5000);
+
+    expect(inspectedAgent?.tools.map((tool) => tool.name)).toEqual(["plan", "exec", "exec_wait"]);
+    expect(inspectedAgent?.tools.find((tool) => tool.name === "exec")?.description).toContain("read(args");
   });
 
   it("propagates the injected output store through child and nested-child assembly", async () => {

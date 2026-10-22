@@ -152,34 +152,68 @@ test("executeGoalCommand supports reserved-word objectives with set", async () =
   ]);
 });
 
-test("retryLastUserMessage renders and binds the newly persisted retry request", async () => {
+test("retryLastUserMessage resends the original text, attached context, and images", async () => {
   const request = mock(async () => ({ accepted: true as const, userMessageId: "persisted-retry-user" }));
   const dispatch = mock(() => {});
+  const contextItems = [
+    { kind: "instance" as const, source: "studiorpc" as const, Name: "Part1", ClassType: "Part", GUID: "guid-1" },
+  ];
+  const image = {
+    type: "local_image" as const,
+    path: "/tmp/shot.png",
+    mediaType: "image/png" as const,
+    fileName: "shot.png",
+  };
 
   await retryLastUserMessage({
     rpc: { request } as never,
     threadId: "thread-1",
-    text: "try this request again",
+    item: {
+      id: "remote-user-u1",
+      kind: "user",
+      text: "try this request again",
+      contextItems,
+      images: [{ url: "/web-image/shot.png", path: image.path, mediaType: image.mediaType, fileName: image.fileName }],
+      timestamp: 1,
+    },
     model: { provider: "openai", modelId: "gpt-5" },
     dispatch,
   });
 
+  const message = prependContextToMessage("try this request again", contextItems);
   expect(request).toHaveBeenCalledWith("turn/start", {
     threadId: "thread-1",
-    message: "try this request again",
-    content: [{ type: "text", text: "try this request again" }],
+    message,
+    attachments: [image],
+    content: [{ type: "text", text: message }, image],
     model: { provider: "openai", modelId: "gpt-5" },
   });
   const localAction = dispatch.mock.calls[0]?.[0];
   expect(localAction).toMatchObject({
     type: "local_user",
-    payload: { text: "try this request again", images: [] },
+    payload: { text: "try this request again", contextItems, images: [expect.objectContaining(image)] },
   });
   expect(localAction.payload.id).toMatch(/^local-user-/);
   expect(dispatch.mock.calls[1]?.[0]).toEqual({
     type: "bind_user_message_id",
     payload: { renderItemId: localAction.payload.id, messageId: "persisted-retry-user" },
   });
+});
+
+test("retryLastUserMessage refuses to drop an image it can no longer resend", async () => {
+  const request = mock(async () => ({ accepted: true as const }));
+  const dispatch = mock(() => {});
+
+  await expect(
+    retryLastUserMessage({
+      rpc: { request } as never,
+      threadId: "thread-1",
+      item: { id: "u1", kind: "user", text: "", images: [{ url: "/web-image/lost.png" }], timestamp: 1 },
+      dispatch,
+    }),
+  ).rejects.toThrow("image");
+  expect(request).not.toHaveBeenCalled();
+  expect(dispatch).not.toHaveBeenCalled();
 });
 
 test("applyModeChange updates draft mode locally without a server thread", async () => {

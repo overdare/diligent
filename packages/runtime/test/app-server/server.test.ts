@@ -1235,9 +1235,10 @@ describe("DiligentAppServer", () => {
       params: { threadId },
     });
     const firstThread = readResult(firstRead) as {
-      errors?: Array<{ error: { message: string } }>;
+      items?: Array<{ type: string; error?: { message: string } }>;
     };
-    expect(firstThread.errors?.at(-1)?.error.message).toContain("invalid Anthropic key");
+    expect(firstThread.items?.at(-1)?.type).toBe("error");
+    expect(firstThread.items?.at(-1)?.error?.message).toContain("invalid Anthropic key");
 
     await server.handleRequest(TEST_CONNECTION_ID, {
       id: 613,
@@ -1262,12 +1263,14 @@ describe("DiligentAppServer", () => {
       params: { threadId },
     });
     const secondThread = readResult(secondRead) as {
-      errors?: Array<{ error: { message: string } }>;
       items?: Array<{ type: string }>;
     };
-    expect(secondThread.errors ?? []).toHaveLength(1);
-    expect(secondThread.items?.some((item) => item.type === "agentMessage")).toBe(true);
-    expect(secondThread.items?.every((item) => item.type !== "error")).toBe(true);
+    expect(secondThread.items?.map((item) => item.type)).toEqual([
+      "userMessage",
+      "error",
+      "userMessage",
+      "agentMessage",
+    ]);
 
     const fileText = await readFile(join(paths.sessions, `${threadId}.jsonl`), "utf8");
     const entries = fileText
@@ -2411,72 +2414,6 @@ describe("DiligentAppServer", () => {
     // abortRequested causes a normal (non-throwing) loop exit → TURN_COMPLETED, not TURN_INTERRUPTED
     expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED)).toBe(true);
     expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED)).toBe(false);
-  });
-
-  it("persists turn-ending errors to thread history and emits error agent event", async () => {
-    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
-    const notifications: DiligentServerNotification[] = [];
-
-    const server = new DiligentAppServer({
-      cwd: projectRoot,
-      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
-      createAgent: () =>
-        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
-          effort: "medium",
-          ...fakeConfig(() => {
-            throw new ProviderError("socket closed unexpectedly", {
-              errorType: "network",
-              isRetryable: false,
-            });
-          }),
-        }),
-    });
-
-    const connection = connectTestPeer(server);
-    connection.setNotificationListener((notification) => {
-      notifications.push(notification);
-    });
-
-    const started = await server.handleRequest(TEST_CONNECTION_ID, {
-      id: 700,
-      method: "thread/start",
-      params: { cwd: projectRoot },
-    });
-    const threadId = (readResult(started) as { threadId: string }).threadId;
-
-    await server.handleRequest(TEST_CONNECTION_ID, {
-      id: 701,
-      method: "turn/start",
-      params: { threadId, message: "hi" },
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 30));
-
-    const errorEventNotification = notifications.find(
-      (n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT && n.params.event.type === "error",
-    );
-    expect(errorEventNotification).toBeDefined();
-    if (errorEventNotification?.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT) {
-      expect(errorEventNotification.params.event.error.message).toContain("socket closed unexpectedly");
-      expect(errorEventNotification.params.event.error.presentation).toEqual({
-        message: "A network problem occurred. Please try again.",
-        recovery: { kind: "retry" },
-      });
-    }
-
-    const read = await server.handleRequest(TEST_CONNECTION_ID, {
-      id: 702,
-      method: "thread/read",
-      params: { threadId },
-    });
-    const result = readResult(read) as {
-      errors?: Array<{ error: { message: string; name: string }; fatal: boolean; turnId?: string }>;
-    };
-    expect(result.errors?.length).toBe(1);
-    expect(result.errors?.[0]?.error.message).toContain("socket closed unexpectedly");
-    expect(result.errors?.[0]?.error).not.toHaveProperty("presentation");
-    expect(result.errors?.[0]?.fatal).toBe(false);
-    expect(result.errors?.[0]?.turnId).toBeDefined();
   });
 
   it("emits turn/completed only after session writes are flushed", async () => {

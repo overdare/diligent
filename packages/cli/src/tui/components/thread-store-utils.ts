@@ -10,7 +10,7 @@ import type {
 import { COLLAB_TOOL_NAMES, normalizeToolName, ToolRenderPayloadSchema } from "@diligent/protocol";
 import { renderToolPayload } from "../render-blocks";
 import { t } from "../theme";
-import type { ThreadItem, ToolResultThreadItem } from "./thread-store-primitives";
+import { type ThreadItem, type ToolResultThreadItem, UserMessageView } from "./thread-store-primitives";
 
 export { COLLAB_TOOL_NAMES, normalizeToolName };
 export const TOOL_MAX_LINES = 5;
@@ -442,6 +442,32 @@ export function deriveToolUpdateMessage(
 }
 
 export function buildToolEndItem(options: {
+  event: Extract<AgentEvent, { type: "tool_end" }>;
+  toolCall?: ToolCallState;
+  collabState?: CollabToolState;
+  planCallCount: number;
+  collabAgentNamesByThreadId: Record<string, string>;
+  nowMs: number;
+}): { item: ThreadItem; collabAgentNamesByThreadId: Record<string, string>; planCallCount: number } {
+  const result = buildToolEndItemLines(options);
+  if (!options.event.parentToolCallId) return result;
+  // Code mode nested calls finish before their `exec` result; a gutter groups them above it.
+  const gutter = `${t.dim}  │${t.reset} `;
+  const item = result.item;
+  if (item instanceof UserMessageView || item.kind === "assistant_chunk" || item.kind === "thinking") return result;
+  const nestedItem: ThreadItem =
+    item.kind === "plain"
+      ? { ...item, lines: item.lines.map((line) => `${gutter}${line}`) }
+      : {
+          ...item,
+          header: `${gutter}${item.header}`,
+          details: item.details.map((line) => `${gutter}${line}`),
+          ...(item.summaryLine ? { summaryLine: `│ ${item.summaryLine}` } : {}),
+        };
+  return { ...result, item: nestedItem };
+}
+
+function buildToolEndItemLines(options: {
   event: Extract<AgentEvent, { type: "tool_end" }>;
   toolCall?: ToolCallState;
   collabState?: CollabToolState;

@@ -5,7 +5,7 @@ import { Agent } from "../../src/agent/agent";
 import type { CoreAgentEvent } from "../../src/agent/types";
 import { EventStream } from "../../src/event-stream";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction } from "../../src/llm/types";
-import type { Tool } from "../../src/tool/types";
+import type { Tool, ToolResult } from "../../src/tool/types";
 import type { AssistantMessage, Message, UserMessage } from "../../src/types";
 
 const TEST_MODEL: Model = {
@@ -339,5 +339,74 @@ describe("agent steering", () => {
     // Only 1 LLM call — loop broke normally
     expect(streamFn.contexts.length).toBe(1);
     expect(events.some((e) => e.type === "steering_injected")).toBe(false);
+  });
+
+  test("interruptTools aborts the running tool and delivers steering on the next turn", async () => {
+    // Resolves only when its signal aborts, so finishing proves the interrupt reached it.
+    const toolWaiting = Promise.withResolvers<void>();
+    const waitTool: Tool = {
+      name: "wait_forever",
+      description: "Blocks until aborted",
+      parameters: z.object({}),
+      execute: (_args, ctx) => {
+        const { promise, resolve } = Promise.withResolvers<ToolResult>();
+        ctx.signal.addEventListener("abort", () => resolve({ output: "[stopped]" }), { once: true });
+        toolWaiting.resolve();
+        return promise;
+      },
+    };
+    const streamFn = createMockStreamFunction([
+      makeAssistant([{ type: "tool_call", id: "tc_1", name: "wait_forever", input: {} }], "tool_use"),
+      makeAssistant([{ type: "text", text: "switching" }]),
+    ]);
+    const agent = makeAgent(streamFn, [waitTool]);
+    const running = runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
+    await toolWaiting.promise;
+    agent.steer({ role: "user", content: "stop and do Y", timestamp: Date.now() });
+    agent.interruptTools();
+    const { events } = await running;
+
+    expect(streamFn.contexts).toHaveLength(2);
+    const secondCall = streamFn.contexts[1]!.messages;
+    const resultIndex = secondCall.findIndex((m) => m.role === "tool_result" && m.output === "[stopped]");
+    const steerIndex = secondCall.findIndex((m) => m.role === "user" && m.content === "stop and do Y");
+    expect(resultIndex).toBeGreaterThan(-1);
+    expect(steerIndex).toBeGreaterThan(resultIndex);
+    expect(events.findLast((e) => e.type === "agent_end")).toMatchObject({ stopReason: "completed" });
+  });
+
+  test("an interrupt while the model streams skips the tool batch it requests", async () => {
+    let executed = 0;
+    const countingTool: Tool = {
+      name: "count",
+      description: "Counts executions",
+      parameters: z.object({}),
+      async execute() {
+        executed++;
+        return { output: "counted" };
+      },
+    };
+    const streamFn = createMockStreamFunction([
+      makeAssistant([{ type: "tool_call", id: "tc_1", name: "count", input: {} }], "tool_use"),
+      makeAssistant([{ type: "tool_call", id: "tc_2", name: "count", input: {} }], "tool_use"),
+      makeAssistant([{ type: "text", text: "done" }]),
+    ]);
+    const agent = makeAgent(streamFn, [countingTool]);
+    const unsub = agent.subscribe((event) => {
+      if (event.type === "message_start" && streamFn.contexts.length === 1) {
+        agent.steer({ role: "user", content: "never mind", timestamp: Date.now() });
+        agent.interruptTools();
+      }
+    });
+    await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
+    unsub();
+
+    // The first batch is skipped; the interrupt is consumed, so the second batch runs normally.
+    expect(executed).toBe(1);
+    const secondCall = streamFn.contexts[1]!.messages;
+    expect(secondCall.some((m) => m.role === "tool_result" && m.toolCallId === "tc_1" && m.output !== "counted")).toBe(
+      true,
+    );
+    expect(secondCall.some((m) => m.role === "user" && m.content === "never mind")).toBe(true);
   });
 });

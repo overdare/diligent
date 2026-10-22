@@ -36,6 +36,9 @@ export class Agent {
   private pendingSteeringMessages: QueuedSteeringMessage[] = [];
   private nextSteeringId = 0;
   private _running = false;
+  /** Set by interruptTools() while no tool batch runs; the next batch is aborted before it starts. */
+  private toolInterruptRequested = false;
+  private abortActiveToolBatch: (() => void) | undefined;
   private sessionId?: string;
   private localImageLoader?: LocalImageLoader;
   private toolOutputStore?: ToolOutputFileStore;
@@ -119,6 +122,8 @@ export class Agent {
     } finally {
       if (ownsTurnScope) await turnScope.dispose();
       this._running = false;
+      this.toolInterruptRequested = false;
+      this.abortActiveToolBatch = undefined;
       this.drainPendingMessages();
     }
   }
@@ -144,8 +149,22 @@ export class Agent {
       loopHooks: this.loopHooks,
       toolOutputStore: this.toolOutputStore,
       hooks: {
-        drainSteeringMessages: () => this.drainPendingMessages(),
+        drainSteeringMessages: () => {
+          // Draining delivers the steering an interrupt was waiting for.
+          this.toolInterruptRequested = false;
+          return this.drainPendingMessages();
+        },
         pendingSteeringCount: () => this.pendingSteeringMessages.length,
+        beginToolBatch: (abort) => {
+          this.abortActiveToolBatch = abort;
+          if (this.toolInterruptRequested) {
+            this.toolInterruptRequested = false;
+            abort();
+          }
+        },
+        endToolBatch: () => {
+          this.abortActiveToolBatch = undefined;
+        },
       },
     };
   }
@@ -154,6 +173,17 @@ export class Agent {
   steer(msg: Message, id = this.createSteeringId()): string {
     this.pendingSteeringMessages.push({ id, message: msg });
     return id;
+  }
+
+  /**
+   * Aborts the running tool batch so queued steering reaches the model on the next turn instead of after
+   * the batch finishes. While the model is still streaming, the batch it requests is skipped instead. The
+   * loop keeps running; only the prompt signal ends a run. No-op when the agent is idle.
+   */
+  interruptTools(): void {
+    if (!this._running) return;
+    if (this.abortActiveToolBatch) this.abortActiveToolBatch();
+    else this.toolInterruptRequested = true;
   }
 
   /** Remove one queued steering message before it is injected. */

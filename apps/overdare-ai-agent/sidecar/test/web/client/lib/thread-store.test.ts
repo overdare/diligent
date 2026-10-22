@@ -32,10 +32,6 @@ function reduce(state: typeof initialThreadState, notification: DiligentServerNo
   return reduceServerNotification(state, notification, events);
 }
 
-function hasErrorRenderItem(items: Array<{ kind: string }>): boolean {
-  return items.some((item) => item.kind === "error");
-}
-
 // Shared adapter instance for tests that need stateful item tracking
 let adapterInstance: ProtocolNotificationAdapter;
 
@@ -488,38 +484,45 @@ test("error during compaction clears compacting and busy state immediately", () 
   expect(next.activeTurnStartedAt).toBeNull();
   expect(next.activeReasoningStartedAt).toBeNull();
   expect(next.activeReasoningDurationMs).toBe(0);
-  expect(next.activeError?.message).toBe("Estimated Token is below 50000");
+  expect(next.items.at(-1)).toMatchObject({ kind: "error", message: "Estimated Token is below 50000" });
   expect(next.toast).toBeNull();
 });
 
-test("error event sets activeError without appending a RenderItem", () => {
+test("error event appends a timestamped error item after the failed turn's output", () => {
   resetAdapter();
 
-  const next = reduce(
-    { ...initialThreadState, activeThreadId: "t1", activeTurnId: "turn-1", threadStatus: "busy" },
-    {
-      method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
-      params: {
-        threadId: "t1",
-        error: {
-          message: "ChatGPT API error (401): unauthorized",
-          name: "ProviderError",
-          providerErrorType: "auth",
-        },
-        fatal: false,
+  const before = Date.now();
+  const withUser = {
+    ...initialThreadState,
+    activeThreadId: "t1",
+    activeTurnId: "turn-1",
+    threadStatus: "busy" as const,
+    items: [{ id: "u1", kind: "user" as const, text: "hi", images: [], timestamp: 1 }],
+  };
+  const next = reduce(withUser, {
+    method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
+    params: {
+      threadId: "t1",
+      error: {
+        message: "ChatGPT API error (401): unauthorized",
+        name: "ProviderError",
+        providerErrorType: "auth",
       },
+      fatal: false,
     },
-  );
+  });
 
-  expect(hasErrorRenderItem(next.items)).toBe(false);
-  expect(next.activeError?.providerErrorType).toBe("auth");
-  expect(next.activeError?.message).toBe("ChatGPT API error (401): unauthorized");
-  expect(next.activeError?.fatal).toBe(false);
-  expect(next.activeError?.turnId).toBe("turn-1");
+  expect(next.items.map((item) => item.kind)).toEqual(["user", "error"]);
+  const errorItem = next.items[1];
+  if (errorItem?.kind !== "error") throw new Error("expected error item");
+  expect(errorItem.providerErrorType).toBe("auth");
+  expect(errorItem.message).toBe("ChatGPT API error (401): unauthorized");
+  expect(errorItem.presented).toBe(false);
+  expect(errorItem.timestamp).toBeGreaterThanOrEqual(before);
   expect(next.toast).toBeNull();
 });
 
-test("network error event shows a user-facing message instead of raw transport details", () => {
+test("network error item shows a user-facing message instead of raw transport details", () => {
   resetAdapter();
 
   const next = reduce(
@@ -539,13 +542,14 @@ test("network error event shows a user-facing message instead of raw transport d
     },
   );
 
-  expect(hasErrorRenderItem(next.items)).toBe(false);
-  expect(next.activeError?.providerErrorType).toBe("network");
-  expect(next.activeError?.message).toBe(USER_FACING_NETWORK_ERROR_MESSAGE);
-  expect(next.toast).toBeNull();
+  expect(next.items.at(-1)).toMatchObject({
+    kind: "error",
+    providerErrorType: "network",
+    message: USER_FACING_NETWORK_ERROR_MESSAGE,
+  });
 });
 
-test("runtime presentation takes precedence and preserves semantic recovery", () => {
+test("runtime presentation takes precedence and preserves semantic recovery on the error item", () => {
   resetAdapter();
 
   const next = reduce(
@@ -569,36 +573,54 @@ test("runtime presentation takes precedence and preserves semantic recovery", ()
     },
   );
 
-  expect(next.activeError?.message).toBe(
-    "This conversation is too long for the selected model. Start a new chat to continue.",
-  );
-  expect(next.activeError?.recovery).toEqual({ kind: "start_new_thread" });
+  expect(next.items.at(-1)).toMatchObject({
+    kind: "error",
+    message: "This conversation is too long for the selected model. Start a new chat to continue.",
+    recovery: { kind: "start_new_thread" },
+    presented: true,
+  });
 });
 
-test("hydrateFromThreadRead keeps history error entries out of visible items", () => {
+test("hydrateFromThreadRead restores error items at their transcript position", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
     threadId: "t1",
-    items: [],
-    errors: [
+    items: [
       {
-        id: "err-1",
+        type: "userMessage",
+        itemId: "u1",
+        timestamp: 100,
+        message: { role: "user", content: "first", timestamp: 100 },
+      },
+      {
+        type: "error",
+        itemId: "e1",
+        timestamp: 200,
         error: {
-          message: "ChatGPT API error (401): unauthorized",
+          message: "socket closed unexpectedly",
           name: "ProviderError",
-          providerErrorType: "auth",
+          providerErrorType: "network",
+          presentation: { message: "A network problem occurred. Please try again.", recovery: { kind: "retry" } },
         },
-        fatal: false,
-        turnId: "turn-1",
-        timestamp: "2024-05-13T01:00:00.000Z",
+      },
+      {
+        type: "userMessage",
+        itemId: "u2",
+        timestamp: 300,
+        message: { role: "user", content: "second", timestamp: 300 },
       },
     ],
   });
 
-  expect(hasErrorRenderItem(hydrated.items)).toBe(false);
-  expect(hydrated.activeError).toBeNull();
+  expect(hydrated.items.map((item) => item.kind)).toEqual(["user", "error", "user"]);
+  expect(hydrated.items[1]).toMatchObject({
+    kind: "error",
+    message: "A network problem occurred. Please try again.",
+    recovery: { kind: "retry" },
+    timestamp: 200,
+  });
 });
 
-test("failed turn completion keeps activeError until a later successful turn completes", () => {
+test("turn completion keeps a failed turn's error item in the transcript", () => {
   resetAdapter();
 
   const startedFailed = reduce(
@@ -620,9 +642,6 @@ test("failed turn completion keeps activeError until a later successful turn com
     method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
     params: { threadId: "t1", turnId: "turn-1" },
   });
-
-  expect(afterFailedCompletion.activeError?.message).toBe("invalid Anthropic key");
-
   const startedSuccess = reduce(afterFailedCompletion, {
     method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED,
     params: { threadId: "t1", turnId: "turn-2" },
@@ -632,31 +651,9 @@ test("failed turn completion keeps activeError until a later successful turn com
     params: { threadId: "t1", turnId: "turn-2" },
   });
 
-  expect(afterSuccessCompletion.activeError).toBeNull();
-});
-
-test("hydrateFromThreadRead ignores history network errors for visible state", () => {
-  const hydrated = hydrateFromThreadRead(initialThreadState, {
-    threadId: "t1",
-    items: [],
-    errors: [
-      {
-        id: "err-1",
-        error: {
-          message: "The socket connection was closed unexpectedly. For more information, pass verbose: true.",
-          name: "ProviderError",
-          providerErrorType: "network",
-          isRetryable: true,
-        },
-        fatal: false,
-        turnId: "turn-1",
-        timestamp: "2024-05-13T01:00:00.000Z",
-      },
-    ],
-  });
-
-  expect(hasErrorRenderItem(hydrated.items)).toBe(false);
-  expect(hydrated.activeError).toBeNull();
+  expect(afterSuccessCompletion.items.filter((item) => item.kind === "error")).toEqual([
+    expect.objectContaining({ message: "invalid Anthropic key" }),
+  ]);
 });
 
 test("plan tool completion sets planState when unresolved steps remain", () => {
@@ -1099,6 +1096,7 @@ test("steering_injected prefers event text and preserves event images", () => {
   expect(injectedUsers[0] && injectedUsers[0].kind === "user" ? injectedUsers[0].images : []).toEqual([
     {
       url: `${WEB_IMAGE_ROUTE_PREFIX}thread-1/shot.png`,
+      path: "/repo/.diligent/images/thread-1/shot.png",
       fileName: "shot.png",
       mediaType: "image/png",
     },
@@ -1274,6 +1272,7 @@ test("steering_injected falls back to event images when local queue is empty", (
   expect(injectedUsers[0] && injectedUsers[0].kind === "user" ? injectedUsers[0].images : []).toEqual([
     {
       url: `${WEB_IMAGE_ROUTE_PREFIX}thread-1/shot.png`,
+      path: "/repo/.diligent/images/thread-1/shot.png",
       fileName: "shot.png",
       mediaType: "image/png",
     },
@@ -1312,7 +1311,12 @@ test("hydrateFromThreadRead restores user images from local_image blocks", () =>
   expect(user && user.kind === "user" ? user.messageId : undefined).toBe("u1");
   expect(user?.id).not.toBe("u1");
   expect(user && user.kind === "user" ? user.images : []).toEqual([
-    { url: `${WEB_IMAGE_ROUTE_PREFIX}thread-1/shot.png`, fileName: "shot.png", mediaType: "image/png" },
+    {
+      url: `${WEB_IMAGE_ROUTE_PREFIX}thread-1/shot.png`,
+      path: "/repo/.diligent/images/thread-1/shot.png",
+      fileName: "shot.png",
+      mediaType: "image/png",
+    },
   ]);
 });
 
@@ -1346,6 +1350,7 @@ test("hydrateFromThreadRead converts persisted local images to browser-safe rout
   expect(user && user.kind === "user" ? user.images : []).toEqual([
     {
       url: `${WEB_IMAGE_ROUTE_PREFIX}thread-1/shot%201.png`,
+      path: "/repo/.diligent/images/thread-1/shot 1.png",
       fileName: "shot 1.png",
       mediaType: "image/png",
     },
@@ -2482,7 +2487,7 @@ test("collab_interaction_end creates interaction item", () => {
   expect(interaction && interaction.kind === "collab" ? interaction.status : "").toBe("completed");
 });
 
-test("collab_wait_end keeps spawn running when timed out snapshot reports running", () => {
+test("collab_wait_end keeps spawn running without copying the timed-out progress message", () => {
   resetAdapter();
   const threadId = "t1";
   const childThreadId = "child-running-timeout-1";
@@ -2531,7 +2536,8 @@ test("collab_wait_end keeps spawn running when timed out snapshot reports runnin
   const spawn = state.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
   expect(spawn).toBeDefined();
   expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("running");
-  expect(spawn && spawn.kind === "collab" ? spawn.message : "").toBe("still working");
+  // A running agent's wait message is a point-in-time progress digest shown on the wait row only.
+  expect(spawn && spawn.kind === "collab" ? spawn.message : "").toBeUndefined();
 });
 
 test("child assistant timeline keeps latest final message text on message_end", () => {
@@ -2754,6 +2760,38 @@ test("hydrateFromThreadRead stores full wait message text from status output", (
   expect(collabWait).toBeDefined();
   const firstAgent = collabWait && collabWait.kind === "collab" ? collabWait.agents?.[0] : undefined;
   expect(firstAgent?.message).toBe(veryLongMessage);
+});
+
+test("hydrateFromThreadRead restores a timed-out wait's progress digest for running agents", () => {
+  const digest = 'turn 2, 3 tool calls, running exec > bash for 42s, last message: "Checking tests"';
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    items: [
+      {
+        type: "toolCall",
+        itemId: "tool:tc-wait-2",
+        toolCallId: "tc-wait-2",
+        toolName: "wait",
+        input: { ids: ["ses-child-1"] },
+        output: JSON.stringify({
+          status: { "ses-child-1": { kind: "running" } },
+          timed_out: true,
+          summary: [`Cleo: Still running — ${digest}`],
+        }),
+        isError: false,
+        timestamp: 102,
+        startedAt: 101,
+        durationMs: 1,
+      },
+    ],
+    isRunning: true,
+    hasFollowUp: false,
+    entryCount: 1,
+    currentEffort: "medium",
+  });
+
+  const collabWait = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "wait");
+  const firstAgent = collabWait && collabWait.kind === "collab" ? collabWait.agents?.[0] : undefined;
+  expect(firstAgent).toMatchObject({ status: "running", message: digest });
 });
 
 // The wait tool embeds each child's full output inside its result JSON, which can be

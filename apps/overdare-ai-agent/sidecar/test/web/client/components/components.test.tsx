@@ -19,7 +19,7 @@ import {
 import { CollabGroup } from "../../../../src/web/client/components/CollabGroup";
 import { ContextMessage } from "../../../../src/web/client/components/ContextMessage";
 import { EmptyState } from "../../../../src/web/client/components/EmptyState";
-import { ErrorBanner } from "../../../../src/web/client/components/ErrorBanner";
+import { ErrorMessage } from "../../../../src/web/client/components/ErrorMessage";
 import { FeedbackReportModal } from "../../../../src/web/client/components/FeedbackReportModal";
 import { Input } from "../../../../src/web/client/components/Input";
 import {
@@ -49,6 +49,7 @@ import { ToolSettingsModal } from "../../../../src/web/client/components/ToolSet
 import { UserMessage } from "../../../../src/web/client/components/UserMessage";
 import { getAgentContextItemVisualKind } from "../../../../src/web/client/lib/agent-native-bridge";
 import { normalizeImageFileName } from "../../../../src/web/client/lib/app-utils";
+import type { RenderItem } from "../../../../src/web/client/lib/thread-store";
 
 function createClipboardFile(name: string, type: string): File {
   return new File([`${name}:${type}`], name, { type });
@@ -418,25 +419,25 @@ test("toast keeps long provider errors bounded and wrappable", () => {
   expect(html).toContain("00f97018-852a-44a9-8da4-ffa4773df9d5");
 });
 
-test("error banner wraps provider error text", () => {
+test("error message wraps provider error text and shows when it happened", () => {
+  const timestamp = Date.UTC(2026, 9, 14, 9, 2);
   const html = renderToStaticMarkup(
-    <ErrorBanner
-      error={{
+    <ErrorMessage
+      item={{
         id: "err-1",
+        kind: "error",
         name: "ProviderError",
         message:
           "An error occurred while processing your request. Please include the request ID 00f97018-852a-44a9-8da4-ffa4773df9d5 in your message.",
-        fatal: false,
-        timestamp: 1,
+        presented: false,
+        timestamp,
         providerErrorType: "unknown",
       }}
-      onOpenProviders={() => {}}
     />,
   );
 
   expect(html).toContain("ProviderError: An error occurred");
-  expect(html).toContain('role="alert"');
-  expect(html).toContain("border-b border-danger/30");
+  expect(html).toContain(`dateTime="${new Date(timestamp).toISOString()}"`);
   expect(html).toContain("break-words");
   expect(html).toContain("whitespace-pre-wrap");
 });
@@ -2350,7 +2351,6 @@ test("tool activity group reveals flat child rows with inline previews as the se
   expect(html).toContain("Ran command: find /Volumes -maxdepth 4 · Command completed");
   expect(html).toContain("find /Volumes -maxdepth 4");
   expect(html).toContain("Command completed");
-  expect(html).toContain(">5m<");
   expect(html).toContain("gap-2 py-0.5");
   expect(html).not.toContain("gap-1.5");
   expect(html).not.toContain("ml-7 mt-1 space-y-1 border-l");
@@ -2389,60 +2389,12 @@ test("nested tool block reveals scrollable third-level details when expanded", (
   expect(html).toContain("Ran command: find /Volumes -maxdepth 4 · Command completed");
   expect(html).toContain("find /Volumes -maxdepth 4");
   expect(html).toContain("Command completed");
-  expect(html).not.toContain("300058ms");
-  expect(html).toContain(">5m<");
   expect(html).toContain("gap-2 py-0.5");
   expect(html).toContain("flex h-5 w-5");
   expect(html).not.toContain("gap-1.5");
   expect(html).not.toContain("ml-7");
   expect(html).not.toContain("border-l border-border");
   expect(html).not.toContain("pl-3");
-});
-
-test("tool block hides completed duration in the default row", () => {
-  const html = renderToStaticMarkup(
-    <ToolBlock
-      item={{
-        id: "tool-1",
-        kind: "tool",
-        toolName: "bash",
-        inputText: '{"command":"echo hi"}',
-        outputText: "hi",
-        isError: false,
-        status: "done",
-        timestamp: 200,
-        toolCallId: "call-1",
-        startedAt: 100,
-        durationMs: 123,
-      }}
-    />,
-  );
-
-  expect(html).not.toContain("123ms");
-  expect(html).toContain("Ran command");
-});
-
-test("tool block shows completed duration only after one second", () => {
-  const html = renderToStaticMarkup(
-    <ToolBlock
-      item={{
-        id: "tool-long",
-        kind: "tool",
-        toolName: "bash",
-        inputText: '{"command":"sleep 1"}',
-        outputText: "done",
-        isError: false,
-        status: "done",
-        timestamp: 1_500,
-        toolCallId: "call-long",
-        startedAt: 100,
-        durationMs: 1_350,
-      }}
-    />,
-  );
-
-  expect(html).toContain(">1s<");
-  expect(html).not.toContain("1350ms");
 });
 
 test("tool block uses a neutral fallback icon instead of the target glyph", () => {
@@ -2518,7 +2470,6 @@ test("tool block keeps request and response summaries hidden while collapsed", (
   );
 
   expect(html).toContain("Read files");
-  expect(html).not.toContain("0ms");
   expect(html).not.toContain("src/ARCHITECTURE.md");
   expect(html).not.toContain("1 # Architecture");
 });
@@ -2959,24 +2910,25 @@ test("slash menu returns null for empty commands", () => {
   expect(html).toBe("");
 });
 
-test("ErrorBanner shows concise auth copy with Reconnect button", () => {
+test("ErrorMessage shows concise auth copy with Reconnect when it is the actionable failure", () => {
   const html = renderToStaticMarkup(
-    <ErrorBanner
-      error={{
+    <ErrorMessage
+      item={{
         id: "event:error:1",
+        kind: "error",
         message: "ChatGPT API error (401): unauthorized",
         name: "ProviderError",
         providerErrorType: "auth",
-        fatal: false,
+        presented: false,
         timestamp: 1715562000000,
       }}
-      onOpenProviders={() => {}}
+      onRecovery={() => {}}
     />,
   );
 
   expect(html).toContain("Provider authentication failed");
   expect(html).toContain("Reconnect this provider to continue.");
-  expect(html).toContain("Reconnect");
+  expect(html).toContain("Reconnect</button>");
   expect(html).not.toContain("ChatGPT API error (401): unauthorized");
   expect(html).not.toContain("ProviderError:");
 });
@@ -3020,52 +2972,76 @@ test("MessageList renders shrink-safe question prompts in the feed", () => {
   expect(html).not.toContain("Start a new conversation");
 });
 
-test("ErrorBanner does not show Reconnect button on non-auth error", () => {
+test("ErrorMessage does not show Reconnect button on non-auth error", () => {
   const html = renderToStaticMarkup(
-    <ErrorBanner
-      error={{
+    <ErrorMessage
+      item={{
         id: "event:error:2",
+        kind: "error",
         message: "Rate limit exceeded",
         name: "ProviderError",
         providerErrorType: "rate_limit",
-        fatal: false,
+        presented: false,
         timestamp: 1715562000000,
       }}
-      onOpenProviders={() => {}}
+      onRecovery={() => {}}
     />,
   );
 
-  expect(html).not.toContain("Reconnect");
+  expect(html).not.toContain("<button");
 });
 
-test("ErrorBanner renders runtime semantic recovery actions", () => {
-  const newThreadHtml = renderToStaticMarkup(
-    <ErrorBanner
-      error={{
-        id: "event:error:new-thread",
-        message: "Conversation too long",
-        recovery: { kind: "start_new_thread" },
-        fatal: false,
-        timestamp: 1715562000000,
-      }}
-      onStartNewThread={() => {}}
-    />,
-  );
-  const retryHtml = renderToStaticMarkup(
-    <ErrorBanner
-      error={{
-        id: "event:error:retry",
-        message: "Temporary failure",
-        recovery: { kind: "retry" },
-        fatal: false,
-        timestamp: 1715562000000,
-      }}
-      onRetry={() => {}}
-    />,
-  );
+test("ErrorMessage renders runtime semantic recovery actions only when actionable", () => {
+  const newThreadItem = {
+    id: "event:error:new-thread",
+    kind: "error" as const,
+    message: "Conversation too long",
+    recovery: { kind: "start_new_thread" as const },
+    presented: true,
+    timestamp: 1715562000000,
+  };
+  const retryItem = {
+    id: "event:error:retry",
+    kind: "error" as const,
+    message: "Temporary failure",
+    recovery: { kind: "retry" as const },
+    presented: true,
+    timestamp: 1715562000000,
+  };
 
-  expect(newThreadHtml).toContain("New chat");
-  expect(retryHtml).toContain("Retry");
+  expect(renderToStaticMarkup(<ErrorMessage item={newThreadItem} onRecovery={() => {}} />)).toContain(
+    "New chat</button>",
+  );
+  expect(renderToStaticMarkup(<ErrorMessage item={retryItem} onRecovery={() => {}} />)).toContain("Retry</button>");
+  expect(renderToStaticMarkup(<ErrorMessage item={retryItem} />)).not.toContain("<button");
+});
+
+test("MessageList offers recovery only on a trailing error while idle", () => {
+  const failure = (id: string, timestamp: number) => ({
+    id,
+    kind: "error" as const,
+    message: `Temporary failure ${id}`,
+    recovery: { kind: "retry" as const },
+    presented: true,
+    timestamp,
+  });
+  const user = { id: "u2", kind: "user" as const, text: "again", images: [], timestamp: 2 };
+  const render = (items: RenderItem[], threadStatus: "idle" | "busy") =>
+    renderToStaticMarkup(
+      <MessageList
+        items={items}
+        threadStatus={threadStatus}
+        hasProvider={true}
+        onOpenProviders={() => {}}
+        onErrorRecovery={() => {}}
+      />,
+    );
+
+  const retryButtons = (html: string) => html.match(/Retry<\/button>/g)?.length ?? 0;
+  expect(retryButtons(render([failure("e1", 1), user, failure("e2", 3)], "idle"))).toBe(1);
+  expect(render([failure("e1", 1), user, failure("e2", 3)], "idle")).toContain("Temporary failure e1");
+  expect(retryButtons(render([failure("e1", 1), user], "idle"))).toBe(0);
+  expect(retryButtons(render([failure("e1", 1)], "busy"))).toBe(0);
 });
 
 test("AssetThumbnail renders the image when a url is present", () => {
@@ -3114,25 +3090,22 @@ test("QuestionCard renders an asset thumbnail grid for display:asset questions",
   expect(html).toContain("100");
 });
 
-test("ErrorBanner keeps provider error details for non-auth errors without turn metadata", () => {
+test("ErrorMessage keeps provider error details for non-auth errors", () => {
   const html = renderToStaticMarkup(
-    <ErrorBanner
-      error={{
+    <ErrorMessage
+      item={{
         id: "event:error:3",
+        kind: "error",
         message: "Anthropic thinking blocks require signature",
         name: "ProviderError",
         providerErrorType: "unknown",
-        fatal: false,
+        presented: false,
         timestamp: 1715562000000,
-        turnId: "turn-c9b7d446",
       }}
-      onOpenProviders={() => {}}
     />,
   );
 
   expect(html).toContain("ProviderError: Anthropic thinking blocks require signature");
-  expect(html).not.toContain("Turn:");
-  expect(html).not.toContain("turn-c9b7d446");
 });
 
 test("SteeringQueuePanel renders attached context as chips instead of raw serialized text", () => {

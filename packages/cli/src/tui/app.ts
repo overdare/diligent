@@ -195,16 +195,17 @@ export class App {
         pendingTurn?.resolve();
         this.renderer.requestRender();
       },
-      onTurnErrored: (message) => {
+      onTurnErrored: () => {
         this.pendingAbortRestartSteer = null;
         this.runtime.isProcessing = false;
         this.runtime.cancelRequested = false;
         const pendingTurn = this.runtime.pendingTurn;
         this.runtime.pendingTurn = null;
+        this.chatView.finishTurn();
         this.inputEditor.setBusy(false);
         this.statusBar.update({ status: "idle" });
         this.renderer.requestRender();
-        pendingTurn?.reject(new Error(message));
+        pendingTurn?.resolve();
       },
       onUserInputRequestResolved: () => {
         this.runtime.activeQuestionCancel?.();

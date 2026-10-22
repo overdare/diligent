@@ -73,6 +73,7 @@ export function reduceToolEvent(state: ThreadState, event: ToolAgentEvent): Thre
           inputText: stringifyUnknown(event.input),
           outputText: "",
           render: ("render" in event ? toToolRenderPayload(event.render) : undefined) ?? undefined,
+          ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}),
         };
         const childTimelineEntry = {
           kind: "tool" as const,
@@ -82,6 +83,7 @@ export function reduceToolEvent(state: ThreadState, event: ToolAgentEvent): Thre
           isError: false,
           inputText: stringifyUnknown(event.input),
           outputText: "",
+          ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}),
         };
         return updateItem(state, spawnItem.id, (item) =>
           item.kind === "collab" ? upsertChildToolStart(item, childTool, childTimelineEntry) : item,
@@ -115,6 +117,7 @@ export function reduceToolEvent(state: ThreadState, event: ToolAgentEvent): Thre
                 ? (event as { startedAt?: number }).startedAt!
                 : now,
             render: ("render" in event ? toToolRenderPayload(event.render) : undefined) ?? undefined,
+            ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}),
           },
         ],
       };

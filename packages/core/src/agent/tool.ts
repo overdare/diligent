@@ -44,6 +44,9 @@ export async function runToolCalls(
         partialResult: partial,
       });
     },
+    emitNestedToolEvent: (event) => {
+      stream.emit({ ...event, parentToolCallId: toolCall.id });
+    },
   });
 
   const canRunInParallel =

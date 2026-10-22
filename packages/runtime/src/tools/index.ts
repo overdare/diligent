@@ -29,6 +29,10 @@ export type {
 export { buildToolCatalog } from "./catalog";
 export type { ChildForkableTool } from "./child-fork";
 export { FORK_TOOL_FOR_CHILD, forkToolForChild } from "./child-fork";
+export type { CodeModeCellSnapshot, CodeModeDriver, CodeModeNestedCallRecord } from "./code-mode/session";
+export { CodeModeSession } from "./code-mode/session";
+export type { CodeMode, CodeModeAssemblyOptions, CodeModeResultMetadata } from "./code-mode/tools";
+export { applyCodeMode } from "./code-mode/tools";
 export type { BuildDefaultToolsResult } from "./defaults";
 export { buildDefaultTools } from "./defaults";
 export { createEditTool, createMultiEditTool } from "./edit";

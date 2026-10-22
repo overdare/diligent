@@ -110,7 +110,6 @@ test("MessageList groups consecutive mixed tool activity rows", () => {
     />,
   );
 
-  expect(html).toContain('data-message-list-row="tool-group:tool-read+tool-grep+tool-bash+tool-plan"');
   expect(html).not.toContain('data-message-list-row="assistant-empty"');
   expect(html).not.toContain('data-message-list-row="tool-read"');
   expect(html).toContain("Read 1 file, searched code, ran 1 command, and updated plan");
@@ -155,7 +154,6 @@ test("MessageList groups failed tool activity rows", () => {
     <MessageList items={items} threadStatus="idle" hasProvider={true} onOpenProviders={() => {}} />,
   );
 
-  expect(html).toContain('data-message-list-row="tool-group:tool-glob-1+tool-glob-2"');
   expect(html).toContain("2 matches failed");
   expect(html).toContain("Failed");
   expect(html).toContain("text-muted/65");

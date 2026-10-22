@@ -57,6 +57,7 @@ export function deriveChildPreview(payload: ThreadReadResponse): ChildPreview {
         inputText,
         outputText,
         outputImages: item.outputImages,
+        ...(item.parentToolCallId ? { parentToolCallId: item.parentToolCallId } : {}),
       } as const;
       if (!childToolsByCallId.has(item.toolCallId)) {
         childToolOrder.push(item.toolCallId);
@@ -256,6 +257,7 @@ function buildChildToolItem(
     toolCallId: entry.toolCallId || `${ownerId}:timeline:tool:${index}`,
     startedAt: 0,
     render: buildChildToolRender(entry),
+    ...(entry.parentToolCallId ? { parentToolCallId: entry.parentToolCallId } : {}),
   };
 }
 

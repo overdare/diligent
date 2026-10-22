@@ -7,7 +7,7 @@ import {
   type ThreadReadResponse,
 } from "@diligent/protocol";
 import type { PlanState, ThreadState } from "./thread-store";
-import { reduceServerNotification } from "./thread-store";
+import { createErrorRenderItem, reduceServerNotification } from "./thread-store";
 import { normalizeToolName, parsePlanOutput, updateItem, withItem, zeroUsage } from "./thread-utils";
 
 function parseSpawnOutput(output: string): { threadId?: string; nickname?: string } {
@@ -26,13 +26,17 @@ function parseWaitOutput(
     const parsed = JSON.parse(output) as {
       status?: Record<string, { kind?: string; output?: string; error?: string }>;
       timed_out?: boolean;
+      summary?: unknown;
     };
     if (!parsed.status) return null;
-    const agents = Object.entries(parsed.status).map(([threadId, s]) => ({
-      threadId,
-      status: s.kind,
-      message: s.output ?? s.error,
-    }));
+    const summary = Array.isArray(parsed.summary) ? parsed.summary : [];
+    const agents = Object.entries(parsed.status).map(([threadId, s], index) => {
+      // Summary lines follow the status order; a running agent's line carries its progress digest
+      // after the em dash ("Cleo: Still running — turn 3, ...").
+      const line = summary[index];
+      const progress = s.kind === "running" && typeof line === "string" ? line.split(" — ").slice(1).join(" — ") : "";
+      return { threadId, status: s.kind, message: s.output ?? s.error ?? (progress || undefined) };
+    });
     return { agents, timedOut: parsed.timed_out ?? false };
   } catch {
     return null;
@@ -104,8 +108,6 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
     activeTurnStartedAt: null,
     activeReasoningStartedAt: null,
     activeReasoningDurationMs: 0,
-    activeTurnHadError: false,
-    activeError: null,
     threadStatus: payload.isRunning ? "busy" : "idle",
     planState: null,
     isCompacting: false,
@@ -138,6 +140,12 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
         summary: `\`\`\`\n${item.presentation.content}\n\`\`\``,
         timestamp: item.timestamp ?? Date.now(),
       });
+      continue;
+    }
+
+    if (item.type === "error") {
+      const id = `history:error:${item.itemId}`;
+      current = withItem(current, id, createErrorRenderItem(id, item.error, item.timestamp ?? Date.now()));
       continue;
     }
 

@@ -58,6 +58,19 @@ describe("classifyOpenAIError", () => {
     expect(result.isRetryable).toBe(true);
   });
 
+  test.each([
+    ["request timeout", () => new OpenAI.APIConnectionTimeoutError()],
+    ["connection failure", () => new OpenAI.APIConnectionError({ cause: new TypeError("fetch failed") })],
+  ])("classifies SDK %s as retryable network error", (_label, createError) => {
+    const err = createError();
+    const result = classifyOpenAIError(err);
+
+    expect(result.errorType).toBe("network");
+    expect(result.isRetryable).toBe(true);
+    expect(result.message).toBe(err.message);
+    expect(result.cause).toBe(err);
+  });
+
   test("parses retry-after header on 429", () => {
     const result = classifyOpenAIError(makeOpenAIAPIError(429, "Rate limit exceeded", { "retry-after": "3" }));
 

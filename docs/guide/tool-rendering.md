@@ -30,6 +30,7 @@ Tool render payloads can appear on tool events and on `tool_result` messages.
 3. Protocol schemas validate the render payload shape.
 4. Web and TUI merge start/end payloads so the final item can keep the start `inputSummary` when the end payload omits it.
 5. Web and TUI render the shared block structure using client-specific presentation.
+6. Tool events and `toolCall` items with `parentToolCallId` are calls made inside a code mode `exec` call; clients render them nested under that call (see `docs/guide/code-mode.md`).
 
 ## What clients currently do
 

@@ -25,4 +25,6 @@ export const CUSTOM_RENDER_TOOLS = new Set([
   "write",
   "apply_patch",
   "update_knowledge",
+  "exec",
+  "exec_wait",
 ]);
