@@ -1,11 +1,10 @@
 // @summary Session file persistence with JSONL format, immediate writing, and session listing
 import { appendFile, unlink } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { ModelRef, ProviderName } from "@diligent/core/provider-contract";
 import { ProviderNameSchema } from "@diligent/protocol";
 import { normalizeLegacyModelRef } from "../model/legacy-model-ref";
 import { externalizeEntryImages, materializeEntryImages } from "./image-sidecar";
-import { getSessionSummaryCache } from "./summary-cache";
 import type { AppendedEntryInfo, CollabSessionMeta, SessionEntry, SessionHeader, SessionInfo } from "./types";
 import { generateSessionId, isSafeSessionId, SESSION_VERSION } from "./types";
 
@@ -167,40 +166,26 @@ async function readSessionSummary(path: string): Promise<SessionInfo> {
 
 /**
  * List sessions by persisted modification time, with stable ID tie-breaking.
- * Check file metadata on every call; read only changed files with bounded concurrency.
+ * Read source files with bounded concurrency; listing never writes derived state.
  */
 export async function listSessions(sessionsDir: string): Promise<SessionInfo[]> {
-  const directory = resolve(sessionsDir);
-  const cache = await getSessionSummaryCache(directory);
-  const seen = new Set<string>();
   const sessions: SessionInfo[] = [];
-  const addSession = async (file: string): Promise<void> => {
-    try {
-      const summary = await cache.get(file, readSessionSummary);
-      // Callers own their results, including mutable Date instances.
-      sessions.push({
-        ...summary,
-        path: join(sessionsDir, file),
-        created: new Date(summary.created.getTime()),
-        modified: new Date(summary.modified.getTime()),
-      });
-    } catch {
-      // Keep listing readable sessions when a file is corrupt or disappears.
-    }
-  };
-  for await (const file of new Bun.Glob("*.jsonl").scan(directory)) {
-    seen.add(file);
-  }
+  const files: string[] = [];
+  for await (const file of new Bun.Glob("*.jsonl").scan(sessionsDir)) files.push(file);
   // Keep workers busy when session sizes differ, rather than waiting for a
   // whole batch behind its largest file.
-  const remaining = seen.values();
+  const remaining = files.values();
   await Promise.all(
-    Array.from({ length: Math.min(SUMMARY_READ_CONCURRENCY, seen.size) }, async () => {
-      for (const file of remaining) await addSession(file);
+    Array.from({ length: Math.min(SUMMARY_READ_CONCURRENCY, files.length) }, async () => {
+      for (const file of remaining) {
+        try {
+          sessions.push(await readSessionSummary(join(sessionsDir, file)));
+        } catch {
+          // Keep listing readable sessions when a file is corrupt or disappears.
+        }
+      }
     }),
   );
-  cache.retain(seen);
-  await cache.flush();
   return sessions.sort((a, b) => {
     const modifiedDelta = b.modified.getTime() - a.modified.getTime();
     if (modifiedDelta !== 0) return modifiedDelta;

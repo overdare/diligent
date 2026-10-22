@@ -335,7 +335,7 @@ export function useAppActions({
   cwdRef: RefObject<string>;
   applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
   activateServerThread: (threadId: string) => Promise<ThreadReadResponse>;
-  refreshThreadList: (rpc?: WebRpcClient | null) => Promise<void>;
+  refreshThreadList: (rpc?: WebRpcClient | null) => Promise<unknown>;
 }) {
   const sendMessage = useCallback(async (): Promise<void> => {
     const rpc = rpcRef.current;
@@ -413,7 +413,7 @@ export function useAppActions({
           payload: { renderItemId: localItemId, messageId: started.userMessageId },
         });
       }
-      await refreshThreadList(rpc);
+      void refreshThreadList(rpc);
     } catch (error) {
       logger.error("message.send_failed", {
         message: "Failed to send message",

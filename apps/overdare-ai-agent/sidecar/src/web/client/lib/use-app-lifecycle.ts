@@ -9,6 +9,7 @@ import type {
   ModelRef,
   PendingSteer,
   ProviderAuthStatus,
+  SessionSummary,
   SkillInfo,
   ThinkingEffort,
 } from "@diligent/protocol";
@@ -87,7 +88,7 @@ export function useAppRpcBindings({
   activeThreadIdRef: RefObject<string | null>;
   stateRef: RefObject<ThreadState>;
   dispatch: Dispatch<AppAction>;
-  refreshThreadList: (rpc?: WebRpcClient | null) => Promise<void>;
+  refreshThreadList: (rpc?: WebRpcClient | null) => Promise<unknown>;
   onAccountLoginCompleted: (params: { loginId: string | null; success: boolean; error: string | null }) => void;
   onAccountUpdated: (params: { providers: ProviderAuthStatus[] }) => Promise<void>;
   onMcpLoginCompleted: (params: { server: string; success: boolean; error: string | null }) => void;
@@ -240,7 +241,7 @@ export function useAppBootstrap({
   setConsent: (consent: ConsentState | null) => void;
   setInitialModel: (model: ModelRef | undefined, models?: InitializeResponse["availableModels"]) => void;
   applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
-  refreshThreadList: (rpc?: WebRpcClient | null) => Promise<void>;
+  refreshThreadList: (rpc?: WebRpcClient | null) => Promise<SessionSummary[] | undefined>;
   refreshProviders: (rpc?: WebRpcClient | null) => Promise<void>;
 }) {
   useEffect(() => {
@@ -252,20 +253,33 @@ export function useAppBootstrap({
     if (!rpc) return;
 
     let cancelled = false;
+    let userInteracted = false;
+    const initialThreadId = activeThreadIdRef.current;
+    const initialUrlThreadId = getThreadIdFromUrl();
+    const stopRestoring = () => {
+      userInteracted = true;
+    };
+    const interactionEvents = ["pointerdown", "keydown", "input", "drop"] as const;
+    for (const event of interactionEvents) window.addEventListener(event, stopRestoring, true);
+    const canRestore = () =>
+      !cancelled &&
+      !userInteracted &&
+      activeThreadIdRef.current === initialThreadId &&
+      getThreadIdFromUrl() === initialUrlThreadId;
 
     const hydrateThread = async (threadId: string, mode: Mode): Promise<boolean> => {
+      if (!canRestore()) return false;
       const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId });
-      if (cancelled || !resumed.found || !resumed.threadId) {
+      if (!canRestore() || !resumed.found || !resumed.threadId) {
         return false;
       }
       const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: resumed.threadId });
-      if (cancelled) return false;
+      if (!canRestore()) return false;
       dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode, history } });
       setEffortState(history.currentEffort);
       setFastModeState(history.currentFastMode ?? false);
       replaceThreadUrl(resumed.threadId);
       await applySessionModel(history.currentModel);
-      await refreshThreadList(rpc);
       return true;
     };
 
@@ -288,38 +302,25 @@ export function useAppBootstrap({
         setInitialModel(meta.currentModel, meta.availableModels ?? []);
         rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
 
-        const previousThreadId = activeThreadIdRef.current;
-        if (previousThreadId && (await hydrateThread(previousThreadId, "default"))) {
-          return;
-        }
+        // Provider readiness and the composer must not wait for session storage.
+        void refreshProviders(rpc);
+        const listing = refreshThreadList(rpc);
+        const selectedThreadId = initialThreadId ?? initialUrlThreadId;
+        if (selectedThreadId && (await hydrateThread(selectedThreadId, "default"))) return;
 
-        const urlThreadId = getThreadIdFromUrl();
-        if (urlThreadId && (await hydrateThread(urlThreadId, "default"))) {
-          return;
-        }
-
-        const mostRecent = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { mostRecent: true });
-        if (
-          !cancelled &&
-          mostRecent.found &&
-          mostRecent.threadId &&
-          (await hydrateThread(mostRecent.threadId, "default"))
-        ) {
-          return;
-        }
-
+        // Reuse the sidebar scan instead of issuing a second full-history lookup.
+        const threads = await listing;
+        if (!canRestore()) return;
+        const latest = threads?.[0];
+        if (latest && (await hydrateThread(latest.id, "default"))) return;
+        if (!canRestore()) return;
         dispatch({ type: "reset_draft", payload: { mode: "default" } });
-        setEffortState(meta.effort ?? "medium");
-        setFastModeState(meta.fastMode ?? false);
         replaceDraftUrl();
-        await refreshThreadList(rpc);
       } catch (error) {
         logger.error("bootstrap.failed", {
           message: "Failed to bootstrap Diligent web client",
           error,
         });
-      } finally {
-        await refreshProviders(rpc);
       }
     };
 
@@ -327,6 +328,7 @@ export function useAppBootstrap({
 
     return () => {
       cancelled = true;
+      for (const event of interactionEvents) window.removeEventListener(event, stopRestoring, true);
     };
   }, [
     connection,

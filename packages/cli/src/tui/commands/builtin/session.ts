@@ -28,6 +28,7 @@ export const resumeCommand: Command = {
     }
 
     // Show thread picker
+    ctx.displayLines([`  ${t.dim}Loading threads…${t.reset}`]);
     const threads = await ctx.listThreads();
     if (threads.length === 0) {
       ctx.displayLines([`  ${t.dim}No threads found.${t.reset}`]);
@@ -79,6 +80,7 @@ export const deleteCommand: Command = {
     }
 
     // Show picker
+    ctx.displayLines([`  ${t.dim}Loading sessions…${t.reset}`]);
     const threads = await ctx.listThreads();
     if (threads.length === 0) {
       ctx.displayLines([`  ${t.dim}No sessions found.${t.reset}`]);

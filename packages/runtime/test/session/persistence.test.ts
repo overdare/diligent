@@ -2,8 +2,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { appendFile, mkdir, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import type { SessionSummary } from "@diligent/protocol";
+import { join } from "node:path";
 import type { AppendedEntryInfo, SessionMessageEntry } from "@diligent/runtime/session";
 import {
   appendEntry,
@@ -30,22 +29,6 @@ async function setupDir(): Promise<string> {
   testDir = join(TEST_ROOT, `run-${Date.now()}`);
   await mkdir(testDir, { recursive: true });
   return testDir;
-}
-
-async function listInFreshProcess(directory: string): Promise<SessionSummary[]> {
-  const child = Bun.spawn(
-    [
-      process.execPath,
-      "--eval",
-      'import { listSessions } from "@diligent/runtime/session"; console.log(JSON.stringify(await listSessions(process.argv[1])));',
-      directory,
-    ],
-    { cwd: resolve(import.meta.dir, "../../../.."), stdout: "pipe", stderr: "pipe" },
-  );
-  const output = await new Response(child.stdout).text();
-  const error = await new Response(child.stderr).text();
-  if ((await child.exited) !== 0) throw new Error(error);
-  return JSON.parse(output) as SessionSummary[];
 }
 
 function makeUserEntry(parentId: string | null = null): SessionMessageEntry {
@@ -339,41 +322,6 @@ describe("listSessions", () => {
     expect((await listSessions(dir))[0]).toMatchObject({ id: header.id, firstUserMessage: "hello" });
     await writeFile(path, `${JSON.stringify({ ...header, version: SESSION_VERSION + 1 })}\n`);
     expect(await listSessions(dir)).toEqual([]);
-  });
-
-  it("revalidates persisted summaries after process restart", async () => {
-    const dir = await setupDir();
-    const { path, header } = await createSessionFile(dir, "/project");
-    const first = makeUserEntry();
-    await appendEntry(path, first);
-    const original = await listSessions(dir);
-    expect(await listInFreshProcess(dir)).toEqual(JSON.parse(JSON.stringify(original)));
-    const next = { ...makeUserEntry(first.id), timestamp: "2030-01-01T00:00:00.000Z" };
-    await appendFile(path, `${JSON.stringify(next)}\n`);
-    expect(await listInFreshProcess(dir)).toMatchObject([
-      { id: header.id, messageCount: 2, firstUserMessage: "hello", modified: next.timestamp },
-    ]);
-    await rm(path);
-    expect(await listInFreshProcess(dir)).toEqual([]);
-  });
-
-  it("rebuilds a corrupt derived index without losing valid sessions", async () => {
-    const dir = await setupDir();
-    const { path, header } = await createSessionFile(dir, "/project");
-    await appendEntry(path, makeUserEntry());
-    await listSessions(dir);
-    await writeFile(join(dir, ".summaries.json"), '{"version":');
-    expect(await listInFreshProcess(dir)).toMatchObject([
-      { id: header.id, firstUserMessage: "hello", messageCount: 1 },
-    ]);
-  });
-
-  it("lists source records when the derived index cannot be replaced", async () => {
-    const dir = await setupDir();
-    await mkdir(join(dir, ".summaries.json"));
-    const { path, header } = await createSessionFile(dir, "/project");
-    await appendEntry(path, makeUserEntry());
-    expect(await listSessions(dir)).toMatchObject([{ id: header.id, firstUserMessage: "hello", messageCount: 1 }]);
   });
 
   it("returns empty array when no sessions", async () => {

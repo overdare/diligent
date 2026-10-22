@@ -71,7 +71,6 @@ import {
   requestApprovalFromConnections,
   requestUserInputFromConnections,
 } from "./server-requests";
-import { getLatestEffortFromSessions, getLatestModelFromSessions } from "./session-handlers";
 import type { SkillConfigManager } from "./skill-handlers";
 import type { SubagentConfigManager } from "./subagent-handlers";
 import { resetTurnRuntimeState, type ThreadRuntime } from "./thread-handlers";
@@ -841,7 +840,7 @@ export class DiligentAppServer {
     }
 
     for (const cwd of this.knownCwds) {
-      const runtime = await this.createThreadRuntime(id, cwd, "default", false, await this.getLatestEffortForCwd(cwd));
+      const runtime = await this.createThreadRuntime(id, cwd, "default", false);
       const resumed = await runtime.manager.resume({ sessionId: id });
       if (!resumed) continue;
 
@@ -869,11 +868,7 @@ export class DiligentAppServer {
         }
       }
     }
-    const cached = this.lastUsedEffortByCwd.get(cwd);
-    if (cached !== undefined) return cached;
-    const result = await getLatestEffortFromSessions(this.config.resolvePaths, this.threads, cwd, fallback);
-    this.lastUsedEffortByCwd.set(cwd, result);
-    return result;
+    return this.lastUsedEffortByCwd.get(cwd) ?? fallback;
   }
 
   private async getLatestModelForCwd(cwd: string): Promise<ModelRef | undefined> {
@@ -886,11 +881,7 @@ export class DiligentAppServer {
         }
       }
     }
-    const cached = this.lastUsedModelByCwd.get(cwd);
-    if (cached !== undefined) return cached;
-    const result = await getLatestModelFromSessions(this.config.resolvePaths, this.threads, cwd, this.currentModel);
-    if (result !== undefined) this.lastUsedModelByCwd.set(cwd, result);
-    return result;
+    return this.lastUsedModelByCwd.get(cwd) ?? this.currentModel;
   }
 
   private async resolveToolsContext(

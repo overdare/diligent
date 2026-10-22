@@ -51,7 +51,8 @@ Defaults on start:
 
 - `mode` defaults to `default` when omitted
 - `cwd` and `mode` can be injected from connection defaults
-- effort is initialized from latest effort for the cwd (fallback `medium`)
+- model and effort reuse the cwd's loaded runtime selection when available, otherwise configured defaults
+- starting a thread never scans saved conversations to discover defaults; resuming a thread restores its own persisted settings
 
 ### `thread/resume`
 
@@ -72,8 +73,8 @@ Resume is a runtime operation (not frontend-local reconstruction).
 The persistence lookup resolves an explicit ID to `<sessionId>.jsonl` directly,
 rather than searching unrelated transcripts for the target. The ID must be safe and
 match the file header. Missing, corrupt, or unsupported JSONL targets are not found.
-Startup defaults may still consult the summary index below; `mostRecent` uses its
-ordering and excludes child sessions.
+No unrelated history is read to choose resume defaults. `mostRecent` explicitly lists
+sessions by persisted modification time and excludes child sessions.
 
 On resume, runtime also repairs orphaned assistant tool calls by appending synthetic `[Cancelled]` tool results when needed.
 
@@ -107,28 +108,28 @@ Notes:
 - child sessions are excluded unless `includeChildren: true`
 - runtime default limit is 100; protocol schema caps `limit` at 500
 
-The shared runtime maintains a rebuildable `.summaries.json` index beside the JSONL
-files. Web, TUI, and CLI listing use the same implementation; this is not a dev-only
-optimization. Overdare production uses `<cwd>/.overdare/sessions/`, which may itself
-reside on a network filesystem.
+Listing reads JSONL directly with bounded concurrency and does not create an index
+or retain summary caches. It skips image blobs, model migration, and context
+reconstruction. Persisted modification timestamps, visible message counts, previews,
+names, and parent IDs keep their existing meaning; equal modification times sort by ID.
+Web, TUI, and CLI share this runtime path. OVERDARE production stores sessions under
+`<cwd>/.overdare/sessions/`, which may reside on a slow network filesystem.
 
-- JSONL remains the source of truth. Every listing discovers current files and checks
-  size, modification time, change time, and inode before reusing a summary.
-- Unchanged files need no transcript or image reads, including after a process restart.
-  New or changed files are parsed for listing fields with bounded concurrency.
-- Persisted modification timestamps, visible message counts, first-user previews, names,
-  and parent IDs retain their existing meaning. Equal modification times sort by ID.
-- The index is atomically replaced only when summaries change. It contains metadata,
-  not full transcripts or image data. Missing, incompatible, corrupt, or unwritable
-  indexes do not make readable session records unavailable.
-- The first index build, or a rebuild after invalidation, still reads existing JSONL
-  data once. On a slow share with a large legacy history, this can remain expensive;
-  subsequent listings and restarts reuse the validated index. No RPC deadline is extended.
-- Startup model and effort defaults inspect persisted entries without materializing
-  image blobs. Full thread loading still restores images when needed.
+Web loads the sidebar in the background, independently of provider readiness,
+the composer, and explicitly selected conversations. Loading and failure states
+stay in the sidebar; a failed refresh retains the previous list. Background listing
+has no fixed RPC deadline, but disconnect still rejects it. Other RPC deadlines are
+unchanged. Older refresh responses cannot overwrite newer ones.
 
-To discard derived summaries after manual repair, remove `.summaries.json` and restart
-the host. Do not delete the session JSONL files.
+At startup, Web reuses the completed list for automatic recent-session selection.
+It restores only while the user has not begun interacting or navigated elsewhere;
+late results cannot replace a new draft. Opening an explicit thread ID does not wait
+for this list. TUI startup and explicit-ID resume also avoid unrelated history reads;
+session picker commands display a loading notice while awaiting their list.
+
+This separates app readiness from storage latency rather than making full-history
+scans cheap. Listing still reads all session JSONL before sorting and applying `limit`.
+There is no storage migration, cache invalidation, or new pagination protocol.
 
 ## Reading thread state
 

@@ -272,6 +272,8 @@ export function App() {
             threadList={state.threadList}
             activeThreadId={state.activeThreadId}
             attentionThreadIds={attentionThreadIds}
+            isLoading={threadMgr.isLoadingThreads}
+            error={threadMgr.threadListError}
             onNewThread={handleSidebarNewThread}
             onOpenThread={handleSidebarOpenThread}
             onDeleteThread={(id) => threadMgr.setPendingDeleteThreadId(id)}

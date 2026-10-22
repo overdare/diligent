@@ -4,7 +4,7 @@ import { createLogger } from "@diligent/logging";
 import type { Mode, ModelRef, SessionSummary, ThinkingEffort, ThreadReadResponse } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import type { RefObject } from "react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { type AgentContextItem, getAgentContextItemKey, mergeAgentContextItems } from "./agent-native-bridge";
 import { replaceDraftUrl, replaceThreadUrl } from "./app-utils";
 import type { WebRpcClient } from "./rpc-client";
@@ -161,6 +161,15 @@ export function useThreadManager({
   const [threadInputs, setThreadInputs] = useState<Record<string, string>>({});
   const [threadContextItems, setThreadContextItems] = useState<Record<string, AgentContextItem[]>>({});
   const activeSubscriptionRef = useRef<ActiveThreadSubscription | null>(null);
+  const [isLoadingThreads, setIsLoadingThreads] = useState(false);
+  const [threadListError, setThreadListError] = useState<string | null>(null);
+  const listRequestRef = useRef(0);
+  useEffect(
+    () => () => {
+      listRequestRef.current++;
+    },
+    [],
+  );
 
   const updateThreadContextItems = useCallback((threadKey: string, items: AgentContextItem[]): void => {
     setThreadContextItems((prev) => mergeThreadContextItems(prev, threadKey, items));
@@ -223,16 +232,27 @@ export function useThreadManager({
   );
 
   const refreshThreadList = useCallback(
-    async (rpc = rpcRef.current): Promise<void> => {
+    async (rpc = rpcRef.current): Promise<SessionSummary[] | undefined> => {
       if (!rpc) return;
+      const requestId = ++listRequestRef.current;
+      setIsLoadingThreads(true);
+      setThreadListError(null);
       try {
-        const list = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST, { limit: 100 });
+        // History is background work, not a deadline for making the app usable.
+        // Disconnect still rejects the request through the RPC client's normal lifecycle.
+        const list = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST, { limit: 100 }, null);
+        if (requestId !== listRequestRef.current || rpc !== rpcRef.current) return;
         dispatch({ type: "set_threads", payload: list.data });
+        return list.data;
       } catch (error) {
+        if (requestId !== listRequestRef.current || rpc !== rpcRef.current) return;
+        setThreadListError("Could not load conversations.");
         logger.error("thread.list_failed", {
           message: "Failed to refresh thread list",
           error,
         });
+      } finally {
+        if (requestId === listRequestRef.current) setIsLoadingThreads(false);
       }
     },
     [rpcRef, dispatch],
@@ -265,7 +285,7 @@ export function useThreadManager({
         if (typeof window !== "undefined") {
           replaceThreadUrl(resumedId);
         }
-        await refreshThreadList(rpc);
+        void refreshThreadList(rpc);
         await applySessionModel(history.currentModel);
         clearAttention(resumedId);
       } catch (error) {
@@ -317,7 +337,7 @@ export function useThreadManager({
           }
         }
       }
-      await refreshThreadList(rpc);
+      void refreshThreadList(rpc);
     } catch (error) {
       logger.error("thread.delete_failed", {
         message: "Failed to delete thread",
@@ -349,6 +369,8 @@ export function useThreadManager({
     removeThreadContextItem,
     clearThreadContextItems,
     refreshThreadList,
+    isLoadingThreads,
+    threadListError,
     startNewThread,
     openThread,
     confirmDeleteThread,
