@@ -1,8 +1,9 @@
 // @summary Tests for session file persistence and entry management
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import type { SessionSummary } from "@diligent/protocol";
 import type { AppendedEntryInfo, SessionMessageEntry } from "@diligent/runtime/session";
 import {
   appendEntry,
@@ -29,6 +30,22 @@ async function setupDir(): Promise<string> {
   testDir = join(TEST_ROOT, `run-${Date.now()}`);
   await mkdir(testDir, { recursive: true });
   return testDir;
+}
+
+async function listInFreshProcess(directory: string): Promise<SessionSummary[]> {
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      "--eval",
+      'import { listSessions } from "@diligent/runtime/session"; console.log(JSON.stringify(await listSessions(process.argv[1])));',
+      directory,
+    ],
+    { cwd: resolve(import.meta.dir, "../../../.."), stdout: "pipe", stderr: "pipe" },
+  );
+  const output = await new Response(child.stdout).text();
+  const error = await new Response(child.stderr).text();
+  if ((await child.exited) !== 0) throw new Error(error);
+  return JSON.parse(output) as SessionSummary[];
 }
 
 function makeUserEntry(parentId: string | null = null): SessionMessageEntry {
@@ -174,25 +191,16 @@ describe("readSessionFile validation", () => {
 });
 
 describe("listSessions", () => {
-  it("returns sessions sorted by modified date", async () => {
+  it("orders by persisted modification time with stable ID tie-breaking", async () => {
     const dir = await setupDir();
-
-    // Create two sessions with entries
-    const { path: p1 } = await createSessionFile(dir, "/project");
-    const e1 = makeUserEntry();
-    await appendEntry(p1, e1);
-
-    // Small delay for distinct timestamps
-    await new Promise((r) => setTimeout(r, 10));
-
-    const { path: p2 } = await createSessionFile(dir, "/project");
-    const e2 = makeUserEntry();
-    await appendEntry(p2, e2);
-
-    const sessions = await listSessions(dir);
-    expect(sessions).toHaveLength(2);
-    // Most recent first
-    expect(sessions[0].path).toBe(p2);
+    for (const id of ["alpha", "middle", "zulu"]) {
+      const { path } = await createSessionFile(dir, "/project", undefined, undefined, id);
+      await appendEntry(path, {
+        ...makeUserEntry(),
+        timestamp: id === "middle" ? "2030-01-03T00:00:00.000Z" : "2030-01-02T00:00:00.000Z",
+      });
+    }
+    expect((await listSessions(dir)).map((session) => session.id)).toEqual(["middle", "zulu", "alpha"]);
   });
 
   it("extracts first user message preview", async () => {
@@ -231,6 +239,141 @@ describe("listSessions", () => {
     const [session] = await listSessions(dir);
     expect(session.messageCount).toBe(2);
     expect(session.firstUserMessage).toBe("<system-reminder>\nlegacy\n</system-reminder>");
+  });
+
+  it("reflects external appends, renames, additions, and deletion after listing", async () => {
+    const dir = await setupDir();
+    const first = await createSessionFile(dir, "/project");
+    await appendEntry(first.path, makeUserEntry());
+    expect((await listSessions(dir))[0]).toMatchObject({ id: first.header.id, messageCount: 1 });
+
+    const renamed = {
+      type: "session_info",
+      id: generateEntryId(),
+      parentId: null,
+      timestamp: "2030-01-02T00:00:00.000Z",
+      name: "Updated outside this process",
+    };
+    const internal = { ...makeUserEntry(), visibility: "internal", timestamp: "2030-01-03T00:00:00.000Z" };
+    await appendFile(first.path, `${JSON.stringify(renamed)}\n${JSON.stringify(internal)}\n`);
+    const second = await createSessionFile(dir, "/other-project", first.header.id);
+
+    const sessions = await listSessions(dir);
+    expect(sessions.map((session) => session.id)).toEqual([first.header.id, second.header.id]);
+    expect(sessions[0]).toMatchObject({
+      name: renamed.name,
+      messageCount: 1,
+      firstUserMessage: "hello",
+      modified: new Date(internal.timestamp),
+    });
+    expect(sessions[1]).toMatchObject({ cwd: "/other-project", parentSession: first.header.id, messageCount: 0 });
+    await rm(first.path);
+    expect((await listSessions(dir)).map((session) => session.id)).toEqual([second.header.id]);
+  });
+
+  it("reflects same-size rewrites rather than serving an old preview", async () => {
+    const dir = await setupDir();
+    const { path } = await createSessionFile(dir, "/project");
+    await appendEntry(path, makeUserEntry());
+    expect((await listSessions(dir))[0].firstUserMessage).toBe("hello");
+    const before = await stat(path);
+    const text = await Bun.file(path).text();
+    await writeFile(path, text.replace('"hello"', '"world"'));
+    await utimes(path, before.atime, new Date(before.mtimeMs + 1000));
+    expect((await stat(path)).size).toBe(before.size);
+    expect((await listSessions(dir))[0].firstUserMessage).toBe("world");
+  });
+
+  it("detects replacement even when file size and modification time are preserved", async () => {
+    const dir = await setupDir();
+    const { path } = await createSessionFile(dir, "/project");
+    await appendEntry(path, makeUserEntry());
+    expect((await listSessions(dir))[0].firstUserMessage).toBe("hello");
+    const before = await stat(path);
+    const replacement = join(dir, "replacement.tmp");
+    await writeFile(replacement, (await Bun.file(path).text()).replace('"hello"', '"world"'));
+    await utimes(replacement, before.atime, before.mtime);
+    await rename(replacement, path);
+    expect((await listSessions(dir))[0].firstUserMessage).toBe("world");
+  });
+
+  it("does not share mutable summaries between concurrent callers", async () => {
+    const dir = await setupDir();
+    const { path, header } = await createSessionFile(dir, "/project");
+    await appendEntry(path, makeUserEntry());
+    const [left, right] = await Promise.all([listSessions(dir), listSessions(dir)]);
+    left[0].cwd = "/modified-by-caller";
+    left[0].created.setTime(0);
+    left[0].modified.setTime(0);
+    const [again] = await listSessions(dir);
+    expect(right[0].cwd).toBe("/project");
+    expect(right[0].created.toISOString()).toBe(header.timestamp);
+    expect(again).toEqual(right[0]);
+  });
+
+  it("keeps identical session IDs in different project directories independent", async () => {
+    const dir = await setupDir();
+    const other = join(dir, "other");
+    await mkdir(other);
+    for (const [root, text] of [
+      [dir, "first"],
+      [other, "other"],
+    ]) {
+      const { path } = await createSessionFile(root, root, undefined, undefined, "shared-id");
+      const entry = makeUserEntry();
+      entry.message = { role: "user", content: text, timestamp: Date.now() };
+      await appendEntry(path, entry);
+    }
+    const [first, second] = await Promise.all([listSessions(dir), listSessions(other)]);
+    expect(first[0]).toMatchObject({ cwd: dir, firstUserMessage: "first", path: join(dir, "shared-id.jsonl") });
+    expect(second[0]).toMatchObject({ cwd: other, firstUserMessage: "other", path: join(other, "shared-id.jsonl") });
+  });
+
+  it("reconsiders a corrupted file after repair and stops listing it after corruption", async () => {
+    const dir = await setupDir();
+    const { path, header } = await createSessionFile(dir, "/project");
+    const valid = `${JSON.stringify(header)}\n${JSON.stringify(makeUserEntry())}\n`;
+    await writeFile(path, `${valid}incomplete-json`);
+    expect(await listSessions(dir)).toEqual([]);
+    await writeFile(path, valid);
+    expect((await listSessions(dir))[0]).toMatchObject({ id: header.id, firstUserMessage: "hello" });
+    await writeFile(path, `${JSON.stringify({ ...header, version: SESSION_VERSION + 1 })}\n`);
+    expect(await listSessions(dir)).toEqual([]);
+  });
+
+  it("revalidates persisted summaries after process restart", async () => {
+    const dir = await setupDir();
+    const { path, header } = await createSessionFile(dir, "/project");
+    const first = makeUserEntry();
+    await appendEntry(path, first);
+    const original = await listSessions(dir);
+    expect(await listInFreshProcess(dir)).toEqual(JSON.parse(JSON.stringify(original)));
+    const next = { ...makeUserEntry(first.id), timestamp: "2030-01-01T00:00:00.000Z" };
+    await appendFile(path, `${JSON.stringify(next)}\n`);
+    expect(await listInFreshProcess(dir)).toMatchObject([
+      { id: header.id, messageCount: 2, firstUserMessage: "hello", modified: next.timestamp },
+    ]);
+    await rm(path);
+    expect(await listInFreshProcess(dir)).toEqual([]);
+  });
+
+  it("rebuilds a corrupt derived index without losing valid sessions", async () => {
+    const dir = await setupDir();
+    const { path, header } = await createSessionFile(dir, "/project");
+    await appendEntry(path, makeUserEntry());
+    await listSessions(dir);
+    await writeFile(join(dir, ".summaries.json"), '{"version":');
+    expect(await listInFreshProcess(dir)).toMatchObject([
+      { id: header.id, firstUserMessage: "hello", messageCount: 1 },
+    ]);
+  });
+
+  it("lists source records when the derived index cannot be replaced", async () => {
+    const dir = await setupDir();
+    await mkdir(join(dir, ".summaries.json"));
+    const { path, header } = await createSessionFile(dir, "/project");
+    await appendEntry(path, makeUserEntry());
+    expect(await listSessions(dir)).toMatchObject([{ id: header.id, firstUserMessage: "hello", messageCount: 1 }]);
   });
 
   it("returns empty array when no sessions", async () => {
@@ -333,6 +476,48 @@ describe("SessionWriter", () => {
 
     const { header } = await readSessionFile(writer.path!);
     expect(header.parentSession).toBe("parent-abc");
+  });
+});
+
+describe("SessionPersistence explicit resume", () => {
+  it("returns not found when the session directory no longer exists", async () => {
+    const dir = await setupDir();
+    const persistence = new SessionPersistence({ sessionsDir: join(dir, "missing"), cwd: dir });
+    expect(await persistence.resume({ sessionId: "missing-session" })).toBeNull();
+  });
+
+  it("restores the requested session and its parent independently of newer siblings", async () => {
+    const dir = await setupDir();
+    const target = await createSessionFile(dir, dir, "parent-id");
+    const entry = makeUserEntry();
+    await appendEntry(target.path, entry);
+    const sibling = await createSessionFile(dir, dir);
+    await appendEntry(sibling.path, { ...makeUserEntry(), timestamp: "2030-01-01T00:00:00.000Z" });
+    const persistence = new SessionPersistence({ sessionsDir: dir, cwd: dir });
+    expect(await persistence.resume({ sessionId: target.header.id })).toEqual([entry]);
+    expect(persistence.sessionId).toBe(target.header.id);
+    expect(persistence.parentSession).toBe("parent-id");
+  });
+
+  it("does not resume a different identity or an invalid target", async () => {
+    const dir = await setupDir();
+    const target = await createSessionFile(dir, dir);
+    const persistence = new SessionPersistence({ sessionsDir: dir, cwd: dir });
+    await writeFile(target.path, `${JSON.stringify({ ...target.header, id: "another-session" })}\n`);
+    expect(await persistence.resume({ sessionId: target.header.id })).toBeNull();
+    await writeFile(target.path, "invalid-json");
+    expect(await persistence.resume({ sessionId: target.header.id })).toBeNull();
+    await writeFile(target.path, `${JSON.stringify({ ...target.header, version: SESSION_VERSION + 1 })}\n`);
+    expect(await persistence.resume({ sessionId: target.header.id })).toBeNull();
+  });
+
+  it("does not resolve traversal IDs outside the session directory", async () => {
+    const dir = await setupDir();
+    const outside = await createSessionFile(TEST_ROOT, "/outside", undefined, undefined, "outside");
+    await appendEntry(outside.path, makeUserEntry());
+    const persistence = new SessionPersistence({ sessionsDir: dir, cwd: dir });
+    expect(await persistence.resume({ sessionId: "../outside" })).toBeNull();
+    expect(persistence.sessionPath).toBeNull();
   });
 });
 

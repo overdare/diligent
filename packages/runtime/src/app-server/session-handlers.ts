@@ -157,7 +157,7 @@ export async function getLatestEffortFromSessions(
     if (!summary.path) continue;
 
     try {
-      const { entries } = await readSessionFile(summary.path);
+      const { entries } = await readSessionFile(summary.path, { materializeImages: false });
       const leafId = entries.length > 0 ? entries[entries.length - 1].id : null;
       const effort = buildSessionContext(entries, leafId).currentEffort;
       if (effort) return effort;
@@ -197,7 +197,7 @@ export async function getLatestModelFromSessions(
     if (!summary.path) continue;
 
     try {
-      const { entries } = await readSessionFile(summary.path);
+      const { entries } = await readSessionFile(summary.path, { materializeImages: false });
       const leafId = entries.length > 0 ? entries[entries.length - 1].id : null;
       const model = buildSessionContext(entries, leafId).currentModel;
       if (model) return model;

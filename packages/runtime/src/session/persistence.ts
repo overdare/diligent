@@ -1,19 +1,12 @@
 // @summary Session file persistence with JSONL format, immediate writing, and session listing
 import { appendFile, unlink } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type { ModelRef, ProviderName } from "@diligent/core/provider-contract";
 import { ProviderNameSchema } from "@diligent/protocol";
 import { normalizeLegacyModelRef } from "../model/legacy-model-ref";
 import { externalizeEntryImages, materializeEntryImages } from "./image-sidecar";
-import type {
-  AppendedEntryInfo,
-  CollabSessionMeta,
-  SessionEntry,
-  SessionHeader,
-  SessionInfo,
-  SessionInfoEntry,
-  SessionMessageEntry,
-} from "./types";
+import { getSessionSummaryCache } from "./summary-cache";
+import type { AppendedEntryInfo, CollabSessionMeta, SessionEntry, SessionHeader, SessionInfo } from "./types";
 import { generateSessionId, isSafeSessionId, SESSION_VERSION } from "./types";
 
 /**
@@ -60,13 +53,25 @@ export async function appendEntry(sessionPath: string, entry: SessionEntry): Pro
   await appendFile(sessionPath, `${JSON.stringify(externalized)}\n`, "utf8");
 }
 
+function parseSessionHeader(line: string | undefined, path: string): SessionHeader {
+  if (!line) throw new Error(`Empty session file: ${path}`);
+  const header = JSON.parse(line) as SessionHeader;
+  if (header.type !== "session") throw new Error(`Invalid session header in: ${path}`);
+  if (header.version > SESSION_VERSION) {
+    throw new Error(
+      `Session file version ${header.version} is newer than supported version ${SESSION_VERSION}. ` +
+        "Please update diligent.",
+    );
+  }
+  return header;
+}
+
 /**
  * Read all lines from a session file.
  * Validates header version.
  *
- * Pass `{ materializeImages: false }` for code paths that only need text
- * content (e.g. listSessions building first-user-message previews) so the
- * sidecar blob files don't have to be read.
+ * Pass `{ materializeImages: false }` when only persisted entries are needed,
+ * without reading image sidecar blobs.
  */
 export async function readSessionFile(
   path: string,
@@ -75,20 +80,7 @@ export async function readSessionFile(
   const text = await Bun.file(path).text();
   const lines = text.trim().split("\n").filter(Boolean);
 
-  if (lines.length === 0) {
-    throw new Error(`Empty session file: ${path}`);
-  }
-
-  const header = JSON.parse(lines[0]) as SessionHeader;
-  if (header.type !== "session") {
-    throw new Error(`Invalid session header in: ${path}`);
-  }
-  if (header.version > SESSION_VERSION) {
-    throw new Error(
-      `Session file version ${header.version} is newer than supported version ${SESSION_VERSION}. ` +
-        "Please update diligent.",
-    );
-  }
+  const header = parseSessionHeader(lines[0], path);
 
   const rawEntries = normalizePersistedModelRefs(lines.slice(1).map((line) => JSON.parse(line) as SessionEntry));
   if (options?.materializeImages === false) {
@@ -127,60 +119,88 @@ function normalizePersistedModelRefs(entries: SessionEntry[]): SessionEntry[] {
   });
 }
 
-/**
- * List all sessions in a directory.
- * Returns SessionInfo sorted by modified date (most recent first).
- */
-export async function listSessions(sessionsDir: string): Promise<SessionInfo[]> {
-  const glob = new Bun.Glob("*.jsonl");
-  const sessions: SessionInfo[] = [];
+const SUMMARY_READ_CONCURRENCY = 8;
 
-  for await (const file of glob.scan(sessionsDir)) {
-    try {
-      const path = join(sessionsDir, file);
-      // listSessions only needs text content for previews — skip blob materialization.
-      const { header, entries } = await readSessionFile(path, { materializeImages: false });
-
-      const messageEntries = entries.filter(
-        (e): e is SessionMessageEntry => e.type === "message" && e.visibility !== "internal",
-      );
-      const firstUserEntry = messageEntries.find((e) => e.message.role === "user");
-      const lastEntry = entries[entries.length - 1];
-      const nameEntry = entries.findLast((e): e is SessionInfoEntry => e.type === "session_info" && !!e.name);
-
-      let firstUserMessage: string | undefined;
-      if (firstUserEntry && firstUserEntry.message.role === "user") {
-        const content = firstUserEntry.message.content;
-        if (typeof content === "string") {
-          firstUserMessage = content.slice(0, 100);
-        } else {
-          const text = content
-            .filter((block): block is { type: "text"; text: string } => block.type === "text")
-            .map((block) => block.text.trim())
-            .filter(Boolean)
-            .join(" ")
-            .slice(0, 100);
-          const imageCount = content.filter((block) => block.type === "local_image").length;
-          firstUserMessage = text || (imageCount > 0 ? `[image${imageCount > 1 ? "s" : ""}]` : undefined);
-        }
-      }
-
-      sessions.push({
-        id: header.id,
-        path,
-        cwd: header.cwd,
-        name: nameEntry?.name,
-        created: new Date(header.timestamp),
-        modified: lastEntry ? new Date(lastEntry.timestamp) : new Date(header.timestamp),
-        messageCount: messageEntries.length,
-        firstUserMessage,
-        parentSession: header.parentSession,
-      });
-    } catch {
-      // Skip corrupted session files
+async function readSessionSummary(path: string): Promise<SessionInfo> {
+  const lines = (await Bun.file(path).text()).trim().split("\n").filter(Boolean);
+  const header = parseSessionHeader(lines[0], path);
+  let modified = header.timestamp;
+  let name: string | undefined;
+  let messageCount = 0;
+  let firstUserMessage: string | undefined;
+  let foundUser = false;
+  for (let index = 1; index < lines.length; index++) {
+    // Listing does not need model migration, parent-chain reconstruction, or blobs.
+    const entry = JSON.parse(lines[index]) as SessionEntry;
+    modified = entry.timestamp;
+    if (entry.type === "session_info" && entry.name) name = entry.name;
+    if (entry.type !== "message" || entry.visibility === "internal") continue;
+    messageCount++;
+    if (foundUser || entry.message.role !== "user") continue;
+    foundUser = true;
+    const content = entry.message.content;
+    if (typeof content === "string") {
+      firstUserMessage = content.slice(0, 100);
+    } else {
+      const text = content
+        .filter((block) => block.type === "text")
+        .map((block) => block.text.trim())
+        .filter(Boolean)
+        .join(" ")
+        .slice(0, 100);
+      const imageCount = content.filter((block) => block.type === "local_image").length;
+      firstUserMessage = text || (imageCount > 1 ? "[images]" : imageCount === 1 ? "[image]" : undefined);
     }
   }
+  return {
+    id: header.id,
+    path,
+    cwd: header.cwd,
+    name,
+    created: new Date(header.timestamp),
+    modified: new Date(modified),
+    messageCount,
+    firstUserMessage,
+    parentSession: header.parentSession,
+  };
+}
 
+/**
+ * List sessions by persisted modification time, with stable ID tie-breaking.
+ * Check file metadata on every call; read only changed files with bounded concurrency.
+ */
+export async function listSessions(sessionsDir: string): Promise<SessionInfo[]> {
+  const directory = resolve(sessionsDir);
+  const cache = await getSessionSummaryCache(directory);
+  const seen = new Set<string>();
+  const sessions: SessionInfo[] = [];
+  const addSession = async (file: string): Promise<void> => {
+    try {
+      const summary = await cache.get(file, readSessionSummary);
+      // Callers own their results, including mutable Date instances.
+      sessions.push({
+        ...summary,
+        path: join(sessionsDir, file),
+        created: new Date(summary.created.getTime()),
+        modified: new Date(summary.modified.getTime()),
+      });
+    } catch {
+      // Keep listing readable sessions when a file is corrupt or disappears.
+    }
+  };
+  for await (const file of new Bun.Glob("*.jsonl").scan(directory)) {
+    seen.add(file);
+  }
+  // Keep workers busy when session sizes differ, rather than waiting for a
+  // whole batch behind its largest file.
+  const remaining = seen.values();
+  await Promise.all(
+    Array.from({ length: Math.min(SUMMARY_READ_CONCURRENCY, seen.size) }, async () => {
+      for (const file of remaining) await addSession(file);
+    }),
+  );
+  cache.retain(seen);
+  await cache.flush();
   return sessions.sort((a, b) => {
     const modifiedDelta = b.modified.getTime() - a.modified.getTime();
     if (modifiedDelta !== 0) return modifiedDelta;
@@ -241,9 +261,8 @@ export class SessionPersistence {
     let sessionPath: string | undefined;
 
     if (options.sessionId) {
-      const sessions = await listSessions(this.config.sessionsDir);
-      const session = sessions.find((s) => s.id === options.sessionId);
-      sessionPath = session?.path;
+      if (!isSafeSessionId(options.sessionId)) return null;
+      sessionPath = join(this.config.sessionsDir, `${options.sessionId}.jsonl`);
     } else if (options.mostRecent) {
       const sessions = await listSessions(this.config.sessionsDir);
       sessionPath = sessions.find((s) => !s.parentSession)?.path;
@@ -251,7 +270,18 @@ export class SessionPersistence {
 
     if (!sessionPath) return null;
 
-    const { header, entries } = await readSessionFile(sessionPath);
+    let data: Awaited<ReturnType<typeof readSessionFile>>;
+    try {
+      data = await readSessionFile(sessionPath, { materializeImages: false });
+    } catch (error) {
+      // Explicit lookup reports missing, corrupt, and unsupported files as not found.
+      if (options.sessionId) return null;
+      throw error;
+    }
+    const { header } = data;
+    if (options.sessionId && header.id !== options.sessionId) return null;
+    const sessionsDir = dirname(sessionPath);
+    const entries = await Promise.all(data.entries.map((entry) => materializeEntryImages(sessionsDir, entry)));
     this.parentSessionId = header.parentSession;
     this.writeQueue = Promise.resolve();
     // Seed seq from existing lines so resumed sessions keep (session_id, seq) unique.

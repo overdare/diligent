@@ -69,6 +69,12 @@ Behavior:
 
 Resume is a runtime operation (not frontend-local reconstruction).
 
+The persistence lookup resolves an explicit ID to `<sessionId>.jsonl` directly,
+rather than searching unrelated transcripts for the target. The ID must be safe and
+match the file header. Missing, corrupt, or unsupported JSONL targets are not found.
+Startup defaults may still consult the summary index below; `mostRecent` uses its
+ordering and excludes child sessions.
+
 On resume, runtime also repairs orphaned assistant tool calls by appending synthetic `[Cancelled]` tool results when needed.
 
 ## Active thread resolution and implicit threadId
@@ -100,6 +106,29 @@ Notes:
 
 - child sessions are excluded unless `includeChildren: true`
 - runtime default limit is 100; protocol schema caps `limit` at 500
+
+The shared runtime maintains a rebuildable `.summaries.json` index beside the JSONL
+files. Web, TUI, and CLI listing use the same implementation; this is not a dev-only
+optimization. Overdare production uses `<cwd>/.overdare/sessions/`, which may itself
+reside on a network filesystem.
+
+- JSONL remains the source of truth. Every listing discovers current files and checks
+  size, modification time, change time, and inode before reusing a summary.
+- Unchanged files need no transcript or image reads, including after a process restart.
+  New or changed files are parsed for listing fields with bounded concurrency.
+- Persisted modification timestamps, visible message counts, first-user previews, names,
+  and parent IDs retain their existing meaning. Equal modification times sort by ID.
+- The index is atomically replaced only when summaries change. It contains metadata,
+  not full transcripts or image data. Missing, incompatible, corrupt, or unwritable
+  indexes do not make readable session records unavailable.
+- The first index build, or a rebuild after invalidation, still reads existing JSONL
+  data once. On a slow share with a large legacy history, this can remain expensive;
+  subsequent listings and restarts reuse the validated index. No RPC deadline is extended.
+- Startup model and effort defaults inspect persisted entries without materializing
+  image blobs. Full thread loading still restores images when needed.
+
+To discard derived summaries after manual repair, remove `.summaries.json` and restart
+the host. Do not delete the session JSONL files.
 
 ## Reading thread state
 
