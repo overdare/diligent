@@ -101,13 +101,17 @@ describe("session-resume", () => {
     const result = (await client.request("thread/resume", { threadId })) as {
       found: boolean;
       threadId?: string;
-      context?: unknown[];
     };
 
     expect(result.found).toBe(true);
     expect(result.threadId).toBe(threadId);
-    expect(result.context).toBeInstanceOf(Array);
-    expect(result.context!.length).toBeGreaterThan(0);
+    const snapshot = (await client.request("thread/read", { threadId })) as ThreadReadResponse;
+    expect(snapshot.items).toContainEqual(
+      expect.objectContaining({
+        type: "userMessage",
+        message: expect.objectContaining({ content: "hello from first server" }),
+      }),
+    );
   });
 
   test("thread/resume mostRecent returns latest thread", async () => {

@@ -571,7 +571,7 @@ export const SessionSummarySchema = z.object({
   name: z.string().optional(),
   created: z.string(),
   modified: z.string(),
-  messageCount: z.number().int().nonnegative(),
+  messageCount: z.number().int().nonnegative().optional(),
   firstUserMessage: z.string().optional(),
   parentSession: z.string().optional(),
 });

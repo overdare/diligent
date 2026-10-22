@@ -3,7 +3,7 @@
 import type {
   ApprovalRequest,
   ErrorRecovery,
-  ThreadReadResponse,
+  ThreadHistoryResponse,
   ThreadStatus,
   UserInputRequest,
 } from "@diligent/protocol";
@@ -11,6 +11,7 @@ import type { RenderItem } from "../../lib/thread-store";
 
 export interface MessageListProps {
   items: RenderItem[];
+  threadId?: string | null;
   threadStatus: ThreadStatus;
   threadCwd?: string;
   hasProvider: boolean;
@@ -29,7 +30,7 @@ export interface MessageListProps {
     onSubmit: () => void;
     onCancel: () => void;
   } | null;
-  onLoadChildThread?: (childThreadId: string) => Promise<ThreadReadResponse>;
+  onLoadChildThread?: (childThreadId: string, cursor?: string) => Promise<ThreadHistoryResponse>;
   onReportMessage?: (item: Extract<RenderItem, { kind: "user" | "assistant" }>) => void;
   /** Runs an error item's recovery; offered only on a trailing failure while idle. */
   onErrorRecovery?: (recovery: ErrorRecovery) => void;

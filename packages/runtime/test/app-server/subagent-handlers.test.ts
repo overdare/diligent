@@ -20,6 +20,7 @@ function makeCtx(cwd: string, threads = new Map<string, ThreadRuntime>()): Threa
   return {
     activeThreadId: null,
     threads,
+    pendingResumes: new Map(),
     knownCwds: new Set([cwd]),
     getUserId: () => "test-user",
     getPluginHooks: async () => ({ onUserPromptSubmit: [], onStop: [] }),

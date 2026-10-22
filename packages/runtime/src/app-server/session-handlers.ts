@@ -1,24 +1,56 @@
 // @summary Session management request handlers: thread list, resume, and delete
 
-import { DILIGENT_SERVER_NOTIFICATION_METHODS, type SessionSummary } from "../protocol/index";
-import { deleteSession, listSessions } from "../session/persistence";
-import { generateSessionId } from "../session/types";
+import { join } from "node:path";
+import { z } from "zod";
+import {
+  DILIGENT_SERVER_NOTIFICATION_METHODS,
+  type SessionSummary,
+  type ThreadHistoryResponse,
+} from "../protocol/index";
+import { buildSessionTranscript } from "../session/context-builder";
+import { findSessionPath, readSessionHistoryPage, readSessionPreview } from "../session/history";
+import { deleteSession } from "../session/persistence";
+import { generateSessionId, isSafeSessionId } from "../session/types";
 import type { ThreadHandlersContext } from "./thread-handlers";
+import { buildThreadReadItems, type ThreadReadTranscriptEntry } from "./thread-read-builder";
 
 export async function handleThreadResume(
   ctx: ThreadHandlersContext,
   params: { threadId?: string; mostRecent?: boolean },
-): Promise<{ found: boolean; threadId?: string; context?: unknown[] }> {
+): Promise<{ found: boolean; threadId?: string }> {
+  if (!params.threadId) return resumeThread(ctx, params);
+  const existing = ctx.pendingResumes.get(params.threadId);
+  if (existing) return existing;
+  const pending = resumeThread(ctx, params);
+  ctx.pendingResumes.set(params.threadId, pending);
+  try {
+    return await pending;
+  } finally {
+    ctx.pendingResumes.delete(params.threadId);
+  }
+}
+
+async function resumeThread(
+  ctx: ThreadHandlersContext,
+  params: { threadId?: string; mostRecent?: boolean },
+): Promise<{ found: boolean; threadId?: string }> {
   if (params.threadId) {
     const existing = ctx.threads.get(params.threadId);
     if (existing) {
+      if (!existing.isRunning && !existing.turnWork) {
+        await existing.manager.reconcileFromDisk();
+        existing.mode = existing.manager.getCurrentMode() ?? existing.mode;
+        existing.effort = existing.manager.getCurrentEffort() ?? existing.effort;
+        existing.fastMode = existing.manager.getCurrentFastMode() ?? false;
+        existing.model = existing.manager.getCurrentModel() ?? existing.model;
+      }
       const context = existing.manager.getContext();
       ctx.setActiveThreadId(params.threadId);
       await ctx.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED,
         params: { threadId: params.threadId, restoredMessages: context.length },
       });
-      return { found: true, threadId: params.threadId, context };
+      return { found: true, threadId: params.threadId };
     }
   }
 
@@ -49,40 +81,87 @@ export async function handleThreadResume(
       params: { threadId, restoredMessages: context.length },
     });
 
-    return { found: true, threadId, context };
+    return { found: true, threadId };
   }
 
   return { found: false };
 }
 
+const ListCursorSchema = z.object({ version: z.literal(1), after: z.string() }).strict();
+
 export async function handleThreadList(
   ctx: ThreadHandlersContext,
-  limit?: number,
+  limit = 20,
   includeChildren?: boolean,
-): Promise<{ data: SessionSummary[] }> {
-  const result: SessionSummary[] = [];
-
-  for (const cwd of ctx.knownCwds) {
-    const paths = await ctx.resolvePaths(cwd);
-    const sessions = await listSessions(paths.sessions);
-    for (const session of sessions) {
-      result.push({
-        id: session.id,
-        path: session.path,
-        cwd: session.cwd,
-        name: session.name,
-        created: session.created.toISOString(),
-        modified: session.modified.toISOString(),
-        messageCount: session.messageCount,
-        firstUserMessage: session.firstUserMessage,
-        parentSession: session.parentSession,
-      });
+  cursor?: string,
+): Promise<{ data: SessionSummary[]; nextCursor?: string }> {
+  let after: string | undefined;
+  if (cursor) {
+    try {
+      after = ListCursorSchema.parse(JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"))).after;
+    } catch {
+      throw new Error("Invalid session list cursor.");
     }
   }
+  const files: Array<{ key: string; path: string }> = [];
+  for (const cwd of ctx.knownCwds) {
+    const paths = await ctx.resolvePaths(cwd);
+    for await (const name of new Bun.Glob("*.jsonl").scan(paths.sessions)) {
+      const key = `${name}\0${cwd}`;
+      if (after === undefined || key < after) files.push({ key, path: join(paths.sessions, name) });
+    }
+  }
+  files.sort((a, b) => (a.key < b.key ? 1 : a.key > b.key ? -1 : 0));
+  const page = files.slice(0, Math.max(1, Math.min(500, limit)));
+  const remaining = page.values();
+  const data: SessionSummary[] = [];
+  await Promise.all(
+    Array.from({ length: Math.min(8, page.length) }, async () => {
+      for (const file of remaining) {
+        try {
+          const session = await readSessionPreview(file.path);
+          if (!includeChildren && session.parentSession) continue;
+          data.push({
+            ...session,
+            created: session.created.toISOString(),
+            modified: session.modified.toISOString(),
+          });
+        } catch {
+          // One unreadable file must not hide readable conversations in this batch.
+        }
+      }
+    }),
+  );
+  data.sort((a, b) => Date.parse(b.modified) - Date.parse(a.modified) || b.id.localeCompare(a.id));
+  return {
+    data,
+    nextCursor:
+      files.length > page.length
+        ? Buffer.from(JSON.stringify({ version: 1, after: page[page.length - 1].key })).toString("base64url")
+        : undefined,
+  };
+}
 
-  const filtered = includeChildren ? result : result.filter((s) => !s.parentSession);
-  filtered.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
-  return { data: filtered.slice(0, limit ?? 100) };
+export async function handleThreadHistory(
+  ctx: ThreadHandlersContext,
+  params: { threadId: string; cursor?: string; limit?: number },
+): Promise<ThreadHistoryResponse> {
+  if (!isSafeSessionId(params.threadId)) throw new Error("Invalid thread ID.");
+  const runtime = ctx.threads.get(params.threadId);
+  if (runtime && !runtime.manager.sessionPath) return { cwd: runtime.cwd, items: [] };
+  for (const cwd of ctx.knownCwds) {
+    const paths = await ctx.resolvePaths(cwd);
+    const path = await findSessionPath(paths.sessions, params.threadId);
+    if (!path) continue;
+    const page = await readSessionHistoryPage(path, params);
+    const transcript = buildSessionTranscript(page.entries);
+    return {
+      cwd: page.header.cwd,
+      items: buildThreadReadItems(transcript as ThreadReadTranscriptEntry[]),
+      nextCursor: page.nextCursor,
+    };
+  }
+  throw new Error(`Thread not found: ${params.threadId}`);
 }
 
 export async function handleThreadDelete(ctx: ThreadHandlersContext, threadId: string): Promise<{ deleted: boolean }> {

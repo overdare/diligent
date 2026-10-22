@@ -1,7 +1,7 @@
 // @summary Renderer-agnostic transcript state container for chat, tool results, thinking blocks, and active prompts
 
 import type { ToolResultMessage } from "@diligent/core/message-contract";
-import type { AgentEvent, ThreadReadResponse, ToolRenderPayload } from "@diligent/protocol";
+import type { AgentEvent, ThreadHistoryResponse, ToolRenderPayload } from "@diligent/protocol";
 import { buildErrorTranscriptLines } from "../error-presentation";
 import type { Component } from "../framework/types";
 import { renderToolPayload } from "../render-blocks";
@@ -40,7 +40,7 @@ type OverlayStatus = ReducerOverlayStatus;
 export interface ThreadStoreOptions {
   requestRender: () => void;
   cwd?: string;
-  loadChildThread?: (threadId: string) => Promise<ThreadReadResponse | null>;
+  loadChildThread?: (threadId: string) => Promise<ThreadHistoryResponse | null>;
 }
 
 export class ThreadStore {
@@ -71,6 +71,7 @@ export class ThreadStore {
     { status: "loaded"; lines: string[] } | { status: "error"; error: string }
   >();
   private childDetailPending = new Map<string, Promise<void>>();
+  private historyGeneration = 0;
 
   constructor(private options: ThreadStoreOptions) {}
 
@@ -395,9 +396,11 @@ export class ThreadStore {
       item.childDetail = { ...detail, status: "loading", lines: undefined, error: undefined };
       this.options.requestRender();
 
+      const generation = this.historyGeneration;
       const pending = this.options
         .loadChildThread(detail.childThreadId)
         .then((thread) => {
+          if (generation !== this.historyGeneration) return;
           if (!thread) {
             const error = "child thread not found";
             this.childDetailCache.set(detail.childThreadId, { status: "error", error });
@@ -405,16 +408,18 @@ export class ThreadStore {
             return;
           }
           const lines = buildChildDetailLines(thread);
+          if (thread.nextCursor) lines.push(`    Earlier child history: /older ${detail.childThreadId}`);
           this.childDetailCache.set(detail.childThreadId, { status: "loaded", lines });
           this.applyChildDetailSuccess(detail.childThreadId, lines);
         })
         .catch((error: unknown) => {
+          if (generation !== this.historyGeneration) return;
           const message = error instanceof Error ? error.message : String(error);
           this.childDetailCache.set(detail.childThreadId, { status: "error", error: message });
           this.applyChildDetailError(detail.childThreadId, message);
         })
         .finally(() => {
-          this.childDetailPending.delete(detail.childThreadId);
+          if (generation === this.historyGeneration) this.childDetailPending.delete(detail.childThreadId);
         });
 
       this.childDetailPending.set(detail.childThreadId, pending);
@@ -448,6 +453,9 @@ export class ThreadStore {
   }
 
   clearHistory(): void {
+    this.historyGeneration++;
+    this.childDetailCache.clear();
+    this.childDetailPending.clear();
     this.clearActive();
     this.items = [];
     this.lastUsage = null;

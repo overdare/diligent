@@ -236,6 +236,14 @@ export class App {
         this.updateAppServerLogSession(id);
       },
       updateStatusBar: (updates) => this.statusBar.update(updates),
+      showHistory: (history, reset, childThreadId) => {
+        this.chatView.setHistory(history, reset, childThreadId);
+        this.renderer.requestRender();
+      },
+      showProgress: (message) => {
+        this.chatView.addLines([`  ${message}`]);
+        this.renderer.requestRender();
+      },
     });
 
     this.configManager = createConfigManager({
@@ -777,6 +785,7 @@ export class App {
 
   /** Stop the TUI */
   stop(): void {
+    this.threadManager.dispose();
     if (this.streamRenderTimer) {
       clearTimeout(this.streamRenderTimer);
       this.streamRenderTimer = null;

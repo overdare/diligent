@@ -1,6 +1,6 @@
 // @summary Renders colocated MessageList virtual row descriptors into concrete row UI
 
-import type { ErrorRecovery, ThreadReadResponse } from "@diligent/protocol";
+import type { ErrorRecovery, ThreadHistoryResponse } from "@diligent/protocol";
 import type { RenderItem } from "../../lib/thread-store";
 import { ApprovalCard } from "../ApprovalCard";
 import { AssistantMessage } from "../AssistantMessage";
@@ -28,7 +28,7 @@ export function MessageListRowContent({
 }: {
   row: VirtualMessageRow;
   threadCwd?: string;
-  onLoadChildThread?: (childThreadId: string) => Promise<ThreadReadResponse>;
+  onLoadChildThread?: (childThreadId: string, cursor?: string) => Promise<ThreadHistoryResponse>;
   onReportMessage?: (item: Extract<RenderItem, { kind: "user" | "assistant" }>) => void;
   lastCompletedResponseId?: string;
   actionableErrorId?: string;

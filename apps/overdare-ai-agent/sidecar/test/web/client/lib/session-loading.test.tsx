@@ -5,8 +5,8 @@ GlobalRegistrator.register({ url: "http://localhost/" });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 import { afterAll, afterEach, expect, test } from "bun:test";
-import type { SessionSummary, ThreadReadResponse } from "@diligent/protocol";
-import { act, createElement, useCallback, useReducer, useState } from "react";
+import type { SessionSummary, ThreadHistoryResponse, ThreadReadResponse } from "@diligent/protocol";
+import { act, createElement, useCallback, useReducer, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { appReducer } from "../../../../src/web/client/lib/app-state";
 import type { WebRpcClient } from "../../../../src/web/client/lib/rpc-client";
@@ -24,6 +24,13 @@ const history: ThreadReadResponse = {
   entryCount: 0,
   isRunning: false,
   currentEffort: "medium",
+};
+const recentHistory: ThreadHistoryResponse = {
+  cwd: "/project",
+  nextCursor: "older",
+  items: [
+    { type: "userMessage", itemId: "recent", message: { role: "user", content: "Recent conversation", timestamp: 1 } },
+  ],
 };
 const latest: SessionSummary = {
   id: "latest",
@@ -43,21 +50,45 @@ afterEach(async () => {
 });
 afterAll(() => void GlobalRegistrator.unregister());
 
-async function renderBootstrap(path = "/", delayedRead = false) {
+async function renderBootstrap(path = "/", delayedRead = false, delayedResume = false) {
   window.history.replaceState(null, "", path);
   const listing = Promise.withResolvers<SessionSummary[]>();
-  const reading = Promise.withResolvers<ThreadReadResponse>();
+  const reading = Promise.withResolvers<ThreadHistoryResponse>();
+  const preparing = Promise.withResolvers<{ found: boolean; threadId: string }>();
+  const requests: Array<{ method: string; params: unknown }> = [];
+  let manager: {
+    openThread: (threadId: string) => Promise<void>;
+    startNewThread: () => Promise<void>;
+    loadEarlierHistory: () => Promise<void>;
+    isPreparingThread: boolean;
+    historyError: string | null;
+  };
   const activeThreadIdRef = { current: null as string | null };
   const rpcRef = {
     current: {
       initialize: async () => ({ cwd: "/project", capabilities: { goals: true } }),
       notify: noop,
-      request: async (method: string, params: { threadId?: string }) => {
-        if (method === "thread/resume") {
-          if (!params.threadId) await listing.promise;
-          return { found: true, threadId: params.threadId ?? latest.id };
+      subscribe: async () => ({ subscriptionId: "subscription" }),
+      unsubscribe: async () => {},
+      request: async (method: string, params: { threadId?: string; cursor?: string }) => {
+        requests.push({ method, params });
+        if (method === "thread/resume")
+          return delayedResume ? preparing.promise : { found: true, threadId: params.threadId };
+        if (method === "thread/history") {
+          if (params.cursor)
+            return {
+              cwd: "/project",
+              items: [
+                {
+                  type: "userMessage",
+                  itemId: "old",
+                  message: { role: "user", content: "Older conversation", timestamp: 0 },
+                },
+              ],
+            };
+          return delayedRead ? reading.promise : recentHistory;
         }
-        if (method === "thread/read") return delayedRead ? reading.promise : history;
+        if (method === "thread/read") return history;
         throw new Error(`Unexpected request: ${method}`);
       },
     } as unknown as WebRpcClient,
@@ -67,6 +98,22 @@ async function renderBootstrap(path = "/", delayedRead = false) {
     const [state, dispatch] = useReducer(appReducer, initialThreadState);
     const [providersReady, setProvidersReady] = useState(false);
     activeThreadIdRef.current = state.activeThreadId;
+    const stateRef = useRef(state);
+    stateRef.current = state;
+    manager = useThreadManager({
+      rpcRef,
+      dispatch,
+      activeThreadIdRef,
+      stateRef,
+      applySessionModel: asyncNoop,
+      resetDraftModel: noop,
+      setEffortState: noop,
+      setFastModeState: noop,
+      activateThreadPrompts: noop,
+      shelveThreadPrompts: noop,
+      clearAttention: noop,
+      closeModals: noop,
+    });
     const refreshProviders = useCallback(async () => setProvidersReady(true), []);
     useAppBootstrap({
       connection: "connected",
@@ -81,7 +128,7 @@ async function renderBootstrap(path = "/", delayedRead = false) {
       setGoalsSupported: noop,
       setConsent: noop,
       setInitialModel: noop,
-      applySessionModel: asyncNoop,
+      openThread: manager.openThread,
       refreshThreadList,
       refreshProviders,
     });
@@ -91,10 +138,20 @@ async function renderBootstrap(path = "/", delayedRead = false) {
       createElement("textarea", { disabled: !providersReady, "aria-label": "Message" }),
       createElement("output", null, state.activeThreadId ?? "draft"),
       createElement(
-        "button",
-        { type: "button", onClick: () => dispatch({ type: "reset_draft", payload: { mode: "default" } }) },
-        "New conversation",
+        "section",
+        null,
+        state.items
+          .filter((item) => item.kind === "user")
+          .map((item) => item.text)
+          .join(","),
       ),
+      createElement(
+        "span",
+        { role: "status" },
+        manager.isPreparingThread ? "preparing" : state.runtimeReady ? "ready" : "not ready",
+      ),
+      manager.historyError ? createElement("span", { role: "alert" }, manager.historyError) : null,
+      createElement("button", { type: "button", onClick: () => void manager.startNewThread() }, "New conversation"),
     );
   }
   const container = document.createElement("div");
@@ -102,7 +159,7 @@ async function renderBootstrap(path = "/", delayedRead = false) {
   const root = createRoot(container);
   mounted.push({ root, container });
   await act(async () => root.render(createElement(Screen)));
-  return { container, listing, reading };
+  return { container, listing, reading, preparing, requests, manager: () => manager };
 }
 
 test("the composer is ready while the initial session list is still pending", async () => {
@@ -151,7 +208,7 @@ test("a late history read cannot replace a new draft", async () => {
     window.history.replaceState(null, "", "/");
   });
   await act(async () => {
-    reading.resolve(history);
+    reading.resolve(recentHistory);
     listing.resolve([latest]);
   });
   expect(container.querySelector("output")!.textContent).toBe("draft");
@@ -159,11 +216,11 @@ test("a late history read cannot replace a new draft", async () => {
 });
 
 async function renderThreadList() {
-  const requests: Array<ReturnType<typeof Promise.withResolvers<{ data: SessionSummary[] }>>> = [];
+  const requests: PromiseWithResolvers<{ data: SessionSummary[]; nextCursor?: string }>[] = [];
   const rpcRef = {
     current: {
       request: () => {
-        const pending = Promise.withResolvers<{ data: SessionSummary[] }>();
+        const pending = Promise.withResolvers<{ data: SessionSummary[]; nextCursor?: string }>();
         requests.push(pending);
         return pending.promise;
       },
@@ -237,4 +294,52 @@ test("a failed refresh keeps the previous list and exposes a local error", async
   expect(container.querySelector("output")!.textContent).toBe(latest.id);
   expect(container.querySelector('[role="alert"]')).not.toBeNull();
   expect(container.querySelector('[role="status"]')!.textContent).toBe("ready");
+});
+
+test("recent and earlier history are visible before a deferred runtime resume completes", async () => {
+  const { container, preparing, manager, requests } = await renderBootstrap("/selected", false, true);
+  expect(container.querySelector("section")!.textContent).toBe("Recent conversation");
+  expect(container.querySelector('[role="status"]')!.textContent).toBe("preparing");
+  expect(requests.some((request) => request.method === "thread/read")).toBe(false);
+  await act(async () => manager().loadEarlierHistory());
+  expect(container.querySelector("section")!.textContent).toBe("Older conversation,Recent conversation");
+  await act(async () => preparing.resolve({ found: true, threadId: "selected" }));
+  expect(container.querySelector('[role="status"]')!.textContent).toBe("ready");
+  expect(requests.find((request) => request.method === "thread/read")?.params).toEqual({
+    threadId: "selected",
+    includeItems: false,
+  });
+});
+
+test("preparation completing after New cannot overwrite the new draft", async () => {
+  const { container, preparing, manager } = await renderBootstrap("/selected", false, true);
+  await act(async () => manager().startNewThread());
+  await act(async () => preparing.resolve({ found: true, threadId: "selected" }));
+  expect(container.querySelector("output")!.textContent).toBe("draft");
+  expect(container.querySelector("section")!.textContent).toBe("");
+});
+
+test("history failures remain visible rather than leaving an empty loading state", async () => {
+  const { container, reading } = await renderBootstrap("/selected", true);
+  await act(async () => reading.reject(new Error("History unavailable")));
+  expect(container.querySelector('[role="alert"]')!.textContent).toContain("History unavailable");
+  expect(container.querySelector('[role="status"]')!.textContent).toBe("not ready");
+});
+
+test("list batches are visible before the final page, including empty discovery batches", async () => {
+  const { container, requests, refresh } = await renderThreadList();
+  let pending: Promise<unknown>;
+  await act(async () => {
+    pending = refresh();
+  });
+  await act(async () => requests[0].resolve({ data: [{ ...latest, messageCount: undefined }], nextCursor: "two" }));
+  expect(container.querySelector("output")!.textContent).toBe("latest");
+  expect(container.querySelector('[role="status"]')!.textContent).toBe("loading");
+  await act(async () => requests[1].resolve({ data: [], nextCursor: "three" }));
+  expect(container.querySelector("output")!.textContent).toBe("latest");
+  await act(async () => {
+    requests[2].resolve({ data: [{ ...latest, id: "newest", modified: "2026-02-01T00:00:00.000Z" }] });
+    await pending;
+  });
+  expect(container.querySelector("output")!.textContent).toBe("newest,latest");
 });

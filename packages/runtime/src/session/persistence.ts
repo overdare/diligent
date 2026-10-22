@@ -1,9 +1,13 @@
 // @summary Session file persistence with JSONL format, immediate writing, and session listing
 import { appendFile, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import type { ModelRef, ProviderName } from "@diligent/core/provider-contract";
-import { ProviderNameSchema } from "@diligent/protocol";
-import { normalizeLegacyModelRef } from "../model/legacy-model-ref";
+import {
+  findMostRecentSession,
+  findSessionPath,
+  firstUserPreview,
+  normalizePersistedModelRefs,
+  parseSessionHeader,
+} from "./history";
 import { externalizeEntryImages, materializeEntryImages } from "./image-sidecar";
 import type { AppendedEntryInfo, CollabSessionMeta, SessionEntry, SessionHeader, SessionInfo } from "./types";
 import { generateSessionId, isSafeSessionId, SESSION_VERSION } from "./types";
@@ -52,19 +56,6 @@ export async function appendEntry(sessionPath: string, entry: SessionEntry): Pro
   await appendFile(sessionPath, `${JSON.stringify(externalized)}\n`, "utf8");
 }
 
-function parseSessionHeader(line: string | undefined, path: string): SessionHeader {
-  if (!line) throw new Error(`Empty session file: ${path}`);
-  const header = JSON.parse(line) as SessionHeader;
-  if (header.type !== "session") throw new Error(`Invalid session header in: ${path}`);
-  if (header.version > SESSION_VERSION) {
-    throw new Error(
-      `Session file version ${header.version} is newer than supported version ${SESSION_VERSION}. ` +
-        "Please update diligent.",
-    );
-  }
-  return header;
-}
-
 /**
  * Read all lines from a session file.
  * Validates header version.
@@ -90,34 +81,6 @@ export async function readSessionFile(
   return { header, entries };
 }
 
-function normalizePersistedModelRefs(entries: SessionEntry[]): SessionEntry[] {
-  const normalized = entries.map((entry) => {
-    if (entry.type !== "model_change") return entry;
-    const provider = ProviderNameSchema.safeParse(entry.provider);
-    const ref = normalizeLegacyModelRef(entry.modelId, provider.success ? provider.data : undefined);
-    return { ...entry, provider: ref.provider, modelId: ref.modelId };
-  });
-  const byId = new Map(normalized.map((entry) => [entry.id, entry]));
-  const modelByEntryId = new Map<string, ModelRef | undefined>();
-  const nearestModel = (entry: SessionEntry): ModelRef | undefined => {
-    if (modelByEntryId.has(entry.id)) return modelByEntryId.get(entry.id);
-    const current = entry.type === "model_change" ? { provider: entry.provider, modelId: entry.modelId } : undefined;
-    const parent = entry.parentId ? byId.get(entry.parentId) : undefined;
-    const inherited = parent ? nearestModel(parent) : undefined;
-    const result = current ?? inherited;
-    modelByEntryId.set(entry.id, result);
-    return result;
-  };
-  return normalized.map((entry) => {
-    if (entry.type !== "message" || entry.message.role !== "assistant") return entry;
-    const rawModel = (entry.message as unknown as { model: unknown }).model;
-    const parent = entry.parentId ? byId.get(entry.parentId) : undefined;
-    const ancestor = parent ? nearestModel(parent) : undefined;
-    const ref = normalizeLegacyModelRef(rawModel, ancestor?.provider as ProviderName | undefined);
-    return { ...entry, message: { ...entry.message, model: ref } };
-  });
-}
-
 const SUMMARY_READ_CONCURRENCY = 8;
 
 async function readSessionSummary(path: string): Promise<SessionInfo> {
@@ -136,20 +99,8 @@ async function readSessionSummary(path: string): Promise<SessionInfo> {
     if (entry.type !== "message" || entry.visibility === "internal") continue;
     messageCount++;
     if (foundUser || entry.message.role !== "user") continue;
+    firstUserMessage = firstUserPreview(entry.message.content);
     foundUser = true;
-    const content = entry.message.content;
-    if (typeof content === "string") {
-      firstUserMessage = content.slice(0, 100);
-    } else {
-      const text = content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text.trim())
-        .filter(Boolean)
-        .join(" ")
-        .slice(0, 100);
-      const imageCount = content.filter((block) => block.type === "local_image").length;
-      firstUserMessage = text || (imageCount > 1 ? "[images]" : imageCount === 1 ? "[image]" : undefined);
-    }
   }
   return {
     id: header.id,
@@ -246,11 +197,9 @@ export class SessionPersistence {
     let sessionPath: string | undefined;
 
     if (options.sessionId) {
-      if (!isSafeSessionId(options.sessionId)) return null;
-      sessionPath = join(this.config.sessionsDir, `${options.sessionId}.jsonl`);
+      sessionPath = await findSessionPath(this.config.sessionsDir, options.sessionId);
     } else if (options.mostRecent) {
-      const sessions = await listSessions(this.config.sessionsDir);
-      sessionPath = sessions.find((s) => !s.parentSession)?.path;
+      sessionPath = await findMostRecentSession(this.config.sessionsDir);
     }
 
     if (!sessionPath) return null;

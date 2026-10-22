@@ -4,7 +4,6 @@ import {
   ContentBlockSchema,
   KnowledgeEntrySchema,
   LocalImageBlockSchema,
-  MessageSchema,
   ModelRefSchema,
   ModeSchema,
   PendingSteerSchema,
@@ -96,23 +95,25 @@ export type ThreadResumeParams = z.infer<typeof ThreadResumeParamsSchema>;
 export const ThreadResumeResponseSchema = z.object({
   found: z.boolean(),
   threadId: z.string().optional(),
-  context: z.array(MessageSchema).optional(),
 });
 export type ThreadResumeResponse = z.infer<typeof ThreadResumeResponseSchema>;
 
 export const ThreadListParamsSchema = z.object({
   limit: z.number().int().positive().max(500).optional(),
   includeChildren: z.boolean().optional(),
+  cursor: z.string().optional(),
 });
 export type ThreadListParams = z.infer<typeof ThreadListParamsSchema>;
 
 export const ThreadListResponseSchema = z.object({
   data: z.array(SessionSummarySchema),
+  nextCursor: z.string().optional(),
 });
 export type ThreadListResponse = z.infer<typeof ThreadListResponseSchema>;
 
 export const ThreadReadParamsSchema = z.object({
   threadId: z.string().optional(),
+  includeItems: z.boolean().optional(),
 });
 export type ThreadReadParams = z.infer<typeof ThreadReadParamsSchema>;
 
@@ -132,6 +133,20 @@ export const ThreadReadResponseSchema = z.object({
   totalCost: z.number().nonnegative().optional(),
 });
 export type ThreadReadResponse = z.infer<typeof ThreadReadResponseSchema>;
+
+export const ThreadHistoryParamsSchema = z.object({
+  threadId: z.string(),
+  cursor: z.string().optional(),
+  limit: z.number().int().positive().max(100).optional(),
+});
+export type ThreadHistoryParams = z.infer<typeof ThreadHistoryParamsSchema>;
+
+export const ThreadHistoryResponseSchema = z.object({
+  cwd: z.string(),
+  items: z.array(ThreadItemSchema),
+  nextCursor: z.string().optional(),
+});
+export type ThreadHistoryResponse = z.infer<typeof ThreadHistoryResponseSchema>;
 
 export const ThreadCompactStartParamsSchema = z.object({
   threadId: z.string().optional(),
@@ -656,6 +671,7 @@ export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME), params: ThreadResumeParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST), params: ThreadListParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ), params: ThreadReadParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY), params: ThreadHistoryParamsSchema }),
   z.object({
     method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START),
     params: ThreadCompactStartParamsSchema,
@@ -724,6 +740,7 @@ export const DiligentClientResponseSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME), result: ThreadResumeResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST), result: ThreadListResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ), result: ThreadReadResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY), result: ThreadHistoryResponseSchema }),
   z.object({
     method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START),
     result: ThreadCompactStartResponseSchema,

@@ -1,6 +1,6 @@
 // @summary Renders consecutive collab events in order without nested group toggles
 
-import type { ThreadReadResponse } from "@diligent/protocol";
+import type { ThreadHistoryResponse } from "@diligent/protocol";
 import type { RenderItem } from "../lib/thread-store";
 import { CollabEventBlock } from "./CollabEventBlock";
 
@@ -8,7 +8,7 @@ type CollabItem = Extract<RenderItem, { kind: "collab" }>;
 
 interface CollabGroupProps {
   items: CollabItem[];
-  loadChildThread?: (childThreadId: string) => Promise<ThreadReadResponse>;
+  loadChildThread?: (childThreadId: string, cursor?: string) => Promise<ThreadHistoryResponse>;
 }
 
 export function CollabGroup({ items, loadChildThread }: CollabGroupProps) {

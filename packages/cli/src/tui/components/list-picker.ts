@@ -42,6 +42,14 @@ export class ListPicker implements Component {
     this.selectedIndex = this.nextSelectable(initial, 1);
   }
 
+  setItems(items: ListPickerItem[], title = this.options.title): void {
+    const selected = this.filteredItems[this.selectedIndex]?.value;
+    this.options = { ...this.options, items, title };
+    this.applyFilter();
+    const index = this.filteredItems.findIndex((item) => item.value === selected);
+    if (index >= 0) this.selectedIndex = index;
+  }
+
   render(width: number): string[] {
     if (this.options.minimal) {
       return this.renderMinimal();

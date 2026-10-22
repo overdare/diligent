@@ -22,6 +22,7 @@ import { VIRTUOSO_COMPONENTS } from "./VirtuosoMessageItem";
 
 function MessageListImpl({
   items,
+  threadId,
   threadStatus,
   threadCwd,
   hasProvider,
@@ -55,7 +56,19 @@ function MessageListImpl({
     () => (showEmptyState ? [] : [...messageRows, ...statusRows]),
     [messageRows, showEmptyState, statusRows],
   );
-  const transcriptKey = items[0]?.id ?? rows[0]?.key ?? "empty";
+  const transcriptKey = threadId ?? items[0]?.id ?? rows[0]?.key ?? "empty";
+  const pagingRef = useRef({ transcriptKey, firstKey: rows[0]?.key, firstItemIndex: 1_000_000 });
+  if (pagingRef.current.transcriptKey !== transcriptKey) {
+    pagingRef.current = { transcriptKey, firstKey: rows[0]?.key, firstItemIndex: 1_000_000 };
+  } else if (pagingRef.current.firstKey !== rows[0]?.key) {
+    const added = rows.findIndex((row) => row.key === pagingRef.current.firstKey);
+    if (added > 0) {
+      pagingRef.current.firstItemIndex -= added;
+      userDetachedFromBottomRef.current = true;
+      isAtBottomRef.current = false;
+    }
+    pagingRef.current.firstKey = rows[0]?.key;
+  }
   const heightEstimates = useMemo(
     () =>
       rows.map(
@@ -243,6 +256,7 @@ function MessageListImpl({
           components={VIRTUOSO_COMPONENTS}
           context={virtuosoContext}
           data={rows}
+          firstItemIndex={pagingRef.current.firstItemIndex}
           style={{ height: "100%" }}
           className="bg-bg-sunken [overflow-anchor:none]"
           atBottomStateChange={handleAtBottomStateChange}

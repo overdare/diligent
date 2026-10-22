@@ -5,7 +5,6 @@ import type {
   DiligentServerNotification,
   DiligentServerRequest,
   InitializeResponse,
-  Mode,
   ModelRef,
   PendingSteer,
   ProviderAuthStatus,
@@ -15,7 +14,6 @@ import type {
 } from "@diligent/protocol";
 import {
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
-  DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_VERSION,
 } from "@diligent/protocol";
@@ -29,7 +27,7 @@ import {
   toNotificationParams,
 } from "./app-notification";
 import type { AppAction } from "./app-state";
-import { getThreadIdFromUrl, replaceDraftUrl, replaceThreadUrl } from "./app-utils";
+import { getThreadIdFromUrl, replaceDraftUrl } from "./app-utils";
 import type { WebRpcClient } from "./rpc-client";
 import type { ThreadState } from "./thread-store";
 
@@ -74,6 +72,7 @@ export function useAppRpcBindings({
   stateRef,
   dispatch,
   refreshThreadList,
+  refreshThreadHistory,
   onAccountLoginCompleted,
   onAccountUpdated,
   onMcpLoginCompleted,
@@ -89,6 +88,7 @@ export function useAppRpcBindings({
   stateRef: RefObject<ThreadState>;
   dispatch: Dispatch<AppAction>;
   refreshThreadList: (rpc?: WebRpcClient | null) => Promise<unknown>;
+  refreshThreadHistory: (threadId: string) => Promise<void>;
   onAccountLoginCompleted: (params: { loginId: string | null; success: boolean; error: string | null }) => void;
   onAccountUpdated: (params: { providers: ProviderAuthStatus[] }) => Promise<void>;
   onMcpLoginCompleted: (params: { server: string; success: boolean; error: string | null }) => void;
@@ -155,21 +155,7 @@ export function useAppRpcBindings({
           activeThreadIdRef.current,
         );
         if (rehydrateThreadId) {
-          void rpc
-            .request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: rehydrateThreadId })
-            .then((history) => {
-              dispatch({
-                type: "hydrate",
-                payload: { threadId: rehydrateThreadId, mode: stateRef.current.mode, history },
-              });
-            })
-            .catch((error) => {
-              logger.error("thread.rehydrate_failed", {
-                message: "Failed to rehydrate thread after idle status",
-                error,
-                threadId: rehydrateThreadId,
-              });
-            });
+          void refreshThreadHistory(rehydrateThreadId);
         }
       }
 
@@ -199,6 +185,7 @@ export function useAppRpcBindings({
     stateRef,
     dispatch,
     refreshThreadList,
+    refreshThreadHistory,
     onAccountLoginCompleted,
     onAccountUpdated,
     onMcpLoginCompleted,
@@ -224,7 +211,7 @@ export function useAppBootstrap({
   setGoalsSupported,
   setConsent,
   setInitialModel,
-  applySessionModel,
+  openThread,
   refreshThreadList,
   refreshProviders,
 }: {
@@ -240,7 +227,7 @@ export function useAppBootstrap({
   setGoalsSupported: Dispatch<SetStateAction<boolean>>;
   setConsent: (consent: ConsentState | null) => void;
   setInitialModel: (model: ModelRef | undefined, models?: InitializeResponse["availableModels"]) => void;
-  applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
+  openThread: (threadId: string) => Promise<void>;
   refreshThreadList: (rpc?: WebRpcClient | null) => Promise<SessionSummary[] | undefined>;
   refreshProviders: (rpc?: WebRpcClient | null) => Promise<void>;
 }) {
@@ -267,22 +254,6 @@ export function useAppBootstrap({
       activeThreadIdRef.current === initialThreadId &&
       getThreadIdFromUrl() === initialUrlThreadId;
 
-    const hydrateThread = async (threadId: string, mode: Mode): Promise<boolean> => {
-      if (!canRestore()) return false;
-      const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId });
-      if (!canRestore() || !resumed.found || !resumed.threadId) {
-        return false;
-      }
-      const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: resumed.threadId });
-      if (!canRestore()) return false;
-      dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode, history } });
-      setEffortState(history.currentEffort);
-      setFastModeState(history.currentFastMode ?? false);
-      replaceThreadUrl(resumed.threadId);
-      await applySessionModel(history.currentModel);
-      return true;
-    };
-
     const bootstrap = async (): Promise<void> => {
       try {
         const meta = (await rpc.initialize({
@@ -306,17 +277,28 @@ export function useAppBootstrap({
         void refreshProviders(rpc);
         const listing = refreshThreadList(rpc);
         const selectedThreadId = initialThreadId ?? initialUrlThreadId;
-        if (selectedThreadId && (await hydrateThread(selectedThreadId, "default"))) return;
+        if (selectedThreadId && canRestore()) {
+          await openThread(selectedThreadId);
+          return;
+        }
 
         // Reuse the sidebar scan instead of issuing a second full-history lookup.
         const threads = await listing;
         if (!canRestore()) return;
         const latest = threads?.[0];
-        if (latest && (await hydrateThread(latest.id, "default"))) return;
+        if (latest) {
+          await openThread(latest.id);
+          return;
+        }
         if (!canRestore()) return;
         dispatch({ type: "reset_draft", payload: { mode: "default" } });
         replaceDraftUrl();
       } catch (error) {
+        if (!cancelled)
+          dispatch({
+            type: "show_info_toast",
+            payload: error instanceof Error ? error.message : "Could not restore conversation.",
+          });
         logger.error("bootstrap.failed", {
           message: "Failed to bootstrap Diligent web client",
           error,
@@ -343,7 +325,7 @@ export function useAppBootstrap({
     setGoalsSupported,
     setConsent,
     setInitialModel,
-    applySessionModel,
+    openThread,
     refreshThreadList,
     refreshProviders,
   ]);

@@ -7,6 +7,7 @@ export const DILIGENT_CLIENT_REQUEST_METHODS = {
   THREAD_RESUME: "thread/resume",
   THREAD_LIST: "thread/list",
   THREAD_READ: "thread/read",
+  THREAD_HISTORY: "thread/history",
   THREAD_GOAL_GET: "thread/goal/get",
   THREAD_GOAL_SET: "thread/goal/set",
   THREAD_COMPACT_START: "thread/compact/start",

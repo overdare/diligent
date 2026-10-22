@@ -1,6 +1,6 @@
 // @summary Composition hook: assembles consent, notification, modal, and thread state sub-hooks
 import { createLogger } from "@diligent/logging";
-import type { SkillInfo, ThinkingEffort, ThreadReadResponse } from "@diligent/protocol";
+import type { SkillInfo, ThinkingEffort, ThreadHistoryResponse } from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { AgentContextItem } from "./agent-native-bridge";
 import { APP_PROJECT_NAME } from "./app-config";
@@ -62,7 +62,7 @@ export function useAppState({
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [runtimeVersion, setRuntimeVersion] = useState<string>("");
   const [goalsSupported, setGoalsSupported] = useState(false);
-  const childThreadCacheRef = useRef<Map<string, ThreadReadResponse>>(new Map());
+  const childThreadCacheRef = useRef<Map<string, ThreadHistoryResponse>>(new Map());
   const threadData = useThreadData({ rpcRef, state, childThreadCacheRef });
 
   const consentState = useConsentState({ rpcRef });
@@ -86,6 +86,7 @@ export function useAppState({
     rpcRef,
     dispatch,
     activeThreadIdRef,
+    stateRef,
     applySessionModel: providerMgr.applySessionModel,
     resetDraftModel: providerMgr.resetDraftModel,
     setEffortState,
@@ -187,6 +188,7 @@ export function useAppState({
 
   const canSend =
     (activeInput.trim().length > 0 || pendingImages.length > 0 || activeContextItems.length > 0) &&
+    state.runtimeReady &&
     !isBusy &&
     !isUploadingImages;
 
@@ -211,6 +213,7 @@ export function useAppState({
     stateRef,
     dispatch,
     refreshThreadList: threadMgr.refreshThreadList,
+    refreshThreadHistory: threadMgr.refreshThreadHistory,
     onAccountLoginCompleted: providerMgr.onAccountLoginCompleted,
     onAccountUpdated: providerMgr.onAccountUpdated,
     onMcpLoginCompleted: modalState.bumpMcpRefreshNonce,
@@ -239,7 +242,7 @@ export function useAppState({
     setGoalsSupported,
     setConsent: consentState.setConsent,
     setInitialModel: providerMgr.setInitialModel,
-    applySessionModel: providerMgr.applySessionModel,
+    openThread: threadMgr.openThread,
     refreshThreadList: threadMgr.refreshThreadList,
     refreshProviders: providerMgr.refreshProviders,
   });
@@ -288,6 +291,8 @@ export function useAppState({
     applySessionModel: providerMgr.applySessionModel,
     activateServerThread: threadMgr.activateServerThread,
     refreshThreadList: threadMgr.refreshThreadList,
+    refreshThreadHistory: threadMgr.refreshThreadHistory,
+    getNavigationGuard: threadMgr.getNavigationGuard,
   });
 
   useEffect(() => {

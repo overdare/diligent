@@ -304,7 +304,40 @@ export function App() {
             }}
           />
 
+          {threadMgr.isLoadingHistory ? (
+            <output className="px-7 py-2 text-sm text-muted">Loading recent history…</output>
+          ) : null}
+          {threadMgr.isPreparingThread ? (
+            <output className="px-7 py-2 text-sm text-muted">
+              History is available. Preparing this conversation for new messages…
+            </output>
+          ) : null}
+          {threadMgr.historyError ? (
+            <div role="alert" className="px-7 py-2 text-sm text-danger">
+              {threadMgr.historyError}
+              {state.activeThreadId ? (
+                <button
+                  type="button"
+                  className="ml-3 underline"
+                  onClick={() => void threadMgr.openThread(state.activeThreadId!)}
+                >
+                  Retry opening
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {state.historyCursor ? (
+            <button
+              type="button"
+              disabled={threadMgr.isLoadingEarlier}
+              onClick={() => void threadMgr.loadEarlierHistory()}
+              className="px-7 py-2 text-sm text-accent"
+            >
+              {threadMgr.isLoadingEarlier ? "Loading earlier history…" : "Load earlier history"}
+            </button>
+          ) : null}
           <MessageList
+            threadId={state.activeThreadId}
             items={state.items}
             threadStatus={state.threadStatus}
             threadCwd={state.activeThreadCwd ?? undefined}

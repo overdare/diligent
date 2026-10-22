@@ -5,9 +5,11 @@ import type {
   DiligentServerRequestResponse,
   InitializeResponse,
   RequestId,
+  SessionSummary,
   ThreadReadResponse,
 } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS, DILIGENT_VERSION } from "@diligent/protocol";
+import { mergeSessionSummaries } from "@diligent/runtime/client";
 import type { ThreadStore } from "../state/thread-store";
 import type { DiligentProcess, DiligentProcessOptions } from "./diligent-process";
 import { DiligentRpcClient } from "./rpc-client";
@@ -32,6 +34,7 @@ export class ThreadSession {
   private readonly rpc = new DiligentRpcClient();
   private readonly subscriptions = new Map<string, string>();
   private started = false;
+  private listRequest = 0;
 
   constructor(
     private readonly process: DiligentProcess,
@@ -73,8 +76,19 @@ export class ThreadSession {
   }
 
   async refreshThreads(): Promise<void> {
-    const response = await this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST, {});
-    this.store.setThreads(response.data.filter((thread) => !thread.parentSession));
+    const request = ++this.listRequest;
+    let threads: SessionSummary[] = [];
+    let cursor: string | undefined;
+    do {
+      const response = await this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST, { cursor });
+      if (request !== this.listRequest) return;
+      threads = mergeSessionSummaries(
+        threads,
+        response.data.filter((thread) => !thread.parentSession),
+      );
+      this.store.setThreads(threads);
+      cursor = response.nextCursor;
+    } while (cursor);
   }
 
   async createThread(): Promise<string> {

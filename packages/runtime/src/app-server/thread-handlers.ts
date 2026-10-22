@@ -16,6 +16,7 @@ import {
   type ModelRef,
   type ThinkingEffort,
   type ThreadItem,
+  type ThreadResumeResponse,
 } from "../protocol/index";
 import type { SessionManager } from "../session/manager";
 import { generateSessionId, type SessionRunOutcome } from "../session/types";
@@ -87,6 +88,7 @@ export interface ThreadHandlersContext {
   getGoalsConfig?: () => DiligentConfig["goals"];
   activeThreadId: string | null;
   threads: Map<string, ThreadRuntime>;
+  pendingResumes: Map<string, Promise<ThreadResumeResponse>>;
   knownCwds: Set<string>;
   hooks?: DiligentConfig["hooks"];
   /** Returns the user ID for a given connection, falling back to config userId or OS username. */
@@ -151,6 +153,7 @@ export async function handleThreadStart(
 export async function handleThreadRead(
   ctx: ThreadHandlersContext,
   threadId?: string,
+  includeItems = true,
 ): Promise<{
   cwd: string;
   items: ThreadItem[];
@@ -173,18 +176,19 @@ export async function handleThreadRead(
 
   // If runtime memory drifts from persisted JSONL, refresh from disk for read consistency.
   // Do this only when idle to avoid mutating active turn state mid-stream.
-  if (!runtime.isRunning && !runtime.turnWork) {
+  if (includeItems && !runtime.isRunning && !runtime.turnWork) {
     await runtime.manager.reconcileFromDisk();
   }
 
-  const messages = runtime.manager.getContext();
-  const transcript = runtime.manager.getTranscript();
-  const items = applyLiveCollabStatusesToSnapshot(
-    buildThreadReadItems(transcript as ThreadReadTranscriptEntry[]),
-    runtime,
-  );
+  const messages = includeItems ? runtime.manager.getContext() : [];
+  const items = includeItems
+    ? applyLiveCollabStatusesToSnapshot(
+        buildThreadReadItems(runtime.manager.getTranscript() as ThreadReadTranscriptEntry[]),
+        runtime,
+      )
+    : [];
 
-  let totalCost = 0;
+  let totalCost = includeItems ? 0 : undefined;
   for (const msg of messages) {
     const m = msg as {
       role?: string;
@@ -193,7 +197,7 @@ export async function handleThreadRead(
     };
     if (m.role === "assistant" && m.usage && m.model) {
       try {
-        totalCost += calculateUsageCost(resolveModel(m.model), m.usage);
+        totalCost = (totalCost ?? 0) + calculateUsageCost(resolveModel(m.model), m.usage);
       } catch {
         // Retired model cards remain readable but no longer have pricing metadata.
       }
@@ -209,10 +213,12 @@ export async function handleThreadRead(
     pendingSteers: runtime.manager.getPendingSteers(),
     entryCount: runtime.manager.entryCount,
     isRunning: runtime.isRunning,
-    currentMode: runtime.manager.getCurrentMode() ?? runtime.mode,
-    currentEffort: runtime.manager.getCurrentEffort() ?? runtime.effort,
-    currentFastMode: runtime.manager.getCurrentFastMode() ?? runtime.fastMode ?? false,
-    currentModel: runtime.manager.getCurrentModel() ?? runtime.model,
+    currentMode: includeItems ? (runtime.manager.getCurrentMode() ?? runtime.mode) : runtime.mode,
+    currentEffort: includeItems ? (runtime.manager.getCurrentEffort() ?? runtime.effort) : runtime.effort,
+    currentFastMode: includeItems
+      ? (runtime.manager.getCurrentFastMode() ?? runtime.fastMode ?? false)
+      : (runtime.fastMode ?? false),
+    currentModel: includeItems ? (runtime.manager.getCurrentModel() ?? runtime.model) : runtime.model,
     totalCost,
   };
 }

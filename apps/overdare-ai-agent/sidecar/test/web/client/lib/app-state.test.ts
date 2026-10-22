@@ -445,3 +445,135 @@ test("resolveDraftModel prefers the runtime default over catalog order", () => {
 
   expect(next).toEqual({ provider: "openai", modelId: "gpt-5.6-sol" });
 });
+
+test("empty first pages retain their older cursor and exhausted cursors do not return on refresh", () => {
+  let state = appReducer(initialThreadState, { type: "select_history", payload: { threadId: "thread" } });
+  state = appReducer(state, {
+    type: "history_page",
+    payload: { threadId: "thread", page: { cwd: "/project", items: [], nextCursor: "ancestor" } },
+  });
+  expect(state.runtimeReady).toBe(false);
+  expect(state.historyCursor).toBe("ancestor");
+  state = appReducer(state, {
+    type: "history_page",
+    payload: { threadId: "thread", older: true, page: { cwd: "/project", items: [] } },
+  });
+  expect(state.historyCursor).toBeUndefined();
+  state = appReducer(state, {
+    type: "history_page",
+    payload: { threadId: "thread", page: { cwd: "/project", items: [], nextCursor: "ancestor" } },
+  });
+  expect(state.historyCursor).toBeUndefined();
+});
+
+test("older tool starts enrich completed results while preserving new realtime messages", () => {
+  let state = appReducer(initialThreadState, { type: "select_history", payload: { threadId: "thread" } });
+  state = appReducer(state, {
+    type: "history_page",
+    payload: {
+      threadId: "thread",
+      page: {
+        cwd: "/project",
+        nextCursor: "older",
+        items: [
+          {
+            type: "toolCall",
+            itemId: "tool:one",
+            toolCallId: "one",
+            toolName: "read",
+            input: {},
+            output: "complete output",
+            timestamp: 20,
+          },
+        ],
+      },
+    },
+  });
+  state = appReducer(state, { type: "local_user", payload: { id: "local", text: "new draft message", images: [] } });
+  state = appReducer(state, {
+    type: "history_page",
+    payload: {
+      threadId: "thread",
+      older: true,
+      page: {
+        cwd: "/project",
+        items: [
+          {
+            type: "toolCall",
+            itemId: "tool:one",
+            toolCallId: "one",
+            toolName: "read",
+            input: { path: "file.ts" },
+            startedAt: 10,
+            timestamp: 10,
+          },
+        ],
+      },
+    },
+  });
+  const tools = state.items.filter((item) => item.kind === "tool");
+  expect(tools).toHaveLength(1);
+  expect(tools[0].inputText).toContain("file.ts");
+  expect(tools[0].outputText).toBe("complete output");
+  expect(state.items.at(-1)).toMatchObject({ kind: "user", text: "new draft message" });
+});
+
+test("metadata and recent refreshes preserve earlier history and reject another selection", () => {
+  let state = appReducer(initialThreadState, { type: "select_history", payload: { threadId: "thread" } });
+  const item = {
+    type: "userMessage" as const,
+    itemId: "old",
+    message: { role: "user" as const, content: "earlier", timestamp: 1 },
+  };
+  state = appReducer(state, {
+    type: "history_page",
+    payload: { threadId: "thread", page: { cwd: "/project", items: [item] } },
+  });
+  state = appReducer(state, {
+    type: "thread_metadata",
+    payload: {
+      threadId: "thread",
+      history: {
+        cwd: "/project",
+        items: [],
+        hasFollowUp: false,
+        entryCount: 100,
+        isRunning: false,
+        currentEffort: "medium",
+      },
+    },
+  });
+  state = appReducer(state, {
+    type: "history_page",
+    payload: { threadId: "thread", page: { cwd: "/project", items: [] } },
+  });
+  expect(state.items).toHaveLength(1);
+  expect(state.runtimeReady).toBe(true);
+  expect(
+    appReducer(state, { type: "history_page", payload: { threadId: "other", page: { cwd: "/other", items: [] } } }),
+  ).toBe(state);
+});
+
+test("a disjoint recent refresh keeps the missing interval reachable through older pages", () => {
+  const item = (timestamp: number) => ({
+    type: "userMessage" as const,
+    itemId: `message-${timestamp}`,
+    message: { role: "user" as const, content: `Message ${timestamp}`, timestamp },
+  });
+  let state = appReducer(initialThreadState, { type: "select_history", payload: { threadId: "thread" } });
+  state = appReducer(state, {
+    type: "history_page",
+    payload: { threadId: "thread", page: { cwd: "/project", items: [item(1)] } },
+  });
+  state = appReducer(state, {
+    type: "history_page",
+    payload: { threadId: "thread", page: { cwd: "/project", items: [item(3)], nextCursor: "missing-interval" } },
+  });
+  expect(state.historyCursor).toBe("missing-interval");
+  state = appReducer(state, {
+    type: "history_page",
+    payload: { threadId: "thread", older: true, page: { cwd: "/project", items: [item(1), item(2)] } },
+  });
+  expect(state.historyItems.map((entry) => entry.itemId)).toEqual(["message-1", "message-2", "message-3"]);
+  expect(state.historyCursor).toBeUndefined();
+});

@@ -91,8 +91,12 @@ function SidebarImpl({
                 </div>
                 <div className="mt-1 flex items-center gap-1.5 text-xs text-muted">
                   <span>{time}</span>
-                  <span className="opacity-40">·</span>
-                  <span>{thread.messageCount} msg</span>
+                  {thread.messageCount !== undefined ? (
+                    <>
+                      <span className="opacity-40">·</span>
+                      <span>{thread.messageCount} msg</span>
+                    </>
+                  ) : null}
                 </div>
               </button>
               {onDeleteThread ? (

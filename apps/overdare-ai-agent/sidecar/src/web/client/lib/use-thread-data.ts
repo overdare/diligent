@@ -14,7 +14,7 @@ import type {
   SubagentsListResponse,
   SubagentsSetParams,
   SubagentsSetResponse,
-  ThreadReadResponse,
+  ThreadHistoryResponse,
   ToolsListResponse,
   ToolsSetParams,
   ToolsSetResponse,
@@ -34,7 +34,7 @@ export function useThreadData({
 }: {
   rpcRef: RpcClientResult["rpcRef"];
   state: ThreadState;
-  childThreadCacheRef: RefObject<Map<string, ThreadReadResponse>>;
+  childThreadCacheRef: RefObject<Map<string, ThreadHistoryResponse>>;
 }) {
   const listTools = useCallback(async (): Promise<ToolsListResponse> => {
     const rpc = rpcRef.current;
@@ -141,13 +141,17 @@ export function useThreadData({
   );
 
   const loadChildThread = useCallback(
-    async (childThreadId: string): Promise<ThreadReadResponse> => {
-      const cached = childThreadCacheRef.current.get(childThreadId);
+    async (childThreadId: string, cursor?: string): Promise<ThreadHistoryResponse> => {
+      const key = `${childThreadId}:${cursor ?? ""}`;
+      const cached = childThreadCacheRef.current.get(key);
       if (cached) return cached;
       const rpc = rpcRef.current;
       if (!rpc) throw new Error("WebSocket is not connected");
-      const response = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: childThreadId });
-      childThreadCacheRef.current.set(childThreadId, response);
+      const response = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY, {
+        threadId: childThreadId,
+        cursor,
+      });
+      childThreadCacheRef.current.set(key, response);
       return response;
     },
     [rpcRef, childThreadCacheRef],
