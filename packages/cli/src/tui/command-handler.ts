@@ -43,6 +43,9 @@ export interface CommandHandlerDeps {
     items: Array<{ label: string; description?: string; value: string; header?: boolean }>;
     selectedIndex?: number;
     filterable?: boolean;
+    load?: (
+      update: (items: Array<{ label: string; description?: string; value: string; header?: boolean }>) => boolean,
+    ) => Promise<void>;
   }) => Promise<string | null>;
   promptInline: (options: {
     title: string;
@@ -96,6 +99,12 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
       }
       if (!threadId) {
         deps.addLines([`  ${t.error}No active thread.${t.reset}`]);
+        deps.requestRender();
+        return;
+      }
+
+      if (!deps.threadManager.isReady()) {
+        deps.addLines([`  ${t.warn}Session is not ready. Wait for preparation, or use /resume or /new.${t.reset}`]);
         deps.requestRender();
         return;
       }
@@ -204,7 +213,8 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
           }
           return deleted;
         },
-        listThreads: () => deps.threadManager.listThreads(),
+        listThreads: (onBatch) => deps.threadManager.listThreads(onBatch),
+        loadOlderHistory: () => deps.threadManager.loadOlderHistory(),
         readThread: () => deps.threadManager.readThread(),
         onModelChanged: (modelId) => deps.onModelChanged(modelId),
         onEffortChanged: (effort, label) => deps.onEffortChanged(effort, label),
@@ -212,6 +222,11 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
     },
 
     handleSteering(text: string): void {
+      if (!deps.threadManager.isReady()) {
+        deps.addLines([`  ${t.warn}Session is not ready.${t.reset}`]);
+        deps.requestRender();
+        return;
+      }
       const rpc = deps.getRpcClient();
       const threadId = deps.getCurrentThreadId();
       if (!rpc || !threadId) return;

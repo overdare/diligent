@@ -11,6 +11,7 @@ import type { RenderItem } from "../../lib/thread-store";
 
 export interface MessageListProps {
   items: RenderItem[];
+  threadId?: string | null;
   threadStatus: ThreadStatus;
   threadCwd?: string;
   hasProvider: boolean;

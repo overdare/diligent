@@ -2,6 +2,8 @@
 import { expect, test } from "bun:test";
 import type { FileReadResponse } from "@diligent/protocol";
 import { fileCommand } from "../../../../src/tui/commands/builtin/file";
+import { registerBuiltinCommands } from "../../../../src/tui/commands/builtin/index";
+import { CommandRegistry } from "../../../../src/tui/commands/registry";
 import type { CommandContext } from "../../../../src/tui/commands/types";
 
 function context(read: (method: string, params: unknown) => Promise<FileReadResponse>) {
@@ -16,13 +18,18 @@ function context(read: (method: string, params: unknown) => Promise<FileReadResp
   return { ctx, lines, errors };
 }
 
-test("requests the selected local path and thread then renders returned Markdown", async () => {
+test("registered file command requests the selected path and retains history navigation", async () => {
   const requests: unknown[] = [];
   const view = context(async (method, params) => {
     requests.push({ method, params });
     return { kind: "markdown", path: "/repo/docs/README.md", name: "README.md", content: "# Actual preview" };
   });
-  await fileCommand.handler("docs/README.md", view.ctx);
+  const registry = new CommandRegistry();
+  registerBuiltinCommands(registry, []);
+  const command = registry.get("file");
+  expect(command).toBeDefined();
+  expect(registry.get("older")).toBeDefined();
+  await command?.handler("docs/README.md", view.ctx);
   expect(requests).toEqual([{ method: "file/read", params: { path: "docs/README.md", threadId: "thread-1" } }]);
   expect(view.lines.join("\n")).toContain("Actual preview");
   expect(view.errors).toEqual([]);

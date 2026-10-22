@@ -1,6 +1,6 @@
 // @summary Historical file previews must not resume or retain a conversation runtime
 import { expect, test } from "bun:test";
-import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DiligentAppServer } from "../../src/app-server/server";
@@ -45,6 +45,30 @@ test("reads historical project metadata without parsing conversation entries", a
     ).toMatchObject({
       result: { kind: "markdown", content: "# File content is independent of history" },
     });
+  } finally {
+    await server.shutdown();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("finds imported historical sessions whose filename differs from their header ID", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "file-preview-imported-"));
+  const paths = await ensureDiligentDir(cwd);
+  const session = await createSessionFile(paths.sessions, cwd);
+  await rename(session.path, join(paths.sessions, "imported-session.jsonl"));
+  await writeFile(join(cwd, "README.md"), "# Imported session project");
+  const server = new DiligentAppServer({ cwd, resolvePaths: ensureDiligentDir });
+  try {
+    expect(
+      await server.handleRequest("preview", {
+        id: 1,
+        method: "file/read",
+        params: { threadId: session.header.id, path: "README.md" },
+      }),
+    ).toMatchObject({
+      result: { kind: "markdown", content: "# Imported session project" },
+    });
+    expect((server as unknown as { threads: Map<string, unknown> }).threads.has(session.header.id)).toBe(false);
   } finally {
     await server.shutdown();
     await rm(cwd, { recursive: true, force: true });

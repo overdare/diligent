@@ -66,7 +66,8 @@ export interface CommandContext {
   /** Delete a thread by ID; switches away if it was active */
   deleteThread: (threadId: string) => Promise<boolean>;
   /** List known threads from the server */
-  listThreads: () => Promise<SessionSummary[]>;
+  listThreads: (onBatch?: (threads: SessionSummary[]) => boolean | undefined) => Promise<SessionSummary[]>;
+  loadOlderHistory: () => Promise<void>;
   /** Read active thread summary (messages count/follow-up) */
   readThread: () => Promise<ThreadReadResponse | null>;
   /** Notify status bar after changing ctx.config.model */
@@ -85,6 +86,7 @@ export interface AppAccessor {
     items: ListPickerItem[];
     selectedIndex?: number;
     filterable?: boolean;
+    load?: (update: (items: ListPickerItem[]) => boolean) => Promise<void>;
   }) => Promise<string | null>;
   prompt: (options: TextInputOptions) => Promise<string | null>;
   stop: () => void;

@@ -4,7 +4,7 @@ import { open, readdir, realpath, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { FileReadResponse } from "@diligent/protocol";
 import { parseFileLink } from "../client/file-link";
-import { readSessionHeader } from "../session/persistence";
+import { findSessionPath } from "../session/history";
 import { isSafeSessionId } from "../session/types";
 import type { ThreadHandlersContext } from "./thread-handlers";
 
@@ -30,12 +30,7 @@ export async function resolveFilePreviewCwd(
   if (!isSafeSessionId(threadId)) throw new Error("Invalid thread ID.");
   for (const cwd of ctx.knownCwds) {
     const paths = await ctx.resolvePaths(cwd);
-    try {
-      const header = await readSessionHeader(join(paths.sessions, `${threadId}.jsonl`));
-      if (header.id === threadId) return cwd;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
+    if (await findSessionPath(paths.sessions, threadId)) return cwd;
   }
   throw new Error(`Thread not found: ${threadId}`);
 }

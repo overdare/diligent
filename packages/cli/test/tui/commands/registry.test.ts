@@ -23,6 +23,10 @@ function makeHandlerDeps(overrides: Partial<CommandHandlerDeps> = {}): CommandHa
     resumeThread: async () => null,
     listThreads: async () => [],
     readThread: async () => null,
+    readThreadById: async () => null,
+    loadOlderHistory: async () => {},
+    isReady: () => true,
+    dispose: () => {},
     deleteThread: async () => false,
   };
 
@@ -221,6 +225,10 @@ describe("createCommandHandler", () => {
           resumeThread: async () => null,
           listThreads: async () => [],
           readThread: async () => null,
+          readThreadById: async () => null,
+          loadOlderHistory: async () => {},
+          isReady: () => true,
+          dispose: () => {},
           deleteThread: async () => false,
         },
         syncActiveThreadState,
@@ -282,4 +290,20 @@ it("removes rejected steering without adding UI or ending the active turn", asyn
   expect(removePendingSteer).toHaveBeenCalledWith((queuePendingSteer.mock.calls[0]?.[0] as { id: string }).id);
   expect(addLines).not.toHaveBeenCalled();
   expect(finishTurn).not.toHaveBeenCalled();
+});
+
+it("preparing sessions reject turns and steering without issuing RPC calls", async () => {
+  const request = mock(async () => ({}));
+  const deps = makeHandlerDeps({
+    getRpcClient: () => ({ request }) as unknown as AppServerRpcClient,
+    getCurrentThreadId: () => "preparing",
+  });
+  deps.threadManager.isReady = () => false;
+  const addLines = mock((_lines: string[]) => {});
+  deps.addLines = addLines;
+  const handler = createCommandHandler(deps);
+  await handler.handleSubmit("must wait");
+  handler.handleSteering("also wait");
+  expect(request).not.toHaveBeenCalled();
+  expect(addLines.mock.calls.flat(2).join("\n")).toContain("Session is not ready");
 });

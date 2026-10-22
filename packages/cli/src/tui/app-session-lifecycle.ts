@@ -10,14 +10,11 @@ import type { AppRuntimeState } from "./app-runtime-state";
 import type { ChatView } from "./components/chat-view";
 import type { InputEditor } from "./components/input-editor";
 import type { StatusBar } from "./components/status-bar";
-import { renderAssistantMessageBlocks, renderAssistantStructuredItems } from "./components/thread-store-utils";
-import { buildErrorTranscriptLines } from "./error-presentation";
 import type { TUIRenderer } from "./framework/renderer";
 import type { Terminal } from "./framework/terminal";
 import type { InputHistory } from "./input-history";
 import type { SpawnedAppServer } from "./rpc-client";
 import type { SetupWizard } from "./setup-wizard";
-import { t } from "./theme";
 import type { ThreadManager } from "./thread-manager";
 
 export interface AppSessionLifecycleDeps {
@@ -94,11 +91,8 @@ export class AppSessionLifecycle {
     this.deps.setGoalsSupported?.(initialized.capabilities?.goals === true);
     await rpcClient.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
 
-    const resumedId = await this.ensureThread();
+    await this.ensureThread();
     await this.syncActiveThreadState();
-    if (resumedId) {
-      await this.hydrateThreadHistory();
-    }
 
     this.deps.renderer.requestRender();
   }
@@ -167,107 +161,10 @@ export class AppSessionLifecycle {
   }
 
   private async ensureThread(): Promise<string | null> {
-    let resumedId: string | null = null;
     if (this.deps.options?.resumeId) {
-      resumedId = await this.deps.threadManager.resumeThread(this.deps.options.resumeId);
-      if (!resumedId) {
-        this.deps.chatView.addLines([`  ${t.error}Session not found: ${this.deps.options.resumeId}${t.reset}`]);
-        await this.deps.threadManager.startNewThread();
-      }
-    } else if (this.deps.options?.resume) {
-      resumedId = await this.deps.threadManager.resumeThread();
-      if (!resumedId) {
-        await this.deps.threadManager.startNewThread();
-      }
-    } else {
-      await this.deps.threadManager.startNewThread();
+      return this.deps.threadManager.resumeThread(this.deps.options.resumeId);
     }
-    return resumedId;
-  }
-
-  private async hydrateThreadHistory(): Promise<void> {
-    const thread = await this.deps.threadManager.readThread();
-    if (!thread) return;
-
-    const hasSnapshotItems = Array.isArray(thread.items) && thread.items.length > 0;
-    if (!hasSnapshotItems) return;
-
-    this.deps.chatView.addLines([`  ${t.dim}─── Resuming session ───${t.reset}`, ""]);
-
-    const lastItem = thread.items.at(-1);
-    for (const item of thread.items) {
-      if (item.type === "error") {
-        // Older failures stay as timeline history; only a trailing failure still offers recovery.
-        this.deps.chatView.addLines([
-          ...buildErrorTranscriptLines(item.error, item.timestamp ?? Date.now(), { includeHint: item === lastItem }),
-          "",
-        ]);
-        continue;
-      }
-      if (item.type === "compaction") {
-        this.deps.chatView.addLines([`  ${t.dim}[Compacted: ${item.displaySummary ?? item.summary}]${t.reset}`, ""]);
-        continue;
-      }
-      if (item.type === "contextMessage") {
-        this.deps.chatView.addLines([
-          `${t.success}✎ ${item.presentation.title}${t.reset}`,
-          ...item.presentation.content.split("\n").map((line) => `${t.dim}  ${line}${t.reset}`),
-          "",
-        ]);
-        continue;
-      }
-      if (item.type === "userMessage") {
-        const text =
-          typeof item.message.content === "string"
-            ? item.message.content
-            : item.message.content
-                .filter((block) => block.type === "text")
-                .map((block) => block.text)
-                .join("");
-        if (text.trim()) this.deps.chatView.addUserMessage(text);
-        continue;
-      }
-      if (item.type === "agentMessage") {
-        const rendered = renderAssistantMessageBlocks(item.message);
-        const thinking = rendered.thinking;
-        if (thinking.trim()) this.deps.chatView.addThinkingMessage(thinking, item.reasoningDurationMs);
-
-        const text = rendered.text;
-        if (text.length > 0) this.deps.chatView.addAssistantMessage(text);
-        const structuredItems = renderAssistantStructuredItems(item.message);
-        for (const structuredItem of structuredItems) {
-          if ("kind" in structuredItem && structuredItem.kind === "plain") {
-            this.deps.chatView.addLines(structuredItem.lines);
-            continue;
-          }
-          this.deps.chatView.addStructuredItem(structuredItem);
-        }
-        if (item.usage) {
-          this.deps.chatView.handleEvent({
-            type: "usage",
-            usage: item.usage,
-            cost: item.cost ?? 0,
-          });
-        }
-        continue;
-      }
-      if (item.type === "toolCall" && typeof item.output === "string") {
-        this.deps.chatView.addToolResultMessage({
-          role: "tool_result",
-          toolCallId: item.toolCallId,
-          toolName: item.toolName,
-          output: item.output,
-          ...(item.outputImages ? { outputImages: item.outputImages } : {}),
-          isError: item.isError ?? false,
-          timestamp:
-            typeof item.startedAt === "number" && typeof item.durationMs === "number"
-              ? item.startedAt + item.durationMs
-              : (item.timestamp ?? Date.now()),
-          render: item.render,
-        });
-      }
-    }
-
-    this.deps.chatView.addLines(["", `  ${t.dim}─── Continue ───${t.reset}`, ""]);
+    if (this.deps.options?.resume) return this.deps.threadManager.resumeThread();
+    return this.deps.threadManager.startNewThread();
   }
 }

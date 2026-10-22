@@ -12,7 +12,7 @@ import { modeCommands } from "./mode";
 import { modelCommand } from "./model";
 import { providerCommand } from "./provider";
 import { reloadCommand } from "./reload";
-import { deleteCommand, newCommand, resumeCommand, statusCommand } from "./session";
+import { deleteCommand, newCommand, olderCommand, resumeCommand, statusCommand } from "./session";
 import { createSkillInvokeCommand, skillsPickerCommand } from "./skills";
 import { toolsCommand } from "./tools";
 
@@ -34,6 +34,7 @@ export function registerBuiltinCommands(
   registry.register(newCommand);
   registry.register(resumeCommand);
   registry.register(deleteCommand);
+  registry.register(olderCommand);
   registry.register(statusCommand);
   registry.register(compactCommand);
   registry.register(clearCommand);

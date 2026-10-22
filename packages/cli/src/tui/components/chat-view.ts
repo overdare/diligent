@@ -1,9 +1,10 @@
 // @summary Renders the agent message history and real-time streaming output
 
 import type { ToolResultMessage } from "@diligent/core/message-contract";
-import type { AgentEvent, ThreadReadResponse } from "@diligent/protocol";
+import type { AgentEvent, ThreadHistoryResponse, ThreadReadResponse } from "@diligent/protocol";
 import { displayWidth } from "../framework/string-width";
 import type { Component } from "../framework/types";
+import { appendHistoryItems } from "./history-items";
 import { MarkdownView } from "./markdown-view";
 import { ThreadStore, UserMessageView } from "./thread-store";
 import type { ThreadItem } from "./thread-store-primitives";
@@ -33,6 +34,7 @@ export class ChatView implements Component {
   private hasCommittedHistory = false;
   private committedHistoryLines: string[] = [];
   private lastCommittedItem: ThreadItem | null = null;
+  private historyRevision = 0;
   private readonly requestRender: () => void;
   private readonly getCommitWidth: () => number;
   private readonly onCommittedLines: ((lines: string[]) => void) | null;
@@ -43,11 +45,13 @@ export class ChatView implements Component {
     this.getCommitWidth = options.getCommitWidth ?? (() => 80);
     this.onCommittedLines = options.onCommittedLines ?? null;
     this.historyView = {
-      render: () => [...this.committedHistoryLines],
-      renderBlocks: () =>
-        this.committedHistoryLines.length > 0
-          ? [{ key: "history", lines: [...this.committedHistoryLines], persistence: "persistent" as const }]
-          : [],
+      render: () => this.committedHistoryLines,
+      renderBlocks: () => {
+        const lines = this.committedHistoryLines;
+        return lines.length
+          ? [{ key: `history-${this.historyRevision}`, lines, persistence: "persistent" as const }]
+          : [];
+      },
       invalidate: () => this.store.invalidate(),
     };
     this.liveStackView = {
@@ -55,6 +59,20 @@ export class ChatView implements Component {
       renderBlocks: (width: number) => renderTranscriptLiveStackBlocks(this.store, width),
       invalidate: () => this.store.invalidate(),
     };
+  }
+
+  setHistory(history: ThreadHistoryResponse, reset: boolean): void {
+    if (reset) this.clearHistory();
+    const store = new ThreadStore({ requestRender: () => {} });
+    appendHistoryItems(store, history.items);
+    const lines = renderCommittedTranscriptItems(store.getItems(), this.getCommitWidth(), {
+      includeLeadingSeparator: false,
+      toolResultsExpanded: this.store.isToolResultsExpanded(),
+    });
+    if (history.nextCursor) lines.unshift("Earlier history available: /older", "");
+    // Native scrollback is append-only. Show the requested older page after its
+    // loading notice rather than inserting before lines already flushed to the terminal.
+    this.addLines(lines);
   }
 
   handleEvent(event: AgentEvent): void {
@@ -114,6 +132,7 @@ export class ChatView implements Component {
     this.hasCommittedHistory = false;
     this.committedHistoryLines = [];
     this.lastCommittedItem = null;
+    this.historyRevision++;
   }
 
   clearActive(): void {

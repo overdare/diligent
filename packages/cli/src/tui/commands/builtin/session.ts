@@ -21,25 +21,25 @@ export const resumeCommand: Command = {
       const resumedId = await ctx.resumeThread(args);
       if (resumedId) {
         ctx.displayLines([`  ${t.dim}Resumed thread: ${resumedId}${t.reset}`]);
-      } else {
-        ctx.displayError(`Thread not found: ${args}`);
       }
       return;
     }
 
-    // Show thread picker
-    const threads = await ctx.listThreads();
-    if (threads.length === 0) {
-      ctx.displayLines([`  ${t.dim}No threads found.${t.reset}`]);
-      return;
-    }
-
-    const items = threads.map((thread) => ({
-      label: thread.id,
-      description: thread.modified,
-      value: thread.id,
-    }));
-    const value = await ctx.app.pick({ title: "Threads", items });
+    const value = await ctx.app.pick({
+      title: "Threads",
+      items: [],
+      load: async (update) => {
+        await ctx.listThreads((threads) =>
+          update(
+            threads.map((thread) => ({
+              label: thread.firstUserMessage ?? thread.id,
+              description: thread.modified,
+              value: thread.id,
+            })),
+          ),
+        );
+      },
+    });
     if (value) {
       const resumedId = await ctx.resumeThread(value);
       if (resumedId) {
@@ -78,23 +78,32 @@ export const deleteCommand: Command = {
       return;
     }
 
-    // Show picker
-    const threads = await ctx.listThreads();
-    if (threads.length === 0) {
-      ctx.displayLines([`  ${t.dim}No sessions found.${t.reset}`]);
-      return;
-    }
-
-    const items = threads.map((thread) => ({
-      label: thread.firstUserMessage ?? thread.id,
-      description: thread.modified,
-      value: thread.id,
-    }));
-    const value = await ctx.app.pick({ title: "Delete Session", items });
+    const value = await ctx.app.pick({
+      title: "Delete Session",
+      items: [],
+      load: async (update) => {
+        await ctx.listThreads((threads) =>
+          update(
+            threads.map((thread) => ({
+              label: thread.firstUserMessage ?? thread.id,
+              description: thread.modified,
+              value: thread.id,
+            })),
+          ),
+        );
+      },
+    });
     if (value) {
       await doDelete(value);
     }
   },
+};
+
+export const olderCommand: Command = {
+  name: "older",
+  description: "Load earlier history",
+  availableDuringTask: true,
+  handler: async (_args, ctx) => ctx.loadOlderHistory(),
 };
 
 export const statusCommand: Command = {

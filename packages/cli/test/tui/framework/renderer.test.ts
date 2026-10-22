@@ -1,10 +1,13 @@
 // @summary Tests for TUI renderer and component rendering pipeline
 import { describe, expect, test } from "bun:test";
+import { ChatView } from "../../../src/tui/components/chat-view";
 import { Container } from "../../../src/tui/framework/container";
 import { TUIRenderer } from "../../../src/tui/framework/renderer";
 import type { Terminal } from "../../../src/tui/framework/terminal";
 import type { Component, RenderBlock } from "../../../src/tui/framework/types";
 import { CURSOR_MARKER } from "../../../src/tui/framework/types";
+import type { AppServerRpcClient } from "../../../src/tui/rpc-client";
+import { createThreadManager } from "../../../src/tui/thread-manager";
 
 // ---------------------------------------------------------------------------
 // Terminal simulator — parses ANSI sequences to track real cursor + screen
@@ -220,6 +223,63 @@ function createInputComponent(text = "", col?: number): Component {
 // ---------------------------------------------------------------------------
 
 describe("TUIRenderer — cursor position after renders", () => {
+  test("prints fetched older records without losing them behind already committed terminal lines", async () => {
+    const { terminal, sim } = createSim(8, 80);
+    const chat = new ChatView({ requestRender: () => {}, getCommitWidth: () => 80 });
+    const container = new Container();
+    container.addChild(chat.getHistoryComponent());
+    container.addChild(createInputComponent());
+    const renderer = new TUIRenderer(terminal, container);
+    const recent = Array.from({ length: 12 }, (_, index) => ({
+      type: "userMessage" as const,
+      itemId: `recent-${index}`,
+      message: { role: "user" as const, content: `Recent saved message ${index}`, timestamp: index + 1 },
+    }));
+    const older = {
+      type: "userMessage" as const,
+      itemId: "older",
+      message: { role: "user" as const, content: "Previously hidden older message", timestamp: 0 },
+    };
+    const rpc = {
+      request: async (method: string, params: { cursor?: string }) => {
+        if (method === "thread/history")
+          return {
+            cwd: "/project",
+            items: params.cursor ? [older] : recent,
+            nextCursor: params.cursor ? undefined : "older-page",
+          };
+        if (method === "thread/resume") return { found: true, threadId: "thread" };
+        if (method === "thread/subscribe") return { subscriptionId: "subscription" };
+        throw new Error(method);
+      },
+    } as unknown as AppServerRpcClient;
+    const manager = createThreadManager({
+      getRpcClient: () => rpc,
+      getCurrentMode: () => "default",
+      getCurrentFastMode: () => false,
+      setCurrentThreadId: () => {},
+      updateStatusBar: () => {},
+      showHistory: (page, reset) => {
+        chat.setHistory(page, reset);
+        renderer.forceRender();
+      },
+      showProgress: (message) => {
+        chat.addLines([message]);
+        renderer.forceRender();
+      },
+    });
+    renderer.start();
+    try {
+      await manager.resumeThread("thread");
+      await manager.loadOlderHistory();
+      const lines = sim.visibleLines();
+      expect(lines.some((line) => line.includes("Previously hidden older message"))).toBe(true);
+      expect(lines.filter((line) => line.includes("Recent saved message 11"))).toHaveLength(1);
+    } finally {
+      renderer.stop();
+    }
+  });
+
   test("cursor lands on input row after first render", () => {
     const { terminal, sim } = createSim();
     const container = new Container();

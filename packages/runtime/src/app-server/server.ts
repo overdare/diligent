@@ -46,10 +46,11 @@ import {
   type Mode,
   ProviderNameSchema,
   type ThinkingEffort,
+  type ThreadResumeResponse,
 } from "../protocol/index";
 import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "../rpc/channel";
+import { readSessionHeader } from "../session/history";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
-import { readSessionFile } from "../session/persistence";
 import type { AppendedEntryInfo, SessionRunOutcome } from "../session/types";
 import { type BundledToolProvider, collectBundledHooks } from "../tools/bundled-provider";
 import { collectPluginHooks, type PluginDiscoveryMode } from "../tools/plugin-loader";
@@ -71,7 +72,6 @@ import {
   requestApprovalFromConnections,
   requestUserInputFromConnections,
 } from "./server-requests";
-import { getLatestEffortFromSessions, getLatestModelFromSessions } from "./session-handlers";
 import type { SkillConfigManager } from "./skill-handlers";
 import type { SubagentConfigManager } from "./subagent-handlers";
 import { resetTurnRuntimeState, type ThreadRuntime } from "./thread-handlers";
@@ -178,6 +178,7 @@ export class DiligentAppServer {
   private readonly serverName: string;
   private readonly serverVersion: string;
   private readonly threads = new Map<string, ThreadRuntime>();
+  private readonly pendingResumes = new Map<string, Promise<ThreadResumeResponse>>();
   private readonly knownCwds = new Set<string>();
   private activeThreadId: string | null = null;
   private closing = false;
@@ -659,7 +660,7 @@ export class DiligentAppServer {
     runtime.goalLoading ??= (async () => {
       const paths = await this.config.resolvePaths(runtime.cwd);
       if (runtime.manager.sessionPath) {
-        const { header } = await readSessionFile(runtime.manager.sessionPath, { materializeImages: false });
+        const header = await readSessionHeader(runtime.manager.sessionPath);
         runtime.isChildSession = !!header.parentSession;
       }
       const store = await openGoalStore(paths.sessions, runtime.id);
@@ -834,6 +835,7 @@ export class DiligentAppServer {
   private async resolveThreadRuntime(threadId?: string): Promise<ThreadRuntime> {
     const id = threadId ?? this.activeThreadId;
     if (!id) throw new Error("No active thread");
+    await this.pendingResumes.get(id);
 
     const existing = this.threads.get(id);
     if (existing) {
@@ -841,7 +843,7 @@ export class DiligentAppServer {
     }
 
     for (const cwd of this.knownCwds) {
-      const runtime = await this.createThreadRuntime(id, cwd, "default", false, await this.getLatestEffortForCwd(cwd));
+      const runtime = await this.createThreadRuntime(id, cwd, "default", false);
       const resumed = await runtime.manager.resume({ sessionId: id });
       if (!resumed) continue;
 
@@ -869,11 +871,7 @@ export class DiligentAppServer {
         }
       }
     }
-    const cached = this.lastUsedEffortByCwd.get(cwd);
-    if (cached !== undefined) return cached;
-    const result = await getLatestEffortFromSessions(this.config.resolvePaths, this.threads, cwd, fallback);
-    this.lastUsedEffortByCwd.set(cwd, result);
-    return result;
+    return this.lastUsedEffortByCwd.get(cwd) ?? fallback;
   }
 
   private async getLatestModelForCwd(cwd: string): Promise<ModelRef | undefined> {
@@ -886,11 +884,7 @@ export class DiligentAppServer {
         }
       }
     }
-    const cached = this.lastUsedModelByCwd.get(cwd);
-    if (cached !== undefined) return cached;
-    const result = await getLatestModelFromSessions(this.config.resolvePaths, this.threads, cwd, this.currentModel);
-    if (result !== undefined) this.lastUsedModelByCwd.set(cwd, result);
-    return result;
+    return this.lastUsedModelByCwd.get(cwd) ?? this.currentModel;
   }
 
   private async resolveToolsContext(
@@ -1073,6 +1067,7 @@ export class DiligentAppServer {
       getGoalsConfig: () => this.config.getGoalsConfig?.(),
       activeThreadId: this.activeThreadId,
       threads: this.threads,
+      pendingResumes: this.pendingResumes,
       knownCwds: this.knownCwds,
       hooks: this.config.hooks,
       getUserId: (connectionId: string | undefined): string => {

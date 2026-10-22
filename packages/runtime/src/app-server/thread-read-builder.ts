@@ -1,6 +1,6 @@
 // @summary Thread read snapshot builder — assembles ThreadItem[] from transcript and applies live collab state.
 
-import { resolveModel } from "@diligent/core/model-registry";
+import { findModel } from "@diligent/core/model-registry";
 import type { ContextPresentation, ProviderName, SerializableError, ToolRenderPayload } from "@diligent/protocol";
 import { calculateUsageCost } from "../cost";
 import { presentRuntimeError } from "../errors/presentation";
@@ -174,7 +174,8 @@ export function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): T
 
     if (message.role === "assistant") {
       const assistantTimestamp = message.timestamp;
-      const assistantCost = calculateUsageCost(resolveModel(message.model), message.usage);
+      const model = findModel(message.model);
+      const assistantCost = model ? calculateUsageCost(model, message.usage) : undefined;
       items.push({
         type: "agentMessage",
         itemId: entry.id,
