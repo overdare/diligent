@@ -130,6 +130,7 @@ for (const scenario of ["local", "hydrated", "failed", "empty", "already-idle"] 
           activeThreadIdRef,
           dispatch,
           refreshThreadList: asyncNoop,
+          refreshThreadHistory: asyncNoop,
           onAccountLoginCompleted: noop,
           onAccountUpdated: asyncNoop,
           onMcpLoginCompleted: noop,
@@ -179,6 +180,8 @@ for (const scenario of ["local", "hydrated", "failed", "empty", "already-idle"] 
             throw new Error("Unexpected thread activation");
           },
           refreshThreadList: asyncNoop,
+          refreshThreadHistory: asyncNoop,
+          getNavigationGuard: () => () => true,
         });
         return (
           <>

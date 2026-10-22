@@ -87,6 +87,7 @@ export async function prepareNewThreadForFirstMessage({
   localText,
   contextItems,
   images,
+  isCurrent,
 }: {
   rpc: WebRpcClient;
   mode: Mode;
@@ -101,6 +102,7 @@ export async function prepareNewThreadForFirstMessage({
   localText: string;
   contextItems: AgentContextItem[];
   images: PendingImage[];
+  isCurrent: () => boolean;
 }): Promise<{ threadId: string; history: ThreadReadResponse }> {
   const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
     cwd: cwd || "/",
@@ -110,7 +112,9 @@ export async function prepareNewThreadForFirstMessage({
     model,
   });
   const threadId = started.threadId;
+  if (!isCurrent()) throw new Error("Conversation selection changed");
   const history = await activateServerThread(threadId);
+  if (!isCurrent()) throw new Error("Conversation selection changed");
   dispatch({ type: "hydrate", payload: { threadId, mode, history } });
   if (typeof window !== "undefined") {
     replaceThreadUrl(threadId);
@@ -123,21 +127,22 @@ export async function prepareNewThreadForFirstMessage({
 export async function runThreadCompaction({
   rpc,
   threadId,
-  mode,
+  refreshThreadHistory,
+  isCurrent,
   dispatch,
 }: {
   rpc: WebRpcClient;
   threadId: string;
-  mode: Mode;
+  refreshThreadHistory: (threadId: string) => Promise<void>;
+  isCurrent: () => boolean;
   dispatch: Dispatch<AppAction>;
 }): Promise<void> {
   try {
     await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START, { threadId }, null);
-    const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
-      threadId,
-    });
-    dispatch({ type: "hydrate", payload: { threadId, mode, history } });
+    if (!isCurrent()) return;
+    await refreshThreadHistory(threadId);
   } catch (error) {
+    if (!isCurrent()) return;
     dispatch({ type: "compaction_error" });
     dispatch({
       type: "show_info_toast",
@@ -298,6 +303,8 @@ export function useAppActions({
   applySessionModel,
   activateServerThread,
   refreshThreadList,
+  refreshThreadHistory,
+  getNavigationGuard,
 }: {
   rpcRef: RefObject<WebRpcClient | null>;
   state: ThreadState;
@@ -335,11 +342,14 @@ export function useAppActions({
   cwdRef: RefObject<string>;
   applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
   activateServerThread: (threadId: string) => Promise<ThreadReadResponse>;
-  refreshThreadList: (rpc?: WebRpcClient | null) => Promise<void>;
+  refreshThreadList: (rpc?: WebRpcClient | null) => Promise<unknown>;
+  refreshThreadHistory: (threadId: string) => Promise<void>;
+  getNavigationGuard: () => () => boolean;
 }) {
   const sendMessage = useCallback(async (): Promise<void> => {
     const rpc = rpcRef.current;
-    if (!rpc || !canSend) return;
+    if (!rpc || !canSend || !stateRef.current.runtimeReady) return;
+    const isCurrent = getNavigationGuard();
     const typedMessage = activeInput.trim();
     const message = prependContextToMessage(typedMessage, activeContextItems);
     const images = pendingImages;
@@ -370,7 +380,9 @@ export function useAppActions({
           localText: typedMessage,
           contextItems: activeContextItems,
           images,
+          isCurrent,
         });
+        if (!isCurrent()) return;
         threadId = prepared.threadId;
       } else {
         dispatch({
@@ -407,14 +419,20 @@ export function useAppActions({
         content,
         model: currentModelRef.current,
       });
+      if (!isCurrent()) return;
       if (started.userMessageId) {
         dispatch({
           type: "bind_user_message_id",
           payload: { renderItemId: localItemId, messageId: started.userMessageId },
         });
       }
-      await refreshThreadList(rpc);
+      void refreshThreadList(rpc);
     } catch (error) {
+      if (!isCurrent()) return;
+      dispatch({
+        type: "show_info_toast",
+        payload: error instanceof Error ? error.message : "Could not send message.",
+      });
       logger.error("message.send_failed", {
         message: "Failed to send message",
         error,
@@ -441,6 +459,8 @@ export function useAppActions({
     applySessionModel,
     activateServerThread,
     refreshThreadList,
+    getNavigationGuard,
+    stateRef,
   ]);
 
   const setMode = useCallback(
@@ -478,15 +498,16 @@ export function useAppActions({
   const handleCompactionClick = useCallback(() => {
     void (async () => {
       const rpc = rpcRef.current;
-      if (!rpc || !state.activeThreadId || state.isCompacting) return;
+      if (!rpc || !state.activeThreadId || state.isCompacting || !stateRef.current.runtimeReady) return;
       await runThreadCompaction({
         rpc,
         threadId: state.activeThreadId,
-        mode: state.mode,
+        refreshThreadHistory,
+        isCurrent: getNavigationGuard(),
         dispatch,
       });
     })();
-  }, [rpcRef, state.activeThreadId, state.mode, state.isCompacting, dispatch]);
+  }, [rpcRef, state.activeThreadId, state.isCompacting, stateRef, dispatch, refreshThreadHistory, getNavigationGuard]);
 
   const handleAddImages = useCallback(
     async (files: FileList | File[]): Promise<void> => {
@@ -769,7 +790,7 @@ export function useAppActions({
         }
         default: {
           const isSkill = slashCommands.some((command) => command.name === name && command.isSkill);
-          if (isSkill && rpc && activeThreadId) {
+          if (isSkill && rpc && activeThreadId && stateRef.current.runtimeReady) {
             const message = arg ? `/${name} ${arg}` : `/${name}`;
             const localItemId = `local-user-${createUuidV4()}`;
             dispatch({ type: "local_user", payload: { id: localItemId, text: message, images: [] } });
@@ -794,6 +815,7 @@ export function useAppActions({
     },
     [
       rpcRef,
+      stateRef,
       state.activeThreadId,
       setMode,
       clearThreadInput,
@@ -823,8 +845,9 @@ export function useAppActions({
         return;
       }
     }
+    if (!stateRef.current.runtimeReady) return;
     void sendMessage();
-  }, [activeInput, slashCommands, handleSlashCommand, sendMessage]);
+  }, [activeInput, slashCommands, handleSlashCommand, sendMessage, stateRef]);
 
   const interruptRequestRef = useRef<{ threadId: string; turnId: string | null } | null>(null);
   const handleInterrupt = useCallback(() => {
@@ -835,6 +858,7 @@ export function useAppActions({
     const turnId = snapshot.activeTurnId;
     if (interruptRequestRef.current?.threadId === threadId && interruptRequestRef.current.turnId === turnId) return;
     const request = { threadId, turnId };
+    const isCurrent = getNavigationGuard();
     interruptRequestRef.current = request;
     steeringControl.pendingAbortRestartSteerRef.current = snapshot.pendingSteers[0] ?? null;
     void (async () => {
@@ -842,9 +866,8 @@ export function useAppActions({
         const result = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId });
         if (!result.interrupted) {
           if (interruptRequestRef.current === request) steeringControl.pendingAbortRestartSteerRef.current = null;
-          const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId });
-          if (stateRef.current.activeThreadId === threadId && stateRef.current.activeTurnId === turnId) {
-            dispatch({ type: "hydrate", payload: { threadId, mode: stateRef.current.mode, history } });
+          if (isCurrent() && stateRef.current.activeThreadId === threadId && stateRef.current.activeTurnId === turnId) {
+            await refreshThreadHistory(threadId);
           }
         }
       } catch (error) {
@@ -858,19 +881,29 @@ export function useAppActions({
         if (interruptRequestRef.current === request) interruptRequestRef.current = null;
       }
     })();
-  }, [rpcRef, stateRef, steeringControl, dispatch]);
+  }, [rpcRef, stateRef, steeringControl, refreshThreadHistory, getNavigationGuard]);
 
   const handleRetryLastTurn = useCallback(() => {
     void (async () => {
       const rpc = rpcRef.current;
       const snapshot = stateRef.current;
       const threadId = snapshot.activeThreadId;
-      if (!rpc || !threadId || snapshot.threadStatus === "busy") return;
+      if (!rpc || !threadId || snapshot.threadStatus === "busy" || !snapshot.runtimeReady) return;
+      const isCurrent = getNavigationGuard();
       try {
         const lastUser = snapshot.items.findLast((item) => item.kind === "user");
         if (lastUser?.kind !== "user") throw new Error("There is no previous request to retry.");
-        await retryLastUserMessage({ rpc, threadId, item: lastUser, model: currentModelRef.current, dispatch });
+        await retryLastUserMessage({
+          rpc,
+          threadId,
+          item: lastUser,
+          model: currentModelRef.current,
+          dispatch: (action) => {
+            if (isCurrent()) dispatch(action);
+          },
+        });
       } catch (error) {
+        if (!isCurrent()) return;
         logger.error("turn.retry_failed", { message: "Failed to retry the last turn", error, threadId });
         const reason = error instanceof Error ? error.message : String(error);
         dispatch({
@@ -882,7 +915,7 @@ export function useAppActions({
         });
       }
     })();
-  }, [currentModelRef, dispatch, rpcRef, stateRef]);
+  }, [currentModelRef, dispatch, rpcRef, stateRef, getNavigationGuard]);
 
   const handleModeChange = useCallback(
     (mode: Mode) => {

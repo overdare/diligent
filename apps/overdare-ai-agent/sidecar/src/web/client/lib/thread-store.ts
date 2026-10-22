@@ -14,6 +14,7 @@ import type {
   PendingSteer,
   SessionSummary,
   ThreadGoal,
+  ThreadItem,
   ThreadStatus,
   ToolRenderPayload,
   UserInputRequest,
@@ -189,6 +190,10 @@ export function createErrorRenderItem(id: string, error: ClientError, timestamp:
 
 export interface ThreadState {
   activeThreadId: string | null;
+  runtimeReady: boolean;
+  historyItems: ThreadItem[];
+  historyLoaded: boolean;
+  historyCursor?: string;
   activeThreadCwd: string | null;
   mode: Mode;
   threadStatus: ThreadStatus;
@@ -225,6 +230,9 @@ export interface ThreadState {
 
 export const initialThreadState: ThreadState = {
   activeThreadId: null,
+  runtimeReady: true,
+  historyItems: [],
+  historyLoaded: false,
   activeThreadCwd: null,
   mode: "default",
   threadStatus: "idle",

@@ -28,6 +28,7 @@ export interface InlinePickerOptions {
   items: ListPickerItem[];
   selectedIndex?: number;
   filterable?: boolean;
+  load?: (update: (items: ListPickerItem[]) => boolean) => Promise<void>;
 }
 
 export class AppDialogs {
@@ -38,7 +39,40 @@ export class AppDialogs {
   }
 
   async pickInline(options: InlinePickerOptions): Promise<string | null> {
-    return this.showInlineComponent((finish) => new ListPicker({ ...options, minimal: true }, finish));
+    let active = true;
+    return this.showInlineComponent<string | null>((finish) => {
+      const picker = new ListPicker(
+        { ...options, minimal: true, title: options.load ? `${options.title} — loading` : options.title },
+        (value) => {
+          active = false;
+          finish(value);
+        },
+      );
+      let items = options.items;
+      if (options.load) {
+        void options
+          .load((next) => {
+            if (!active) return false;
+            items = next;
+            picker.setItems(items);
+            this.deps.renderer.requestRender();
+            return true;
+          })
+          .then(() => {
+            if (!active) return;
+            picker.setItems(items, options.title);
+            this.deps.renderer.requestRender();
+          })
+          .catch((error) => {
+            if (!active) return;
+            picker.setItems(items, `${options.title} — ${String(error)}`);
+            this.deps.renderer.requestRender();
+          });
+      }
+      return picker;
+    }).finally(() => {
+      active = false;
+    });
   }
 
   async promptInline(options: TextInputOptions): Promise<string | null> {

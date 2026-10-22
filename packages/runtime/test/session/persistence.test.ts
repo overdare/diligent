@@ -1,6 +1,6 @@
 // @summary Tests for session file persistence and entry management
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AppendedEntryInfo, SessionMessageEntry } from "@diligent/runtime/session";
@@ -16,18 +16,17 @@ import {
   SessionWriter,
 } from "@diligent/runtime/session";
 
-const TEST_ROOT = join(tmpdir(), `diligent-session-test-${Date.now()}`);
+let testRoot: string;
 let testDir: string;
 
 afterEach(async () => {
-  try {
-    await rm(TEST_ROOT, { recursive: true, force: true });
-  } catch {}
+  if (testRoot) await rm(testRoot, { recursive: true, force: true });
 });
 
 async function setupDir(): Promise<string> {
-  testDir = join(TEST_ROOT, `run-${Date.now()}`);
-  await mkdir(testDir, { recursive: true });
+  testRoot = await mkdtemp(join(tmpdir(), "diligent-session-test-"));
+  testDir = join(testRoot, "sessions");
+  await mkdir(testDir);
   return testDir;
 }
 
@@ -81,7 +80,7 @@ describe("createSessionFile + readSessionFile", () => {
 
   it("rejects a traversal id without creating a file outside the sessions directory", async () => {
     const dir = await setupDir();
-    const outsidePath = join(TEST_ROOT, "created-outside.jsonl");
+    const outsidePath = join(testRoot, "created-outside.jsonl");
 
     await expect(createSessionFile(dir, "/project", undefined, undefined, "../created-outside")).rejects.toThrow(
       /Invalid session ID/,
@@ -174,25 +173,16 @@ describe("readSessionFile validation", () => {
 });
 
 describe("listSessions", () => {
-  it("returns sessions sorted by modified date", async () => {
+  it("orders by persisted modification time with stable ID tie-breaking", async () => {
     const dir = await setupDir();
-
-    // Create two sessions with entries
-    const { path: p1 } = await createSessionFile(dir, "/project");
-    const e1 = makeUserEntry();
-    await appendEntry(p1, e1);
-
-    // Small delay for distinct timestamps
-    await new Promise((r) => setTimeout(r, 10));
-
-    const { path: p2 } = await createSessionFile(dir, "/project");
-    const e2 = makeUserEntry();
-    await appendEntry(p2, e2);
-
-    const sessions = await listSessions(dir);
-    expect(sessions).toHaveLength(2);
-    // Most recent first
-    expect(sessions[0].path).toBe(p2);
+    for (const id of ["alpha", "middle", "zulu"]) {
+      const { path } = await createSessionFile(dir, "/project", undefined, undefined, id);
+      await appendEntry(path, {
+        ...makeUserEntry(),
+        timestamp: id === "middle" ? "2030-01-03T00:00:00.000Z" : "2030-01-02T00:00:00.000Z",
+      });
+    }
+    expect((await listSessions(dir)).map((session) => session.id)).toEqual(["middle", "zulu", "alpha"]);
   });
 
   it("extracts first user message preview", async () => {
@@ -260,7 +250,7 @@ describe("deleteSession", () => {
 
   it("rejects a traversal id without deleting a file outside the sessions directory", async () => {
     const dir = await setupDir();
-    const outsidePath = join(TEST_ROOT, "outside.jsonl");
+    const outsidePath = join(testRoot, "outside.jsonl");
     await writeFile(outsidePath, "protected", "utf8");
 
     await expect(deleteSession(dir, "../outside")).rejects.toThrow(/Invalid session ID/);
@@ -333,6 +323,48 @@ describe("SessionWriter", () => {
 
     const { header } = await readSessionFile(writer.path!);
     expect(header.parentSession).toBe("parent-abc");
+  });
+});
+
+describe("SessionPersistence explicit resume", () => {
+  it("returns not found when the session directory no longer exists", async () => {
+    const dir = await setupDir();
+    const persistence = new SessionPersistence({ sessionsDir: join(dir, "missing"), cwd: dir });
+    expect(await persistence.resume({ sessionId: "missing-session" })).toBeNull();
+  });
+
+  it("restores the requested session and its parent independently of newer siblings", async () => {
+    const dir = await setupDir();
+    const target = await createSessionFile(dir, dir, "parent-id");
+    const entry = makeUserEntry();
+    await appendEntry(target.path, entry);
+    const sibling = await createSessionFile(dir, dir);
+    await appendEntry(sibling.path, { ...makeUserEntry(), timestamp: "2030-01-01T00:00:00.000Z" });
+    const persistence = new SessionPersistence({ sessionsDir: dir, cwd: dir });
+    expect(await persistence.resume({ sessionId: target.header.id })).toEqual([entry]);
+    expect(persistence.sessionId).toBe(target.header.id);
+    expect(persistence.parentSession).toBe("parent-id");
+  });
+
+  it("does not resume a different identity or an invalid target", async () => {
+    const dir = await setupDir();
+    const target = await createSessionFile(dir, dir);
+    const persistence = new SessionPersistence({ sessionsDir: dir, cwd: dir });
+    await writeFile(target.path, `${JSON.stringify({ ...target.header, id: "another-session" })}\n`);
+    expect(await persistence.resume({ sessionId: target.header.id })).toBeNull();
+    await writeFile(target.path, "invalid-json");
+    expect(await persistence.resume({ sessionId: target.header.id })).toBeNull();
+    await writeFile(target.path, `${JSON.stringify({ ...target.header, version: SESSION_VERSION + 1 })}\n`);
+    expect(await persistence.resume({ sessionId: target.header.id })).toBeNull();
+  });
+
+  it("does not resolve traversal IDs outside the session directory", async () => {
+    const dir = await setupDir();
+    const outside = await createSessionFile(testRoot, "/outside", undefined, undefined, "outside");
+    await appendEntry(outside.path, makeUserEntry());
+    const persistence = new SessionPersistence({ sessionsDir: dir, cwd: dir });
+    expect(await persistence.resume({ sessionId: "../outside" })).toBeNull();
+    expect(persistence.sessionPath).toBeNull();
   });
 });
 

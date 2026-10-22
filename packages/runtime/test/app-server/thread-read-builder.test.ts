@@ -4,6 +4,32 @@ import { describe, expect, test } from "bun:test";
 import { buildThreadReadItems } from "../../src/app-server/thread-read-builder";
 
 describe("buildThreadReadItems", () => {
+  test("keeps assistant text readable when its persisted model card has been retired", () => {
+    const items = buildThreadReadItems([
+      {
+        type: "message",
+        id: "old-assistant",
+        timestamp: "2024-01-01T00:00:00.000Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Previously saved answer" }],
+          model: { provider: "anthropic", modelId: "retired-history-model" },
+          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 1704067200000,
+        },
+      },
+    ]);
+    expect(items).toMatchObject([
+      {
+        type: "agentMessage",
+        itemId: "old-assistant",
+        message: { content: [{ type: "text", text: "Previously saved answer" }] },
+      },
+    ]);
+    expect(items[0]).not.toHaveProperty("cost", expect.any(Number));
+  });
+
   test("preserves presentable context injections as context snapshot items", () => {
     const items = buildThreadReadItems([
       {
