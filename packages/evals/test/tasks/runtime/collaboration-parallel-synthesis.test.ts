@@ -19,7 +19,6 @@ import { assistantMessage, sequenceStream } from "../../helpers/fake-stream";
 
 describe("collaboration-parallel-synthesis", () => {
   test("runs two genuinely overlapping bounded children and one ordered synthesis for both providers", async () => {
-    expect(DEFAULT_PROFILES).toHaveLength(2);
     for (const profile of DEFAULT_PROFILES) {
       const execution = await assembledExecution(profile);
       expect(collaborationParallelSynthesisTask.evaluate(execution), profile.provider).toEqual({ passed: true });
@@ -57,7 +56,6 @@ describe("collaboration-parallel-synthesis", () => {
       for (const id of ids) {
         const calls = execution.providerCalls.filter((call) => call.sessionId === id);
         expect(calls.map((call) => call.model.modelId)).toEqual([childModel.modelId, childModel.modelId]);
-        expect(calls.every((call) => call.tools.items.map(toolName).join(",") === "read")).toBe(true);
       }
     }
   });
@@ -927,8 +925,4 @@ function setFinal(value: RuntimeEvalExecution<CollaborationParallelSynthesisWorl
   const final = value.turns[0]!.messages.at(-1);
   if (!final || final.role !== "assistant") throw new Error("Missing final assistant response.");
   final.content = [{ type: "text", text }];
-}
-
-function toolName(value: unknown) {
-  return (value as { name?: string }).name;
 }

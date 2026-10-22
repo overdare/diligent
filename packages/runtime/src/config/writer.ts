@@ -48,7 +48,7 @@ export interface StoredToolsConfig {
     tools?: Record<string, false>;
   }>;
   conflictPolicy?: Exclude<ConflictPolicy, "error">;
-  codeMode?: Exclude<CodeMode, "off">;
+  codeMode?: Exclude<CodeMode, "on">;
 }
 
 export interface WriteToolsConfigResult {
@@ -143,7 +143,7 @@ export function normalizeStoredToolsConfig(
   const normalizedBuiltin = normalizeFalseOnlyMap(tools.builtin);
   const plugins = normalizePluginConfigs(tools.plugins);
   const conflictPolicy = tools.conflictPolicy && tools.conflictPolicy !== "error" ? tools.conflictPolicy : undefined;
-  const codeMode = tools.codeMode && tools.codeMode !== "off" ? tools.codeMode : undefined;
+  const codeMode = tools.codeMode && tools.codeMode !== "on" ? tools.codeMode : undefined;
 
   if (webAction === undefined && !normalizedBuiltin && !plugins && !conflictPolicy && !codeMode) {
     return undefined;

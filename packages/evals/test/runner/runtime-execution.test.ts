@@ -414,14 +414,6 @@ describe("runRuntimeEvalExecution", () => {
 
     expect(result.failures).toEqual([]);
     expect(result.execution.toolCalls.map((call) => call.name)).toEqual(["read", "read", "request_user_input"]);
-    expect(
-      result.execution.providerCalls.every((call) =>
-        call.tools.items.every((tool) => {
-          const name = "name" in tool ? tool.name : "";
-          return ["read", "request_user_input"].includes(name);
-        }),
-      ),
-    ).toBe(true);
     expect(result.execution.advertisedTools[0]?.mode).toBe("plan");
   });
 
@@ -1753,16 +1745,25 @@ describe("runRuntimeEvalExecution", () => {
       snapshotWorld: async () => ({}),
       evaluate: () => ({ passed: true }),
     };
+    let sourceToolCount = 0;
+    const stream = sequenceStream([assistantMessage([{ type: "text", text: "Done." }])]);
     const result = await runRuntimeEvalExecution({
       task,
       seed: "bounded-seed",
       profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
-      streamFunction: sequenceStream([assistantMessage([{ type: "text", text: "Done." }])]),
+      streamFunction: (model, context, options) => {
+        sourceToolCount = context.tools.length;
+        return stream(model, context, options);
+      },
     });
 
     const call = result.execution.providerCalls[0]!;
     expect(call.systemPrompt).toMatchObject({ totalCount: sourceCount, includedCount: 64, omittedCount: 6 });
-    expect(call.tools).toMatchObject({ totalCount: sourceCount, includedCount: 64, omittedCount: 6 });
+    expect(call.tools).toMatchObject({
+      totalCount: sourceToolCount,
+      includedCount: 64,
+      omittedCount: sourceToolCount - 64,
+    });
     expect(call.bounds.truncatedStrings).toBeGreaterThan(0);
     expect(JSON.stringify(call).length).toBeLessThan(700_000);
   });

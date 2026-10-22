@@ -28,7 +28,7 @@ function agentEvents(notifications: ProtocolTestClient["notifications"]): AgentE
 }
 
 describe("code mode", () => {
-  test("code-only exposes exec instead of nested tools and runs them as nested calls", async () => {
+  test.each([undefined, "only"] as const)("exec runs nested calls with code mode %s", async (codeMode) => {
     tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-code-mode-"));
     const notePath = join(tmpDir, "note.txt");
     await writeFile(notePath, "code-mode-marker\n");
@@ -54,7 +54,7 @@ describe("code mode", () => {
       return inner(model, context, options);
     };
 
-    const server = createTestServer({ cwd: tmpDir, runtimeToolsConfig: { codeMode: "only" }, streamFunction });
+    const server = createTestServer({ cwd: tmpDir, runtimeToolsConfig: { codeMode }, streamFunction });
     client = createProtocolClient(server);
     const threadId = await client.initAndStartThread(tmpDir);
     const notifications = await client.sendTurnAndWait(threadId, "read the note through exec");
@@ -62,7 +62,7 @@ describe("code mode", () => {
     const firstToolNames = requests[0]?.toolNames ?? [];
     expect(firstToolNames).toContain("exec");
     expect(firstToolNames).toContain("exec_wait");
-    expect(firstToolNames).not.toContain("read");
+    expect(firstToolNames.includes("read")).toBe(codeMode !== "only");
     expect(firstToolNames).toContain("request_user_input");
 
     const events = agentEvents(notifications);
