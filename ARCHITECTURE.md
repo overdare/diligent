@@ -110,6 +110,7 @@ Current guides:
 - Tool settings: `docs/guide/tool-settings.md`
 - Tool rendering: `docs/guide/tool-rendering.md`
 - Code mode: `docs/guide/code-mode.md`
+- File links and previews: `docs/guide/file-links.md`
 - Studio snapshots: `docs/guide/studio-snapshots.md`
 - AgentNativeBridge: `docs/guide/agent-native-bridge.md`
 - Product experiments: `docs/guide/experiments.md`
@@ -530,6 +531,7 @@ The shared protocol is JSON-RPC based and currently includes requests such as:
 - auth/config: `config/set`, `auth/list`, `auth/set`, `auth/remove`, `auth/oauth/start`
 - subscriptions: `thread/subscribe`, `thread/unsubscribe`
 - assets: `image/upload`
+- project file previews: `file/read`
 
 Server-driven protocol messages include:
 

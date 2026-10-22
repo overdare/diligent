@@ -1,6 +1,8 @@
 // @summary Session file persistence with JSONL format, immediate writing, and session listing
+import { createReadStream } from "node:fs";
 import { appendFile, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { createInterface } from "node:readline";
 import type { ModelRef, ProviderName } from "@diligent/core/provider-contract";
 import { ProviderNameSchema } from "@diligent/protocol";
 import { normalizeLegacyModelRef } from "../model/legacy-model-ref";
@@ -58,6 +60,23 @@ export async function appendEntry(sessionPath: string, entry: SessionEntry): Pro
   const sessionsDir = dirname(sessionPath);
   const externalized = await externalizeEntryImages(sessionsDir, entry);
   await appendFile(sessionPath, `${JSON.stringify(externalized)}\n`, "utf8");
+}
+
+/** Read project/session metadata without parsing or materializing conversation entries. */
+export async function readSessionHeader(path: string): Promise<SessionHeader> {
+  const input = createReadStream(path, { encoding: "utf8" });
+  const lines = createInterface({ input, crlfDelay: Infinity });
+  try {
+    for await (const line of lines) {
+      const header = JSON.parse(line) as SessionHeader;
+      if (header.type !== "session") throw new Error(`Invalid session header in: ${path}`);
+      return header;
+    }
+    throw new Error(`Empty session file: ${path}`);
+  } finally {
+    lines.close();
+    input.destroy();
+  }
 }
 
 /**

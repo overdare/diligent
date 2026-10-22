@@ -23,5 +23,6 @@ export {
 } from "@diligent/core/model-registry";
 export type { Mode } from "./agent/mode";
 export type { AgentEvent, ChildAgentEvent, RuntimeAgentEvent } from "./agent-event";
+export { type FileLink, parseFileLink } from "./client/file-link";
 export { applyGoalSnapshot, parseGoalCommand } from "./client/goal-command";
 export { ProtocolNotificationAdapter } from "./notification-adapter";

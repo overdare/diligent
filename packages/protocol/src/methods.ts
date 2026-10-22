@@ -39,6 +39,7 @@ export const DILIGENT_CLIENT_REQUEST_METHODS = {
   THREAD_SUBSCRIBE: "thread/subscribe",
   THREAD_UNSUBSCRIBE: "thread/unsubscribe",
   IMAGE_UPLOAD: "image/upload",
+  FILE_READ: "file/read",
   MCP_LIST: "mcp/list",
   MCP_LOGIN_START: "mcp/login/start",
   MCP_LOGOUT: "mcp/logout",

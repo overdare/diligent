@@ -32,6 +32,7 @@ import {
   handleImageUpload,
 } from "./config-handlers";
 import { type ExperimentConfigManager, handleExperimentsList, handleExperimentsSet } from "./experiment-handlers";
+import { readFilePreview, resolveFilePreviewCwd } from "./file-handlers";
 import { handleKnowledgeList, handleKnowledgeUpdate } from "./knowledge-handlers";
 import { handleMcpList, handleMcpLoginStart, handleMcpLogout } from "./mcp-handlers";
 import { handleThreadDelete, handleThreadList, handleThreadResume } from "./session-handlers";
@@ -164,6 +165,7 @@ export function applySessionDefaults(
   }
 
   const threadScoped: string[] = [
+    DILIGENT_CLIENT_REQUEST_METHODS.FILE_READ,
     DILIGENT_CLIENT_REQUEST_METHODS.TURN_START,
     DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT,
     DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER,
@@ -487,6 +489,15 @@ export async function dispatchClientRequest(
         server: request.params.server,
         getMcpServers: ctx.threadHandlersCtx.getMcpServers,
       });
+
+    case DILIGENT_CLIENT_REQUEST_METHODS.FILE_READ: {
+      const cwd = await resolveFilePreviewCwd(
+        ctx.threadHandlersCtx,
+        request.params.threadId,
+        ctx.getConnection(connectionId)?.cwd ?? ctx.cwd ?? process.cwd(),
+      );
+      return readFilePreview(cwd, request.params.path);
+    }
 
     case DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD: {
       const conn = ctx.getConnection(connectionId);

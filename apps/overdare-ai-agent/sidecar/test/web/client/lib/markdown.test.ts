@@ -2,6 +2,35 @@
 import { expect, test } from "bun:test";
 import { renderMarkdown } from "../../../../src/web/client/lib/markdown";
 
+test("local links open an internal file preview instead of a browser filesystem or project URL", () => {
+  for (const path of [
+    "docs/README.md",
+    "/workspace/docs/README.md",
+    "C:/Users/test/README.md",
+    "C://Users/test/README.md",
+    "file:///C:/Users/test/README.md",
+  ]) {
+    const html = renderMarkdown(`[Read file](<${path}>)`);
+    expect(html).toContain('href="/_diligent/file?');
+    expect(html).toContain('target="_blank"');
+    expect(html).not.toContain('href="file:');
+    expect(html).not.toContain('href="C:');
+    expect(html).not.toContain('href="docs/');
+  }
+});
+
+test("web links and document anchors retain their original navigation", () => {
+  for (const href of [
+    "https://example.com/page",
+    "http://localhost:3000",
+    "//example.com/page",
+    "mailto:hello@example.com",
+    "#section",
+  ]) {
+    expect(renderMarkdown(`[Link](${href})`)).toContain(`href="${href}"`);
+  }
+});
+
 test("generated-image Markdown uses the Web route instead of the host volume path", () => {
   const html = renderMarkdown(
     '![생성된 사진](/Volumes/overdare-newgame/.overdare/images/generated/photo.png "Generated photo")',

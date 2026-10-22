@@ -3,12 +3,13 @@
 import { type MouseEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { cn } from "../lib/cn";
-import { renderMarkdown } from "../lib/markdown";
+import { type MarkdownOptions, renderMarkdown } from "../lib/markdown";
 import { ImageLightbox, type PreviewImage } from "./ImageLightbox";
 
 interface MarkdownContentProps {
   text: string;
   className?: string;
+  options?: MarkdownOptions;
 }
 
 // Preserve the rendered DOM and its focus/collapse state when only the viewer opens or closes.
@@ -31,10 +32,17 @@ const MarkdownBody = memo(function MarkdownBody({
   );
 });
 
-export const MarkdownContent = memo(function MarkdownContent({ text, className }: MarkdownContentProps) {
+export const MarkdownContent = memo(function MarkdownContent({ text, className, options }: MarkdownContentProps) {
   const resetTimers = useRef(new Map<HTMLButtonElement, number>());
   const [preview, setPreview] = useState<PreviewImage | null>(null);
-  const html = useMemo(() => renderMarkdown(text), [text]);
+  const pagePath = typeof window === "undefined" ? "" : window.location.pathname.slice(1);
+  const threadId = options?.threadId ?? (pagePath && !pagePath.includes("/") ? pagePath : undefined);
+  const basePath = options?.basePath;
+  const safeHtml = options?.safeHtml;
+  const html = useMemo(
+    () => renderMarkdown(text, { threadId, basePath, safeHtml }),
+    [text, threadId, basePath, safeHtml],
+  );
 
   useEffect(
     () => () => {
