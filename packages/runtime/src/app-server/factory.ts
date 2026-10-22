@@ -176,7 +176,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
       .map((block) => block.text)
       .join("\n");
   };
-  const codeMode = runtimeConfig.diligent.tools?.codeMode ?? "off";
+  const codeMode = runtimeConfig.diligent.tools?.codeMode ?? "on";
   const toolsResult = await buildDefaultTools({
     cwd,
     paths,

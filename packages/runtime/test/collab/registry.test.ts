@@ -256,13 +256,16 @@ describe("AgentRegistry", () => {
     });
   });
 
-  it("applies the configured code mode to child agents with their own exec session", async () => {
+  it.each([
+    undefined,
+    "only",
+  ] as const)("applies code mode %s to child agents with their own exec session", async (codeMode) => {
     let inspectedAgent: RuntimeAgent | undefined;
     const registry = new AgentRegistry(
       makeCollabDeps({
         // Code mode renders input schemas into the exec description, so these tools need real Zod parameters.
         parentTools: ["read", "plan"].map((name) => ({ ...makeTool(name), parameters: z.object({}) })),
-        codeMode: "only",
+        codeMode,
         sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
           inspectedAgent = agent;
         }),
@@ -272,8 +275,16 @@ describe("AgentRegistry", () => {
     const { threadId } = registry.spawn({ prompt: "inspect", description: "inspect", agentType: "general" });
     await registry.wait([threadId], 5000);
 
-    expect(inspectedAgent?.tools.map((tool) => tool.name)).toEqual(["plan", "exec", "exec_wait"]);
-    expect(inspectedAgent?.tools.find((tool) => tool.name === "exec")?.description).toContain("read(args");
+    expect(inspectedAgent?.tools.map((tool) => tool.name)).toEqual(
+      codeMode === "only" ? ["plan", "exec", "exec_wait"] : ["read", "plan", "exec", "exec_wait"],
+    );
+    const result = await inspectedAgent!.tools
+      .find((tool) => tool.name === "exec")!
+      .execute(
+        { code: "text(await tools.read({}));" },
+        { toolCallId: "test-exec", signal: new AbortController().signal, abort: () => {} },
+      );
+    expect(result.output).toBe("Script completed\nread");
   });
 
   it("propagates the injected output store through child and nested-child assembly", async () => {
@@ -681,7 +692,7 @@ describe("AgentRegistry", () => {
     await registry.wait([resumed.threadId], 5000);
 
     expect(inspectedAgent?.model.modelId).toBe("gpt-6-luna");
-    expect(inspectedAgent?.tools.map((tool) => tool.name)).toEqual(["read"]);
+    expect(inspectedAgent?.tools.map((tool) => tool.name)).toEqual(["read", "exec", "exec_wait"]);
     expect(inspectedAgent?.systemPrompt).toContainEqual({
       label: "nested_subagent_policy",
       content:
@@ -745,7 +756,7 @@ describe("AgentRegistry", () => {
     });
     await registry.wait([resumed.threadId], 5000);
 
-    expect(inspectedAgent?.tools.map((tool) => tool.name)).toEqual(["read", "grep"]);
+    expect(inspectedAgent?.tools.map((tool) => tool.name)).toEqual(["read", "grep", "exec", "exec_wait"]);
   });
 
   it("rejects resuming a child that is still active", async () => {
