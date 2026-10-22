@@ -2,6 +2,13 @@
 
 Use the live harness tool's `describe` operation for the schema; do not maintain a separate copy of its full limits or input grammar here.
 
+Install/update supplies the strict `DiligentPlaytestAPI` ModuleScript beside the adapter. Require it with
+`local P = require(script.Parent.DiligentPlaytestAPI)` and use `P.action`, `P.key`, `P.wait`, `P.look` and
+`P.expect` instead of repeatedly hand-typing heterogeneous descriptor tables. Annotate empty collections with
+`{P.Action}`, `{P.Event}` or `{P.Expectation}`; do not silence real type errors with `any` casts.
+The live contract lists all constructors. Helpers describe inputs and observed expectations only; game bindings,
+strategy and outcomes remain the adapter's responsibility.
+
 For direct-control exploration, publish short movement, look and interaction actions with useful observed alternatives. Short approach or alignment assists may share the same ordinary action catalog when enabled by the selected control configuration. Derive durations, input routes and directions from the current controller; a universal W key or fixed camera gesture is not guaranteed. Bind direction/focus-sensitive actions to material camera, modal or target changes so a slow choice cannot execute with a different meaning. Confirm movement on its intended axis with meaningful thresholds, not merely any displacement.
 
 For deliberate multi-step commitment, optional intent metadata can attach a goal to each next physical step. Compute all steps from the same observed facts with goal-local caches; do not select a nearest target globally before constructing the catalog. The runner retains the model-selected goal and dispatches its changing steps, then reevaluates on completion, invalidation or the configured policy interval. Goal completion compares actual state with the original selection-time baseline; continuing the same goal preserves that baseline. Keep meaningful alternatives present so the model can change strategy. Author distinct step effects, goal completion and whole-game terminal checks. A nonempty frame must use either intent-tagged or ordinary actions throughout.

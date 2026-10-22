@@ -4,8 +4,10 @@ import { join } from "node:path";
 import type { Tool } from "../../types";
 import { createCoverageTracker } from "./coverage";
 import { createDecisionProvider, type DecisionProvider, defaultDecisionProvider } from "./decision-provider";
+import { withHarnessDriver } from "./driver-state";
 import { readHarness } from "./harness";
 import { findRepeatedFailure } from "./run-history";
+import { compactRunEvidence } from "./run-output";
 import { DEFAULT_INTENT_DECISION_INTERVAL_MS, DEFAULT_STUCK_TIMEOUT_MS, runPlaytest } from "./runtime";
 import {
   approve,
@@ -57,28 +59,38 @@ export function createRunTool(options: PlaytestToolOptions): Tool {
       const rpc = withSignal(options.callRpc, ctx);
       const asset = await readHarness(rpc, parsed.harnessName);
       if (!asset?.driverGuid) throw new Error("Install the Studio harness and its observation driver before running");
-      const checked = await validate(rpc, [asset.moduleGuid, asset.driverGuid]);
+      const checked = await validate(rpc, [
+        asset.moduleGuid,
+        asset.driverGuid,
+        ...(asset.helperGuid ? [asset.helperGuid] : []),
+      ]);
       if (!checked.valid)
         throw new Error(`Harness validation did not pass; repair it before playing.\n${checked.output}`);
       const maxDurationMs = parsed.maxDurationMs ?? DEFAULT_RUN_DURATION_MS;
       const stuckTimeoutMs = parsed.stuckTimeoutMs ?? DEFAULT_STUCK_TIMEOUT_MS;
       const maxPhysicalBatchDurationMs = parsed.maxPhysicalBatchDurationMs ?? DEFAULT_PHYSICAL_BATCH_MS;
       if (
-        !(await approve(ctx, toolName, `Start, play and stop Studio using ${parsed.harnessName}`, {
-          harnessName: parsed.harnessName,
-          mode,
-          numberOfPlayer,
-          maxDurationMs,
-          ...(numberOfPlayer === 2 ? { maxPhysicalBatchDurationMs } : {}),
-          stuckTimeoutMs,
-          ...(chooser
-            ? {
-                decisionProvider: chooser.metadata.provider,
-                observationMode: chooser.metadata.observationMode,
-                endpoint: chooser.metadata.endpoint,
-              }
-            : {}),
-        }))
+        !(await approve(
+          ctx,
+          toolName,
+          `Start, play and stop Studio using ${parsed.harnessName}; temporarily enable only its managed driver when needed and restore its prior Enabled value`,
+          {
+            harnessName: parsed.harnessName,
+            driverGuid: asset.driverGuid,
+            mode,
+            numberOfPlayer,
+            maxDurationMs,
+            ...(numberOfPlayer === 2 ? { maxPhysicalBatchDurationMs } : {}),
+            stuckTimeoutMs,
+            ...(chooser
+              ? {
+                  decisionProvider: chooser.metadata.provider,
+                  observationMode: chooser.metadata.observationMode,
+                  endpoint: chooser.metadata.endpoint,
+                }
+              : {}),
+          },
+        ))
       ) {
         return { output: "[Rejected by user]", metadata: { error: true } };
       }
@@ -116,47 +128,49 @@ export function createRunTool(options: PlaytestToolOptions): Tool {
       let writeFailure: unknown;
       const coverage = createCoverageTracker();
       let lastObservationProgressMs = Number.NEGATIVE_INFINITY;
-      const result = await runPlaytest({
-        callRpc: options.callRpc,
-        mode,
-        numberOfPlayer: parsed.numberOfPlayer,
-        actorGoals: parsed.actorGoals,
-        goal: parsed.goal,
-        harnessId: parsed.harnessName,
-        frameName: asset.frameName,
-        maxDurationMs,
-        maxPhysicalBatchDurationMs: parsed.maxPhysicalBatchDurationMs,
-        stuckTimeoutMs: parsed.stuckTimeoutMs,
-        intentDecisionIntervalMs: parsed.intentDecisionIntervalMs,
-        signal: ctx.signal,
-        ...(chooser ? { choose: chooser.choose, maxVisualAgeMs: parsed.maxVisualAgeMs } : {}),
-        ...(chooser?.metadata.observationMode === "structured+image"
-          ? {
-              captureVisual: createVisualObserver({
-                callRpc: options.callRpc,
-                directory,
-                localRoot: process.env.STUDIO_SCREENSHOT_LOCAL_ROOT,
-                remoteRoot: process.env.STUDIO_SCREENSHOT_REMOTE_ROOT,
-              }),
+      const { result, driver, warning } = await withHarnessDriver(options, ctx, asset, () =>
+        runPlaytest({
+          callRpc: options.callRpc,
+          mode,
+          numberOfPlayer: parsed.numberOfPlayer,
+          actorGoals: parsed.actorGoals,
+          goal: parsed.goal,
+          harnessId: parsed.harnessName,
+          frameName: asset.frameName,
+          maxDurationMs,
+          maxPhysicalBatchDurationMs: parsed.maxPhysicalBatchDurationMs,
+          stuckTimeoutMs: parsed.stuckTimeoutMs,
+          intentDecisionIntervalMs: parsed.intentDecisionIntervalMs,
+          signal: ctx.signal,
+          ...(chooser ? { choose: chooser.choose, maxVisualAgeMs: parsed.maxVisualAgeMs } : {}),
+          ...(chooser?.metadata.observationMode === "structured+image"
+            ? {
+                captureVisual: createVisualObserver({
+                  callRpc: options.callRpc,
+                  directory,
+                  localRoot: process.env.STUDIO_SCREENSHOT_LOCAL_ROOT,
+                  remoteRoot: process.env.STUDIO_SCREENSHOT_REMOTE_ROOT,
+                }),
+              }
+            : {}),
+          onFrame: coverage.observe,
+          onEvent(event) {
+            coverage.event(event);
+            const line = JSON.stringify({ at: new Date().toISOString(), ...event });
+            // Serialize writes; I/O is outside the control path and failures surface at completion.
+            pending = pending
+              .then(() => appendFile(tracePath, `${line}\n`, "utf8"))
+              .catch((error) => {
+                writeFailure = error;
+              });
+            // Keep the full trace on disk while bounding high-frequency UI progress.
+            if (event.type !== "observation" || event.atMs - lastObservationProgressMs >= 1000) {
+              ctx.onUpdate?.(line);
+              if (event.type === "observation") lastObservationProgressMs = event.atMs;
             }
-          : {}),
-        onFrame: coverage.observe,
-        onEvent(event) {
-          coverage.event(event);
-          const line = JSON.stringify({ at: new Date().toISOString(), ...event });
-          // Serialize writes; I/O is outside the control path and failures surface at completion.
-          pending = pending
-            .then(() => appendFile(tracePath, `${line}\n`, "utf8"))
-            .catch((error) => {
-              writeFailure = error;
-            });
-          // Keep the full trace on disk while bounding high-frequency UI progress.
-          if (event.type !== "observation" || event.atMs - lastObservationProgressMs >= 1000) {
-            ctx.onUpdate?.(line);
-            if (event.type === "observation") lastObservationProgressMs = event.atMs;
-          }
-        },
-      });
+          },
+        }),
+      );
       await pending;
       for (const actor of Object.values(result.perActorEvidence ?? {})) {
         actor.source = { harnessName: asset.name, sourceHash: asset.sourceHash };
@@ -176,6 +190,9 @@ export function createRunTool(options: PlaytestToolOptions): Tool {
       const coverageResult = coverage.summary();
       const evidence = {
         ...result,
+        schemaVersion: 1,
+        driver,
+        ...(warning ? { warning } : {}),
         harnessName: asset.name,
         sourceHash: asset.sourceHash,
         runId,
@@ -189,9 +206,10 @@ export function createRunTool(options: PlaytestToolOptions): Tool {
       // Run artifacts carry game state and decision context; keep them readable by the owner only.
       await writeFile(coveragePath, JSON.stringify(coverageResult, null, 2), { encoding: "utf8", mode: 0o600 });
       await writeFile(summaryPath, JSON.stringify(evidence, null, 2), { encoding: "utf8", mode: 0o600 });
+      const compact = compactRunEvidence({ ...evidence, summaryPath });
       return {
-        output: JSON.stringify({ ...evidence, summaryPath }, null, 2),
-        metadata: { ...evidence, summaryPath },
+        output: JSON.stringify(compact, null, 2),
+        metadata: { ...compact, ...(driver.restoration === "failed" ? { error: true } : {}) },
       };
     },
   };

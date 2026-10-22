@@ -1,11 +1,14 @@
 # Playtest code map
 
 Start at `createPlaytestTools` in [index.ts](index.ts). It registers two tools:
-[harness-tool.ts](harness-tool.ts) manages saved Studio code;
+[harness-tool.ts](harness-tool.ts) manages saved Studio code and selected-run reports;
 [run-tool.ts](run-tool.ts) validates an installed adapter, prepares the provider
 (autonomous mode only), runs an episode, writes its evidence and checks
 [run-history.ts](run-history.ts) for a repeating failure. Their public schemas and
 common tool helpers live in [tool-shared.ts](tool-shared.ts).
+
+[driver-state.ts](driver-state.ts) owns the selected driver's temporary enable/restore scope outside the
+episode. The episode itself still owns only the PIE session it started.
 
 ## Follow one episode
 
@@ -31,12 +34,16 @@ startOwnedSession
 | --- | --- |
 | What is a frame, action, intent or check? | [frame.ts](frame.ts): validated adapter wire contract |
 | What does the managed Studio driver publish? | [harness.ts](harness.ts): driver source, `api.emit`/`api.check`, contracts |
+| How are strict mixed descriptor arrays authored? | [harness-helpers.ts](harness-helpers.ts): managed `DiligentPlaytestAPI` constructors |
+| Who enables and restores the selected driver? | [driver-state.ts](driver-state.ts): approved temporary flag ownership and independent cleanup |
 | How does Studio's RPC envelope become usable data? | [observation.ts](observation.ts): parsing only |
 | What keeps observing while a model or input is pending? | [frame-observer.ts](frame-observer.ts): background loop, freshness, waits |
 | Is the choice still legal, and did its expected effect happen? | [action-checks.ts](action-checks.ts): pure comparisons |
 | Did the declared requirements pass? | [checks.ts](checks.ts): latched check transitions, independent of the terminal |
 | Why did a run fail or stall? | [diagnostics.ts](diagnostics.ts): readiness, last action, unmet expectations, hints |
 | Has this harness failed the same way before? | [run-history.ts](run-history.ts) |
+| What stays inline versus in evidence files? | [run-output.ts](run-output.ts): bounded provenance-first output |
+| How are selected runs reported without custom scripts? | [run-report.ts](run-report.ts): validated records, deterministic artifacts, no acceptance inference |
 | Which provider receives state and images? | [decision-provider.ts](decision-provider.ts), [visual-observation.ts](visual-observation.ts) |
 | What ends an episode with no progress? | [progress.ts](progress.ts) |
 | Did the model actually influence play? | [decision-evidence.ts](decision-evidence.ts); distinct from [coverage.ts](coverage.ts) |

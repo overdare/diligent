@@ -4,6 +4,7 @@ import type { call } from "../../rpc";
 import type { ToolContext } from "../../types";
 import type { WriteLock } from "../../write-lock";
 import type { DecisionProviderOptions } from "./decision-provider";
+import { reportRunIdsSchema } from "./run-report";
 import { DEFAULT_INTENT_DECISION_INTERVAL_MS, DEFAULT_STUCK_TIMEOUT_MS } from "./runtime";
 
 export const DEFAULT_RUN_DURATION_MS = 80_000;
@@ -23,6 +24,15 @@ export const harnessParams = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("describe") }).strict(),
   z.object({ operation: z.literal("list") }).strict(),
   z.object({ operation: z.literal("read"), name: nameSchema }).strict(),
+  z
+    .object({
+      operation: z.literal("report"),
+      name: nameSchema,
+      runIds: reportRunIdsSchema.describe(
+        "Explicit saved run IDs from game_playtest. Include relevant failures, normal, exception and regression runs; this is not an automatic history scan.",
+      ),
+    })
+    .strict(),
   z.object({ operation: z.literal("install"), name: nameSchema, source: sourceSchema }).strict(),
   z
     .object({

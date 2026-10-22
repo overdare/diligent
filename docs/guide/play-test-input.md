@@ -17,8 +17,8 @@ walk the character — instead of asking the user to do it by hand and report ba
 | `studiorpc_game_character_move_status` | Outcome of a `move_to` request |
 | `studiorpc_game_ui_browse` | List the UI on screen with the rectangle each element occupies |
 | `studiorpc_viewport_camera_read` | Where the camera on screen is, how much it covers, and what it is aimed at |
-| `studiorpc_game_playtest_harness` | Describe, read, install, or update persistent game-specific Luau harness code |
-| `studiorpc_game_playtest` | Start, play with Laya, record observed effects, and stop the session it started |
+| `studiorpc_game_playtest_harness` | Describe, read, install, update, or report saved runs of game-specific Luau harnesses |
+| `studiorpc_game_playtest` | Run bounded autonomous/scripted episodes, record evidence, and clean up owned PIE/driver state |
 
 They live in `apps/overdare-ai-agent/sidecar/src/tools/studiorpc/tools/pie-input/` and `…/methods/`, and are
 registered by the Studio RPC provider, so they reach the product agent, the TUI, the MCP router, and
@@ -29,11 +29,20 @@ registered by the Studio RPC provider, so they reach the product agent, the TUI,
 Diligent prepares a harness from the current project's Lua, GUI, accepted server snapshots, and feedback.
 The harness is code inside Studio: a ModuleScript at
 `ReplicatedStorage.DiligentPlaytestHarnesses.<name>` and a common LocalScript driver at
-`StarterPlayer.StarterPlayerScripts.DiligentPlaytestDriver_<name>`. Installation saves the project, reads
-the source back, and validates both scripts. These assets remain available for the next maintenance run.
+`StarterPlayer.StarterPlayerScripts.DiligentPlaytestDriver_<name>`. Installation and updates also maintain the
+reserved `DiligentPlaytestAPI` helper ModuleScript beside the adapter. Installation saves the project, reads
+the adapter/helper source back, and validates the managed assets. These assets remain available for later runs.
 
 Harness installation and updates await the request's rollback-baseline capture before acquiring the
 harness write lock. Snapshot capture uses that same lock, so it must finish before the edit holds it.
+
+New drivers are installed disabled. After run approval, the runner temporarily enables only the selected
+managed driver when necessary and restores its original `Enabled` value after owned PIE cleanup. An already
+enabled driver is not rewritten; other drivers are never changed. Temporary mutation captures the baseline
+before acquiring the write lock. Cancellation uses an independent, bounded cleanup signal. Failed restoration
+is reported in `driver.restoration` and marks the tool result as an error without rewriting the game outcome.
+An external PIE session is never stopped just to restore a flag. Process termination is not a transactional
+rollback; inspect the driver if the process exits before cleanup.
 
 Use `game_playtest_harness` with `operation: "describe"` for the authoring contract. The adapter returns
 `observe()` and optional `start()`. It owns compact state, up to 16 useful candidate input batches, their
@@ -64,6 +73,38 @@ errors, and session replacement are recorded as runtime failures rather than gam
 under `<cwd>/.overdare/playtests/`. Web and TUI use the existing tool progress/result protocol; MCP exposes
 the same registered tools and final results, with the live trace available on disk.
 Game-specific candidate quality and truthful terminal rules remain the adapter author's responsibility.
+
+### Typed descriptor helpers
+
+Use the installed helper module to give mixed input/action/expectation arrays a stable strict Luau type:
+
+```lua
+--!strict
+local P = require(script.Parent.DiligentPlaytestAPI)
+local actions: {P.Action} = {}
+table.insert(actions, P.action("forward", "Move forward", {
+    P.key("W", "press", 100),
+    P.wait(50),
+}, {
+    P.expect("distance", "increase"),
+}))
+```
+
+The example's `distance` must be a real observed state field in the game-specific adapter. Constructors only
+describe actions and checks; they never perform gameplay, choose a strategy, or manufacture an outcome.
+`P.Event`, `P.Action`, `P.Expectation`, `P.Intent` and `P.WaitCondition` can annotate empty arrays and controller
+variables without `any` casts. Native input bounds, balanced inputs and frame validation still apply.
+
+Helpers include `key(key, action, durationMs?)`, `wait(durationMs, untilCondition?)`,
+`look(yawDegrees?, pitchDegrees?, timeoutMs?)`, `click(target, button?)`, `clickAt(x, y, button?)`,
+`pointer(x, y)`, `mouseDelta(x, y)`, `scroll(delta)`, `expect(key, op, value?)` and
+`action(id, description, events, expectations?)`. Pointer coordinates are normalized. Conditional waits use
+the existing input contract, for example `P.wait(1000, {ui = "StartButton", visible = true})`.
+An `equals` expectation requires an actual scalar value; `false` is retained, not treated as missing.
+
+Install/update refresh managed helpers alongside the common driver. A reserved-name collision with unrelated
+code is rejected, not overwritten. Keep game-specific logic in the adapter. Existing plain-table adapters
+continue to use the same observation contract.
 
 ### Run modes
 
@@ -99,22 +140,68 @@ The frame JSON stays capped at 256 KiB. An oversized frame fails the run with th
 keys and `state.*` keys) and their byte counts. Publish current facts; report verdicts through checks and logs
 through events instead of accumulating proofs or samples in `state`.
 
+Studio may encode an empty Luau record as `[]`. Only schema-declared record slots (`state`, `decisionState`,
+event `data`, check `detail`, and actor-local equivalents) normalize that empty value to `{}`. Populated arrays
+and `null` are still rejected there; nested semantic arrays remain arrays. This keeps startup/error frames
+readable without weakening the state contract.
+
 Integer input fields (`durationMs`, `timeoutMs`) are rounded to whole milliseconds before validation, because Luau
 arithmetic produces fractions.
 
 ### Diagnostics and repeated failures
 
-Every result carries `diagnostics`: the episode phase reached (`startup` or `running`), frames observed, the most
+The full saved summary carries `diagnostics`: the episode phase reached (`startup` or `running`), frames observed, the most
 frequent readiness waits, the last dispatched action with its input status and failed expectations, counts of action
 results with unmet expectations (top keys), the last observer error and plain-language hints. Hints point at the next
 thing to check, for example which readiness condition kept a startup from completing, or that a terminal success
 came with failed requirement checks. They are never a verdict.
+Compact output includes bounded diagnostic previews; read `summaryPath` for complete details or when `outputMode` is `minimal`.
 
 After writing a run, the tool compares it with the newest saved runs of the same harness under
 `.overdare/playtests/`. When the same failure signature (outcome plus reason with measured values such as `25030ms`
 normalized, step numbers kept) appears in at least three consecutive runs, the result includes
 `repeatedFailure = {count, signature, sameSourceHash, runIds, guidance}`. It does not block the run; it tells the
 agent to stop rerunning the same hypothesis and to probe the responsible boundary narrowly.
+
+### Compact results and evidence reports
+
+Run responses begin with `runId`, `summaryPath`, `tracePath` and `coveragePath`. Full persisted evidence is not
+truncated: `summary.json` retains checks, details, transitions, diagnostics and actor evidence;
+`coverage.json` retains all declared targets; `trace.jsonl` retains recorded events. The response itself uses
+bounded descriptions and at most eight attention checks (failed, pending, or previously failed).
+`omittedChecks` and `omittedAttentionChecks` make omissions explicit. Requirement counts, terminal outcome,
+decision participation and cleanup remain separate. A passing final check may still have `everFailed: true`.
+
+Concurrency output retains counters and the native-timing uncertainty, not the full input-timing array.
+It reports `inputTimingsRecorded` and `inputTimingsDropped`; consult the summary for individual timings.
+An unusually large response falls back to `outputMode: "minimal"` with provenance and aggregate verdicts
+rather than allowing large details to hide file paths.
+
+Use the existing harness tool's report operation instead of generating a separate Python/patch audit script:
+
+```json
+{
+  "operation": "report",
+  "name": "feature-checks",
+  "runIds": ["1700000000000-aaaaaaaa", "1700000000001-bbbbbbbb"]
+}
+```
+
+Replace these example values with actual returned names and IDs. Select up to 50 distinct runs, including
+relevant failures and the required normal, exception and regression scenarios. The tool validates saved
+identities, requirement counts/verdicts and required evidence files before publishing anything. Missing,
+invalid or mismatched records fail explicitly rather than producing a partial pass. No Studio or provider
+call is made.
+
+The response gives `jsonPath` and `markdownPath` under `.overdare/playtests/reports/`. Reports are deterministic
+for the same selected records and locations, regardless of selection order. They retain selected failures,
+recovered-check flags, harness source hashes, summary SHA-256, decision participation and cleanup facts.
+They describe selected runs only, not a complete history. Harness hashes identify adapter versions, not
+game-code/build versions. Full per-actor details and diagnostics remain linked from each summary path.
+
+Reports deliberately set `acceptance: "not_assessed"`. They do not prove visual/audio quality, unexecuted
+requirements, or global map preservation. A terminal success, later passing run, or declared coverage never
+erases earlier selected evidence or substitutes for those checks.
 
 ### Two players
 
