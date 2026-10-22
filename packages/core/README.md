@@ -32,12 +32,12 @@ src/
 additional wire-format restrictions; tagging a schema with `type: "object"` alone does not
 make every JSON Schema keyword acceptable to every provider.
 
-Anthropic rejects `anyOf`, `oneOf`, and `allOf` at the tool input schema root. Its adapter
-shares Gemini's object projection: resolve local references before merging root branches
-into `properties` and `required`, retaining sibling fields. Alternative branches keep shared
-required fields; `allOf` keeps every branch's requirements. Authored descriptions are
-preserved, but raw schema JSON and generated structural explanations are not added to
-`description`. Tool arguments remain visible as schema fields rather than description dumps.
+Anthropic rejects `anyOf`, `oneOf`, and `allOf` at the tool input schema root. Following omp's
+`normalizeAnthropicToolSchema` approach, the Anthropic adapter removes those root keywords
+and appends their complete JSON constraints to the schema's `description`. Existing
+descriptions, sibling fields, and nested schemas are retained. Branch constraints become
+model-visible guidance rather than provider-enforced schema rules; the adapter does not
+close an otherwise open object or replace a union with an empty closed schema.
 
 OpenAI and ChatGPT share Responses schema adaptation: `oneOf` becomes `anyOf`, object nodes
 gain an explicit `properties` map, and local `$ref` paths follow relocated branches.
@@ -46,9 +46,11 @@ Union projection can widen acceptance; original execution-time validation remain
 Only schema-valued positions are visited, leaving property names and literal data in
 `enum`, `const`, `default`, and `examples` untouched.
 
-Gemini uses the same root object projection so the SDK does not mistake a composed schema
-for a parameterless tool. Reference resolution and root adaptation apply regardless of
-schema size or native web tools; size-driven pruning remains limited to native-web requests.
+Gemini resolves local references before relocating root `anyOf`, `oneOf`, and `allOf`
+branches into one object shape. Sibling properties and requirements are retained.
+Alternative branches keep only shared required fields; `allOf` keeps every branch's
+requirements. Reference resolution and root adaptation apply regardless of schema size
+or native web tools; size-driven pruning remains limited to native-web requests.
 
 Vertex currently uses the OpenAI-compatible Chat Completions endpoint, as does Z.ai.
 Neither path inherits Gemini or Responses schema restrictions just because of its provider name.

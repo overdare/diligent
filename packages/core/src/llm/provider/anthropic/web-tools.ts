@@ -1,9 +1,7 @@
 // @summary Anthropic tool schemas and provider-native web content mapping
 import type Anthropic from "@anthropic-ai/sdk";
-import { asObjectJsonSchema } from "../../../tool/input-schema";
 import type { ContentBlock } from "../../../types";
 import type { FunctionToolDefinition, ToolDefinition } from "../../types";
-import { projectRootObjectSchema } from "../object-schema";
 
 type ProviderToolUseBlock = Extract<ContentBlock, { type: "provider_tool_use" }>;
 type WebSearchResultBlock = Extract<ContentBlock, { type: "web_search_result" }>;
@@ -28,15 +26,23 @@ export function convertTools(tools: ToolDefinition[]): Anthropic.MessageCreatePa
 }
 
 /**
- * Keep root compositions out of Anthropic's wire schema and descriptions.
- * Project their arguments into object properties; execution still validates the canonical schema.
+ * Like omp's Anthropic normalizer, spill unsupported root compositions into the description.
+ * Keep every branch visible to the model without altering the canonical validation schema.
+ * Nested schemas remain intact; this is not the stricter structured-output schema dialect.
  */
 function normalizeAnthropicToolSchema(
   schema: FunctionToolDefinition["inputSchema"],
 ): FunctionToolDefinition["inputSchema"] {
   if (schema.anyOf === undefined && schema.oneOf === undefined && schema.allOf === undefined) return schema;
 
-  return asObjectJsonSchema(projectRootObjectSchema(schema));
+  const { anyOf, oneOf, allOf, ...normalized } = schema;
+  const constraints = Object.entries({ anyOf, oneOf, allOf })
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+    .join(", ");
+  const description = typeof schema.description === "string" ? schema.description : "";
+  normalized.description = `${description ? `${description}\n\n` : ""}{${constraints}}`;
+  return normalized;
 }
 
 function createAnthropicWebTool(
