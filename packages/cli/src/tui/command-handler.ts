@@ -214,7 +214,7 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
           return deleted;
         },
         listThreads: (onBatch) => deps.threadManager.listThreads(onBatch),
-        loadOlderHistory: (threadId) => deps.threadManager.loadOlderHistory(threadId),
+        loadOlderHistory: () => deps.threadManager.loadOlderHistory(),
         readThread: () => deps.threadManager.readThread(),
         onModelChanged: (modelId) => deps.onModelChanged(modelId),
         onEffortChanged: (effort, label) => deps.onEffortChanged(effort, label),

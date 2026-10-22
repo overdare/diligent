@@ -67,7 +67,7 @@ export interface CommandContext {
   deleteThread: (threadId: string) => Promise<boolean>;
   /** List known threads from the server */
   listThreads: (onBatch?: (threads: SessionSummary[]) => boolean | undefined) => Promise<SessionSummary[]>;
-  loadOlderHistory: (threadId?: string) => Promise<void>;
+  loadOlderHistory: () => Promise<void>;
   /** Read active thread summary (messages count/follow-up) */
   readThread: () => Promise<ThreadReadResponse | null>;
   /** Notify status bar after changing ctx.config.model */

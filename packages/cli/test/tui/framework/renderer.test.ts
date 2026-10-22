@@ -259,8 +259,8 @@ describe("TUIRenderer — cursor position after renders", () => {
       getCurrentFastMode: () => false,
       setCurrentThreadId: () => {},
       updateStatusBar: () => {},
-      showHistory: (page, reset, child) => {
-        chat.setHistory(page, reset, child);
+      showHistory: (page, reset) => {
+        chat.setHistory(page, reset);
         renderer.forceRender();
       },
       showProgress: (message) => {

@@ -20,8 +20,8 @@ const session = (id: string): SessionSummary => ({ id, path: id, cwd: "/project"
 function setup(request: (method: string, params: unknown) => Promise<unknown>) {
   const historyShown = Promise.withResolvers<void>();
   const chat = new ChatView({ requestRender: () => {} });
-  const showHistory = mock((_history: ThreadHistoryResponse, _reset: boolean, _child?: string) => {
-    chat.setHistory(_history, _reset, _child);
+  const showHistory = mock((history: ThreadHistoryResponse, reset: boolean) => {
+    chat.setHistory(history, reset);
     historyShown.resolve();
   });
   const showProgress = mock((_message: string) => {});
@@ -117,16 +117,15 @@ test("history errors remain visible and do not silently start another thread", a
   expect(request).toHaveBeenCalledTimes(1);
 });
 
-test("prepending history retains realtime transcript and exposes earlier/child controls", () => {
+test("older pages keep the realtime transcript and offer /older while more history exists", () => {
   const chat = new ChatView({ requestRender: () => {} });
-  chat.setHistory(page([user("recent")], "older"), true);
+  chat.setHistory(page([user("recent", "recent message")], "older"), true);
   chat.addUserMessage("live message");
-  chat.setHistory(page([user("old"), user("recent")]), false);
-  chat.setHistory(page([user("child")], "child-older"), false, "child-id");
+  chat.setHistory(page([user("previous", "previous message")]), false);
   const text = chat.getHistoryComponent().render(80).join("\n");
-  expect(text.indexOf("old")).toBeLessThan(text.indexOf("recent"));
+  expect(text).toContain("Earlier history available: /older");
   expect(text).toContain("live message");
-  expect(text).toContain("/older child-id");
+  expect(text).toContain("previous message");
 });
 
 test("a progressive picker keeps the user's selection as newer batches reorder rows", () => {

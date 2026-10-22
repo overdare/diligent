@@ -169,7 +169,7 @@ Opening a conversation shows the first page immediately and then calls `thread/r
 the background. Sending stays disabled until resume completes; a failed resume is shown with
 a retry, and the visible history remains. Web runs that resume without an RPC deadline and
 offers "Load earlier history" at the top of the transcript. TUI prints the first page, and
-`/older [childThreadId]` appends the next earlier page to scrollback after a loading notice;
+`/older` appends the next earlier page to scrollback after a loading notice;
 pages already printed are never rewritten. Late history or resume results are discarded if
 the user has navigated elsewhere.
 

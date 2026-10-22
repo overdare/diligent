@@ -101,10 +101,9 @@ export const deleteCommand: Command = {
 
 export const olderCommand: Command = {
   name: "older",
-  description: "Load earlier history, optionally for a child thread",
-  supportsArgs: true,
+  description: "Load earlier history",
   availableDuringTask: true,
-  handler: async (args, ctx) => ctx.loadOlderHistory(args?.trim() || undefined),
+  handler: async (_args, ctx) => ctx.loadOlderHistory(),
 };
 
 export const statusCommand: Command = {

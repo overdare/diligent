@@ -1,7 +1,7 @@
 // @summary Renders the agent message history and real-time streaming output
 
 import type { ToolResultMessage } from "@diligent/core/message-contract";
-import type { AgentEvent, ThreadHistoryResponse } from "@diligent/protocol";
+import type { AgentEvent, ThreadHistoryResponse, ThreadReadResponse } from "@diligent/protocol";
 import { displayWidth } from "../framework/string-width";
 import type { Component } from "../framework/types";
 import { appendHistoryItems } from "./history-items";
@@ -21,7 +21,7 @@ export interface ChatViewOptions {
   cwd?: string;
   getCommitWidth?: () => number;
   onCommittedLines?: (lines: string[]) => void;
-  loadChildThread?: (threadId: string) => Promise<ThreadHistoryResponse | null>;
+  loadChildThread?: (threadId: string) => Promise<ThreadReadResponse | null>;
 }
 
 /**
@@ -61,7 +61,7 @@ export class ChatView implements Component {
     };
   }
 
-  setHistory(history: ThreadHistoryResponse, reset: boolean, childThreadId?: string): void {
+  setHistory(history: ThreadHistoryResponse, reset: boolean): void {
     if (reset) this.clearHistory();
     const store = new ThreadStore({ requestRender: () => {} });
     appendHistoryItems(store, history.items);
@@ -69,9 +69,7 @@ export class ChatView implements Component {
       includeLeadingSeparator: false,
       toolResultsExpanded: this.store.isToolResultsExpanded(),
     });
-    if (history.nextCursor)
-      lines.unshift(`Earlier history available: /older${childThreadId ? ` ${childThreadId}` : ""}`, "");
-    if (childThreadId) lines.unshift(`Child thread ${childThreadId}`, "");
+    if (history.nextCursor) lines.unshift("Earlier history available: /older", "");
     // Native scrollback is append-only. Show the requested older page after its
     // loading notice rather than inserting before lines already flushed to the terminal.
     this.addLines(lines);

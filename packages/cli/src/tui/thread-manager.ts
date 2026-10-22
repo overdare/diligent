@@ -15,7 +15,7 @@ export interface ThreadManagerDeps {
   getCurrentFastMode: () => boolean;
   setCurrentThreadId: (id: string | null) => void;
   updateStatusBar: (updates: { sessionId: string }) => void;
-  showHistory?: (history: ThreadHistoryResponse, reset: boolean, childThreadId?: string) => void;
+  showHistory?: (history: ThreadHistoryResponse, reset: boolean) => void;
   showProgress?: (message: string) => void;
 }
 
@@ -24,8 +24,8 @@ export interface ThreadManager {
   resumeThread: (threadId?: string) => Promise<string | null>;
   listThreads: (onBatch?: (threads: SessionSummary[]) => boolean | undefined) => Promise<SessionSummary[]>;
   readThread: () => Promise<ThreadReadResponse | null>;
-  readThreadById: (threadId: string) => Promise<ThreadHistoryResponse | null>;
-  loadOlderHistory: (threadId?: string) => Promise<void>;
+  readThreadById: (threadId: string) => Promise<ThreadReadResponse | null>;
+  loadOlderHistory: () => Promise<void>;
   isReady: () => boolean;
   dispose: () => void;
   deleteThread: (threadId: string) => Promise<boolean>;
@@ -35,8 +35,8 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
   let currentThreadId: string | null = null;
   let generation = 0;
   let ready = false;
-  const histories = new Map<string, ThreadHistoryResponse>();
-  const loading = new Set<string>();
+  let history: ThreadHistoryResponse | null = null;
+  let loadingOlder = false;
   const setThread = (id: string | null) => {
     currentThreadId = id;
     deps.setCurrentThreadId(id);
@@ -56,7 +56,7 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
     },
     async startNewThread() {
       const token = ++generation;
-      loading.clear();
+      loadingOlder = false;
       ready = false;
       const rpc = rpcClient();
       try {
@@ -67,8 +67,8 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
         });
         if (token !== generation) return response.threadId;
         setThread(response.threadId);
-        histories.clear();
-        deps.showHistory?.({ cwd: process.cwd(), items: [] }, true);
+        history = { cwd: process.cwd(), items: [] };
+        deps.showHistory?.(history, true);
         await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE, { threadId: response.threadId });
         if (token === generation) ready = true;
         return response.threadId;
@@ -79,7 +79,7 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
     },
     async resumeThread(threadId) {
       const token = ++generation;
-      loading.clear();
+      loadingOlder = false;
       ready = false;
       const rpc = rpcClient();
       progress("Loading session history…");
@@ -91,13 +91,12 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
           if (!threadId) return manager.startNewThread();
         }
         setThread(threadId);
-        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY, { threadId });
+        const recent = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY, { threadId });
         if (token !== generation) return null;
-        histories.clear();
-        histories.set(threadId, history);
-        deps.showHistory?.(history, true);
+        history = recent;
+        deps.showHistory?.(recent, true);
         progress(
-          `Preparing session… History is available${history.nextCursor ? "; /older loads earlier history" : ""}.`,
+          `Preparing session… History is available${recent.nextCursor ? "; /older loads earlier history" : ""}.`,
         );
         // Yield to the renderer before starting potentially expensive runtime restoration.
         const rendered = Promise.withResolvers<void>();
@@ -139,42 +138,35 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
       return token === generation ? response : null;
     },
     async readThreadById(threadId) {
-      const token = generation;
-      const history = await rpcClient().request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY, { threadId });
-      if (token !== generation) return null;
-      histories.set(threadId, history);
-      return history;
+      const rpc = deps.getRpcClient();
+      if (!rpc) return null;
+      return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId });
     },
-    async loadOlderHistory(threadId = currentThreadId ?? undefined) {
-      if (!threadId || loading.has(threadId)) return;
-      const token = generation;
-      const previous = histories.get(threadId);
-      if (previous && !previous.nextCursor) {
+    async loadOlderHistory() {
+      const threadId = currentThreadId;
+      const previous = history;
+      if (!threadId || !previous || loadingOlder) return;
+      if (!previous.nextCursor) {
         progress("No earlier history.");
         return;
       }
-      loading.add(threadId);
+      const token = generation;
+      loadingOlder = true;
       progress("Loading earlier history…");
       try {
         const page = await rpcClient().request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY, {
           threadId,
-          cursor: previous?.nextCursor,
+          cursor: previous.nextCursor,
         });
         if (token !== generation) return;
-        const history = { ...page, items: mergeHistoryItems(page.items, previous?.items ?? []) };
-        histories.set(threadId, history);
+        history = { ...page, items: mergeHistoryItems(page.items, previous.items) };
         const pageIds = new Set(page.items.map((item) => item.itemId));
-        const displayPage = { ...page, items: history.items.filter((item) => pageIds.has(item.itemId)) };
-        deps.showHistory?.(displayPage, false, threadId === currentThreadId ? undefined : threadId);
-        progress(
-          history.nextCursor
-            ? `Earlier history loaded. /older${threadId === currentThreadId ? "" : ` ${threadId}`} loads more.`
-            : "All history loaded.",
-        );
+        deps.showHistory?.({ ...page, items: history.items.filter((item) => pageIds.has(item.itemId)) }, false);
+        progress(history.nextCursor ? "Earlier history loaded. /older loads more." : "All history loaded.");
       } catch (error) {
         if (token === generation) progress(`Unable to load earlier history: ${String(error)}. Use /older to retry.`);
       } finally {
-        if (token === generation) loading.delete(threadId);
+        if (token === generation) loadingOlder = false;
       }
     },
     async deleteThread(threadId) {

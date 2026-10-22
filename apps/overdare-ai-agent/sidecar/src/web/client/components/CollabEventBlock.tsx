@@ -1,8 +1,7 @@
 // @summary Collab event block showing sub-agent orchestration in concise conversation order
 
-import type { ThreadHistoryResponse, ToolRenderPayload } from "@diligent/protocol";
-import { mergeHistoryItems } from "@diligent/runtime/client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { ThreadReadResponse, ToolRenderPayload } from "@diligent/protocol";
+import { useCallback, useEffect, useState } from "react";
 import { cn } from "../lib/cn";
 import type { RenderItem } from "../lib/thread-store";
 import { stringifyUnknown } from "../lib/thread-utils";
@@ -12,7 +11,7 @@ import { ToolBlock } from "./ToolBlock";
 
 interface CollabEventBlockProps {
   item: Extract<RenderItem, { kind: "collab" }>;
-  loadChildThread?: (childThreadId: string, cursor?: string) => Promise<ThreadHistoryResponse>;
+  loadChildThread?: (childThreadId: string) => Promise<ThreadReadResponse>;
   initialOpen?: boolean;
 }
 
@@ -27,12 +26,12 @@ type CollabTimelineToolEntry = Extract<CollabTimelineEntry, { kind: "tool" }>;
 
 type CachedCollabViewState = {
   open: boolean;
-  history: ThreadHistoryResponse | null;
+  loadedChildPreview: ChildPreview | null;
 };
 
 const collabViewStateCache = new Map<string, CachedCollabViewState>();
 
-export function deriveChildPreview(payload: ThreadHistoryResponse): ChildPreview {
+export function deriveChildPreview(payload: ThreadReadResponse): ChildPreview {
   const childMessages: string[] = [];
   const childTimeline: ChildPreview["childTimeline"] = [];
   const childToolsByCallId = new Map<string, ChildPreview["childTools"][number]>();
@@ -299,17 +298,8 @@ export function CollabEventBlock({ item, loadChildThread, initialOpen = false }:
   const [open, setOpen] = useState(cachedState?.open ?? initialOpen);
   const [isLoadingChild, setIsLoadingChild] = useState(false);
   const [childLoadError, setChildLoadError] = useState<string | null>(null);
-  const [loadedChildPreview, setLoadedChildPreview] = useState<ChildPreview | null>(() =>
-    cachedState?.history ? deriveChildPreview(cachedState.history) : null,
-  );
-  const [childHistory, setChildHistory] = useState<ThreadHistoryResponse | null>(cachedState?.history ?? null);
-  const requestRef = useRef(0);
-  const attemptedRef = useRef(Boolean(cachedState?.history));
-  useEffect(
-    () => () => {
-      requestRef.current++;
-    },
-    [],
+  const [loadedChildPreview, setLoadedChildPreview] = useState<ChildPreview | null>(
+    cachedState?.loadedChildPreview ?? null,
   );
   const hasRunningTool = item.childTools.some((tool) => tool.status === "running");
   const isWaitRunning = item.eventType === "wait" && item.status === "running";
@@ -365,39 +355,33 @@ export function CollabEventBlock({ item, loadChildThread, initialOpen = false }:
     setOpen((value) => !value);
   }
 
-  const loadChildDetail = useCallback(
-    async (cursor?: string): Promise<void> => {
-      if (item.eventType !== "spawn" || !item.childThreadId || !loadChildThread || isLoadingChild) return;
-      const request = ++requestRef.current;
-      attemptedRef.current = true;
-      setIsLoadingChild(true);
-      setChildLoadError(null);
-      try {
-        const page = await loadChildThread(item.childThreadId, cursor);
-        if (request !== requestRef.current) return;
-        const child =
-          cursor && childHistory ? { ...page, items: mergeHistoryItems(page.items, childHistory.items) } : page;
-        setChildHistory(child);
-        setLoadedChildPreview(deriveChildPreview(child));
-      } catch (error) {
-        if (request === requestRef.current) setChildLoadError(error instanceof Error ? error.message : String(error));
-      } finally {
-        if (request === requestRef.current) setIsLoadingChild(false);
-      }
-    },
-    [item.eventType, item.childThreadId, loadChildThread, isLoadingChild, childHistory],
-  );
+  const loadChildDetail = useCallback(async (): Promise<void> => {
+    if (item.eventType !== "spawn" || !item.childThreadId || !loadChildThread) return;
+    if (isLoadingChild) return;
+    if (loadedChildPreview) return;
+    setIsLoadingChild(true);
+    setChildLoadError(null);
+    try {
+      const child = await loadChildThread(item.childThreadId);
+      setLoadedChildPreview(deriveChildPreview(child));
+    } catch (error) {
+      setChildLoadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoadingChild(false);
+    }
+  }, [item.eventType, item.childThreadId, loadChildThread, isLoadingChild, loadedChildPreview]);
 
   const retryLoadChildDetail = useCallback(async (): Promise<void> => {
-    await loadChildDetail(childHistory?.nextCursor);
-  }, [loadChildDetail, childHistory]);
+    setLoadedChildPreview(null);
+    await loadChildDetail();
+  }, [loadChildDetail]);
 
   useEffect(() => {
-    collabViewStateCache.set(persistenceKey, { open, history: childHistory });
-  }, [persistenceKey, open, childHistory]);
+    collabViewStateCache.set(persistenceKey, { open, loadedChildPreview });
+  }, [persistenceKey, open, loadedChildPreview]);
 
   useEffect(() => {
-    if (!open || attemptedRef.current) return;
+    if (!open) return;
     if (item.eventType !== "spawn" || !item.childThreadId) return;
     void loadChildDetail();
   }, [open, item.eventType, item.childThreadId, loadChildDetail]);
@@ -478,16 +462,6 @@ export function CollabEventBlock({ item, loadChildThread, initialOpen = false }:
 
           {item.eventType === "spawn" && item.childThreadId ? (
             <div className="ml-7 pt-0.5 text-xs leading-5 text-text/55">
-              {childHistory?.nextCursor ? (
-                <button
-                  type="button"
-                  disabled={isLoadingChild}
-                  onClick={() => void loadChildDetail(childHistory.nextCursor)}
-                  className="text-accent hover:underline"
-                >
-                  Load earlier child history
-                </button>
-              ) : null}
               {isLoadingChild ? <div>Loading child thread details…</div> : null}
               {!isLoadingChild && childLoadError ? (
                 <div className="space-y-1">

@@ -4,7 +4,7 @@ import type {
   AgentEvent,
   AssistantMessage,
   TextBlock,
-  ThreadHistoryResponse,
+  ThreadReadResponse,
   ToolRenderPayload,
 } from "@diligent/protocol";
 import { COLLAB_TOOL_NAMES, normalizeToolName, ToolRenderPayloadSchema } from "@diligent/protocol";
@@ -77,7 +77,7 @@ export function parseSpawnChildThreadId(output: string): string | undefined {
   return typeof threadId === "string" && threadId.trim().length > 0 ? threadId : undefined;
 }
 
-export function buildChildDetailLines(payload: ThreadHistoryResponse): string[] {
+export function buildChildDetailLines(payload: ThreadReadResponse): string[] {
   const detailLines: string[] = [];
   let assistantCount = 0;
   let toolCount = 0;
@@ -541,7 +541,6 @@ function buildToolEndItemLines(options: {
         }
       }
       const childThreadId = parseSpawnChildThreadId(event.output);
-      if (childThreadId) lines.push(`${t.dim}  View child history: /older ${childThreadId}${t.reset}`);
       const trimmedNickname = (parsed?.nickname as string | undefined)?.trim();
       const item = createToolResultItem(lines);
       if (childThreadId && trimmedNickname) {

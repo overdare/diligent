@@ -236,8 +236,8 @@ export class App {
         this.updateAppServerLogSession(id);
       },
       updateStatusBar: (updates) => this.statusBar.update(updates),
-      showHistory: (history, reset, childThreadId) => {
-        this.chatView.setHistory(history, reset, childThreadId);
+      showHistory: (history, reset) => {
+        this.chatView.setHistory(history, reset);
         this.renderer.requestRender();
       },
       showProgress: (message) => {
