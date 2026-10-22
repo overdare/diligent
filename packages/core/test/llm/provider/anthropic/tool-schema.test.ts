@@ -1,4 +1,4 @@
-// @summary Tests Anthropic root-composition compatibility without losing model-visible constraints
+// @summary Tests Anthropic root-composition projection without generated schema descriptions
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { convertTools } from "../../../../src/llm/provider/anthropic";
@@ -10,9 +10,13 @@ describe("convertTools function schemas", () => {
     return (tools?.[0] as { input_schema: Record<string, unknown> }).input_schema;
   }
 
-  test.each(["anyOf", "oneOf", "allOf"])("moves root %s constraints into the schema description", (keyword) => {
+  test.each([
+    "anyOf",
+    "oneOf",
+    "allOf",
+  ])("projects root %s arguments without appending schema internals to descriptions", (keyword) => {
     const branches = [
-      { type: "object", properties: { a: { type: "string" } }, required: ["a"] },
+      { type: "object", properties: { a: { type: "string", description: "Text to write." } }, required: ["a"] },
       { type: "object", properties: { b: { type: "number" } }, required: ["b"] },
     ];
     const input = Object.freeze({
@@ -26,12 +30,15 @@ describe("convertTools function schemas", () => {
 
     expect(schema.type).toBe("object");
     expect(schema).not.toHaveProperty(keyword);
-    expect(schema.description).toContain(input.description);
-    expect(schema.description).toContain(`${keyword}: ${JSON.stringify(branches)}`);
-    expect(schema.properties).toEqual(input.properties);
-    expect(schema.required).toEqual(["requestId"]);
-    // Branch-only arguments must remain possible; do not turn this into a closed empty object.
-    expect(schema.additionalProperties).not.toBe(false);
+    expect(schema.description).toBe(input.description);
+    expect(schema.properties).toEqual({
+      a: { type: "string", description: "Text to write." },
+      b: { type: "number" },
+      requestId: { type: "string" },
+    });
+    expect(new Set(schema.required as string[])).toEqual(
+      new Set(keyword === "allOf" ? ["a", "b", "requestId"] : ["requestId"]),
+    );
     expect(input[keyword]).toEqual(branches);
     expect(input.description).toBe("Choose the appropriate arguments.");
   });
@@ -55,22 +62,24 @@ describe("convertTools function schemas", () => {
 
     expect(schema).not.toHaveProperty("anyOf");
     expect(schema.properties).toEqual({ nested });
+    expect(schema.description).toBeUndefined();
   });
 
-  test("spills every root composition when multiple keywords coexist without a description", () => {
+  test("removes simultaneous root compositions without generating a description", () => {
     const anyOf = [{ required: ["a"] }, { required: ["b"] }];
     const oneOf = [{ required: ["x"] }, { required: ["y"] }];
     const allOf = [{ required: ["id"] }];
-    const schema = schemaOf({ type: "object", anyOf, oneOf, allOf });
+    const properties = Object.fromEntries(["a", "b", "x", "y", "id"].map((name) => [name, { type: "string" }]));
+    const schema = schemaOf({ type: "object", properties, anyOf, oneOf, allOf });
 
-    for (const [keyword, branches] of Object.entries({ anyOf, oneOf, allOf })) {
-      expect(schema).not.toHaveProperty(keyword);
-      expect(schema.description).toContain(`${keyword}: ${JSON.stringify(branches)}`);
-    }
+    for (const keyword of ["anyOf", "oneOf", "allOf"]) expect(schema).not.toHaveProperty(keyword);
+    expect(schema.description).toBeUndefined();
+    expect(schema.properties).toEqual(properties);
+    expect(schema.required).toEqual(["id"]);
   });
 
-  test("preserves Zod union branches and their references as guidance without mutating the canonical schema", () => {
-    const name = z.string().min(1);
+  test("keeps Zod union arguments and authored descriptions while resolving moved references", () => {
+    const name = z.string().min(1).describe("Entry name.");
     const parameters = z.discriminatedUnion("operation", [
       z.object({ operation: z.literal("read"), name }).strict(),
       z.object({ operation: z.literal("write"), name, content: z.string() }).strict(),
@@ -80,8 +89,30 @@ describe("convertTools function schemas", () => {
     const schema = schemaOf(Object.freeze(canonical));
 
     expect(schema).not.toHaveProperty("anyOf");
-    expect(schema.description).toContain(JSON.stringify(canonical.anyOf));
+    expect(schema.description).toBeUndefined();
+    expect(schema.properties).toEqual({
+      operation: {
+        anyOf: [
+          { type: "string", const: "read" },
+          { type: "string", const: "write" },
+        ],
+      },
+      name: { type: "string", minLength: 1, description: "Entry name." },
+      content: { type: "string" },
+    });
+    expect(schema.required).toEqual(["operation", "name"]);
+    expect(schema.additionalProperties).toBe(false);
     expect(JSON.stringify(canonical)).toBe(original);
-    expect(schema.additionalProperties).not.toBe(false);
+  });
+
+  test("projects object alternatives when the root object type already excludes nullable branches", () => {
+    const schema = schemaOf({
+      type: "object",
+      anyOf: [{ type: "object", properties: { path: { type: "string" } }, required: ["path"] }, { type: "null" }],
+    });
+    expect(schema).not.toHaveProperty("anyOf");
+    expect(schema.properties).toEqual({ path: { type: "string" } });
+    expect(schema.required).toEqual(["path"]);
+    expect(schema.description).toBeUndefined();
   });
 });
