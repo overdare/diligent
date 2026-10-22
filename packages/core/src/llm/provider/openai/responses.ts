@@ -9,6 +9,7 @@ import type {
   ToolDefinition,
 } from "../../types";
 import { openAICompactionStateToInputItems } from "./compaction-state";
+import { normalizeResponsesToolSchema } from "./tool-schema";
 
 // OpenAI vision `detail`: "low" = fixed 512px (~85 tokens), "high" = tiled, "auto" = server picks by size.
 export type OpenAIImageDetail = "auto" | "low" | "high";
@@ -239,7 +240,7 @@ export function buildTools(tools: ToolDefinition[], strict?: boolean): OpenAIRes
         type: "function" as const,
         name: t.name,
         description: t.description,
-        parameters: t.inputSchema,
+        parameters: normalizeResponsesToolSchema(t.inputSchema),
         ...(strict !== undefined && { strict }),
       },
     ];
