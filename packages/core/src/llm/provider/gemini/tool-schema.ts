@@ -1,9 +1,8 @@
 // @summary Normalizes union and oversized function schemas for Gemini tool compatibility.
+import { isSchemaObject as isRecord, type JsonSchema, mapJsonSchema, mapSchemaChildren } from "../tool-schema";
 
 const DEFAULT_MAX_SCHEMA_BYTES = 32_000;
 const PROPERTY_CAPS = [128, 64, 32, 16, 8] as const;
-
-type JsonSchema = Record<string, unknown>;
 
 interface SchemaVariant {
   schema: JsonSchema;
@@ -11,9 +10,11 @@ interface SchemaVariant {
 }
 
 export function normalizeGeminiToolSchema(schema: JsonSchema, maxSchemaBytes = DEFAULT_MAX_SCHEMA_BYTES): JsonSchema {
-  if (JSON.stringify(schema).length <= maxSchemaBytes) return schema;
-  const normalized = simplifySchema(dereferenceSchema(schema, schema, new Set()));
-  return trimToSchemaBudget(isRecord(normalized) ? normalized : schema, maxSchemaBytes);
+  const dereferenced = dereferenceSchema(schema, schema, new Set()) as JsonSchema;
+  const compatible = flattenRootCompositions(dereferenced);
+  if (!Number.isFinite(maxSchemaBytes) || JSON.stringify(compatible).length <= maxSchemaBytes) return compatible;
+  const normalized = simplifySchema(compatible);
+  return trimToSchemaBudget(isRecord(normalized) ? normalized : compatible, maxSchemaBytes);
 }
 
 function trimToSchemaBudget(schema: JsonSchema, maxSchemaBytes: number): JsonSchema {
@@ -25,55 +26,45 @@ function trimToSchemaBudget(schema: JsonSchema, maxSchemaBytes: number): JsonSch
 }
 
 function capObjectProperties(value: unknown, maxProperties: number): unknown {
-  if (Array.isArray(value)) return value.map((entry) => capObjectProperties(entry, maxProperties));
-  if (!isRecord(value)) return value;
-  const entries = Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [key, capObjectProperties(entry, maxProperties)]),
-  );
-  if (!isRecord(entries.properties)) return entries;
-  const kept = Object.entries(entries.properties).slice(0, maxProperties);
-  if (kept.length === Object.keys(entries.properties).length) return entries;
-  return { ...entries, properties: Object.fromEntries(kept) };
+  return mapJsonSchema(value, (schema) => {
+    if (!isRecord(schema.properties)) return schema;
+    const entries = Object.entries(schema.properties);
+    if (entries.length <= maxProperties) return schema;
+    return { ...schema, properties: Object.fromEntries(entries.slice(0, maxProperties)) };
+  });
 }
 
 function pruneDanglingRequired(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(pruneDanglingRequired);
-  if (!isRecord(value)) return value;
-  const entries = Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, pruneDanglingRequired(entry)]));
-  if (!Array.isArray(entries.required)) return entries;
-  const properties = isRecord(entries.properties) ? entries.properties : {};
-  const required = entries.required.filter((name) => typeof name === "string" && Object.hasOwn(properties, name));
-  if (required.length > 0) return { ...entries, required };
-  const { required: _dropped, ...rest } = entries;
-  return rest;
+  return mapJsonSchema(value, (schema) => {
+    if (!Array.isArray(schema.required)) return schema;
+    const properties = isRecord(schema.properties) ? schema.properties : {};
+    const required = schema.required.filter((name) => typeof name === "string" && Object.hasOwn(properties, name));
+    if (required.length > 0) return { ...schema, required };
+    const { required: _dropped, ...rest } = schema;
+    return rest;
+  });
 }
 
-/**
- * Merges a union at the root of a tool schema into a single object schema.
- *
- * Gemini's schema dialect is an OpenAPI subset that reads a tool schema as an object and does not
- * reliably accept `anyOf` in that position, so the branches are folded into one property set.
- * Unions nested inside `properties` are left alone — Gemini accepts those, and merging them would
- * lose the per-branch shapes. Unlike size-driven simplification this runs for every schema,
- * because an external MCP server can advertise a root union no matter how our own tools are
- * written.
- */
-export function flattenGeminiUnionSchema(schema: JsonSchema): JsonSchema {
-  if (!Array.isArray(schema.anyOf)) return schema;
-  const collapsed = collapseUnion(schema);
-  return isRecord(collapsed) ? collapsed : schema;
+/** Fold root object compositions before the Google SDK mistakes them for parameterless tools. */
+function flattenRootCompositions(schema: JsonSchema): JsonSchema {
+  let result = schema;
+  for (const key of ["anyOf", "oneOf", "allOf"] as const) {
+    const branches = result[key];
+    if (!Array.isArray(branches)) continue;
+    const variants = branches.map((branch) => (isRecord(branch) ? flattenRootCompositions(branch) : branch));
+    result = collapseComposition({ ...result, [key]: variants }, key);
+  }
+  return result;
 }
 
 function dereferenceSchema(value: unknown, root: JsonSchema, resolvingRefs: Set<string>): unknown {
-  if (Array.isArray(value)) {
-    return value.map((entry) => dereferenceSchema(entry, root, resolvingRefs));
-  }
+  // Walk schema positions only: names such as "$defs" and values under const/default are data.
   if (!isRecord(value)) return value;
 
   const ref = typeof value.$ref === "string" ? value.$ref : undefined;
-  if (ref?.startsWith("#/")) {
+  if (ref === "#" || ref?.startsWith("#/")) {
     if (resolvingRefs.has(ref)) return {};
-    const target = resolveJsonPointer(root, ref);
+    const target = ref === "#" ? root : resolveJsonPointer(root, ref);
     if (target !== undefined) {
       const nextRefs = new Set(resolvingRefs).add(ref);
       const { $ref, ...siblings } = value;
@@ -85,11 +76,12 @@ function dereferenceSchema(value: unknown, root: JsonSchema, resolvingRefs: Set<
     }
   }
 
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([key]) => key !== "$defs" && key !== "definitions" && key !== "$schema")
-      .map(([key, entry]) => [key, dereferenceSchema(entry, root, resolvingRefs)]),
-  );
+  let node = value;
+  if (value.$defs !== undefined || value.definitions !== undefined || value.$schema !== undefined) {
+    const { $defs, definitions, $schema, ...rest } = value;
+    node = rest;
+  }
+  return mapSchemaChildren(node, (child) => dereferenceSchema(child, root, resolvingRefs));
 }
 
 function resolveJsonPointer(root: JsonSchema, ref: string): unknown {
@@ -103,32 +95,36 @@ function resolveJsonPointer(root: JsonSchema, ref: string): unknown {
 }
 
 function simplifySchema(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(simplifySchema);
-  if (!isRecord(value)) return value;
-
-  const simplified = Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, simplifySchema(entry)]));
-  return collapseUnion(simplified);
+  return mapJsonSchema(value, (schema) => collapseComposition(schema, "anyOf"));
 }
 
-function collapseUnion(schema: JsonSchema): unknown {
-  const anyOf = Array.isArray(schema.anyOf)
-    ? schema.anyOf.filter((variant) => !isImpossibleSchema(variant))
-    : undefined;
-  if (!anyOf || anyOf.length === 0) return schema;
+function collapseComposition(schema: JsonSchema, key: "anyOf" | "oneOf" | "allOf"): JsonSchema {
+  const branches = schema[key];
+  if (!Array.isArray(branches) || branches.length === 0) return schema;
+  const variants = deduplicateSchemas(
+    key === "allOf" ? branches : branches.filter((variant) => !isImpossibleSchema(variant)),
+  );
+  if (variants.length === 0 || !variants.every(isObjectSchema)) return { ...schema, [key]: variants };
 
-  const variants = deduplicateSchemas(anyOf);
-  if (variants.length === 1) {
-    const { anyOf: _anyOf, ...siblings } = schema;
-    return isRecord(variants[0]) ? { ...variants[0], ...siblings } : variants[0];
-  }
-  if (variants.every(isObjectSchema)) {
-    const { anyOf: _anyOf, ...siblings } = schema;
-    return { ...mergeObjectSchemas(variants as JsonSchema[]), ...siblings };
-  }
-  return { ...schema, anyOf: variants };
+  const { [key]: _composition, ...siblings } = schema;
+  const merged = mergeObjectSchemas(variants, key === "allOf");
+  const ownProperties = isRecord(siblings.properties) ? siblings.properties : {};
+  const required = [
+    ...new Set([
+      ...(Array.isArray(merged.required) ? merged.required : []),
+      ...(Array.isArray(siblings.required) ? siblings.required : []),
+    ]),
+  ];
+  return {
+    ...(variants.length === 1 ? variants[0] : {}),
+    ...merged,
+    ...siblings,
+    properties: { ...(merged.properties as JsonSchema), ...ownProperties },
+    ...(required.length > 0 ? { required } : {}),
+  };
 }
 
-function mergeObjectSchemas(schemas: JsonSchema[]): JsonSchema {
+function mergeObjectSchemas(schemas: JsonSchema[], intersect = false): JsonSchema {
   const variantsByProperty = new Map<string, SchemaVariant[]>();
 
   for (const schema of schemas) {
@@ -146,7 +142,9 @@ function mergeObjectSchemas(schemas: JsonSchema[]): JsonSchema {
     [...variantsByProperty].map(([propertyName, variants]) => [propertyName, mergePropertyVariants(variants)]),
   );
   const requiredSets = schemas.map((schema) => new Set(Array.isArray(schema.required) ? schema.required : []));
-  const required = [...(requiredSets[0] ?? [])].filter((name) => requiredSets.every((set) => set.has(name)));
+  const required = intersect
+    ? [...new Set(requiredSets.flatMap((set) => [...set]))]
+    : [...(requiredSets[0] ?? [])].filter((name) => requiredSets.every((set) => set.has(name)));
 
   return {
     type: "object",
@@ -190,13 +188,9 @@ function deduplicateSchemas(values: unknown[]): unknown[] {
 }
 
 function isObjectSchema(value: unknown): value is JsonSchema {
-  return isRecord(value) && (value.type === "object" || isRecord(value.properties));
+  return isRecord(value) && (value.type === "object" || value.type === undefined);
 }
 
 function isImpossibleSchema(value: unknown): boolean {
   return isRecord(value) && isRecord(value.not) && Object.keys(value.not).length === 0;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
