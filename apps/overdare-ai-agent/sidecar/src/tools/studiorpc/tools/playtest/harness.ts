@@ -1,6 +1,7 @@
 // @summary Persistent Studio-owned Luau harness assets and the generic observation driver.
 import { createHash } from "node:crypto";
 import type { call } from "../../rpc";
+import { HARNESS_HELPERS_SOURCE, HELPERS_MODULE_NAME, HELPERS_SOURCE_HEADER } from "./harness-helpers";
 
 export const ADAPTER_FOLDER = "DiligentPlaytestHarnesses";
 const DRIVER_PREFIX = "DiligentPlaytestDriver_";
@@ -139,6 +140,7 @@ export interface HarnessAsset {
   name: string;
   moduleGuid: string;
   driverGuid?: string;
+  helperGuid?: string;
   source: string;
   sourceHash: string;
   frameName: string;
@@ -162,6 +164,9 @@ export async function listHarnesses(callRpc: typeof call): Promise<HarnessSummar
   const tree = (await callRpc("level.browse", {})) as { level?: BrowseNode[] } | BrowseNode[];
   const entries = flatten(Array.isArray(tree) ? tree : (tree.level ?? []));
   const prefix = `ReplicatedStorage.${ADAPTER_FOLDER}.`;
+  const helperPath = `${prefix}${HELPERS_MODULE_NAME}`;
+  const helpers = entries.filter((entry) => entry.path === helperPath || entry.path.endsWith(`.${helperPath}`));
+  if (helpers.length > 1) throw new Error("Managed playtest helpers are ambiguous in the Studio tree");
   const result: HarnessSummary[] = [];
   for (const entry of entries) {
     const index = entry.path.indexOf(prefix);
@@ -172,7 +177,13 @@ export async function listHarnesses(callRpc: typeof call): Promise<HarnessSummar
     const drivers = entries.filter((e) => e.path === suffix || e.path.endsWith(`.${suffix}`));
     if (result.some((a) => a.name === name) || drivers.length > 1)
       throw new Error(`Harness ${name} is ambiguous in the Studio tree`);
-    result.push({ name, moduleGuid: entry.guid, driverGuid: drivers[0]?.guid, frameName: frameNameFor(name) });
+    result.push({
+      name,
+      moduleGuid: entry.guid,
+      driverGuid: drivers[0]?.guid,
+      helperGuid: helpers[0]?.guid,
+      frameName: frameNameFor(name),
+    });
   }
   return result.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -193,6 +204,14 @@ export async function readHarness(
   return { ...asset, source, sourceHash: sourceHash(source) };
 }
 
+function ensureHelpersCode(): string {
+  return `local helpers=folder:FindFirstChild('${HELPERS_MODULE_NAME}')
+if helpers and (not helpers:IsA('ModuleScript') or string.sub(helpers.Source,1,${HELPERS_SOURCE_HEADER.length})~=${luaString(HELPERS_SOURCE_HEADER)}) then error('Managed playtest helper name is occupied by unrelated code') end
+if not helpers then helpers=Instance.new('ModuleScript'); helpers.Name='${HELPERS_MODULE_NAME}'; helpers.Parent=folder end
+local helperSource=${luaString(HARNESS_HELPERS_SOURCE)}
+if helpers.Source~=helperSource then helpers.Source=helperSource end`;
+}
+
 export function installCode(name: string, source: string): string {
   return `local rs=game:FindFirstChild('ReplicatedStorage')
 local starter=game:FindFirstChild('StarterPlayer')
@@ -202,8 +221,9 @@ local folder=rs:FindFirstChild('${ADAPTER_FOLDER}')
 if folder and not folder:IsA('Folder') then error('Harness folder name is occupied') end
 if not folder then folder=Instance.new('Folder'); folder.Name='${ADAPTER_FOLDER}'; folder.Parent=rs end
 if folder:FindFirstChild(${luaString(name)}) or scripts:FindFirstChild(${luaString(DRIVER_PREFIX + name)}) then error('Harness already exists; read it and update with its current source hash') end
+${ensureHelpersCode()}
 local module=Instance.new('ModuleScript'); module.Name=${luaString(name)}; module.Source=${luaString(source)}; module.Parent=folder
-local driver=Instance.new('LocalScript'); driver.Name=${luaString(DRIVER_PREFIX + name)}; driver.Source=${luaString(createDriverSource(name))}; driver.Parent=scripts
+local driver=Instance.new('LocalScript'); driver.Name=${luaString(DRIVER_PREFIX + name)}; driver.Source=${luaString(createDriverSource(name))}; driver.Enabled=false; driver.Parent=scripts
 return {installed=true,name=${luaString(name)}}`;
 }
 
@@ -217,12 +237,14 @@ local starter=game:FindFirstChild('StarterPlayer')
 local scripts=starter and starter:FindFirstChild('StarterPlayerScripts')
 local driver=scripts and scripts:FindFirstChild(${luaString(DRIVER_PREFIX + name)})
 if not driver or not driver:IsA('LocalScript') then error('Managed playtest driver is missing') end
+${ensureHelpersCode()}
 module.Source=${luaString(source)}
 driver.Source=${luaString(createDriverSource(name))}
 return {updated=true,name=${luaString(name)}}`;
 }
 
 export const HARNESS_CONTRACT = `Author a game-specific Luau ModuleScript returning a table with observe() and optional start().
+install/update maintain a reserved strict ModuleScript ${HELPERS_MODULE_NAME} beside the adapter. Use local P=require(script.Parent.${HELPERS_MODULE_NAME}) and typed constructors instead of hand-inferred heterogeneous tables: P.action("forward","Move forward",{P.key("W","press",100),P.wait(50)},{P.expect("distance","increase")}). Constructors return P.Action, P.Event and P.Expectation; annotate empty arrays with those types. Other constructors: P.look(yaw?,pitch?,timeoutMs?), P.click(target,button?), P.clickAt(x,y,button?), P.pointer(x,y), P.mouseDelta(x,y), P.scroll(delta). Coordinates stay normalized; runtime validation remains mandatory. These helpers only describe inputs/checks, never execute gameplay or manufacture outcomes. Existing plain-table adapters remain supported.
 start(api) may bind accepted server snapshot/feedback signals and receives the driver api: api.emit(level, message, data?) logs a game event that the driver republishes for ${DRIVER_EVENT_RETAIN_SECONDS} seconds (newest ${MAX_DRIVER_EVENTS}) so the adapter never keeps a growing log; api.declareCheck(id, basis, description?) and api.check(id, status, detail?) report verification checks (below). observe() returns {state={}, decisionState?, actions={}, terminal?, events?, checks?, coverage?, progress?}.
 The whole frame is JSON at most 256 KiB. Publish current facts only; never accumulate proofs, samples or logs in state. An oversized frame fails the run with the largest sections named.
 state: compact JSON facts; do not treat client defaults as authoritative. No Instances/Vector3/userdata in JSON: convert to plain tables.
@@ -260,10 +282,12 @@ The generic driver owns protocolVersion=1, harnessId, revision and gameTimeSecon
 The same adapter can run with decisionProvider=laya or openai-decisions; omitting decisionProvider uses the sidecar host's configured default (DILIGENT_DECISION_PROVIDER, else laya). observationMode=structured is default; structured+image requires an image-capable provider, accessible PNG captures and one targeted owned PIE client. Image bytes are captured by the sidecar at model-decision boundaries, not returned by Lua or put in StringValue. maxVisualAgeMs bounds image age before a new choice dispatch; retained/singleton steps still use fresh structured state. Missing/stale images never silently become a text-only run. OpenAI credentials come from server-side OPENAI_API_KEY; do not put credentials in Source or tool arguments. See the tool schema for options and host screenshot mapping configuration.
 Results include decisionEvidence: model requests/choices/dispatches/confirmed effects, automatic (singleton) dispatches and scenario dispatches. In autonomous mode not_exercised is possible even with a successful game outcome; it does not satisfy a request to verify model-mediated decisions. Correlate the trace by decisionId and verify the intended controller transition, not just call counts. In verification mode decisionEvidence is not_applicable; use verification and coverage.
 Results also include diagnostics: startup readiness waits, the last action with its failed expectations, unmet-expectation counts and hints. Read them before changing the adapter. repeatedFailure appears when the same harness failed the same way in consecutive runs; stop rerunning and narrow the hypothesis.
+Tool output is compact and begins with runId, summaryPath, tracePath and coveragePath. Omitted check/detail rows remain in the full files; consult omittedAttentionChecks before concluding that all issues are shown. Use operation='report', name=<harness>, runIds={<explicit saved IDs>} to build JSON/Markdown evidence instead of writing an ad hoc audit script. Include relevant failures and required normal/exception/regression scenarios. Reports describe only selected runs and never establish visual/audio acceptance or global preservation.
 Integer input fields (durationMs, timeoutMs) are rounded to whole milliseconds, so Luau arithmetic may produce fractions.
 Workflow: list/read actual installed names -> inspect game Lua/GUI and test objective -> describe contract -> author/install -> validate -> game_playtest -> inspect verification/diagnostics/trace/coverage -> read/update using sourceHash -> rerun.
 read found:false is a normal new-project branch; author/install. RPC failure is not evidence that a harness is absent.
 update refreshes the generated common driver too; keep game-specific behavior in the adapter rather than customizing the managed driver.
+New drivers are installed disabled. An approved run temporarily enables only its selected driver when necessary and restores its original Enabled value after owned PIE cleanup, including failures/cancellation. Other drivers and external PIE are never changed. Inspect driver restoration failures before continuing.
 Do not patch an adapter during PIE. For UGC, derive bindings from the current project, not an unrelated example.`;
 
 export const MULTIPLAYER_CONTRACT = `Two-player extension (numberOfPlayer=2, structured only):

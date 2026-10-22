@@ -19,7 +19,7 @@ export interface CheckSummaryItem {
   transitions: CheckTransition[];
 }
 
-interface BasisCounts {
+export interface BasisCounts {
   total: number;
   passed: number;
   failed: number;
@@ -62,6 +62,17 @@ function verificationStatus(requirement: BasisCounts): VerificationSummary["stat
   return "passed";
 }
 
+/** Shared by live tracking and saved-record validation; a terminal never supplies a check verdict. */
+export function summarizeChecks(checks: CheckSummaryItem[]): VerificationSummary {
+  const requirement = countBasis(checks, "requirement");
+  return {
+    status: verificationStatus(requirement),
+    requirement,
+    auxiliary: countBasis(checks, "auxiliary"),
+    checks,
+  };
+}
+
 export function createCheckTracker(): CheckTracker {
   const items = new Map<string, CheckSummaryItem>();
 
@@ -101,13 +112,7 @@ export function createCheckTracker(): CheckTracker {
     },
     summary() {
       const checks = [...items.values()].map((item) => structuredClone(item));
-      const requirement = countBasis(checks, "requirement");
-      return {
-        status: verificationStatus(requirement),
-        requirement,
-        auxiliary: countBasis(checks, "auxiliary"),
-        checks,
-      };
+      return summarizeChecks(checks);
     },
   };
 }

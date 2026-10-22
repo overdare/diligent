@@ -4,7 +4,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPlaytestTools } from "../../../../../src/tools/studiorpc/tools/playtest";
-import { luaString } from "../../../../../src/tools/studiorpc/tools/playtest/harness";
+import {
+  HARNESS_HELPERS_SOURCE,
+  HELPERS_MODULE_NAME,
+} from "../../../../../src/tools/studiorpc/tools/playtest/harness-helpers";
 import { createWriteLock } from "../../../../../src/tools/studiorpc/write-lock";
 
 const context = {
@@ -22,7 +25,10 @@ const tree = {
         {
           Name: "DiligentPlaytestHarnesses",
           ActorGuid: "folder",
-          LuaChildren: [{ Name: "sample", ActorGuid: "adapter", LuaChildren: [] }],
+          LuaChildren: [
+            { Name: "sample", ActorGuid: "adapter", LuaChildren: [] },
+            { Name: HELPERS_MODULE_NAME, ActorGuid: "helpers", LuaChildren: [] },
+          ],
         },
       ],
     },
@@ -129,7 +135,7 @@ describe("editable playtest tools", () => {
     ).rejects.toThrow(/PIE|running/i);
     expect(calls).toEqual(["game.pie.status"]);
   });
-  test("update captures the rollback baseline before editing, then saves and validates both scripts", async () => {
+  test("update captures the rollback baseline before editing, then saves and validates managed assets", async () => {
     let source = "return {observe=function() return {state={},actions={}} end}";
     const next = `${source}\n-- Improved game observation`;
     const calls: string[] = [];
@@ -139,17 +145,20 @@ describe("editable playtest tools", () => {
       calls.push(method);
       if (method === "game.pie.status") return { running: false };
       if (method === "level.browse") return tree;
-      if (method === "instance.read") return { instance: { Name: "sample", Source: source } };
+      if (method === "instance.read")
+        return {
+          instance:
+            args?.ActorGuid === "helpers"
+              ? { Name: HELPERS_MODULE_NAME, Source: HARNESS_HELPERS_SOURCE }
+              : { Name: "sample", Source: source },
+        };
       if (method === "execute.luau") {
         expect(baseline).toBe(source);
-        expect(args?.code).toContain(`module.Source~=${luaString(source)}`);
-        expect(args?.code).toContain(`module.Source=${luaString(next)}`);
         source = next;
         return { updated: true };
       }
       if (method === "level.save.file") return {};
       if (method === "lua.validate") {
-        expect(args?.targetGuids).toEqual(["adapter", "driver"]);
         return { output: "SUMMARY scripts=2 errors=0 warnings=0" };
       }
       throw Error(method);
@@ -290,7 +299,13 @@ test("shared playtest tool switches to Decisions with pixels and persists provid
       requests = 0;
     const rpc = async (method: string, params?: Record<string, unknown>) => {
       if (method === "level.browse") return tree;
-      if (method === "instance.read") return { instance: { Name: "sample", Source: "return {}" } };
+      if (method === "instance.read")
+        return {
+          instance:
+            params?.ActorGuid === "driver"
+              ? { Name: "DiligentPlaytestDriver_sample", InstanceType: "LocalScript", Enabled: true }
+              : { Name: "sample", Source: "return {}" },
+        };
       if (method === "lua.validate") return { output: "SUMMARY scripts=2 errors=0 warnings=0" };
       if (method === "game.pie.status")
         return {
@@ -397,11 +412,25 @@ test("verification mode runs scripted acceptance without any decision provider a
   const dir = await mkdtemp(join(tmpdir(), "playtest-verification-"));
   try {
     let running = false;
+    let driverEnabled = false;
     let revision = 0;
     const injectedEvents: unknown[] = [];
     const rpc = async (method: string, params?: Record<string, unknown>) => {
       if (method === "level.browse") return tree;
-      if (method === "instance.read") return { instance: { Name: "sample", Source: "return {}" } };
+      if (method === "instance.read")
+        return {
+          instance:
+            params?.ActorGuid === "driver"
+              ? { Name: "DiligentPlaytestDriver_sample", InstanceType: "LocalScript", Enabled: driverEnabled }
+              : { Name: "sample", Source: "return {}" },
+        };
+      if (method === "instance.update") {
+        for (const update of params?.Instances as Array<{ ActorGuid: string; Enabled: boolean }>) {
+          if (update.ActorGuid !== "driver") throw Error("Unrelated driver mutation");
+          driverEnabled = update.Enabled;
+        }
+        return {};
+      }
       if (method === "lua.validate") return { output: "SUMMARY scripts=2 errors=0 warnings=0" };
       if (method === "game.pie.status")
         return {
@@ -410,6 +439,7 @@ test("verification mode runs scripted acceptance without any decision provider a
           clients: running ? [{ clientId: "client", injectable: true, targeted: true }] : [],
         };
       if (method === "game.play") {
+        expect(driverEnabled).toBe(true);
         running = true;
         return { started: true };
       }
@@ -483,8 +513,32 @@ test("verification mode runs scripted acceptance without any decision provider a
     });
     const summary = JSON.parse(await readFile(output.summaryPath, "utf8"));
     expect(summary.runConfig.mode).toBe("verification");
+    expect(summary.verification.checks).toEqual([expect.objectContaining({ id: "door-opens", status: "pass" })]);
+    expect(summary.driver).toMatchObject({ originalEnabled: false, temporarilyEnabled: true, restoration: "restored" });
+    expect(driverEnabled).toBe(false);
     expect(running).toBe(false);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("rejected run approval cannot enable a driver or start PIE", async () => {
+  const effects: string[] = [];
+  const rpc = async (method: string) => {
+    if (method === "level.browse") return tree;
+    if (method === "instance.read") return { instance: { Name: "sample", Source: "return {}" } };
+    if (method === "lua.validate") return { output: "SUMMARY scripts=3 errors=0 warnings=0" };
+    effects.push(method);
+    throw Error(`Unapproved Studio effect: ${method}`);
+  };
+  const run = createPlaytestTools({ cwd: "/tmp", callRpc: rpc as never })[1]!;
+  const result = await run.execute(
+    { harnessName: "sample", mode: "verification", goal: "verify" },
+    {
+      ...context,
+      approve: async () => "reject",
+    },
+  );
+  expect(result.metadata?.error).toBe(true);
+  expect(effects).toEqual([]);
 });

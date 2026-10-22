@@ -9,11 +9,13 @@ import {
   sourceHash,
   updateCode,
 } from "./harness";
+import { HARNESS_HELPERS_SOURCE, HELPERS_MODULE_NAME } from "./harness-helpers";
+import { createRunReport } from "./run-report";
 import { approve, harnessParams, type PlaytestToolOptions, validate, withSignal } from "./tool-shared";
 
 const toolName = "studiorpc_game_playtest_harness";
 const description =
-  "Author and maintain the current UGC game's playtest controller as editable Luau code inside Studio. describe returns the contract; list discovers installed names; read returns current source/hash or found:false with the author/install next step. A missing harness is normal for a new project. install persists an adapter and common driver; update checks expectedSourceHash and refreshes the driver. Derive bindings, state/event transitions, parameterized actions, actual effect checks and meaningful model decision points from this game's scripts/GUI and the user's objective. Declare requirement checks (the spec's acceptance criteria) separately from auxiliary harness diagnostics so a run reports which requirement passed or failed. Expose direct controls and optional bounded assists according to the test; keep user-adjustable assistance separate from test goals and game rules. For player exploration, preserve unknowns and route/recovery choices instead of supplying a hidden solution. Optional intent-tagged steps support model-selected goals spanning multiple inputs; the adapter computes each goal independently and receives no semantic choice callback. Validate, run game_playtest, inspect verification/diagnostics/decisionEvidence/coverage and improve between runs. Edits save the project and are refused during PIE. Game-specific logic stays in Studio.";
+  "Author and maintain the current UGC game's playtest controller as editable Luau code inside Studio. describe returns the contract; list discovers installed names; read returns current source/hash or found:false with the author/install next step. A missing harness is normal for a new project. install persists an adapter, disabled common driver and typed descriptor helpers; update checks expectedSourceHash and refreshes managed code. report takes explicit runIds and writes deterministic JSON/Markdown evidence from saved records without Studio calls; include relevant failed, normal, exception and regression runs. It does not infer visual/audio acceptance or global preservation. Derive bindings, state/event transitions, parameterized actions, actual effect checks and meaningful model decision points from this game's scripts/GUI and the user's objective. Declare requirement checks separately from auxiliary harness diagnostics. Expose direct controls and optional bounded assists according to the test; keep user-adjustable assistance separate from test goals and game rules. For player exploration, preserve unknowns and route/recovery choices instead of supplying a hidden solution. Optional intent-tagged steps support model-selected goals spanning multiple inputs; the adapter computes each goal independently and receives no semantic choice callback. Validate, run game_playtest, inspect verification/diagnostics/decisionEvidence/coverage and improve between runs. Edits save the project and are refused during PIE. Game-specific logic stays in Studio.";
 
 export function createHarnessTool(options: PlaytestToolOptions): Tool {
   return {
@@ -24,6 +26,10 @@ export function createHarnessTool(options: PlaytestToolOptions): Tool {
       const parsed = harnessParams.parse(args);
       if (parsed.operation === "describe")
         return { output: `${HARNESS_CONTRACT}\n\n${MULTIPLAYER_CONTRACT}`, metadata: { protocolVersion: 1 } };
+      if (parsed.operation === "report") {
+        const report = await createRunReport(options.cwd, parsed.name, parsed.runIds, ctx.signal);
+        return { output: JSON.stringify(report, null, 2), metadata: report };
+      }
       const rpc = withSignal(options.callRpc, ctx);
       if (parsed.operation === "list") {
         const harnesses = await listHarnesses(rpc);
@@ -83,10 +89,25 @@ export function createHarnessTool(options: PlaytestToolOptions): Tool {
           );
         }
         const installed = await readHarness(rpc, parsed.name);
-        if (!installed || installed.sourceHash !== sourceHash(parsed.source) || !installed.driverGuid) {
-          throw new Error("Harness edit succeeded but source/driver readback did not match; inspect the Studio assets");
+        if (
+          !installed ||
+          installed.sourceHash !== sourceHash(parsed.source) ||
+          !installed.driverGuid ||
+          !installed.helperGuid
+        ) {
+          throw new Error(
+            "Harness edit succeeded but source/driver/helper readback did not match; inspect the Studio assets",
+          );
         }
-        const checked = await validate(rpc, [installed.moduleGuid, installed.driverGuid]);
+        const helper = (await rpc("instance.read", { ActorGuid: installed.helperGuid, Depth: 0 })) as {
+          instance?: { Name?: unknown; Source?: unknown };
+        };
+        if (helper.instance?.Name !== HELPERS_MODULE_NAME || helper.instance.Source !== HARNESS_HELPERS_SOURCE) {
+          throw new Error(
+            "Harness edit succeeded but managed helper source readback did not match; inspect the existing edit, do not replay it",
+          );
+        }
+        const checked = await validate(rpc, [installed.moduleGuid, installed.driverGuid, installed.helperGuid]);
         return {
           output: `${warning ? `${warning}\n` : ""}${JSON.stringify({ ...installed, source: undefined, valid: checked.valid }, null, 2)}\n\n${checked.output}`,
           metadata: {
@@ -94,6 +115,7 @@ export function createHarnessTool(options: PlaytestToolOptions): Tool {
             sourceHash: installed.sourceHash,
             moduleGuid: installed.moduleGuid,
             driverGuid: installed.driverGuid,
+            helperGuid: installed.helperGuid,
             frameName: installed.frameName,
             valid: checked.valid,
           },

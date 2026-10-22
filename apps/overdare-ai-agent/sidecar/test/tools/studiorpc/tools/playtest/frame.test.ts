@@ -31,6 +31,62 @@ function actor(actorId: string, x: number, actions: unknown[] = []) {
 }
 
 describe("playtest frame tolerance and limits", () => {
+  test("empty Luau tables normalize only declared record slots, preserving nested arrays", () => {
+    const startup = parsePlaytestFrame(
+      JSON.stringify(baseFrame({ ready: false, state: [], decisionState: [], actions: {} })),
+    );
+    expect(startup).toMatchObject({ ready: false, state: {}, decisionState: {}, actions: [] });
+
+    const failed = parsePlaytestFrame(
+      baseFrame({
+        state: { samples: [], nested: { items: [] } },
+        error: { message: "Adapter initialization failed" },
+        events: [{ id: "startup", message: "No observations yet", data: [] }],
+        checks: [{ id: "visible", basis: "requirement", status: "pending", detail: [] }],
+      }),
+    );
+    expect(failed.state).toEqual({ samples: [], nested: { items: [] } });
+    expect(failed.error?.message).toBe("Adapter initialization failed");
+    expect(failed.events?.[0]?.data).toEqual({});
+    expect(failed.checks?.[0]?.detail).toEqual({});
+  });
+
+  test("nonempty record arrays and null state remain invalid rather than losing observations", () => {
+    expect(() => parsePlaytestFrame(baseFrame({ state: [{ score: 3 }] }))).toThrow(/state/);
+    expect(() => parsePlaytestFrame(baseFrame({ state: null }))).toThrow(/state/);
+    expect(() => parsePlaytestFrame(baseFrame({ events: [{ id: "event", message: "Observed", data: [1] }] }))).toThrow(
+      /data/,
+    );
+    expect(() =>
+      parsePlaytestFrame(
+        baseFrame({ checks: [{ id: "goal", basis: "requirement", status: "pass", detail: ["proof"] }] }),
+      ),
+    ).toThrow(/detail/);
+  });
+
+  test("actor-local empty record tables preserve both actual actor identities", () => {
+    const frame = parsePlaytestFrame(
+      baseFrame({
+        state: {
+          multiplayerActors: [
+            { ...actor("Player0", 0), state: [], decisionState: [] },
+            { ...actor("Player1", 5), state: { collected: [] }, decisionState: [] },
+          ],
+        },
+      }),
+    );
+    expect(
+      parseMultiplayerActors(frame).map(({ actorId, state, decisionState }) => ({
+        actorId,
+        state,
+        decisionState,
+      })),
+    ).toEqual([
+      { actorId: "Player0", state: {}, decisionState: {} },
+      { actorId: "Player1", state: { collected: [] }, decisionState: {} },
+    ]);
+  });
+
   test("fractional input durations computed in Luau are rounded instead of failing the run", () => {
     const parsed = parsePlaytestFrame(
       baseFrame({

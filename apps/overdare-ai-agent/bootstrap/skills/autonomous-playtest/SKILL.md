@@ -43,7 +43,7 @@ For GUI/prompt interactions, adjacent controls, shared inputs or repeated focus 
 
 Use `studiorpc_game_playtest_harness` list/read to discover actual names and current source/hash. `found:false` is normal recoverable absence; a failed RPC is not evidence of absence. Read describe when first authoring or compatibility is uncertain and reuse its contract within the task.
 
-Keep Source writes in the harness tool. Install creates the adapter and managed driver; update checks expectedSourceHash and refreshes the driver. Inspect validation and readback. Initialize composed dependencies explicitly and preserve their versions. Do not edit during PIE or depend on another harness driver to initialize shared state.
+Keep Source writes in the harness tool. Install creates the adapter, disabled managed driver and typed descriptor helpers; update checks expectedSourceHash and refreshes managed code. Inspect validation and readback. Initialize composed dependencies explicitly and preserve their versions. Do not edit during PIE or depend on another harness driver to initialize shared state. An approved run temporarily enables only its selected driver when needed and restores its original flag; inspect `driver.restoration` before continuing after a cleanup failure.
 
 ## Run and assess
 
@@ -56,6 +56,8 @@ Record and reuse explicit run arguments when comparing revisions or resuming a t
 The default watchdog stops after 15 seconds without meaningful progress. Supply game-specific progress and bounded normal-wait signals; follow any explicit user timeout. Diagnose stuck results before further bounded runs.
 
 Inspect the result's `verification`, `diagnostics` and `repeatedFailure` first, then summaryPath, tracePath and coveragePath. Report game outcome, requirement verdict, execution errors, missing coverage and decisionEvidence as separate facts: a terminal success with a failed or pending requirement check is not a verified feature, and a requirement that passed in a run that later errored is still recorded. For model-mediated play, verify a genuine candidate -> model choice -> dispatch -> observed effect chain at an intended decision point. A successful autonomous episode with not_exercised still leaves model participation unverified. Diagnose collapsed branches; duplicate candidates or unnecessary forced-step calls do not fix this.
+
+The response is compact: use its provenance paths and omission counts rather than assuming every check/detail is inline. Full checks and actor evidence remain in the saved summary; raw events remain in the trace. For a selected run set, use the harness tool with `operation: "report"`, the installed `name`, and explicit `runIds` instead of generating an audit script. Include relevant failures and required normal, exception and regression scenarios. This report is not complete history and does not establish visual/audio acceptance or global preservation.
 
 Read `diagnostics.unmetExpectations` even when the outcome is success. Classify each unmet expectation as a normal wait, a mistimed assertion or a missing effect before calling the run clean.
 

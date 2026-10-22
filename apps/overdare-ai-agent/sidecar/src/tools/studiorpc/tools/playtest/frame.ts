@@ -18,7 +18,11 @@ const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
     z.record(z.string(), jsonValueSchema),
   ]),
 );
-const jsonRecordSchema = z.record(z.string(), jsonValueSchema);
+// Studio JSONEncode may serialize an empty Luau record as []; never coerce populated arrays or nested data.
+const jsonRecordSchema = z.preprocess(
+  (value) => (Array.isArray(value) && value.length === 0 ? {} : value),
+  z.record(z.string(), jsonValueSchema),
+);
 const expectationValueSchema = z.union([z.string(), z.number().finite(), z.boolean(), z.null()]);
 
 const expectationSchema = z
