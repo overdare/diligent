@@ -38,7 +38,7 @@ describe("file/read", () => {
   });
 
   test("reads paths with spaces, Unicode, percent signs, and URL-like characters literally", async () => {
-    const name = "report 100% #1 ? café.md";
+    const name = "report 100% #1 café.md";
     await writeFile(join(project, name), "# Exact file");
     expect(await client.request("file/read", { threadId, path: name })).toMatchObject({
       name,

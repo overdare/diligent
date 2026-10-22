@@ -1,6 +1,6 @@
 // @summary Bounded file previews constrained to the canonical thread project directory
 import { constants } from "node:fs";
-import { open, readdir, realpath, stat } from "node:fs/promises";
+import { open, readdir, realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { FileReadResponse } from "@diligent/protocol";
 import { parseFileLink } from "../client/file-link";
@@ -66,21 +66,29 @@ export async function readFilePreview(cwd: string, requestedPath: string): Promi
   try {
     const canonicalPath = await realpath(candidate);
     assertInsideProject(project, canonicalPath);
-    const info = await stat(canonicalPath);
     const base = { path: canonicalPath, name: basename(canonicalPath) };
-    if (info.isDirectory()) {
-      const entries = (await readdir(canonicalPath, { withFileTypes: true }))
+    // Read directories directly: opening a directory as a file is not portable to Windows.
+    const directory = await readdir(canonicalPath, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOTDIR") return undefined;
+      throw error;
+    });
+    if (directory) {
+      const entries = directory
         .map((entry) => ({ name: entry.name, path: join(canonicalPath, entry.name), isDirectory: entry.isDirectory() }))
         .sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name));
       return { ...base, kind: "directory", entries };
     }
-    if (!info.isFile()) throw new Error("Only regular files and directories can be previewed.");
-    if (info.size > MAX_PREVIEW_BYTES) throw new Error("File preview is limited to 10 MiB.");
 
-    // Bound the read itself as well as the initial stat, in case the file grows while it is open.
-    const handle = await open(canonicalPath, constants.O_RDONLY | constants.O_NONBLOCK);
+    const handle = await open(canonicalPath, constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0));
     let data: Buffer;
     try {
+      // Validate the opened file rather than metadata from a path that could have been replaced.
+      const info = await handle.stat();
+      assertInsideProject(project, await realpath(canonicalPath));
+      if (!info.isFile()) throw new Error("Only regular files and directories can be previewed.");
+      if (info.size > MAX_PREVIEW_BYTES) throw new Error("File preview is limited to 10 MiB.");
+
+      // Bound the read itself as well as the initial stat, in case the file grows while it is open.
       const buffer = Buffer.alloc(MAX_PREVIEW_BYTES + 1);
       let length = 0;
       while (length < buffer.length) {
@@ -106,6 +114,7 @@ export async function readFilePreview(cwd: string, requestedPath: string): Promi
     }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ELOOP") throw new Error("File changed while opening the preview. Try again.");
     if (code === "ENOENT" || code === "ENOTDIR") throw new Error("File not found on the agent server computer.");
     if (code === "EACCES" || code === "EPERM") throw new Error("The agent server cannot access this file.");
     throw error;
