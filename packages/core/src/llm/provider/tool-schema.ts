@@ -63,7 +63,7 @@ export function mapSchemaChildren(
     }
     if (next === child) continue;
     if (result === schema) result = { ...schema };
-    result[key] = next;
+    Object.defineProperty(result, key, { value: next, enumerable: true, writable: true, configurable: true });
   }
   return result;
 }
