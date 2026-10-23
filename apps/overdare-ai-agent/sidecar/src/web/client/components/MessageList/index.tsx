@@ -9,7 +9,8 @@ import { EmptyState } from "../EmptyState";
 import { ScrollToBottom } from "../ScrollToBottom";
 import {
   DEFAULT_ESTIMATED_ROW_HEIGHT_PX,
-  PREPEND_MEASURE_AHEAD_VIEWPORT_INCREASE_PX,
+  PREPEND_MEASURE_AHEAD_ESTIMATE_MARGIN,
+  PREPEND_MEASURE_AHEAD_MAX_PX,
   VIRTUOSO_MIN_OVERSCAN_ITEMS,
   VIRTUOSO_OVERSCAN_PX,
   VIRTUOSO_VIEWPORT_INCREASE_PX,
@@ -120,7 +121,8 @@ function MessageListImpl({
   const pendingAutoscrollFrameRef = useRef<number | null>(null);
   const previousTranscriptKeyRef = useRef<string | null>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
-  const [measuringAhead, setMeasuringAhead] = useState(false);
+  /** Top viewport extension while a prepend is pinned; 0 when none is. */
+  const [measureAheadPx, setMeasureAheadPx] = useState(0);
   const isAtBottomRef = useRef(true);
   const userDetachedFromBottomRef = useRef(false);
   const showScrollBtnRef = useRef(false);
@@ -154,6 +156,7 @@ function MessageListImpl({
     firstItemIndex: INITIAL_FIRST_ITEM_INDEX,
     paged: false,
     pinEpoch: 0,
+    measureAheadPx: 0,
   });
   if (pagingRef.current.transcriptKey !== transcriptKey) {
     pagingRef.current = {
@@ -162,6 +165,7 @@ function MessageListImpl({
       firstItemIndex: INITIAL_FIRST_ITEM_INDEX,
       paged: false,
       pinEpoch: 0,
+      measureAheadPx: 0,
     };
   } else if (pagingRef.current.firstItemId !== firstItemId) {
     // Anchor by item id: an older page can merge into the first tool group and change its row key.
@@ -179,6 +183,17 @@ function MessageListImpl({
       if (!isAtBottomRef.current) userDetachedFromBottomRef.current = true;
       prependAnchorRef.current = capturePrependAnchor(scrollerRef.current, rows, isAtBottomRef.current);
       pagingRef.current.pinEpoch++;
+      let addedEstimate = 0;
+      for (const row of rows.slice(0, added + 1)) addedEstimate += row.estimatedSize;
+      pagingRef.current.measureAheadPx = Math.min(
+        PREPEND_MEASURE_AHEAD_MAX_PX,
+        Math.max(
+          VIRTUOSO_VIEWPORT_INCREASE_PX.top,
+          (scrollerRef.current?.scrollTop ?? 0) +
+            addedEstimate * PREPEND_MEASURE_AHEAD_ESTIMATE_MARGIN +
+            VIRTUOSO_VIEWPORT_INCREASE_PX.top,
+        ),
+      );
     }
     pagingRef.current.firstItemId = firstItemId;
   }
@@ -397,10 +412,10 @@ function MessageListImpl({
     mutations.observe(scroller, { childList: true, subtree: true, attributes: true, attributeFilter: ["style"] });
     scroller.addEventListener("wheel", handleWheel, { capture: true, passive: false });
     for (const event of releaseEvents) scroller.addEventListener(event, release, { capture: true, passive: true });
-    setMeasuringAhead(true);
+    setMeasureAheadPx(pagingRef.current.measureAheadPx);
     let frame = 0;
     const stop = () => {
-      setMeasuringAhead(false);
+      setMeasureAheadPx(0);
       cancelAnimationFrame(frame);
       mutations.disconnect();
       scroller.removeEventListener("wheel", handleWheel, { capture: true });
@@ -486,7 +501,9 @@ function MessageListImpl({
           followOutput={followOutput}
           heightEstimates={heightEstimates}
           increaseViewportBy={
-            measuringAhead ? PREPEND_MEASURE_AHEAD_VIEWPORT_INCREASE_PX : VIRTUOSO_VIEWPORT_INCREASE_PX
+            measureAheadPx > 0
+              ? { ...VIRTUOSO_VIEWPORT_INCREASE_PX, top: measureAheadPx }
+              : VIRTUOSO_VIEWPORT_INCREASE_PX
           }
           initialTopMostItemIndex={initialTopMostItemIndex}
           itemSize={measureItemSize}
