@@ -48,6 +48,41 @@ describe("progressive session RPC", () => {
     expect(history.items).toMatchObject([{ type: "userMessage", message: { content: "Older saved conversation" } }]);
   });
 
+  test("scans the sessions directory once per list pass and still accepts cursors without a snapshot", async () => {
+    const { paths, rpc } = await setup();
+    for (const id of ["s-1", "s-2", "s-3"]) {
+      const saved = await createSessionFile(paths.sessions, cwd, undefined, undefined, id);
+      await appendEntry(saved.path, {
+        type: "message",
+        id: `${id}-user`,
+        parentId: null,
+        timestamp: "2024-01-01T00:00:00Z",
+        message: { role: "user", content: id, timestamp: 1704067200000 },
+      });
+    }
+    const scan = spyOn(Bun.Glob.prototype, "scan");
+    try {
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = (await rpc.request("thread/list", { limit: 1, cursor })) as ThreadListResponse;
+        seen.push(...page.data.map((session) => session.id));
+        cursor = page.nextCursor;
+      } while (cursor);
+      expect(seen).toEqual(["s-3", "s-2", "s-1"]);
+      expect(scan).toHaveBeenCalledTimes(1);
+
+      const legacyCursor = Buffer.from(JSON.stringify({ version: 1, after: `s-3.jsonl\0${cwd}` })).toString(
+        "base64url",
+      );
+      const resumed = (await rpc.request("thread/list", { limit: 5, cursor: legacyCursor })) as ThreadListResponse;
+      expect(resumed.data.map((session) => session.id)).toEqual(["s-2", "s-1"]);
+      expect(resumed.nextCursor).toBeUndefined();
+    } finally {
+      scan.mockRestore();
+    }
+  });
+
   test("returns history during restoration without overriding a newer selection or rereading metadata", async () => {
     const { paths, rpc } = await setup();
     const saved = await createSessionFile(paths.sessions, cwd);

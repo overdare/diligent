@@ -83,12 +83,20 @@ export function resetTurnRuntimeState(runtime: ThreadRuntime): void {
   runtime.isRunning = false;
 }
 
+export interface ThreadListScan {
+  /** Session files sorted by descending `${name}\0${cwd}` key. */
+  files: Array<{ key: string; path: string }>;
+  expiresAt: number;
+}
+
 export interface ThreadHandlersContext {
   ensureGoal?: (runtime: ThreadRuntime) => Promise<GoalController>;
   getGoalsConfig?: () => DiligentConfig["goals"];
   activeThreadId: string | null;
   threads: Map<string, ThreadRuntime>;
   pendingResumes: Map<string, Promise<ThreadResumeResponse>>;
+  /** Directory listings shared by the pages of one `thread/list` pass, keyed by the cursor's scan id. */
+  threadListScans?: Map<string, ThreadListScan>;
   knownCwds: Set<string>;
   hooks?: DiligentConfig["hooks"];
   /** Returns the user ID for a given connection, falling back to config userId or OS username. */
