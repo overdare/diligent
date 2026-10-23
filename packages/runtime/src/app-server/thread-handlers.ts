@@ -22,6 +22,7 @@ import type { SessionManager } from "../session/manager";
 import { generateSessionId, type SessionRunOutcome } from "../session/types";
 import type { BundledToolProvider } from "../tools/bundled-provider";
 import type { CollectedPluginHooks } from "../tools/plugin-loader";
+import type { HistoryPriority } from "./history-priority";
 import {
   applyLiveCollabStatusesToSnapshot,
   buildThreadReadItems,
@@ -97,6 +98,8 @@ export interface ThreadHandlersContext {
   pendingResumes: Map<string, Promise<ThreadResumeResponse>>;
   /** Directory listings shared by the pages of one `thread/list` pass, keyed by the cursor's scan id. */
   threadListScans?: Map<string, ThreadListScan>;
+  /** `thread/history` reads run ahead of `thread/list` file reads. */
+  historyPriority?: HistoryPriority;
   knownCwds: Set<string>;
   hooks?: DiligentConfig["hooks"];
   /** Returns the user ID for a given connection, falling back to config userId or OS username. */
