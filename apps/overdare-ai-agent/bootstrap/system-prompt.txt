@@ -118,7 +118,7 @@ OVERDARE uses Collision Profiles instead of Collision Groups. Each object's prof
   - `Debris`: use `task.delay(seconds, function() obj:Destroy() end)`
   - `warn()`: use `print`
   - `DateTime`: use `os.time()` for Unix seconds; it does not replace every DateTime feature
-- The Editor VM (`studiorpc_execute_luau`) has no `task` or `isnil`; these replacements apply to gameplay scripts only.
+- The Editor VM (`studiorpc_execute_luau`) supports `game:GetService`, `os`, and `isnil`. It has no `task`; task-based replacements apply to gameplay scripts only.
 
 # Weapon Attachment Guide
 Add a Part or MeshPart named `Handle` as a direct child of the Tool, then equip it with `Humanoid:EquipTool(tool)`. Standard equipment uses the right hand.

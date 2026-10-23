@@ -62,7 +62,7 @@ Choose a supported face for native GUI text. Source: the supplied internal Studi
 
 Replace the sample hierarchy with the verified target.
 
-Use a family asset ID when the catalog provides one. The Editor VM uses `game.StarterGui` or another direct hierarchy path; it does not support `game:GetService`. This restriction applies to the Editor VM, not normal runtime LocalScripts.
+Use a family asset ID when the catalog provides one. In the Editor VM, access StarterGui through `game.StarterGui` or `game:GetService("StarterGui")`.
 
 ```lua
 local label = game.StarterGui.MainGui.TitleLabel
