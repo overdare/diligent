@@ -83,23 +83,33 @@ describe("schema overlay on targeted lookups", () => {
     const reply = {
       classes: [
         {
+          class: "VFXPreset",
+          properties: [{ name: "Enabled", declaredOn: "VFXPreset", valueSchema: { type: "boolean" } }],
+        },
+      ],
+    };
+    const all = classOf(await search({ classes: ["VFXPreset"] }, reply), "VFXPreset");
+    expect(all?.properties?.filter((p) => p.source === "sidecar").map((p) => p.name)).toEqual(
+      Object.keys(supplementProperties.VFXPreset ?? {}),
+    );
+    expect(all?.note).toBe(classNotes.VFXPreset);
+
+    const alpha = classOf(await search({ classes: ["VFXPreset"], query: "alpha" }, reply), "VFXPreset");
+    expect(alpha?.properties?.filter((p) => p.source === "sidecar").map((p) => p.name)).toEqual(["Alpha"]);
+  });
+
+  test("VFXRecipe routes to the dedicated authoring tool without Luau layer supplements", async () => {
+    const reply = {
+      classes: [
+        {
           class: "VFXRecipe",
           properties: [{ name: "AutoActivate", declaredOn: "VFXRecipe", valueSchema: { type: "boolean" } }],
         },
       ],
     };
-    const all = classOf(await search({ classes: ["VFXRecipe"] }, reply), "VFXRecipe");
-    expect(all?.properties?.filter((p) => p.source === "sidecar").map((p) => p.name)).toEqual(
-      Object.keys(supplementProperties.VFXRecipe ?? {}),
-    );
-    expect(all?.note).toBe(classNotes.VFXRecipe);
-
-    const layers = classOf(await search({ classes: ["VFXRecipe"], query: "layer" }, reply), "VFXRecipe");
-    expect(layers?.properties?.filter((p) => p.source === "sidecar").map((p) => p.name)).toEqual([
-      "BaseLayer",
-      "DetailLayer",
-      "ExtraLayer",
-    ]);
+    const recipe = classOf(await search({ classes: ["VFXRecipe"] }, reply), "VFXRecipe");
+    expect(recipe?.note).toContain("studiorpc_vfx_recipe_upsert");
+    expect(recipe?.properties?.some((p) => p.source === "sidecar")).toBe(false);
   });
 
   test("a property Studio publishes wins over the supplement of the same name", async () => {

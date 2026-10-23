@@ -9,8 +9,11 @@ If the appropriate class is unknown, discover available classes by calling
 `studiorpc_instance_schema_search` with no filters. For a known class, request
 its details directly without fetching the full catalog first. Then author with
 `studiorpc_execute_luau` targeting Editor. Instance reads, hierarchy moves/deletes,
-and focused Source reads/edits remain available. The bulk JSON upsert tool and
-its static class/property catalog are removed in this long-term draft.
+and focused Source reads/edits remain available. The general JSON upsert tool is
+removed in this long-term draft. VFXRecipe authoring stays on the dedicated
+`studiorpc_vfx_recipe_upsert` tool (#491), which keeps the static catalog's
+VFXRecipe schema, source-name expansion and file/RPC write path; ActionSequence
+authoring stays on `studiorpc_action_sequencer_service_apply_json`.
 
 Select an implementation from its execution lifetime, not from a keyword or model
 category. An Editor command runs once and its VM is discarded. A persistent
@@ -71,14 +74,14 @@ reads and writes. The sidecar merges an annotation table
   condition flags such as `bActivePivotOffset`). Property notes are keyed by
   `<Class>.<Property>` or by the declaring class, so an inherited property is
   annotated once; the exact class key wins.
-- `source: "sidecar"` properties for values Studio omits: VFXRecipe
-  `BaseLayer`/`DetailLayer`/`ExtraLayer`/`LoopDuration`, VFXPreset `PresetName`,
+- `source: "sidecar"` properties for values Studio omits: VFXPreset `PresetName`,
   `Color`, `Alpha`, `Size`, `Transparency`, `Importance`, MaterialVariant
   `UseCustomPhysicsProperties`, SimulationBall `BallSimParams` and
   `MicroBounceThresholdMult`. They follow Studio's property query filtering, and
   a property query Studio cannot match still returns them in a `source: "sidecar"`
   class entry. If Studio starts publishing one, Studio's entry wins and keeps only
-  the sidecar note.
+  the sidecar note. VFXRecipe layer arrays are not supplemented: the class note
+  routes recipe authoring to `studiorpc_vfx_recipe_upsert`.
 - `valueTypes`: for each value shape present in the result (Color3, CFrame,
   UDim2, enums, instance references, …), how to write it in Editor Luau.
 - Engine sentinel enum members (`Max`, `LastMaterial` in material enums) are
@@ -87,11 +90,8 @@ reads and writes. The sidecar merges an annotation table
 Every overlay entry was checked against a live Studio build (schemaVersion
 `blake3:9c5e427e…`), including Editor Luau writes. Notable findings: Color3 JSON
 0-255 equals `Color3.fromRGB`, while `Color3.new` takes linear values; VFXPreset
-`PresetName` accepts the presets.md DisplayName and silently ignores Resource
-names; a Luau read of a VFXRecipe layer item omits its per-source parameters, so
-edits read the JSON with `studiorpc_instance_read` and assign complete items; VFX
-`Texture` overrides need the `{ Content = ... }` table. Studio reports VFXRecipe
-as `creatable: false`, yet `Instance.new("VFXRecipe")` works in the Editor VM.
+`PresetName` takes the presets.md `PresetName` column and silently ignores
+Resource names.
 
 `test/fixtures/studio-schema-property-index.json` records the class → property →
 declaredOn index of that build. The overlay tests fail when a note key no longer
@@ -103,9 +103,9 @@ verification. The earlier `-32602` result came from `{"query":""}`, not from an
 unsupported full-catalog request. If Studio rejects a valid empty request, surface
 that error without wildcard/alphabet probing or inventing a partial catalog.
 
-The previous upsert class validators, automatic defaults, ObjectType insertion,
-VFX short-name expansion and upsert-only diagnostics/file recovery are retired
-with that tool. Editor assignments must use supported Luau values and exact asset
+For Editor Luau, the general tool's class validators, automatic defaults and
+ObjectType insertion are retired; they survive only behind the dedicated VFXRecipe
+tool. Editor assignments must use supported Luau values and exact asset
 names/paths; the overlay documents them but does not convert or validate values.
 Existing hierarchy move protections and Mobility normalization remain.
 
@@ -284,8 +284,8 @@ schemas (inherited notes,
 sentinel removal, supplements and their query filtering, Studio precedence,
 valueTypes), overlay keys against the recorded Studio index, Korean descriptions split
 across TCP chunks, UTF-8 byte accounting, and persisted truncated results. They
-also verify that upsert is absent while Editor error/save handling and retained
-instance/Source tools continue to work. The bundled registry exposes the active
+also verify that the general upsert tool is absent while Editor error/save handling,
+retained instance/Source tools and the dedicated VFXRecipe tool continue to work. The bundled registry exposes the active
 procedural-model-builder skill/agent while keeping procedural-builder and the
 retired local runner absent. Live full-catalog transport and targeted lookups have
 been verified; end-to-end model authoring remains a draft gate.

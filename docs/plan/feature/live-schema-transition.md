@@ -2,17 +2,20 @@
 
 Status: implementation draft stacked on native RPC restoration PR #441
 (`fix/restore-proceduralmodel-rpcs`), targeting preview/release-40. Compatibility
-#415 and geometry restoration #434 are already merged. This draft removes upsert and implements dynamic discovery.
+#415 and geometry restoration #434 are already merged. This draft removes the general upsert tool and implements dynamic discovery.
+The dedicated VFXRecipe authoring tool from #491 is the source of truth for recipe
+authoring and VFXPreset names; this draft keeps it and its write path unchanged.
 
 ## Implemented behavior
 
 - Inherit proceduralmodel.api / validate / set unchanged from #441. These native
   authoring tools remain available; only the local procedural runner stays retired.
 
-- Remove the upsert tool, its static instance.params catalog, class-bound write
-  validators/defaults/transformations, upsert renderer, and v1/v2 upsert execution.
-  Keep instance read, hierarchy move/delete, Source helpers and their shared
-  Mobility/singleton safeguards. Remove the procedural-builder skill/agent definitions. Rename the active geometry-recipe skill/agent inherited from #434 to
+- Remove the general `studiorpc_instance_upsert` tool, its Lua-validation hook and
+  registry renderer. Its static instance.params catalog, class-bound parsing, v1/v2
+  write execution and renderer stay only because `studiorpc_vfx_recipe_upsert`
+  (#491) reuses them. Keep instance read, hierarchy move/delete, Source helpers and
+  their shared Mobility/singleton safeguards. Remove the procedural-builder skill/agent definitions. Rename the active geometry-recipe skill/agent inherited from #434 to
   procedural-model-builder and remove the old geometry-recipe entries here. The
   underlying native authoring guidance is restored by #434, not by this PR.
 - Full discovery is a request with no filters: `{}`. Class-only requests use
@@ -27,8 +30,9 @@ Status: implementation draft stacked on native RPC restoration PR #441
 - Targeted lookup preserves the full returned property schemas and descriptions and
   merges the sidecar schema overlay: notes migrated from the retired upsert catalog
   (units, contextual limits), Luau value-type guidance, sentinel enum removal, and
-  `source:"sidecar"` properties Studio omits (VFXRecipe layers, VFXPreset.PresetName
-  and others) because Studio-side schema changes are not available. Studio fields
+  `source:"sidecar"` properties Studio omits (VFXPreset.PresetName and others)
+  because Studio-side schema changes are not available. VFXRecipe gets only a class
+  note routing to the dedicated tool, not Luau layer supplements. Studio fields
   stay authoritative. No wildcard probing, alternate endpoints, persistent cache, or
   prompt-level property-schema injection is added.
 - Preserve Korean UTF-8 descriptions through JSON and chunked TCP responses. Measure
@@ -39,7 +43,9 @@ Status: implementation draft stacked on native RPC restoration PR #441
   is unknown. A known class goes directly to targeted property lookup, then
   Editor Luau. Retain the tested
   native Python Source example and explicit Editor/gameplay lifetime distinction.
-  Update UI, VFX and asset-pack skills so they no longer call the removed upsert.
+  Update UI and asset-pack skills so they no longer call the removed upsert. The
+  vfx-recipe skill and presets.md follow #491 unchanged, apart from dropping its
+  mention of the general tool.
 
 ## Contract and current server evidence
 
@@ -65,8 +71,9 @@ The upper branch no longer advertises that tool or automatically validates/conve
 its old JSON payloads. Existing saved tool records can still be displayed, but an
 attempt to call the removed tool must fail as unavailable.
 
-World changes now use Editor Luau. Correct class/property values, creation
-settings, exact VFX paths, and read-only distinctions must come from live hints,
+World changes now use Editor Luau, except VFXRecipe (`studiorpc_vfx_recipe_upsert`)
+and ActionSequence authoring. Correct class/property values, creation settings,
+exact VFXPreset names, and read-only distinctions must come from live hints,
 applicable documentation and actual Studio validation. The lower PR remains the
 usable compatibility option until this transition is verified sufficiently.
 
@@ -81,8 +88,9 @@ lookup returns detailed hints. Full search through the shared executor returned 
 
 Deterministic tests must cover:
 
-- Upsert absence in bundled and MCP tool catalogs, with Editor and schema search
-  still present; preserve retained instance/source tool tests.
+- General upsert absence in bundled and MCP tool catalogs, with Editor, schema
+  search and the dedicated VFXRecipe tool still present; preserve retained
+  instance/source tool tests and the shared write-path tests that tool relies on.
 - No-filter inputs from agent and MCP entry points reaching Studio as the empty
   full-search request; empty queries with or without classes rejected before RPC.
   Keep global empty-input cleanup semantics for unrelated tools unchanged.

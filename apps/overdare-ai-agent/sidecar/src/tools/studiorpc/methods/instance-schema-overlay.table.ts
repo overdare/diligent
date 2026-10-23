@@ -8,7 +8,6 @@ export interface SupplementProperty {
 }
 
 const number = { type: "number" } as const;
-const integer = { type: "integer" } as const;
 const unit = { type: "number", minimum: 0, maximum: 1 } as const;
 const channel = { type: "integer", minimum: 0, maximum: 255 } as const;
 const vector3 = {
@@ -55,9 +54,9 @@ export const classNotes: Readonly<Record<string, string>> = {
   Trail: "Motion trail rendered between Attachment0 and Attachment1.",
   ParticleEmitter: "Particle system with emission shape, flipbook animation and physics.",
   VFXPreset:
-    "A named built-in visual effect. Select it with PresetName using the vfx-recipe skill's references/presets.md DisplayName.",
+    "A named built-in visual effect. Select it with PresetName using the PresetName column of the vfx-recipe skill's references/presets.md.",
   VFXRecipe:
-    'Custom layered VFX: Base/Detail/Extra layer items, each playing a VFX source asset with per-source parameters. Studio reports creatable:false, but Editor Luau Instance.new("VFXRecipe") works. Compose it with the vfx-recipe skill. The engine defaults to InfiniteLoop=false (plays LoopCount times) and AutoActivate=true.',
+    "Custom layered VFX: Base/Detail/Extra layer items, each playing a VFX source asset with per-source parameters. Studio reports creatable:false and omits the layer arrays; create and edit recipes with studiorpc_vfx_recipe_upsert (vfx-recipe skill), not Editor Luau, and read complete layers with studiorpc_instance_read.",
   Sound: "Audio source with 3D spatial roll-off.",
   SoundGroup: "Groups Sounds under a shared volume multiplier.",
   Animation: "References an animation asset loaded by an Animator.",
@@ -273,73 +272,13 @@ export const hiddenEnumValues: Readonly<Record<string, readonly string[]>> = {
   "SimulationBall.Material": materialSentinels,
 };
 
-const vfxLayerItemNote =
-  'Assigning replaces the whole array. Editor Luau items are plain tables: { Name = "Body", NiagaraSystem = <full path>, Position = Vector3.new(0, 0, 0), SpawnRate = 20, Duration = 1, Color = { { R = 255, G = 120, B = 0, Time = 0 }, { R = 255, G = 0, B = 0, Time = 1 } }, Alpha = { { Time = 0, Value = 1 }, { Time = 1, Value = 0 } } }. Texture overrides must be { Content = "ovdrassetid://<id>" }; a plain string is dropped. Omitted parameters keep the source asset defaults; parameters the source does not support are ignored. Rate sources (_R in the name) use Duration/SpawnRate; Burst sources use SpawnCount. Luau readback of an item omits its per-source parameters, so never copy a layer array back from Luau: read current values with studiorpc_instance_read and assign complete items. Name is the identifier runtime scripts pass to GetParam/SetParam.';
-
-function vfxLayer(dir: string, prefix: string, role: string): SupplementProperty {
-  return {
-    declaredOn: "VFXRecipe",
-    valueSchema: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          Name: { type: "string" },
-          NiagaraSystem: {
-            type: "string",
-            format: `/CommonContent/VFX/Layer/${dir}/<Source>/VFX_UGC_${prefix}_<Source>.VFX_UGC_${prefix}_<Source>`,
-          },
-          Texture: {
-            type: "object",
-            struct: "Content",
-            properties: { Content: { type: "string" } },
-            required: ["Content"],
-          },
-          Position: vector3,
-          Rotation: vector3,
-          Acceleration: vector3,
-          BoundSize: vector3,
-          Color: colorKeypoints,
-          Alpha: alphaKeypoints,
-          Delay: number,
-          Duration: number,
-          SpawnRate: number,
-          SpawnCount: number,
-          Lifetime_Min: number,
-          Lifetime_Max: number,
-          Size: number,
-          Size2D: { type: "object", properties: { X: number, Y: number }, required: ["X", "Y"] },
-          Scale: number,
-          Speed: number,
-          Transparency: unit,
-          FlipbookMode: integer,
-          FlipbookRows: integer,
-          FlipbookColumns: integer,
-        },
-        required: ["Name", "NiagaraSystem"],
-      },
-    },
-    note: `${role} Pick NiagaraSystem paths for the ${prefix} layer from the vfx-recipe skill's references/sources.md; a source from another layer does not belong here. ${vfxLayerItemNote}`,
-  };
-}
-
 /** Properties Studio's schema omits but Editor Luau reads and writes (verified against a live Studio build). */
 export const supplementProperties: Readonly<Record<string, Readonly<Record<string, SupplementProperty>>>> = {
-  VFXRecipe: {
-    BaseLayer: vfxLayer("0_Base", "Base", "Source items forming the effect body; keep at least one."),
-    DetailLayer: vfxLayer("1_Detail", "Detail", "Optional accent source items."),
-    ExtraLayer: vfxLayer("2_Extra", "Extra", "Optional residue/extra source items."),
-    LoopDuration: {
-      declaredOn: "VFXRecipe",
-      valueSchema: number,
-      note: "Read-only, derived from the layer items' Delay and Duration; assignments are ignored. Shorten an effect by changing item Duration/Delay.",
-    },
-  },
   VFXPreset: {
     PresetName: {
       declaredOn: "VFXPreset",
       valueSchema: { type: "string" },
-      note: 'The DisplayName column of the vfx-recipe skill\'s references/presets.md, e.g. "Rain" or "Impact Link". Resource names (VFX_UGC_...) and unknown names are silently ignored and keep the previous value (a new preset starts as "Fire"); presets without a DisplayName cannot be selected. Read PresetName back to confirm.',
+      note: 'The exact PresetName column of the vfx-recipe skill\'s references/presets.md, e.g. "Muzzle"; not the Resource or upstream DisplayName, and never an UNAVAILABLE row. Unknown names are silently ignored and keep the previous value (a new preset starts as "Fire"), so read PresetName back to confirm before setting other parameters.',
     },
     Color: {
       declaredOn: "VFXPreset",
