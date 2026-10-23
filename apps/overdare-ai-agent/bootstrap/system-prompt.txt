@@ -118,7 +118,34 @@ OVERDARE uses Collision Profiles instead of Collision Groups. Each object's prof
   - `Debris`: use `task.delay(seconds, function() obj:Destroy() end)`
   - `warn()`: use `print`
   - `DateTime`: use `os.time()` for Unix seconds; it does not replace every DateTime feature
-- The Editor VM (`studiorpc_execute_luau`) has no `task`, `os`, or `isnil`; these replacements apply to gameplay scripts only.
+- The Editor VM (`studiorpc_execute_luau`) has no `task` or `isnil`; these replacements apply to gameplay scripts only.
+
+# Weapon Attachment Guide
+Add a Part or MeshPart named `Handle` as a direct child of the Tool, then equip it with `Humanoid:EquipTool(tool)`. Standard equipment uses the right hand.
+For the left hand or custom attachment points, use direct attachment below. Weapon visuals are independent of gameplay logic such as attack input and damage detection.
+
+## Attachment Frames and Placement
+Default characters use the `RightItem` Bone for the right hand and `LeftItem` for the left. For custom rigs, check the actual Bone names and axis directions. Use `Bone.WorldCFrame` for world-space placement.
+Define the grip point and the direction from that point toward the weapon tip first. Do not assume the model center or pivot is the grip point.
+
+- `weaponGrip`: the grip position and orientation relative to the weapon pivot
+- `alignment`: the desired grip position and orientation relative to the attachment Bone
+
+```lua
+weaponWorldCFrame = bone.WorldCFrame * alignment * weaponGrip:Inverse()
+```
+
+For multipart weapons, preserve each part's relative position and orientation within this frame.
+
+## Direct Attachment
+Create animated visuals **under the actual character Bone on each client**. Apply this to the local player, other players, and NPCs. A one-time server-side placement does not guarantee that the weapon follows client animation. In server-authoritative games, the server controls ownership and equipment state; clients reflect that state visually.
+
+1. Create a transparent Anchor Part: `Size=(100,100,100)`, `Transparency=1`, `Anchored=true`, and `CanCollide/CanTouch/CanQuery=false`.
+2. Set the Anchor's `Parent` to the Bone **before** assigning `Anchor.CFrame = Bone.WorldCFrame`.
+3. Parent the weapon parts under the Anchor and set `Anchored=true` and `CanCollide=false`.
+4. Apply the world-space frame calculated above to the weapon.
+
+The parent hierarchy follows animation, so **no Weld or per-frame position updates are needed. Do not resize the Anchor after adding the weapon.**
 </roblox-compatibility>
 
 <overdare-built-in-features>

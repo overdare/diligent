@@ -40,6 +40,7 @@ import { getStudioChangeCollector } from "./tools/studio-change-collector";
 import type { StudioChangeConsumer } from "./tools/studio-change-store";
 import { captureStudioChanges, createStudioChangesTool } from "./tools/studio-changes-tool";
 import { checkResult } from "./tools/v2/result";
+import { createVfxRecipeUpsertTool } from "./tools/vfx-recipe-upsert-tool";
 import type { Tool, ToolResult } from "./types";
 import { createWriteLock, type WriteLock } from "./write-lock";
 
@@ -413,6 +414,7 @@ export async function createStudioRpcTools(ctx: {
       ),
       ctx.host,
     ),
+    wrapTool(withSnapshot(createVfxRecipeUpsertTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
     wrapTool(withSnapshot(createInstanceDeleteTool(ctx.cwd, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceMoveTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
     wrapTool(createScriptReadTool(ctx.cwd), ctx.host),

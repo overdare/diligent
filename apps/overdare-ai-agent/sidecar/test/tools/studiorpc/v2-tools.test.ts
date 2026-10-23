@@ -921,3 +921,60 @@ test.each(["v1", "v2"])("creates ProceduralModel and patches WorldPivot by GUID 
     AutoRebuild: false,
   });
 });
+
+describe("dedicated VFXRecipe authoring over v2", () => {
+  test("creates and patches normalized recipe JSON through the registered tool", async () => {
+    const tools = await loadTools(makeStudioProject());
+    const tool = tools.get("studiorpc_vfx_recipe_upsert")!;
+    expect(tool).toBeDefined();
+    const result = await tool.execute(
+      {
+        items: [
+          {
+            parentGuid: WORKSPACE_GUID,
+            name: "Recipe",
+            properties: {
+              AutoActivate: false,
+              InfiniteLoop: false,
+              LoopCount: 3,
+              BaseLayer: [
+                { Name: "Body", NiagaraSystem: "NeutralBurst_A", SpawnCount: 3, Alpha: [{ Time: 0, Value: 1 }] },
+              ],
+            },
+          },
+        ],
+      },
+      toolContext(),
+    );
+    expect(result.metadata?.error).not.toBe(true);
+    const create = paramsOf("instance.create") as { Instances: Array<Record<string, unknown>> };
+    expect(create.Instances[0]).toMatchObject({ InstanceType: "VFXRecipe", AutoActivate: false });
+    expect((create.Instances[0].BaseLayer as Array<Record<string, unknown>>)[0]).toMatchObject({
+      NiagaraSystem:
+        "/CommonContent/VFX/Layer/0_Base/NeutralBurst_A/VFX_UGC_Base_NeutralBurst_A.VFX_UGC_Base_NeutralBurst_A",
+      Alpha: [{ Time: 0, Value: 1 }],
+    });
+    const added = result.metadata?.added as Array<{ guid: string }>;
+    // The transport fixture issues GUIDs but does not persist create calls.
+    world.LuaChildren!.push({ ...create.Instances[0], ActorGuid: added[0].guid });
+    rpcCalls.length = 0;
+    const patched = await tool.execute(
+      { items: [{ guid: added[0].guid, properties: { BaseLayer: [], LoopCount: 2 } }] },
+      toolContext(),
+    );
+    expect(patched.metadata?.error).not.toBe(true);
+    expect(paramsOf("instance.update")).toEqual({
+      Instances: [{ ActorGuid: added[0].guid, BaseLayer: [], LoopCount: 2 }],
+    });
+    expect(rpcCalls.filter((call) => call.method === "level.save.file")).toHaveLength(1);
+  });
+  test("rejects a non-recipe GUID before sending an update or save", async () => {
+    const tools = await loadTools(makeStudioProject());
+    await expect(
+      tools
+        .get("studiorpc_vfx_recipe_upsert")!
+        .execute({ items: [{ guid: PART_GUID, properties: {} }] }, toolContext()),
+    ).rejects.toThrow("VFXRecipe");
+    expect(rpcCalls.some((call) => call.method === "instance.update" || call.method === "level.save.file")).toBe(false);
+  });
+});

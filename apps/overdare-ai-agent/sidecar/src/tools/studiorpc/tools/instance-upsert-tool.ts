@@ -10,6 +10,7 @@ import type { Tool, ToolContext, ToolResult } from "../types";
 import type { WriteLock } from "../write-lock";
 import {
   addInstancesInDocument,
+  assertInstanceClasses,
   normalizeWorkspaceMobility,
   requireDocumentRoot,
   updateInstancesInDocument,
@@ -22,14 +23,15 @@ function toToolName(method: string): string {
   return `studiorpc_${method.replace(/\./g, "_")}`;
 }
 
-async function executeInstanceUpsert(
+export async function executeInstanceUpsert(
   args: Record<string, unknown>,
   ctx: ToolContext,
   cwd: string,
   writeLock: WriteLock,
   applyLevelChanges: () => Promise<unknown>,
+  options: { toolName?: string; expectedClass?: string } = {},
 ): Promise<ToolResult> {
-  const toolName = "studiorpc_instance_upsert";
+  const toolName = options.toolName ?? "studiorpc_instance_upsert";
   const parsedArgs = instanceUpsert.parseArgs(args);
 
   const writeApproval = await ctx.approve({
@@ -47,8 +49,11 @@ async function executeInstanceUpsert(
 
   const release = await writeLock.acquire();
   try {
-    if (resolveApiVersion() === "v2") return await upsertInstancesViaRpc(parsedArgs);
-    return await executeInstanceUpsertInner(parsedArgs, cwd, { applyLevelChanges });
+    if (resolveApiVersion() === "v2") return await upsertInstancesViaRpc(parsedArgs, options.expectedClass);
+    return await executeInstanceUpsertInner(parsedArgs, cwd, {
+      applyLevelChanges,
+      expectedClass: options.expectedClass,
+    });
   } finally {
     release();
   }
@@ -57,7 +62,7 @@ async function executeInstanceUpsert(
 export async function executeInstanceUpsertInner(
   parsedArgs: ReturnType<typeof instanceUpsert.parseArgs>,
   cwd: string,
-  options: { applyAndSaveChanges?: boolean; applyLevelChanges?: () => Promise<unknown> } = {},
+  options: { applyAndSaveChanges?: boolean; applyLevelChanges?: () => Promise<unknown>; expectedClass?: string } = {},
 ): Promise<ToolResult> {
   let ovdrjmRoot: OvdrjmNode | undefined;
   const applyAndSaveChanges = options.applyAndSaveChanges ?? true;
@@ -68,6 +73,7 @@ export async function executeInstanceUpsertInner(
       const originalBytes = readFileSync(ovdrjmPath);
       const result = readAndWriteOvdrjm(cwd, (rootDoc) => {
         const root = requireDocumentRoot(rootDoc);
+        if (options.expectedClass) assertInstanceClasses(root, parsedArgs.items, options.expectedClass);
         const mobilityInfo: string[] = [];
         const writeOptions = { mobilityInfo };
 
