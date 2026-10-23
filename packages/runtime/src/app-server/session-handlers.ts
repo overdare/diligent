@@ -97,6 +97,7 @@ async function scanSessionFiles(ctx: ThreadHandlersContext): Promise<ThreadListS
     Array.from(ctx.knownCwds, async (cwd) => {
       const paths = await ctx.resolvePaths(cwd);
       const files: ThreadListScan["files"] = [];
+      await ctx.historyPriority?.idle();
       for await (const name of new Bun.Glob("*.jsonl").scan(paths.sessions)) {
         files.push({ key: `${name}\0${cwd}`, path: join(paths.sessions, name) });
       }
@@ -149,6 +150,7 @@ export async function handleThreadList(
   await Promise.all(
     Array.from({ length: Math.min(8, page.length) }, async () => {
       for (const file of remaining) {
+        await ctx.historyPriority?.idle();
         try {
           const session = await readSessionPreview(file.path);
           if (!includeChildren && session.parentSession) continue;
@@ -178,7 +180,15 @@ export async function handleThreadList(
   };
 }
 
-export async function handleThreadHistory(
+export function handleThreadHistory(
+  ctx: ThreadHandlersContext,
+  params: { threadId: string; cursor?: string; limit?: number },
+): Promise<ThreadHistoryResponse> {
+  const read = () => readThreadHistory(ctx, params);
+  return ctx.historyPriority ? ctx.historyPriority.run(read) : read();
+}
+
+async function readThreadHistory(
   ctx: ThreadHandlersContext,
   params: { threadId: string; cursor?: string; limit?: number },
 ): Promise<ThreadHistoryResponse> {

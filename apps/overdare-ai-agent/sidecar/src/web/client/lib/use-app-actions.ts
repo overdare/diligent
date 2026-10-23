@@ -333,7 +333,7 @@ export function useAppActions({
   setFastModeState: Dispatch<SetStateAction<boolean>>;
   changeModel: (model: ModelRef, threadId?: string) => Promise<void>;
   startNewThread: () => Promise<void>;
-  openThread: (threadId: string) => Promise<void>;
+  openThread: (threadId: string) => Promise<unknown>;
   openMcpModal: () => void;
   bumpMcpRefreshNonce: () => void;
   setSkills: Dispatch<SetStateAction<SkillInfo[]>>;

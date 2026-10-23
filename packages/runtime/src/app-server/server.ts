@@ -57,6 +57,7 @@ import { collectPluginHooks, type PluginDiscoveryMode } from "../tools/plugin-lo
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
 import type { ConfigReloadResult } from "./config-handlers";
 import type { ExperimentConfigManager } from "./experiment-handlers";
+import { HistoryPriority } from "./history-priority";
 import { createKeyedSerializer } from "./keyed-serializer";
 import {
   applySessionDefaults,
@@ -180,6 +181,7 @@ export class DiligentAppServer {
   private readonly threads = new Map<string, ThreadRuntime>();
   private readonly pendingResumes = new Map<string, Promise<ThreadResumeResponse>>();
   private readonly threadListScans = new Map<string, ThreadListScan>();
+  private readonly historyPriority = new HistoryPriority();
   private readonly knownCwds = new Set<string>();
   private activeThreadId: string | null = null;
   private closing = false;
@@ -1070,6 +1072,7 @@ export class DiligentAppServer {
       threads: this.threads,
       pendingResumes: this.pendingResumes,
       threadListScans: this.threadListScans,
+      historyPriority: this.historyPriority,
       knownCwds: this.knownCwds,
       hooks: this.config.hooks,
       getUserId: (connectionId: string | undefined): string => {

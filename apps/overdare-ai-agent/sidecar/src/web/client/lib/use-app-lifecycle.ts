@@ -27,7 +27,7 @@ import {
   toNotificationParams,
 } from "./app-notification";
 import type { AppAction } from "./app-state";
-import { getThreadIdFromUrl, replaceDraftUrl } from "./app-utils";
+import { getThreadIdFromUrl, readLastThreadId, replaceDraftUrl } from "./app-utils";
 import type { WebRpcClient } from "./rpc-client";
 import type { ThreadState } from "./thread-store";
 import type { OpenThreadOptions } from "./use-thread-manager";
@@ -228,7 +228,7 @@ export function useAppBootstrap({
   setGoalsSupported: Dispatch<SetStateAction<boolean>>;
   setConsent: (consent: ConsentState | null) => void;
   setInitialModel: (model: ModelRef | undefined, models?: InitializeResponse["availableModels"]) => void;
-  openThread: (threadId: string, options?: OpenThreadOptions) => Promise<void>;
+  openThread: (threadId: string, options?: OpenThreadOptions) => Promise<boolean>;
   refreshThreadList: (rpc?: WebRpcClient | null) => Promise<SessionSummary[] | undefined>;
   refreshProviders: (rpc?: WebRpcClient | null) => Promise<void>;
 }) {
@@ -294,13 +294,22 @@ export function useAppBootstrap({
           listing ??= refreshThreadList(rpc);
           return listing;
         };
-        const selectedThreadId = initialThreadId ?? initialUrlThreadId;
+        const requestedThreadId = initialThreadId ?? initialUrlThreadId;
+        const selectedThreadId = requestedThreadId ?? readLastThreadId();
         if (selectedThreadId && canRestore()) {
-          // The opened conversation gets session storage first; the sidebar scan follows its first page.
+          // The opened conversation gets session storage first; the sidebar scan waits until it is ready,
+          // since on a network drive the scan would otherwise hold the disk the history reads need.
           // Session model/effort must land after initialize's defaults, never under them.
-          const opening = openThread(selectedThreadId, { beforeMetadata: initialized, onHistoryShown: startListing });
-          await Promise.all([initialized, opening.finally(() => void startListing())]);
-          return;
+          const shown = await openThread(selectedThreadId, {
+            beforeMetadata: initialized,
+            quietIfUnavailable: !requestedThreadId,
+          });
+          // A requested conversation that failed keeps its error on screen instead of switching away.
+          if (shown || requestedThreadId) {
+            startListing();
+            await initialized;
+            return;
+          }
         }
         startListing();
         await initialized;

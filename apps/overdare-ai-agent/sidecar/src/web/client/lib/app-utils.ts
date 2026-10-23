@@ -6,6 +6,7 @@ export function getThreadIdFromUrl(): string | null {
 }
 
 export function replaceThreadUrl(threadId: string): void {
+  writeLastThreadId(threadId);
   if (getThreadIdFromUrl() !== threadId) {
     window.history.replaceState(null, "", `/${threadId}`);
   }
@@ -14,6 +15,27 @@ export function replaceThreadUrl(threadId: string): void {
 export function replaceDraftUrl(): void {
   if (window.location.pathname !== "/") {
     window.history.replaceState(null, "", "/");
+  }
+}
+
+const LAST_THREAD_STORAGE_KEY = "diligent.lastThreadId";
+
+/** The conversation last shown, restored on a bare `/` load before the (possibly slow) session scan. */
+export function readLastThreadId(): string | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage.getItem(LAST_THREAD_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function writeLastThreadId(threadId: string | null): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    if (threadId) localStorage.setItem(LAST_THREAD_STORAGE_KEY, threadId);
+    else localStorage.removeItem(LAST_THREAD_STORAGE_KEY);
+  } catch {
+    /* Storage can be unavailable (private mode, quota); restoring then falls back to the session scan. */
   }
 }
 

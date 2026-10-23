@@ -43,9 +43,7 @@ function EarlierHistoryHeader({ context }: ContextProp<VirtuosoMessageListContex
           className="flex items-center justify-center text-xs text-muted"
           style={{ height: EARLIER_HISTORY_HEADER_HEIGHT_PX }}
         >
-          {state === "loading" ? (
-            <output>Loading earlier history…</output>
-          ) : state === "failed" ? (
+          {state === "failed" ? (
             <div role="alert">
               Could not load earlier messages.
               <button type="button" className="ml-2 text-accent" onClick={() => context.onLoadEarlierHistory?.()}>

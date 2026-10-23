@@ -310,32 +310,22 @@ export function App() {
           />
 
           <div className="relative flex min-h-0 flex-1 flex-col">
-            {threadMgr.isLoadingHistory || threadMgr.isPreparingThread || threadMgr.historyError ? (
+            {threadMgr.historyError ? (
               // Overlaid rather than stacked above the list: a status line that comes and goes must not
               // move the transcript the reader is looking at.
               <div className="absolute inset-x-0 top-0 z-10 flex flex-col bg-surface-dark/90">
-                {threadMgr.isLoadingHistory ? (
-                  <output className="px-7 py-2 text-sm text-muted">Loading recent history…</output>
-                ) : null}
-                {threadMgr.isPreparingThread ? (
-                  <output className="px-7 py-2 text-sm text-muted">
-                    History is available. Preparing this conversation for new messages…
-                  </output>
-                ) : null}
-                {threadMgr.historyError ? (
-                  <div role="alert" className="px-7 py-2 text-sm text-danger">
-                    {threadMgr.historyError}
-                    {state.activeThreadId ? (
-                      <button
-                        type="button"
-                        className="ml-3 underline"
-                        onClick={() => void threadMgr.openThread(state.activeThreadId!)}
-                      >
-                        Retry opening
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
+                <div role="alert" className="px-7 py-2 text-sm text-danger">
+                  {threadMgr.historyError}
+                  {state.activeThreadId ? (
+                    <button
+                      type="button"
+                      className="ml-3 underline"
+                      onClick={() => void threadMgr.openThread(state.activeThreadId!)}
+                    >
+                      Retry opening
+                    </button>
+                  ) : null}
+                </div>
               </div>
             ) : null}
             <MessageList

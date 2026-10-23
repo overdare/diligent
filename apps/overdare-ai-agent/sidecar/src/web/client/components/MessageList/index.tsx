@@ -72,6 +72,18 @@ function firstVisibleRow(scroller: HTMLElement): HTMLElement | null {
   return null;
 }
 
+/**
+ * Paging follows the reader: rows rendered far ahead of a pinned prepend (for measurement) do not count,
+ * or every page would immediately request the next one.
+ */
+function firstRowNearViewport(scroller: HTMLElement | null, firstItemIndex: number): boolean {
+  const first = scroller?.querySelector<HTMLElement>("[data-message-list-row]");
+  if (!scroller || !first || Number(first.dataset.itemIndex) !== firstItemIndex) return false;
+  return (
+    first.getBoundingClientRect().bottom >= scroller.getBoundingClientRect().top - VIRTUOSO_VIEWPORT_INCREASE_PX.top
+  );
+}
+
 function rowContainsItem(row: VirtualMessageRow, itemId: string): boolean {
   if (row.kind === "message") return row.item.id === itemId;
   if (row.kind === "toolGroup" || row.kind === "collab") return row.items.some((item) => item.id === itemId);
@@ -298,18 +310,45 @@ function MessageListImpl({
     return "auto";
   }, []);
 
-  // Fires once per first-row index as it enters the top overscan, so paging starts before the edge.
-  const handleStartReached = useCallback(() => {
-    if (hasEarlierHistory && !isLoadingEarlierHistory && !earlierHistoryFailed) onLoadEarlierHistory?.();
-  }, [hasEarlierHistory, isLoadingEarlierHistory, earlierHistoryFailed, onLoadEarlierHistory]);
-
-  // A page whose items all merge into the existing first row leaves firstItemIndex unchanged, so
-  // startReached never fires again; keep paging while the first row is still rendered.
-  useEffect(() => {
+  const loadEarlierIfNearRef = useRef(() => {});
+  loadEarlierIfNearRef.current = () => {
     if (!hasEarlierHistory || isLoadingEarlierHistory || earlierHistoryFailed) return;
-    const firstRendered = scrollerRef.current?.querySelector<HTMLElement>("[data-message-list-row]");
-    if (firstRendered && Number(firstRendered.dataset.itemIndex) === firstItemIndex) onLoadEarlierHistory?.();
-  }, [hasEarlierHistory, isLoadingEarlierHistory, earlierHistoryFailed, firstItemIndex, onLoadEarlierHistory]);
+    if (firstRowNearViewport(scrollerRef.current, firstItemIndex)) onLoadEarlierHistory?.();
+  };
+  // Checked a frame later so Virtuoso has committed the rows the check reads.
+  const scheduleLoadEarlierCheck = useCallback(() => {
+    requestAnimationFrame(() => loadEarlierIfNearRef.current());
+  }, []);
+
+  // startReached fires once per first-row index; a page whose items all merge into the existing first
+  // row leaves the index unchanged, so loading finishing and scrolling re-check as well.
+  const handleStartReached = scheduleLoadEarlierCheck;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each listed change can bring the first row near
+  useEffect(scheduleLoadEarlierCheck, [
+    scheduleLoadEarlierCheck,
+    hasEarlierHistory,
+    isLoadingEarlierHistory,
+    earlierHistoryFailed,
+    firstItemIndex,
+  ]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Virtuoso remounts its scroller per transcript
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        loadEarlierIfNearRef.current();
+      });
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      scroller.removeEventListener("scroll", onScroll);
+    };
+  }, [transcriptKey, rows.length > 0]);
 
   const computeItemKey = useCallback((_index: number, row: VirtualMessageRow) => row.key, []);
 
