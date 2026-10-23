@@ -9,7 +9,7 @@ Owns all VFX effect work in OVERDARE Studio. All VFX reference data is bundled i
 
 | Unit | Reference | What it is | How it's used |
 |---|---|---|---|
-| **Preset** | `references/presets.md` | Ready-made named effect | Create a `VFXPreset` instance with its resource name as `PresetName` — used as-is, no internal editing |
+| **Preset** | `references/presets.md` | Ready-made named effect | Create a `VFXPreset` instance with its exact catalog `PresetName` — used as-is, no internal editing |
 | **Template** | `references/templates/` | A recipe pre-composed from several sources | Copy its Original Payload JSON as a `VFXRecipe` — verbatim, or with sources swapped / structure modified |
 | **Source** | `references/sources.md` | One raw ingredient asset for a recipe layer (Base/Detail/Extra) | Placed as items inside a `VFXRecipe`'s layer arrays |
 
@@ -37,9 +37,11 @@ For a request that edits a VFXRecipe already in the level, go straight to the ed
 
 ## Flow: preset
 
-1. `grep` `references/presets.md` case-insensitively with English keywords from the request (element, mood, purpose — e.g. `muzzle|gunfire`, `heal|buff`). Try synonyms before concluding there is no match. Each row is `| Resource | DisplayName | Category | Subcategory | Genre | Keywords |`.
+1. `grep` `references/presets.md` case-insensitively with English keywords from the request (element, mood, purpose — e.g. `muzzle|gunfire`, `heal|buff`). Try synonyms before concluding there is no match. Each row is `| Resource | PresetName | DisplayName | Category | Subcategory | Genre | Keywords |`. Use the exact `PresetName` column, not Resource or the upstream DisplayName. Skip `UNAVAILABLE` rows. The names are derived from Studio DefaultCommonContent.ini and preset assets; upstream labels may contain typos or omit names.
 2. Choose the best-matching preset. If none fits well, switch to the direct-composition flow.
-3. `studiorpc_instance_upsert` with `class: "VFXPreset"`, `PresetName` = the Resource value, parented under the target Workspace object.
+3. Create with Editor Luau using the exact name: `local vfx = Instance.new("VFXPreset", workspace); vfx.Name = "MuzzleEffect"; vfx.Enabled = false; vfx.PresetName = "Muzzle"; return vfx.PresetName`. Use the requested parent and the catalog name for the selected effect.
+4. Asset selection may load asynchronously. In a later call, read `PresetName` and verify it equals the requested name before setting dynamic parameters (Color, Alpha, Size, Transparency). A successful write alone is not proof: an invalid name can leave the default Fire effect in place. Do not replay creation if loading is pending.
+5. Read existing curves before modifying them. Color and Alpha use bare keypoint arrays, with Color channels 0-255. PresetName changes reset source parameters, so apply custom parameters after the name resolves; then read them back. Set Enabled as requested after configuration. The generic instance tool also normalizes known resource aliases to exact names, but the preferred preset path is Editor Luau.
 
 ## Flow: direct composition
 

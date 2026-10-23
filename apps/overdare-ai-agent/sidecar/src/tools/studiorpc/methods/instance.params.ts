@@ -1,5 +1,6 @@
 // @summary Defines shared instance property schemas and class enums for Studio RPC tools.
 import { z } from "zod";
+import presetCatalog from "./vfx-preset-names.json";
 
 /**
  * Studio names the type inside the value — `{"ObjectType":"CFrame", "Position":{...}}` — in the
@@ -862,8 +863,20 @@ const rawInstancePropertiesUnion = z.union([
     .object({
       PresetName: z
         .string()
+        .transform((name, ctx) => {
+          const nativeName = (presetCatalog.names as Record<string, string>)[name];
+          if (nativeName) return nativeName;
+          if (name.startsWith("VFX_")) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "Unknown or unavailable preset resource. Use the catalog PresetName column, for example Muzzle.",
+            });
+            return z.NEVER;
+          }
+          return name;
+        })
         .describe(
-          'Preset resource name, e.g. "VFX_UGC_Muzzle_01" — discover via the vfx-recipe skill (references/presets.md, Resource column)',
+          'Exact Studio preset name, e.g. "Muzzle" (known resource aliases are normalized) — discover via the vfx-recipe skill (references/presets.md, PresetName column)',
         ),
       Alpha: z
         .array(z.object({ Time: z.number(), Value: z.number() }))
