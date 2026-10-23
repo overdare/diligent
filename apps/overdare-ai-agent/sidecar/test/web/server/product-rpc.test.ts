@@ -41,6 +41,25 @@ describe("routeWebRpcRequest", () => {
     expect(forwarded).toHaveLength(0);
   });
 
+  test("consent/get waits for the backend sync before answering", async () => {
+    const sent: unknown[] = [];
+    const forwarded: unknown[] = [];
+    let synced = false;
+    await routeWebRpcRequest(JSON.stringify({ id: 9, method: "consent/get", params: {} }), {
+      consentBackend: backend({
+        refresh: async () => {
+          synced = true;
+        },
+        get: () => ({ ...STATE, serviceImprovement: synced }),
+      }),
+      send: (message) => sent.push(message),
+      forward: (raw) => forwarded.push(raw),
+    });
+
+    expect(sent).toEqual([{ id: 9, result: { ...STATE, serviceImprovement: true } }]);
+    expect(forwarded).toHaveLength(0);
+  });
+
   test("forwards core requests unchanged", async () => {
     const raw = JSON.stringify({ id: 8, method: "thread/list", params: {} });
     const forwarded: unknown[] = [];

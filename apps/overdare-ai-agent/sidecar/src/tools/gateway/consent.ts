@@ -27,6 +27,7 @@ type ConsentStatus = "granted" | "withdrawn" | "none";
 
 export interface ConsentService extends WebConsentBackend {
   refresh(): Promise<void>;
+  isLoaded(): boolean;
   set(params: ConsentSetParams): Promise<ConsentState>;
   isGranted(): boolean;
 }
@@ -130,19 +131,38 @@ function patchToGranted(params: ConsentSetParams, current: ConsentStatus): boole
  */
 export function createGatewayConsentService(): ConsentService {
   let status: ConsentStatus = "none";
+  let loaded = false;
+  let inFlight: Promise<void> | undefined;
+  // Bumped by every successful `set`, so a GET that started earlier cannot overwrite it.
+  let revision = 0;
+
+  const syncStatus = async () => {
+    const startRevision = revision;
+    await Promise.all([
+      refreshPrivacyPolicyUrl(),
+      (async () => {
+        const token = await resolveToken();
+        if (!token) return;
+        try {
+          const next = await fetchConsentStatus(token);
+          if (revision === startRevision) status = next;
+        } catch (err) {
+          if (DEBUG) logger.warn("consent.refresh_failed", { message: "[gateway] consent refresh failed", error: err });
+        }
+      })(),
+    ]);
+  };
 
   return {
     get: () => statusToState(status),
     isGranted: () => status === "granted",
-    refresh: async () => {
-      await refreshPrivacyPolicyUrl();
-      const token = await resolveToken();
-      if (!token) return;
-      try {
-        status = await fetchConsentStatus(token);
-      } catch (err) {
-        if (DEBUG) logger.warn("consent.refresh_failed", { message: "[gateway] consent refresh failed", error: err });
-      }
+    isLoaded: () => loaded,
+    refresh: () => {
+      inFlight ??= syncStatus().finally(() => {
+        loaded = true;
+        inFlight = undefined;
+      });
+      return inFlight;
     },
     set: async (params) => {
       const token = await resolveToken();
@@ -151,6 +171,8 @@ export function createGatewayConsentService(): ConsentService {
       try {
         const result = await postConsent(token, granted);
         status = granted ? "granted" : "withdrawn";
+        revision++;
+        loaded = true;
         if (DEBUG) {
           logger.debug("consent.set", {
             message: `[gateway] consent set granted=${granted}`,

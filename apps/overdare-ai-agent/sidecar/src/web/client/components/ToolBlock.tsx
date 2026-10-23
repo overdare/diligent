@@ -2,7 +2,7 @@
 
 import type { ToolRenderPayload } from "@diligent/protocol";
 import { useEffect, useState } from "react";
-import { toolDisclosureKey, useRememberedOpen } from "../lib/disclosure-state";
+import { rememberShownOpen, toolDisclosureKey, useRememberedOpen } from "../lib/disclosure-state";
 import type { RenderItem } from "../lib/thread-store";
 import { normalizeToolName } from "../lib/thread-utils";
 import { formatToolDurationLabel } from "../lib/time-format";
@@ -121,6 +121,12 @@ export function ToolBlock({
     setAssetGalleryAutoOpened(true);
   }, [assetGalleryAutoOpened, setOpen, shouldAutoOpen]);
 
+  // A lone row merges into a group when an adjacent call arrives (live or from an earlier history page);
+  // the group starts from what was on screen, so an auto-opened preview neither vanishes nor shrinks the row.
+  useEffect(() => {
+    if (!nested && open) rememberShownOpen(toolDisclosureKey(item.id), true);
+  }, [item.id, nested, open]);
+
   return (
     // Calls made from a code mode `exec` script hang under that exec row.
     <div className={item.parentToolCallId ? "ml-3 border-l border-border/30 pl-3" : undefined}>
@@ -148,7 +154,7 @@ export function ToolBlock({
         />
 
         {open && (
-          <div className={nested ? "mt-0.5 max-h-72 overflow-y-auto overscroll-contain pr-2" : "mt-2"}>
+          <div className={nested ? "mt-0.5 max-h-72 overflow-y-auto pr-2" : "mt-2"}>
             <ToolOutputImages images={item.outputImages} />
             <ToolContent item={item} render={renderPayload} />
           </div>

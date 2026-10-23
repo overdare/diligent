@@ -17,6 +17,13 @@ const logger = createLogger({ scope: "web.client.threads" });
 
 export const DRAFT_INPUT_KEY = "__draft__";
 
+export interface OpenThreadOptions {
+  /** Settles once client defaults are applied; session model/effort are applied only afterwards. */
+  beforeMetadata?: Promise<unknown>;
+  /** Called once the first history page is on screen, before runtime preparation starts. */
+  onHistoryShown?: () => void;
+}
+
 export function clearDraftThreadInput(threadInputs: Record<string, string>): Record<string, string> {
   if (!(DRAFT_INPUT_KEY in threadInputs)) {
     return threadInputs;
@@ -300,7 +307,7 @@ export function useThreadManager({
   }, [activeThreadIdRef, deactivateServerThread, dispatch, resetDraftModel, closeModals]);
 
   const openThread = useCallback(
-    async (threadId: string): Promise<void> => {
+    async (threadId: string, options?: OpenThreadOptions): Promise<void> => {
       const rpc = rpcRef.current;
       if (!rpc) return;
       const navigation = ++navigationRef.current;
@@ -324,10 +331,13 @@ export function useThreadManager({
           setIsLoadingHistory(false);
           setIsPreparingThread(true);
         });
+        options?.onHistoryShown?.();
         const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId }, null);
         if (!isCurrent()) return;
         if (!resumed.found) throw new Error("Conversation could not be restored.");
         const history = await activateServerThread(threadId);
+        if (!isCurrent()) return;
+        await options?.beforeMetadata;
         if (!isCurrent()) return;
         await applySessionModel(history.currentModel);
         if (!isCurrent()) return;

@@ -3,6 +3,8 @@
 import { z } from "zod";
 
 export const WEB_CONSENT_SET_METHOD = "consent/set";
+/** Resolves once the backend has synced with its source of truth; `initialize` never waits for it. */
+export const WEB_CONSENT_GET_METHOD = "consent/get";
 
 export const ConsentStateSchema = z.object({
   noticeAcknowledged: z.boolean(),
@@ -20,5 +22,7 @@ export type ConsentSetParams = z.infer<typeof ConsentSetParamsSchema>;
 export interface WebConsentBackend {
   get(): ConsentState;
   refresh?(): Promise<void>;
+  /** False until the first `refresh` settles; `get()` is only a placeholder before then. */
+  isLoaded?(): boolean;
   set(params: ConsentSetParams): ConsentState | Promise<ConsentState>;
 }

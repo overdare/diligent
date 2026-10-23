@@ -189,6 +189,11 @@ export function App() {
     },
     [closeSidebar, openThread, sidebarIsOverlay],
   );
+  const setPendingDeleteThreadId = threadMgr.setPendingDeleteThreadId;
+  const handleSidebarDeleteThread = useCallback(
+    (id: string) => setPendingDeleteThreadId(id),
+    [setPendingDeleteThreadId],
+  );
   const handleReportMessage = useCallback(
     (item: Extract<RenderItem, { kind: "user" | "assistant" }>) => {
       if (!state.activeThreadId) return;
@@ -276,7 +281,7 @@ export function App() {
             error={threadMgr.threadListError}
             onNewThread={handleSidebarNewThread}
             onOpenThread={handleSidebarOpenThread}
-            onDeleteThread={(id) => threadMgr.setPendingDeleteThreadId(id)}
+            onDeleteThread={handleSidebarDeleteThread}
             onClose={closeSidebar}
           />
         </ResponsiveSidebar>
@@ -304,54 +309,55 @@ export function App() {
             }}
           />
 
-          {threadMgr.isLoadingHistory ? (
-            <output className="px-7 py-2 text-sm text-muted">Loading recent history…</output>
-          ) : null}
-          {threadMgr.isPreparingThread ? (
-            <output className="px-7 py-2 text-sm text-muted">
-              History is available. Preparing this conversation for new messages…
-            </output>
-          ) : null}
-          {threadMgr.historyError ? (
-            <div role="alert" className="px-7 py-2 text-sm text-danger">
-              {threadMgr.historyError}
-              {state.activeThreadId ? (
-                <button
-                  type="button"
-                  className="ml-3 underline"
-                  onClick={() => void threadMgr.openThread(state.activeThreadId!)}
-                >
-                  Retry opening
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          {state.historyCursor ? (
-            <button
-              type="button"
-              disabled={threadMgr.isLoadingEarlier}
-              onClick={() => void threadMgr.loadEarlierHistory()}
-              className="px-7 py-2 text-sm text-accent"
-            >
-              {threadMgr.isLoadingEarlier ? "Loading earlier history…" : "Load earlier history"}
-            </button>
-          ) : null}
-          <MessageList
-            threadId={state.activeThreadId}
-            items={state.items}
-            threadStatus={state.threadStatus}
-            threadCwd={state.activeThreadCwd ?? undefined}
-            hasProvider={providerMgr.effectiveHasProvider}
-            oauthPending={oauthPending}
-            onOpenProviders={handleOpenProviders}
-            onQuickConnectChatGPT={handleQuickConnectChatGPT}
-            isCompacting={state.isCompacting}
-            approvalPrompt={approvalPrompt}
-            questionPrompt={questionPrompt}
-            onLoadChildThread={loadChildThread}
-            onReportMessage={handleReportMessage}
-            onErrorRecovery={handleErrorRecovery}
-          />
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            {threadMgr.isLoadingHistory || threadMgr.isPreparingThread || threadMgr.historyError ? (
+              // Overlaid rather than stacked above the list: a status line that comes and goes must not
+              // move the transcript the reader is looking at.
+              <div className="absolute inset-x-0 top-0 z-10 flex flex-col bg-surface-dark/90">
+                {threadMgr.isLoadingHistory ? (
+                  <output className="px-7 py-2 text-sm text-muted">Loading recent history…</output>
+                ) : null}
+                {threadMgr.isPreparingThread ? (
+                  <output className="px-7 py-2 text-sm text-muted">
+                    History is available. Preparing this conversation for new messages…
+                  </output>
+                ) : null}
+                {threadMgr.historyError ? (
+                  <div role="alert" className="px-7 py-2 text-sm text-danger">
+                    {threadMgr.historyError}
+                    {state.activeThreadId ? (
+                      <button
+                        type="button"
+                        className="ml-3 underline"
+                        onClick={() => void threadMgr.openThread(state.activeThreadId!)}
+                      >
+                        Retry opening
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            <MessageList
+              threadId={state.activeThreadId}
+              items={state.items}
+              threadStatus={state.threadStatus}
+              threadCwd={state.activeThreadCwd ?? undefined}
+              hasProvider={providerMgr.effectiveHasProvider}
+              oauthPending={oauthPending}
+              onOpenProviders={handleOpenProviders}
+              onQuickConnectChatGPT={handleQuickConnectChatGPT}
+              isCompacting={state.isCompacting}
+              approvalPrompt={approvalPrompt}
+              questionPrompt={questionPrompt}
+              onLoadChildThread={loadChildThread}
+              onReportMessage={handleReportMessage}
+              onErrorRecovery={handleErrorRecovery}
+              hasEarlierHistory={Boolean(state.historyCursor)}
+              isLoadingEarlierHistory={threadMgr.isLoadingEarlier}
+              onLoadEarlierHistory={threadMgr.loadEarlierHistory}
+            />
+          </div>
 
           {state.planState?.steps.some((s) => s.status !== "done") && <PlanPanel planState={state.planState!} />}
 

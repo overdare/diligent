@@ -1,6 +1,7 @@
 // @summary Renders colocated MessageList virtual row descriptors into concrete row UI
 
 import type { ErrorRecovery, ThreadReadResponse } from "@diligent/protocol";
+import { memo } from "react";
 import type { RenderItem } from "../../lib/thread-store";
 import { ApprovalCard } from "../ApprovalCard";
 import { AssistantMessage } from "../AssistantMessage";
@@ -17,15 +18,7 @@ import { ToolBlock } from "../ToolBlock";
 import { UserMessage } from "../UserMessage";
 import type { VirtualMessageRow } from "./types";
 
-export function MessageListRowContent({
-  row,
-  threadCwd,
-  onLoadChildThread,
-  onReportMessage,
-  lastCompletedResponseId,
-  actionableErrorId,
-  onErrorRecovery,
-}: {
+interface MessageListRowContentProps {
   row: VirtualMessageRow;
   threadCwd?: string;
   onLoadChildThread?: (childThreadId: string) => Promise<ThreadReadResponse>;
@@ -33,7 +26,56 @@ export function MessageListRowContent({
   lastCompletedResponseId?: string;
   actionableErrorId?: string;
   onErrorRecovery?: (recovery: ErrorRecovery) => void;
-}) {
+}
+
+/** Rows are rebuilt on every transcript change; a row only renders again when its own items change. */
+function sameRowContent(a: VirtualMessageRow, b: VirtualMessageRow): boolean {
+  if (a.kind !== b.kind || a.key !== b.key) return false;
+  switch (a.kind) {
+    case "message": {
+      const other = b as typeof a;
+      return a.item === other.item && a.suppressThinking === other.suppressThinking;
+    }
+    case "toolGroup":
+    case "collab": {
+      const other = b as typeof a;
+      return a.items.length === other.items.length && a.items.every((item, index) => item === other.items[index]);
+    }
+    case "approval":
+    case "question":
+      return a.prompt === (b as typeof a).prompt;
+    default:
+      return true;
+  }
+}
+
+function samePropsForRow(prev: MessageListRowContentProps, next: MessageListRowContentProps): boolean {
+  if (!sameRowContent(prev.row, next.row)) return false;
+  // Response and error ids only change what the row they name renders.
+  if (prev.row.kind === "message") {
+    const id = prev.row.item.id;
+    if ((prev.lastCompletedResponseId === id) !== (next.lastCompletedResponseId === id)) return false;
+    if ((prev.actionableErrorId === id) !== (next.actionableErrorId === id)) return false;
+  }
+  return (
+    prev.threadCwd === next.threadCwd &&
+    prev.onLoadChildThread === next.onLoadChildThread &&
+    prev.onReportMessage === next.onReportMessage &&
+    prev.onErrorRecovery === next.onErrorRecovery
+  );
+}
+
+export const MessageListRowContent = memo(MessageListRowContentImpl, samePropsForRow);
+
+function MessageListRowContentImpl({
+  row,
+  threadCwd,
+  onLoadChildThread,
+  onReportMessage,
+  lastCompletedResponseId,
+  actionableErrorId,
+  onErrorRecovery,
+}: MessageListRowContentProps) {
   switch (row.kind) {
     case "collab":
       return <CollabGroup items={row.items} loadChildThread={onLoadChildThread} />;
