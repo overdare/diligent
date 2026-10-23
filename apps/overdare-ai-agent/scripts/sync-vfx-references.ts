@@ -3,6 +3,8 @@
 // Usage: bun run apps/overdare-ai-agent/scripts/sync-vfx-references.ts
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import presetNames from "../sidecar/src/tools/studiorpc/methods/vfx-preset-names.json";
+import { annotatePresetCatalog } from "./vfx-preset-catalog";
 
 const REPO = "overdare/creator-guide-eng";
 const BASE = "official-asset-info";
@@ -70,7 +72,7 @@ function transformPresets(src: string, sha: string): string {
     stamp(sha) +
     "# VFXPreset Catalog\n\n" +
     "One row per official preset. Grep this file case-insensitively by English keywords, " +
-    "category, or display name; the Resource column feeds `VFXPreset.PresetName` directly.\n\n" +
+    "category, or display name. Use the PresetName column as the exact Studio input; Resource is an asset identifier. UNAVAILABLE rows are absent from the checked Studio particle-system inventory and must not be selected.\n\n" +
     "| Resource | DisplayName | Category | Subcategory | Genre | Keywords |\n" +
     "|---|---|---|---|---|---|\n" +
     `${lines.join("\n")}\n`
@@ -124,7 +126,7 @@ async function main() {
     ...templateNames.map((n) => fetchRaw(`vfx-recipe-template/${n}`)),
   ]);
 
-  const presetsOut = transformPresets(presetsSrc, sha);
+  const presetsOut = annotatePresetCatalog(transformPresets(presetsSrc, sha), presetNames.names);
   const presetCount = presetsOut.split("\n").filter((l) => l.startsWith("| VFX_")).length;
   if (presetCount < 100) throw new Error(`suspiciously few presets (${presetCount}) — upstream format changed?`);
 

@@ -233,3 +233,18 @@ export function deleteInstancesInDocument(
   }
   return { deletedGuids, skippedGuids };
 }
+
+/** Preflight the whole batch before a class-scoped tool can mutate any target. */
+export function assertInstanceClasses(
+  root: OvdrjmNode,
+  items: readonly ({ guid: string } | { class: string })[],
+  expectedClass: string,
+): void {
+  for (const item of items) {
+    const actualClass = "guid" in item ? findNodeByActorGuid(root, item.guid)?.InstanceType : item.class;
+    if (actualClass !== expectedClass)
+      throw new Error(
+        `This tool only edits ${expectedClass}; target ${"guid" in item ? item.guid : item.class} is ${actualClass ?? "missing"}.`,
+      );
+  }
+}

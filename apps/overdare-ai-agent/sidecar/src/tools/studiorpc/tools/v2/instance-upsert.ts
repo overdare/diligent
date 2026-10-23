@@ -3,7 +3,11 @@
 import { collectUiDiagnostics, type InstanceUpsertArgs, isUpdateItem } from "../../methods/instance.upsert";
 import { buildInstanceUpsertRender } from "../../render";
 import type { ToolResult } from "../../types";
-import { addInstancesInDocument, updateInstancesInDocument } from "../instance-document-operations";
+import {
+  addInstancesInDocument,
+  assertInstanceClasses,
+  updateInstancesInDocument,
+} from "../instance-document-operations";
 import { resultFromInstanceToolStatusError } from "../instance-status";
 import { findNodeByActorGuid, type OvdrjmNode } from "../ovdrjm-utils";
 import { callInstanceRpc, createdActorGuids, readLevelRoot, saveLevelFile, takeWarnings } from "./client";
@@ -31,9 +35,12 @@ function changedProperties(before: Record<string, unknown>, after: OvdrjmNode): 
   return changed;
 }
 
-export async function upsertInstancesViaRpc(parsedArgs: InstanceUpsertArgs): Promise<ToolResult> {
+export async function upsertInstancesViaRpc(
+  parsedArgs: InstanceUpsertArgs,
+  expectedClass?: string,
+): Promise<ToolResult> {
   try {
-    return await runUpsert(parsedArgs);
+    return await runUpsert(parsedArgs, expectedClass);
   } catch (error) {
     const result = resultFromInstanceToolStatusError(error);
     if (result) return result;
@@ -41,8 +48,9 @@ export async function upsertInstancesViaRpc(parsedArgs: InstanceUpsertArgs): Pro
   }
 }
 
-async function runUpsert(parsedArgs: InstanceUpsertArgs): Promise<ToolResult> {
+async function runUpsert(parsedArgs: InstanceUpsertArgs, expectedClass?: string): Promise<ToolResult> {
   const root = await readLevelRoot();
+  if (expectedClass) assertInstanceClasses(root, parsedArgs.items, expectedClass);
   const document: Record<string, unknown> = { Root: root };
   const mobilityInfo: string[] = [];
   const writeOptions = { mobilityInfo };
