@@ -2,8 +2,8 @@
 
 This branch is the implemented long-term draft above geometry restoration PR #434;
 compatibility PR #415 is already merged.
-The general upsert tool is removed here; its static catalog and write path remain
-only behind the dedicated `studiorpc_vfx_recipe_upsert` tool (#491). The
+The general upsert tool and its static catalog are removed here; the dedicated
+`studiorpc_vfx_recipe_upsert` tool (#491) keeps a VFXRecipe-only schema and writer. The
 compatibility-stage results below describe the lower branch. Current behavior and remaining live-server gates
 are documented in `docs/plan/feature/live-schema-transition.md`.
 

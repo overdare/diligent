@@ -11,11 +11,13 @@ authoring and VFXPreset names; this draft keeps it and its write path unchanged.
 - Inherit proceduralmodel.api / validate / set unchanged from #441. These native
   authoring tools remain available; only the local procedural runner stays retired.
 
-- Remove the general `studiorpc_instance_upsert` tool, its Lua-validation hook and
-  registry renderer. Its static instance.params catalog, class-bound parsing, v1/v2
-  write execution and renderer stay only because `studiorpc_vfx_recipe_upsert`
-  (#491) reuses them. Keep instance read, hierarchy move/delete, Source helpers and
-  their shared Mobility/singleton safeguards. Remove the procedural-builder skill/agent definitions. Rename the active geometry-recipe skill/agent inherited from #434 to
+- Remove the general `studiorpc_instance_upsert` tool, its static instance.params
+  catalog, class-bound validators/defaults/transformations, UI diagnostics, renderer
+  and v1/v2 upsert execution. `studiorpc_vfx_recipe_upsert` (#491) keeps its contract
+  on a self-contained VFXRecipe schema (`vfx-recipe.params.ts`) and its own file/RPC
+  writer, which reuse only the document add/update helpers with the Mobility policy.
+  Keep instance read, hierarchy move/delete, Source helpers and their shared
+  Mobility/singleton safeguards. Remove the procedural-builder skill/agent definitions. Rename the active geometry-recipe skill/agent inherited from #434 to
   procedural-model-builder and remove the old geometry-recipe entries here. The
   underlying native authoring guidance is restored by #434, not by this PR.
 - Full discovery is a request with no filters: `{}`. Class-only requests use

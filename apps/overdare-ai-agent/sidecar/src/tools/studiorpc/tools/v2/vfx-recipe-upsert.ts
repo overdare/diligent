@@ -1,17 +1,15 @@
-// @summary Applies batched instance adds and updates through the Studio instance RPCs.
+// @summary Applies VFXRecipe creates and patches through the Studio instance RPCs.
 
-import { collectUiDiagnostics, type InstanceUpsertArgs, isUpdateItem } from "../../methods/instance.upsert";
-import { buildInstanceUpsertRender } from "../../render";
-import type { ToolResult } from "../../types";
 import {
+  type AddedInstanceMetadata,
   addInstancesInDocument,
   assertInstanceClasses,
+  normalizeWorkspaceMobility,
   updateInstancesInDocument,
 } from "../instance-document-operations";
-import { resultFromInstanceToolStatusError } from "../instance-status";
 import { findNodeByActorGuid, type OvdrjmNode } from "../ovdrjm-utils";
+import type { VfxRecipeItem } from "../vfx-recipe-upsert-tool";
 import { callInstanceRpc, createdActorGuids, readLevelRoot, saveLevelFile, takeWarnings } from "./client";
-import { applyMobilityCascade } from "./mobility";
 
 /** Studio issues ActorGuid and ObjectKey itself, and children arrive through their own calls. */
 const LOCAL_ONLY_KEYS = new Set(["ActorGuid", "ObjectKey", "LuaChildren"]);
@@ -35,40 +33,34 @@ function changedProperties(before: Record<string, unknown>, after: OvdrjmNode): 
   return changed;
 }
 
-export async function upsertInstancesViaRpc(
-  parsedArgs: InstanceUpsertArgs,
-  expectedClass?: string,
-): Promise<ToolResult> {
-  try {
-    return await runUpsert(parsedArgs, expectedClass);
-  } catch (error) {
-    const result = resultFromInstanceToolStatusError(error);
-    if (result) return result;
-    throw error;
-  }
-}
-
-async function runUpsert(parsedArgs: InstanceUpsertArgs, expectedClass?: string): Promise<ToolResult> {
+/**
+ * Applies the batch to a local copy of the level first, so class preflight, Mobility policy and
+ * GUID resolution match the file backend, then sends only the resulting changes to Studio.
+ */
+export async function upsertVfxRecipesViaRpc(
+  items: readonly VfxRecipeItem[],
+): Promise<{ added: AddedInstanceMetadata[]; info: string[] }> {
   const root = await readLevelRoot();
-  if (expectedClass) assertInstanceClasses(root, parsedArgs.items, expectedClass);
+  assertInstanceClasses(
+    root,
+    items.map((item) => ("guid" in item ? item : { class: "VFXRecipe" })),
+    "VFXRecipe",
+  );
   const document: Record<string, unknown> = { Root: root };
   const mobilityInfo: string[] = [];
-  const writeOptions = { mobilityInfo };
-
   const updateInstances: Record<string, unknown>[] = [];
   const addsByParent = new Map<string, PendingAdd[]>();
-  const added: { guid: string; name: string; class: string }[] = [];
+  const added: AddedInstanceMetadata[] = [];
 
-  for (const item of parsedArgs.items) {
-    if (isUpdateItem(item)) {
+  for (const item of items) {
+    if ("guid" in item) {
       const target = findNodeByActorGuid(root, item.guid);
       const before = target ? { ...target } : {};
-      updateInstancesInDocument(root, [{ ...item, properties: item.properties ?? {} }], writeOptions);
+      updateInstancesInDocument(root, [item], { mobilityInfo });
       if (target) updateInstances.push({ ActorGuid: item.guid, ...changedProperties(before, target) });
       continue;
     }
-
-    const [metadata] = addInstancesInDocument(document, [{ ...item, properties: item.properties ?? {} }], writeOptions);
+    const [metadata] = addInstancesInDocument(document, [{ ...item, class: "VFXRecipe" }], { mobilityInfo });
     const node = findNodeByActorGuid(root, metadata.guid);
     if (!node) throw new Error(`Locally added instance disappeared: ${metadata.guid}`);
     added.push(metadata);
@@ -80,7 +72,6 @@ async function runUpsert(parsedArgs: InstanceUpsertArgs, expectedClass?: string)
   if (updateInstances.length > 0) {
     await callInstanceRpc("instance.update", { Instances: updateInstances });
   }
-
   // instance.create takes one parent per call, so adds are grouped by parentGuid.
   for (const [parentGuid, pending] of addsByParent) {
     const result = await callInstanceRpc("instance.create", {
@@ -95,41 +86,9 @@ async function runUpsert(parsedArgs: InstanceUpsertArgs, expectedClass?: string)
     });
   }
 
-  applyMobilityCascade(root);
+  // Studio cascades a top-level object's Mobility by itself and refuses a Mobility set below
+  // Workspace, so only the local tree is brought in line to keep the reported info consistent.
+  normalizeWorkspaceMobility(root);
   await saveLevelFile();
-
-  const diag = collectUiDiagnostics(root);
-  diag.info.push(...mobilityInfo, ...takeWarnings());
-  const addedGuids = added.map((item) => item.guid);
-  const updatedGuids = parsedArgs.items.flatMap((item) => (isUpdateItem(item) ? [item.guid] : []));
-  const targetGuids = [...updatedGuids, ...addedGuids];
-
-  const lines: string[] = [];
-  if (added.length > 0) {
-    lines.push("<added-instances>");
-    for (const a of added) {
-      lines.push(`<instance name="${a.name}" class="${a.class}" guid="${a.guid}" />`);
-    }
-    lines.push("</added-instances>");
-  }
-  if (diag.warnings.length > 0) {
-    lines.push("<warnings>", ...diag.warnings, "</warnings>");
-  }
-  if (diag.info.length > 0) {
-    lines.push("<suggestions>", ...diag.info, "</suggestions>");
-  }
-
-  return {
-    output: lines.join("\n") || "OK",
-    render: buildInstanceUpsertRender(parsedArgs, lines.join("\n") || "OK"),
-    metadata: {
-      method: "instance.upsert",
-      targetGuids,
-      addCount: added.length,
-      updateCount: updatedGuids.length,
-      added,
-      ...(diag.warnings.length > 0 && { warnings: diag.warnings }),
-      ...(diag.info.length > 0 && { info: diag.info }),
-    },
-  };
+  return { added, info: [...mobilityInfo, ...takeWarnings()] };
 }

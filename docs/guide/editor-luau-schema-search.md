@@ -11,8 +11,9 @@ its details directly without fetching the full catalog first. Then author with
 `studiorpc_execute_luau` targeting Editor. Instance reads, hierarchy moves/deletes,
 and focused Source reads/edits remain available. The general JSON upsert tool is
 removed in this long-term draft. VFXRecipe authoring stays on the dedicated
-`studiorpc_vfx_recipe_upsert` tool (#491), which keeps the static catalog's
-VFXRecipe schema, source-name expansion and file/RPC write path; ActionSequence
+`studiorpc_vfx_recipe_upsert` tool (#491). It owns a VFXRecipe-only schema
+(`methods/vfx-recipe.params.ts`) with source-name expansion and type tags, plus its
+own file/RPC write path; nothing else from the static catalog remains. ActionSequence
 authoring stays on `studiorpc_action_sequencer_service_apply_json`.
 
 Select an implementation from its execution lifetime, not from a keyword or model
@@ -103,9 +104,9 @@ verification. The earlier `-32602` result came from `{"query":""}`, not from an
 unsupported full-catalog request. If Studio rejects a valid empty request, surface
 that error without wildcard/alphabet probing or inventing a partial catalog.
 
-For Editor Luau, the general tool's class validators, automatic defaults and
-ObjectType insertion are retired; they survive only behind the dedicated VFXRecipe
-tool. Editor assignments must use supported Luau values and exact asset
+The general tool's class validators, automatic defaults, ObjectType insertion,
+ValueBase tagging and UI diagnostics are retired; only the VFXRecipe schema's own
+equivalents remain behind the dedicated tool. Editor assignments must use supported Luau values and exact asset
 names/paths; the overlay documents them but does not convert or validate values.
 Existing hierarchy move protections and Mobility normalization remain.
 

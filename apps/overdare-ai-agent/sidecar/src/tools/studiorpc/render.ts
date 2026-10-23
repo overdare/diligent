@@ -316,7 +316,7 @@ export function buildInstanceReadRender(args: Record<string, unknown>, output: s
   };
 }
 
-export function buildInstanceUpsertRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
+export function buildVfxRecipeUpsertRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
   const items = Array.isArray(args.items) ? args.items : [];
   const addCount = items.filter((i) => isRecord(i) && "parentGuid" in i).length;
   const updateCount = items.filter((i) => isRecord(i) && "guid" in i && !("parentGuid" in i)).length;
@@ -326,17 +326,17 @@ export function buildInstanceUpsertRender(args: Record<string, unknown>, output:
   const summary = parts.join(", ") || "upsert";
   return {
     inputSummary: clip(summary),
-    outputSummary: summarizeText(output, "Instances upserted."),
+    outputSummary: summarizeText(output, "Recipes upserted."),
     blocks: [
       {
         type: "key_value",
-        title: "Studio instance upsert",
+        title: "VFXRecipe upsert",
         items: [
           { key: "adds", value: String(addCount) },
           { key: "updates", value: String(updateCount) },
         ],
       },
-      { type: "summary", text: firstLine(output, "Instances upserted."), tone: "success" },
+      { type: "summary", text: firstLine(output, "Recipes upserted."), tone: "success" },
     ],
   };
 }
