@@ -1,7 +1,8 @@
 // @summary Marked wrapper with highlight.js syntax highlighting for code blocks
 import hljs from "highlight.js";
-import { marked } from "marked";
+import { marked, type Renderer } from "marked";
 import { markedHighlight } from "marked-highlight";
+import { type FileLinkOptions, toFilePreviewUrl } from "../../shared/file-routes";
 import { toWebImageUrl } from "../../shared/image-routes";
 
 const renderer = new marked.Renderer();
@@ -13,9 +14,9 @@ const IMAGE_GALLERY_ICON = `<svg class="image-gallery-icon" viewBox="0 0 24 24" 
   <path d="m5.5 17 2.7-2.7 2.2 2.2 1.6-1.6 1.5 1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="11.5" cy="11.5" r="1.25" fill="currentColor"/>
 </svg>`;
-const renderImage = renderer.image.bind(renderer);
-renderer.image = (token) => {
-  const image = renderImage({
+const renderImage = renderer.image;
+renderer.image = function (token) {
+  const image = renderImage.call(this, {
     ...token,
     href: /^(?:[a-z][a-z0-9+.-]*:\/\/|\/\/)/i.test(token.href) ? token.href : toWebImageUrl(token.href),
   });
@@ -56,12 +57,35 @@ const COPY_SUCCESS_ICON = `
 </svg>
 `.trim();
 
-renderer.link = ({ href, title, tokens, text }) => {
-  const safeHref = href ?? "#";
-  const titleAttr = title ? ` title="${title}"` : "";
-  const label = text || marked.Parser.parseInline(tokens ?? []);
-  return `<a href="${safeHref}"${titleAttr} class="prose-link" target="_blank" rel="noopener noreferrer">${label}</a>`;
-};
+export interface MarkdownOptions extends FileLinkOptions {
+  /** File content is untrusted: display raw HTML as text. */
+  safeHtml?: boolean;
+}
+
+function createRenderer(options: MarkdownOptions): Renderer {
+  const configured = Object.assign(new marked.Renderer(), renderer);
+  configured.link = function ({ href, title, tokens, text }) {
+    const label = tokens?.length ? this.parser.parseInline(tokens) : escapeHtml(text);
+    const normalizedHref = href.trim().replace(/[\u0000-\u0020]/g, "");
+    if (/^(?:javascript|vbscript|data):/i.test(normalizedHref)) return label;
+    const safeHref = escapeHtml(toFilePreviewUrl(href, options));
+    const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+    return `<a href="${safeHref}"${titleAttr} class="prose-link" target="_blank" rel="noopener noreferrer">${label}</a>`;
+  };
+  if (options.safeHtml) {
+    configured.html = ({ text }) => escapeHtml(text);
+    configured.image = ({ href, text }) => {
+      const title = escapeHtml(text || "Image");
+      const target = toFilePreviewUrl(href, options);
+      if (target !== href) {
+        return `<a href="${escapeHtml(target)}" target="_blank" rel="noopener noreferrer">${title}</a>`;
+      }
+      if (!/^(?:https?:\/\/|\/\/|\/_diligent\/image\/)/i.test(href)) return title;
+      return `<img src="${escapeHtml(href)}" alt="${title}" loading="lazy" />`;
+    };
+  }
+  return configured;
+}
 
 renderer.code = ({ text, lang, escaped }) => {
   const language = normalizeCodeLanguage(lang);
@@ -108,10 +132,10 @@ marked.setOptions({
   renderer,
 });
 
-export function renderMarkdown(text: string): string {
-  return marked.parse(text) as string;
+export function renderMarkdown(text: string, options: MarkdownOptions = {}): string {
+  return marked.parse(text, { renderer: createRenderer(options) }) as string;
 }
 
-export function renderInlineMarkdown(text: string): string {
-  return marked.parseInline(text) as string;
+export function renderInlineMarkdown(text: string, options: MarkdownOptions = {}): string {
+  return marked.parseInline(text, { renderer: createRenderer(options) }) as string;
 }

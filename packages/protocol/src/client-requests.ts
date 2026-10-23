@@ -601,6 +601,26 @@ export const ThreadUnsubscribeResponseSchema = z.object({
 });
 export type ThreadUnsubscribeResponse = z.infer<typeof ThreadUnsubscribeResponseSchema>;
 
+// --- file/read ---
+export const FileReadParamsSchema = z.object({
+  threadId: z.string().optional(),
+  path: z.string().min(1),
+});
+export type FileReadParams = z.infer<typeof FileReadParamsSchema>;
+
+const FilePreviewBaseSchema = z.object({ path: z.string(), name: z.string() });
+export const FileReadResponseSchema = z.discriminatedUnion("kind", [
+  FilePreviewBaseSchema.extend({ kind: z.literal("markdown"), content: z.string() }),
+  FilePreviewBaseSchema.extend({ kind: z.literal("text"), content: z.string() }),
+  FilePreviewBaseSchema.extend({ kind: z.literal("image"), mediaType: z.string(), dataBase64: z.string() }),
+  FilePreviewBaseSchema.extend({ kind: z.literal("binary"), mediaType: z.string(), dataBase64: z.string() }),
+  FilePreviewBaseSchema.extend({
+    kind: z.literal("directory"),
+    entries: z.array(z.object({ name: z.string(), path: z.string(), isDirectory: z.boolean() })),
+  }),
+]);
+export type FileReadResponse = z.infer<typeof FileReadResponseSchema>;
+
 // --- image/upload ---
 export const ImageUploadParamsSchema = z.object({
   threadId: z.string().optional(),
@@ -726,6 +746,7 @@ export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
     params: ThreadUnsubscribeParamsSchema,
   }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD), params: ImageUploadParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.FILE_READ), params: FileReadParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MCP_LIST), params: McpListParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MCP_LOGIN_START), params: McpLoginStartParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MCP_LOGOUT), params: McpLogoutParamsSchema }),
@@ -801,6 +822,7 @@ export const DiligentClientResponseSchema = z.discriminatedUnion("method", [
     result: ThreadUnsubscribeResponseSchema,
   }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD), result: ImageUploadResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.FILE_READ), result: FileReadResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MCP_LIST), result: McpListResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MCP_LOGIN_START), result: McpLoginStartResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MCP_LOGOUT), result: McpLogoutResponseSchema }),
