@@ -45,13 +45,16 @@ function EarlierHistoryHeader({ context }: ContextProp<VirtuosoMessageListContex
         >
           {state === "loading" ? (
             <output>Loading earlier history…</output>
-          ) : state === "available" ? (
-            <button type="button" className="text-accent" onClick={() => context.onLoadEarlierHistory?.()}>
-              Load earlier history
-            </button>
-          ) : (
+          ) : state === "failed" ? (
+            <div role="alert">
+              Could not load earlier messages.
+              <button type="button" className="ml-2 text-accent" onClick={() => context.onLoadEarlierHistory?.()}>
+                Retry
+              </button>
+            </div>
+          ) : state === "start" ? (
             <span>Beginning of conversation</span>
-          )}
+          ) : null}
         </div>
       ) : null}
     </div>

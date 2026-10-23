@@ -115,6 +115,7 @@ function MessageListImpl({
   onErrorRecovery,
   hasEarlierHistory = false,
   isLoadingEarlierHistory = false,
+  earlierHistoryFailed = false,
   onLoadEarlierHistory,
 }: MessageListProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -203,7 +204,9 @@ function MessageListImpl({
   const earlierHistory: EarlierHistoryState | undefined = isLoadingEarlierHistory
     ? "loading"
     : hasEarlierHistory
-      ? "available"
+      ? earlierHistoryFailed
+        ? "failed"
+        : "available"
       : pagingRef.current.paged
         ? "start"
         : undefined;
@@ -297,16 +300,16 @@ function MessageListImpl({
 
   // Fires once per first-row index as it enters the top overscan, so paging starts before the edge.
   const handleStartReached = useCallback(() => {
-    if (hasEarlierHistory && !isLoadingEarlierHistory) onLoadEarlierHistory?.();
-  }, [hasEarlierHistory, isLoadingEarlierHistory, onLoadEarlierHistory]);
+    if (hasEarlierHistory && !isLoadingEarlierHistory && !earlierHistoryFailed) onLoadEarlierHistory?.();
+  }, [hasEarlierHistory, isLoadingEarlierHistory, earlierHistoryFailed, onLoadEarlierHistory]);
 
   // A page whose items all merge into the existing first row leaves firstItemIndex unchanged, so
   // startReached never fires again; keep paging while the first row is still rendered.
   useEffect(() => {
-    if (!hasEarlierHistory || isLoadingEarlierHistory) return;
+    if (!hasEarlierHistory || isLoadingEarlierHistory || earlierHistoryFailed) return;
     const firstRendered = scrollerRef.current?.querySelector<HTMLElement>("[data-message-list-row]");
     if (firstRendered && Number(firstRendered.dataset.itemIndex) === firstItemIndex) onLoadEarlierHistory?.();
-  }, [hasEarlierHistory, isLoadingEarlierHistory, firstItemIndex, onLoadEarlierHistory]);
+  }, [hasEarlierHistory, isLoadingEarlierHistory, earlierHistoryFailed, firstItemIndex, onLoadEarlierHistory]);
 
   const computeItemKey = useCallback((_index: number, row: VirtualMessageRow) => row.key, []);
 

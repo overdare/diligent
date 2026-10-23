@@ -65,8 +65,10 @@ async function renderBootstrap(path = "/", delayedRead = false, delayedResume = 
     startNewThread: () => Promise<void>;
     loadEarlierHistory: () => Promise<void>;
     isPreparingThread: boolean;
+    earlierHistoryFailed: boolean;
     historyError: string | null;
   };
+  const earlierFailures = { remaining: 0 };
   const activeThreadIdRef = { current: null as string | null };
   const rpcRef = {
     current: {
@@ -85,6 +87,10 @@ async function renderBootstrap(path = "/", delayedRead = false, delayedResume = 
         if (method === "thread/resume")
           return delayedResume ? preparing.promise : { found: true, threadId: params.threadId };
         if (method === "thread/history") {
+          if (params.cursor && earlierFailures.remaining > 0) {
+            earlierFailures.remaining--;
+            throw new Error("Storage unavailable");
+          }
           if (params.cursor)
             return {
               cwd: "/project",
@@ -182,6 +188,7 @@ async function renderBootstrap(path = "/", delayedRead = false, delayedResume = 
     requests,
     modelEvents,
     listCalls,
+    earlierFailures,
     manager: () => manager,
   };
 }
@@ -363,6 +370,18 @@ test("recent and earlier history are visible before a deferred runtime resume co
     threadId: "selected",
     includeItems: false,
   });
+});
+
+test("a failed earlier page stays local to paging and clears on retry", async () => {
+  const { container, manager, earlierFailures } = await renderBootstrap("/selected");
+  earlierFailures.remaining = 1;
+  await act(async () => manager().loadEarlierHistory());
+  expect(manager().earlierHistoryFailed).toBe(true);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector("section")!.textContent).toBe("Recent conversation");
+  await act(async () => manager().loadEarlierHistory());
+  expect(manager().earlierHistoryFailed).toBe(false);
+  expect(container.querySelector("section")!.textContent).toBe("Older conversation,Recent conversation");
 });
 
 test("preparation completing after New cannot overwrite the new draft", async () => {

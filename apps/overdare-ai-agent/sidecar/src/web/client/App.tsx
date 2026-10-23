@@ -355,6 +355,7 @@ export function App() {
               onErrorRecovery={handleErrorRecovery}
               hasEarlierHistory={Boolean(state.historyCursor)}
               isLoadingEarlierHistory={threadMgr.isLoadingEarlier}
+              earlierHistoryFailed={threadMgr.earlierHistoryFailed}
               onLoadEarlierHistory={threadMgr.loadEarlierHistory}
             />
           </div>

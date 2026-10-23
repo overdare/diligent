@@ -36,6 +36,8 @@ export interface MessageListProps {
   onErrorRecovery?: (recovery: ErrorRecovery) => void;
   hasEarlierHistory?: boolean;
   isLoadingEarlierHistory?: boolean;
+  /** The last earlier-history request failed; paging waits for an explicit retry. */
+  earlierHistoryFailed?: boolean;
   onLoadEarlierHistory?: () => void;
 }
 
@@ -55,7 +57,7 @@ export type CollabRow = MessageListRow & { kind: "collab"; items: CollabItem[] }
 export type ToolGroupRow = MessageListRow & { kind: "toolGroup"; items: ToolItem[] };
 export type MessageRow = MessageListRow & { kind: "message"; item: MessageContentItem; suppressThinking?: boolean };
 
-export type EarlierHistoryState = "available" | "loading" | "start";
+export type EarlierHistoryState = "available" | "loading" | "failed" | "start";
 
 export interface VirtuosoMessageListContext {
   transcriptKey: string;

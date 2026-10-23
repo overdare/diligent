@@ -175,6 +175,7 @@ export function useThreadManager({
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isPreparingThread, setIsPreparingThread] = useState(false);
   const [isLoadingEarlier, setIsLoadingEarlier] = useState(false);
+  const [earlierHistoryFailed, setEarlierHistoryFailed] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const earlierRequestRef = useRef(false);
   useEffect(
@@ -295,6 +296,7 @@ export function useThreadManager({
     setIsLoadingHistory(false);
     setIsPreparingThread(false);
     setIsLoadingEarlier(false);
+    setEarlierHistoryFailed(false);
     earlierRequestRef.current = false;
     setHistoryError(null);
     closeModals();
@@ -318,6 +320,7 @@ export function useThreadManager({
       setIsLoadingHistory(true);
       setIsPreparingThread(false);
       setIsLoadingEarlier(false);
+      setEarlierHistoryFailed(false);
       earlierRequestRef.current = false;
       setHistoryError(null);
       dispatch({ type: "select_history", payload: { threadId } });
@@ -411,14 +414,19 @@ export function useThreadManager({
     const navigation = navigationRef.current;
     earlierRequestRef.current = true;
     setIsLoadingEarlier(true);
-    setHistoryError(null);
+    setEarlierHistoryFailed(false);
     try {
       const page = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY, { threadId, cursor });
       if (navigation !== navigationRef.current || rpc !== rpcRef.current) return;
       dispatch({ type: "history_page", payload: { threadId, page, older: true } });
     } catch (error) {
-      if (navigation === navigationRef.current)
-        setHistoryError(error instanceof Error ? error.message : "Could not load earlier messages.");
+      if (navigation !== navigationRef.current) return;
+      setEarlierHistoryFailed(true);
+      logger.warn("thread.history_page_failed", {
+        message: "Failed to load earlier history",
+        error,
+        threadId,
+      });
     } finally {
       if (navigation === navigationRef.current) {
         earlierRequestRef.current = false;
@@ -467,6 +475,7 @@ export function useThreadManager({
     isLoadingHistory,
     isPreparingThread,
     isLoadingEarlier,
+    earlierHistoryFailed,
     historyError,
     loadEarlierHistory,
     refreshThreadHistory,
