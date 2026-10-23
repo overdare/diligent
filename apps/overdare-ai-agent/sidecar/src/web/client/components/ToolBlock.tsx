@@ -1,7 +1,7 @@
 // @summary Tool call block with icon, summary header, and tool-type-specific expandable content
 
 import type { ToolRenderPayload } from "@diligent/protocol";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { rememberShownOpen, toolDisclosureKey, useRememberedOpen } from "../lib/disclosure-state";
 import type { RenderItem } from "../lib/thread-store";
 import { normalizeToolName } from "../lib/thread-utils";
@@ -81,10 +81,6 @@ function ToolContent({ item, render }: { item: Extract<RenderItem, { kind: "tool
 
 /* ── Main ToolBlock ─────────────────────────────────────────────── */
 
-function hasAssetGalleryBlock(render?: ToolRenderPayload): boolean {
-  return Boolean(render?.blocks.some((block) => block.type === "asset_gallery"));
-}
-
 export function ToolBlock({
   item,
   nested = false,
@@ -93,10 +89,8 @@ export function ToolBlock({
   inlinePreviewWhenCollapsed = false,
 }: ToolBlockProps) {
   const renderPayload = item.render;
-  const shouldAutoOpen = hasAssetGalleryBlock(renderPayload) || Boolean(item.outputImages?.length);
-  const shouldInitiallyOpen = initialOpen ?? shouldAutoOpen;
-  const [open, setOpen] = useRememberedOpen(toolDisclosureKey(item.id), shouldInitiallyOpen);
-  const [assetGalleryAutoOpened, setAssetGalleryAutoOpened] = useState(shouldAutoOpen);
+  // Closed unless asked: an expanded image or gallery is tall and gets in the way when scrolling history.
+  const [open, setOpen] = useRememberedOpen(toolDisclosureKey(item.id), initialOpen ?? false);
   const toolInfo = getToolInfo(item.toolName);
   const activityTitle = getToolActivityLabel(item.toolName, item.status, item.isError);
   const normalizedToolName = normalizeToolName(item.toolName);
@@ -115,14 +109,8 @@ export function ToolBlock({
     : "";
   const rowTitle = inlinePreview ? `${activityTitle}: ${inlinePreview}` : activityTitle;
 
-  useEffect(() => {
-    if (!shouldAutoOpen || assetGalleryAutoOpened) return;
-    setOpen(true);
-    setAssetGalleryAutoOpened(true);
-  }, [assetGalleryAutoOpened, setOpen, shouldAutoOpen]);
-
   // A lone row merges into a group when an adjacent call arrives (live or from an earlier history page);
-  // the group starts from what was on screen, so an auto-opened preview neither vanishes nor shrinks the row.
+  // the group starts from what was on screen, so an opened preview neither vanishes nor shrinks the row.
   useEffect(() => {
     if (!nested && open) rememberShownOpen(toolDisclosureKey(item.id), true);
   }, [item.id, nested, open]);
