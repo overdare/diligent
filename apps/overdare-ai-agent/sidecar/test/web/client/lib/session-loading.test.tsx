@@ -47,6 +47,7 @@ afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
   }
+  localStorage.clear();
 });
 afterAll(() => void GlobalRegistrator.unregister());
 
@@ -87,6 +88,7 @@ async function renderBootstrap(path = "/", delayedRead = false, delayedResume = 
         if (method === "thread/resume")
           return delayedResume ? preparing.promise : { found: true, threadId: params.threadId };
         if (method === "thread/history") {
+          if (params.threadId === "missing") throw new Error("Thread not found: missing");
           if (params.cursor && earlierFailures.remaining > 0) {
             earlierFailures.remaining--;
             throw new Error("Storage unavailable");
@@ -247,6 +249,36 @@ test("a deep-linked conversation reads its first page before the sidebar scan st
   await act(async () => reading.resolve(recentHistory));
   expect(container.querySelector("section")!.textContent).toBe("Recent conversation");
   expect(listCalls.count).toBe(1);
+});
+
+test("the sidebar scan waits until the opened conversation is prepared", async () => {
+  const { container, preparing, listCalls } = await renderBootstrap("/selected", false, true);
+  expect(container.querySelector("section")!.textContent).toBe("Recent conversation");
+  expect(listCalls.count).toBe(0);
+  await act(async () => preparing.resolve({ found: true, threadId: "selected" }));
+  expect(listCalls.count).toBe(1);
+});
+
+test("a bare load reopens the remembered conversation before scanning sessions", async () => {
+  localStorage.setItem("diligent.lastThreadId", "selected");
+  const { container, preparing, listCalls, requests } = await renderBootstrap("/", false, true);
+  expect(window.location.pathname).toBe("/selected");
+  expect(container.querySelector("section")!.textContent).toBe("Recent conversation");
+  expect(requests.find((request) => request.method === "thread/history")?.params).toEqual({ threadId: "selected" });
+  expect(listCalls.count).toBe(0);
+  await act(async () => preparing.resolve({ found: true, threadId: "selected" }));
+  expect(listCalls.count).toBe(1);
+});
+
+test("a remembered conversation that cannot be read falls back to the latest without an error", async () => {
+  localStorage.setItem("diligent.lastThreadId", "missing");
+  const { container, listing } = await renderBootstrap("/");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(window.location.pathname).toBe("/");
+  expect(localStorage.getItem("diligent.lastThreadId")).toBeNull();
+  await act(async () => listing.resolve([latest]));
+  expect(container.querySelector("output")!.textContent).toBe(latest.id);
+  expect(localStorage.getItem("diligent.lastThreadId")).toBe(latest.id);
 });
 
 test("the sidebar scan still starts when the first history page fails", async () => {

@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { type AgentContextItem, getAgentContextItemKey, mergeAgentContextItems } from "./agent-native-bridge";
 import type { AppAction } from "./app-state";
-import { replaceDraftUrl, replaceThreadUrl } from "./app-utils";
+import { readLastThreadId, replaceDraftUrl, replaceThreadUrl, writeLastThreadId } from "./app-utils";
 import type { WebRpcClient } from "./rpc-client";
 import type { ThreadState } from "./thread-store";
 
@@ -20,8 +20,11 @@ export const DRAFT_INPUT_KEY = "__draft__";
 export interface OpenThreadOptions {
   /** Settles once client defaults are applied; session model/effort are applied only afterwards. */
   beforeMetadata?: Promise<unknown>;
-  /** Called once the first history page is on screen, before runtime preparation starts. */
-  onHistoryShown?: () => void;
+  /**
+   * A remembered (not user-chosen) conversation: if its history cannot be read, return to the draft
+   * without an error so the caller can fall back to the latest conversation.
+   */
+  quietIfUnavailable?: boolean;
 }
 
 export function clearDraftThreadInput(threadInputs: Record<string, string>): Record<string, string> {
@@ -309,9 +312,10 @@ export function useThreadManager({
   }, [activeThreadIdRef, deactivateServerThread, dispatch, resetDraftModel, closeModals]);
 
   const openThread = useCallback(
-    async (threadId: string, options?: OpenThreadOptions): Promise<void> => {
+    /** Resolves true once the conversation's history was shown, even if preparing it later failed. */
+    async (threadId: string, options?: OpenThreadOptions): Promise<boolean> => {
       const rpc = rpcRef.current;
-      if (!rpc) return;
+      if (!rpc) return false;
       const navigation = ++navigationRef.current;
       const isCurrent = () => navigation === navigationRef.current && rpc === rpcRef.current;
       activeThreadIdRef.current = threadId;
@@ -325,37 +329,52 @@ export function useThreadManager({
       setHistoryError(null);
       dispatch({ type: "select_history", payload: { threadId } });
       if (typeof window !== "undefined") replaceThreadUrl(threadId);
+      let shown = false;
       try {
         const page = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY, { threadId });
-        if (!isCurrent()) return;
+        if (!isCurrent()) return false;
         // Commit the bounded transcript before starting potentially slow runtime preparation.
         flushSync(() => {
           dispatch({ type: "history_page", payload: { threadId, page } });
           setIsLoadingHistory(false);
           setIsPreparingThread(true);
         });
-        options?.onHistoryShown?.();
+        shown = true;
         const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId }, null);
-        if (!isCurrent()) return;
+        if (!isCurrent()) return shown;
         if (!resumed.found) throw new Error("Conversation could not be restored.");
         const history = await activateServerThread(threadId);
-        if (!isCurrent()) return;
+        if (!isCurrent()) return shown;
         await options?.beforeMetadata;
-        if (!isCurrent()) return;
+        if (!isCurrent()) return shown;
         await applySessionModel(history.currentModel);
-        if (!isCurrent()) return;
+        if (!isCurrent()) return shown;
         dispatch({ type: "thread_metadata", payload: { threadId, history } });
         setEffortState(history.currentEffort);
         setFastModeState(history.currentFastMode ?? false);
         clearAttention(threadId);
+        return shown;
       } catch (error) {
-        if (!isCurrent()) return;
+        if (!isCurrent()) return shown;
+        if (!shown && options?.quietIfUnavailable) {
+          activeThreadIdRef.current = null;
+          writeLastThreadId(null);
+          dispatch({ type: "reset_draft", payload: { mode: "default" } });
+          if (typeof window !== "undefined") replaceDraftUrl();
+          logger.warn("thread.remembered_unavailable", {
+            message: "Remembered conversation could not be read",
+            error,
+            threadId,
+          });
+          return false;
+        }
         setHistoryError(error instanceof Error ? error.message : "Could not open conversation.");
         logger.error("thread.open_failed", {
           message: "Failed to open thread",
           error,
           threadId,
         });
+        return shown;
       } finally {
         if (isCurrent()) {
           setIsLoadingHistory(false);
@@ -444,6 +463,7 @@ export function useThreadManager({
     const navigation = navigationRef.current;
     try {
       await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE, { threadId });
+      if (readLastThreadId() === threadId) writeLastThreadId(null);
       if (navigation !== navigationRef.current) return;
       if (activeThreadIdRef.current === threadId) await startNewThread();
       void refreshThreadList(rpc);
