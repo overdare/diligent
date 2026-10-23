@@ -74,7 +74,7 @@ import {
 } from "./server-requests";
 import type { SkillConfigManager } from "./skill-handlers";
 import type { SubagentConfigManager } from "./subagent-handlers";
-import { resetTurnRuntimeState, type ThreadRuntime } from "./thread-handlers";
+import { resetTurnRuntimeState, type ThreadListScan, type ThreadRuntime } from "./thread-handlers";
 import { handleTurnStart } from "./turn-handlers";
 
 export type { ConnectedPeer, ModelConfig, ToolConfigManager } from "./request-dispatcher";
@@ -179,6 +179,7 @@ export class DiligentAppServer {
   private readonly serverVersion: string;
   private readonly threads = new Map<string, ThreadRuntime>();
   private readonly pendingResumes = new Map<string, Promise<ThreadResumeResponse>>();
+  private readonly threadListScans = new Map<string, ThreadListScan>();
   private readonly knownCwds = new Set<string>();
   private activeThreadId: string | null = null;
   private closing = false;
@@ -1068,6 +1069,7 @@ export class DiligentAppServer {
       activeThreadId: this.activeThreadId,
       threads: this.threads,
       pendingResumes: this.pendingResumes,
+      threadListScans: this.threadListScans,
       knownCwds: this.knownCwds,
       hooks: this.config.hooks,
       getUserId: (connectionId: string | undefined): string => {

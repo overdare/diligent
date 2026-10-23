@@ -92,6 +92,7 @@ for (const render of [undefined, { blocks: [{ type: "text" as const, text: "Load
   test(`tool image preview appears with ${render ? "structured" : "fallback"} output`, () => {
     const html = renderToStaticMarkup(
       <ToolBlock
+        initialOpen
         item={{
           ...tool,
           toolName: "read_image",

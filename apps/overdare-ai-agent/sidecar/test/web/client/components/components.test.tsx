@@ -2503,49 +2503,47 @@ test("tool block treats namespaced request_user_input as user-input tool (hides 
   expect(html).not.toContain("Answer submitted");
 });
 
-test("tool block renders asset gallery previews expanded", () => {
-  const html = renderToStaticMarkup(
-    <ToolBlock
-      item={{
-        id: "tool-assets",
-        kind: "tool",
-        toolName: "overdaresearch",
-        inputText: '{"source":"assets","query":"fountain classic stone"}',
-        outputText: "Found assets",
-        isError: false,
-        status: "done",
-        timestamp: 500,
-        toolCallId: "call-assets",
-        startedAt: 450,
-        durationMs: 42,
-        render: {
-          inputSummary: "assets: fountain classic stone",
-          outputSummary: "5 assets",
-          blocks: [
+test("tool block keeps asset gallery previews collapsed until opened", () => {
+  const item: Extract<RenderItem, { kind: "tool" }> = {
+    id: "tool-assets",
+    kind: "tool",
+    toolName: "overdaresearch",
+    inputText: '{"source":"assets","query":"fountain classic stone"}',
+    outputText: "Found assets",
+    isError: false,
+    status: "done",
+    timestamp: 500,
+    toolCallId: "call-assets",
+    startedAt: 450,
+    durationMs: 42,
+    render: {
+      inputSummary: "assets: fountain classic stone",
+      outputSummary: "5 assets",
+      blocks: [
+        {
+          type: "asset_gallery",
+          title: "OVERDARE Assets",
+          query: "fountain classic stone",
+          items: [
             {
-              type: "asset_gallery",
-              title: "OVERDARE Assets",
-              query: "fountain classic stone",
-              items: [
-                {
-                  id: "asset-fountain-1",
-                  title: "Classic Stone Fountain",
-                  subtitle: "MODEL",
-                  price: "Free",
-                  thumbnailUrl: "https://assets.example/fountain.png",
-                  metadata: [
-                    { key: "assetType", value: "MODEL" },
-                    { key: "category", value: "ENVIRONMENT" },
-                  ],
-                },
+              id: "asset-fountain-1",
+              title: "Classic Stone Fountain",
+              subtitle: "MODEL",
+              price: "Free",
+              thumbnailUrl: "https://assets.example/fountain.png",
+              metadata: [
+                { key: "assetType", value: "MODEL" },
+                { key: "category", value: "ENVIRONMENT" },
               ],
             },
           ],
         },
-      }}
-    />,
-  );
+      ],
+    },
+  };
 
+  expect(renderToStaticMarkup(<ToolBlock item={item} />)).not.toContain('data-asset-id="asset-fountain-1"');
+  const html = renderToStaticMarkup(<ToolBlock item={item} initialOpen />);
   expect(html).toContain('data-asset-id="asset-fountain-1"');
   expect(html).toContain('src="https://assets.example/fountain.png"');
   expect(html).toContain("Classic Stone Fountain");

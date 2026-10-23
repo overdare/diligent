@@ -54,7 +54,8 @@ function UserImageAttachment({ image }: { image: UserMessageImage }) {
       href={image.url}
       target="_blank"
       rel="noreferrer"
-      className="block overflow-hidden rounded bg-surface-dark"
+      // Fixed tile height: the row must not grow when the image arrives, or history above the reader shifts.
+      className="flex h-48 items-center justify-center overflow-hidden rounded bg-surface-dark"
       title={label}
     >
       <img src={image.url} alt={label} className="max-h-48 max-w-56 object-cover" onError={() => setFailed(true)} />

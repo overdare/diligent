@@ -1,7 +1,12 @@
 // @summary Intercepts Web-owned product requests before the closed Diligent runtime protocol
 
 import type { JSONRPCResponse } from "@diligent/protocol";
-import { ConsentSetParamsSchema, WEB_CONSENT_SET_METHOD, type WebConsentBackend } from "../shared/consent-protocol";
+import {
+  ConsentSetParamsSchema,
+  WEB_CONSENT_GET_METHOD,
+  WEB_CONSENT_SET_METHOD,
+  type WebConsentBackend,
+} from "../shared/consent-protocol";
 import {
   FeedbackReportParamsSchema,
   FeedbackReportResponseSchema,
@@ -36,6 +41,16 @@ export async function routeWebRpcRequest(raw: string | Buffer, options: WebReque
     return;
   }
   try {
+    if (value.method === WEB_CONSENT_GET_METHOD) {
+      if (!options.consentBackend) {
+        options.send({ id, error: { code: -32601, message: "Consent backend not available" } });
+        return;
+      }
+      await options.consentBackend.refresh?.();
+      options.send({ id, result: options.consentBackend.get() });
+      return;
+    }
+
     if (value.method === WEB_CONSENT_SET_METHOD) {
       if (!options.consentBackend) {
         options.send({ id, error: { code: -32601, message: "Consent backend not available" } });
@@ -82,7 +97,8 @@ function isProductRequest(value: unknown): value is { id: unknown; method: strin
     value !== null &&
     "id" in value &&
     "method" in value &&
-    ((value as { method?: unknown }).method === WEB_CONSENT_SET_METHOD ||
+    ((value as { method?: unknown }).method === WEB_CONSENT_GET_METHOD ||
+      (value as { method?: unknown }).method === WEB_CONSENT_SET_METHOD ||
       (value as { method?: unknown }).method === WEB_FEEDBACK_REPORT_METHOD)
   );
 }

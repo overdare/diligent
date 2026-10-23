@@ -169,12 +169,21 @@ function groupElapsedMs(items: ToolItem[]): number | undefined {
   return end >= start ? end - start : undefined;
 }
 
+function rememberedMemberOpen(items: ToolItem[]): boolean | undefined {
+  for (const item of items) {
+    const open = getRememberedOpen(toolGroupDisclosureKey(item.id)) ?? getRememberedOpen(toolDisclosureKey(item.id));
+    if (open !== undefined) return open;
+  }
+  return undefined;
+}
+
 export function ToolActivityGroup({ items, initialOpen = false }: { items: ToolItem[]; initialOpen?: boolean }) {
   const firstItemId = items[0]?.id ?? "";
-  // A lone tool row the user opened becomes this group when the next call arrives; keep it open.
+  // Calls join a group from either end: later ones arrive live, older ones from an earlier history page.
+  // Whichever member the reader opened or closed, as a lone row or as the previous group, carries over.
   const [open, setOpen] = useRememberedOpen(
     toolGroupDisclosureKey(firstItemId),
-    getRememberedOpen(toolDisclosureKey(firstItemId)) ?? initialOpen,
+    rememberedMemberOpen(items) ?? initialOpen,
   );
   const title = useMemo(() => summarizeToolGroup(items), [items]);
   const firstInfo = getToolInfo(items[0]?.toolName ?? "tool");

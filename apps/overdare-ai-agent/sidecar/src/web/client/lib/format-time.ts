@@ -1,5 +1,7 @@
 // @summary Relative time formatter: "just now", "2m ago", "3h ago", "yesterday", "Jan 5"
 
+const MONTH_DAY_FORMAT = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+
 export function formatRelativeTime(ts: number | string): string {
   const date = typeof ts === "string" ? new Date(ts) : new Date(ts);
   const now = Date.now();
@@ -12,5 +14,5 @@ export function formatRelativeTime(ts: number | string): string {
   const yesterday = new Date(now - 86_400_000);
   if (date.toDateString() === yesterday.toDateString()) return "yesterday";
 
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return MONTH_DAY_FORMAT.format(date);
 }

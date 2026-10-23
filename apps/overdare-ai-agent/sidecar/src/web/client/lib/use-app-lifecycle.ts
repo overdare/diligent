@@ -18,7 +18,7 @@ import {
   DILIGENT_VERSION,
 } from "@diligent/protocol";
 import { type Dispatch, type MutableRefObject, type RefObject, type SetStateAction, useEffect } from "react";
-import type { ConsentState } from "../../shared/consent-protocol";
+import { type ConsentState, ConsentStateSchema, WEB_CONSENT_GET_METHOD } from "../../shared/consent-protocol";
 import {
   deriveAgentEvents,
   hasInFlightRenderItems,
@@ -30,6 +30,7 @@ import type { AppAction } from "./app-state";
 import { getThreadIdFromUrl, replaceDraftUrl } from "./app-utils";
 import type { WebRpcClient } from "./rpc-client";
 import type { ThreadState } from "./thread-store";
+import type { OpenThreadOptions } from "./use-thread-manager";
 
 const logger = createLogger({ scope: "web.client.lifecycle" });
 
@@ -227,7 +228,7 @@ export function useAppBootstrap({
   setGoalsSupported: Dispatch<SetStateAction<boolean>>;
   setConsent: (consent: ConsentState | null) => void;
   setInitialModel: (model: ModelRef | undefined, models?: InitializeResponse["availableModels"]) => void;
-  openThread: (threadId: string) => Promise<void>;
+  openThread: (threadId: string, options?: OpenThreadOptions) => Promise<void>;
   refreshThreadList: (rpc?: WebRpcClient | null) => Promise<SessionSummary[] | undefined>;
   refreshProviders: (rpc?: WebRpcClient | null) => Promise<void>;
 }) {
@@ -256,34 +257,57 @@ export function useAppBootstrap({
 
     const bootstrap = async (): Promise<void> => {
       try {
-        const meta = (await rpc.initialize({
-          clientName: "diligent-web",
-          clientVersion: DILIGENT_VERSION,
-          protocolVersion: 1,
-        })) as WebInitializeResponse;
-        if (cancelled) return;
+        // initialize can wait on remote consent checks; session storage reads must not queue behind it.
+        const initialized = rpc
+          .initialize({
+            clientName: "diligent-web",
+            clientVersion: DILIGENT_VERSION,
+            protocolVersion: 1,
+          })
+          .then((result) => {
+            const meta = result as WebInitializeResponse;
+            if (cancelled) return;
+            setCwd(meta.cwd ?? "");
+            setEffortState(meta.effort ?? "medium");
+            setFastModeState(meta.fastMode ?? false);
+            setSkills(meta.skills ?? []);
+            setRuntimeVersion(meta.serverVersion ?? "");
+            setGoalsSupported(meta.capabilities.goals === true);
+            if (meta.consent) setConsent(meta.consent);
+            setInitialModel(meta.currentModel, meta.availableModels ?? []);
+            rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
+            // The gateway sync is off the initialize path; until it lands the first-run notice stays hidden.
+            void rpc
+              .requestRaw(WEB_CONSENT_GET_METHOD, {})
+              .then((value) => {
+                if (!cancelled) setConsent(ConsentStateSchema.parse(value));
+              })
+              .catch((error) => {
+                logger.debug("consent.sync_failed", { message: "Consent sync unavailable", error });
+              });
+            // Provider readiness and the composer must not wait for session storage.
+            void refreshProviders(rpc);
+          });
 
-        setCwd(meta.cwd ?? "");
-        setEffortState(meta.effort ?? "medium");
-        setFastModeState(meta.fastMode ?? false);
-        setSkills(meta.skills ?? []);
-        setRuntimeVersion(meta.serverVersion ?? "");
-        setGoalsSupported(meta.capabilities.goals === true);
-        setConsent(meta.consent ?? null);
-        setInitialModel(meta.currentModel, meta.availableModels ?? []);
-        rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
-
-        // Provider readiness and the composer must not wait for session storage.
-        void refreshProviders(rpc);
-        const listing = refreshThreadList(rpc);
+        let listing: Promise<SessionSummary[] | undefined> | undefined;
+        const startListing = () => {
+          listing ??= refreshThreadList(rpc);
+          return listing;
+        };
         const selectedThreadId = initialThreadId ?? initialUrlThreadId;
         if (selectedThreadId && canRestore()) {
-          await openThread(selectedThreadId);
+          // The opened conversation gets session storage first; the sidebar scan follows its first page.
+          // Session model/effort must land after initialize's defaults, never under them.
+          const opening = openThread(selectedThreadId, { beforeMetadata: initialized, onHistoryShown: startListing });
+          await Promise.all([initialized, opening.finally(() => void startListing())]);
           return;
         }
+        startListing();
+        await initialized;
+        if (cancelled) return;
 
         // Reuse the sidebar scan instead of issuing a second full-history lookup.
-        const threads = await listing;
+        const threads = await startListing();
         if (!canRestore()) return;
         const latest = threads?.[0];
         if (latest) {

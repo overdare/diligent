@@ -50,31 +50,47 @@ afterEach(async () => {
 });
 afterAll(() => void GlobalRegistrator.unregister());
 
-async function renderBootstrap(path = "/", delayedRead = false, delayedResume = false) {
+async function renderBootstrap(path = "/", delayedRead = false, delayedResume = false, delayedInitialize = false) {
   window.history.replaceState(null, "", path);
   const listing = Promise.withResolvers<SessionSummary[]>();
   const reading = Promise.withResolvers<ThreadHistoryResponse>();
   const preparing = Promise.withResolvers<{ found: boolean; threadId: string }>();
+  const initializing = Promise.withResolvers<unknown>();
   const requests: Array<{ method: string; params: unknown }> = [];
+  const modelEvents: string[] = [];
+  const setInitialModel = () => void modelEvents.push("defaults");
+  const applySessionModel = async () => void modelEvents.push("session");
   let manager: {
     openThread: (threadId: string) => Promise<void>;
     startNewThread: () => Promise<void>;
     loadEarlierHistory: () => Promise<void>;
     isPreparingThread: boolean;
+    earlierHistoryFailed: boolean;
     historyError: string | null;
   };
+  const earlierFailures = { remaining: 0 };
   const activeThreadIdRef = { current: null as string | null };
   const rpcRef = {
     current: {
-      initialize: async () => ({ cwd: "/project", capabilities: { goals: true } }),
+      initialize: async () =>
+        delayedInitialize ? initializing.promise : { cwd: "/project", capabilities: { goals: true } },
       notify: noop,
       subscribe: async () => ({ subscriptionId: "subscription" }),
       unsubscribe: async () => {},
+      // The remote consent sync never settles here: bootstrap must not depend on it.
+      requestRaw: (method: string) => {
+        requests.push({ method, params: {} });
+        return Promise.withResolvers<unknown>().promise;
+      },
       request: async (method: string, params: { threadId?: string; cursor?: string }) => {
         requests.push({ method, params });
         if (method === "thread/resume")
           return delayedResume ? preparing.promise : { found: true, threadId: params.threadId };
         if (method === "thread/history") {
+          if (params.cursor && earlierFailures.remaining > 0) {
+            earlierFailures.remaining--;
+            throw new Error("Storage unavailable");
+          }
           if (params.cursor)
             return {
               cwd: "/project",
@@ -93,7 +109,11 @@ async function renderBootstrap(path = "/", delayedRead = false, delayedResume = 
       },
     } as unknown as WebRpcClient,
   };
-  const refreshThreadList = (() => listing.promise) as Parameters<typeof useAppBootstrap>[0]["refreshThreadList"];
+  const listCalls = { count: 0 };
+  const refreshThreadList = (() => {
+    listCalls.count++;
+    return listing.promise;
+  }) as Parameters<typeof useAppBootstrap>[0]["refreshThreadList"];
   function Screen() {
     const [state, dispatch] = useReducer(appReducer, initialThreadState);
     const [providersReady, setProvidersReady] = useState(false);
@@ -105,7 +125,7 @@ async function renderBootstrap(path = "/", delayedRead = false, delayedResume = 
       dispatch,
       activeThreadIdRef,
       stateRef,
-      applySessionModel: asyncNoop,
+      applySessionModel,
       resetDraftModel: noop,
       setEffortState: noop,
       setFastModeState: noop,
@@ -127,7 +147,7 @@ async function renderBootstrap(path = "/", delayedRead = false, delayedResume = 
       setRuntimeVersion: noop,
       setGoalsSupported: noop,
       setConsent: noop,
-      setInitialModel: noop,
+      setInitialModel,
       openThread: manager.openThread,
       refreshThreadList,
       refreshProviders,
@@ -159,7 +179,18 @@ async function renderBootstrap(path = "/", delayedRead = false, delayedResume = 
   const root = createRoot(container);
   mounted.push({ root, container });
   await act(async () => root.render(createElement(Screen)));
-  return { container, listing, reading, preparing, requests, manager: () => manager };
+  return {
+    container,
+    listing,
+    reading,
+    preparing,
+    initializing,
+    requests,
+    modelEvents,
+    listCalls,
+    earlierFailures,
+    manager: () => manager,
+  };
 }
 
 test("the composer is ready while the initial session list is still pending", async () => {
@@ -197,6 +228,36 @@ test("a deep-linked conversation restores without waiting for the sidebar", asyn
   expect(container.querySelector("textarea")!.disabled).toBe(false);
   await act(async () => listing.resolve([latest]));
   expect(container.querySelector("output")!.textContent).toBe("selected");
+});
+
+test("a deep-linked conversation loads while initialize is pending and its model lands after the defaults", async () => {
+  const { container, initializing, requests, modelEvents } = await renderBootstrap("/selected", false, false, true);
+  expect(container.querySelector("section")!.textContent).toBe("Recent conversation");
+  expect(requests.map((request) => request.method)).toContain("thread/resume");
+  expect(modelEvents).toEqual([]);
+  expect(container.querySelector('[role="status"]')!.textContent).toBe("preparing");
+  await act(async () => initializing.resolve({ cwd: "/project", capabilities: { goals: true } }));
+  expect(modelEvents).toEqual(["defaults", "session"]);
+  expect(container.querySelector('[role="status"]')!.textContent).toBe("ready");
+});
+
+test("a deep-linked conversation reads its first page before the sidebar scan starts", async () => {
+  const { container, reading, listCalls } = await renderBootstrap("/selected", true);
+  expect(listCalls.count).toBe(0);
+  await act(async () => reading.resolve(recentHistory));
+  expect(container.querySelector("section")!.textContent).toBe("Recent conversation");
+  expect(listCalls.count).toBe(1);
+});
+
+test("the sidebar scan still starts when the first history page fails", async () => {
+  const { reading, listCalls } = await renderBootstrap("/selected", true);
+  await act(async () => reading.reject(new Error("History unavailable")));
+  expect(listCalls.count).toBe(1);
+});
+
+test("a draft without a deep link lists sessions immediately to find the latest", async () => {
+  const { listCalls } = await renderBootstrap("/", false, false, true);
+  expect(listCalls.count).toBe(1);
 });
 
 test("a late history read cannot replace a new draft", async () => {
@@ -309,6 +370,18 @@ test("recent and earlier history are visible before a deferred runtime resume co
     threadId: "selected",
     includeItems: false,
   });
+});
+
+test("a failed earlier page stays local to paging and clears on retry", async () => {
+  const { container, manager, earlierFailures } = await renderBootstrap("/selected");
+  earlierFailures.remaining = 1;
+  await act(async () => manager().loadEarlierHistory());
+  expect(manager().earlierHistoryFailed).toBe(true);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector("section")!.textContent).toBe("Recent conversation");
+  await act(async () => manager().loadEarlierHistory());
+  expect(manager().earlierHistoryFailed).toBe(false);
+  expect(container.querySelector("section")!.textContent).toBe("Older conversation,Recent conversation");
 });
 
 test("preparation completing after New cannot overwrite the new draft", async () => {

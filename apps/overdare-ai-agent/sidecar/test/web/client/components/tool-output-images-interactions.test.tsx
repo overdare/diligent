@@ -54,7 +54,7 @@ test("image thumbnails show the actual count and open a downloadable viewer", as
   }
 });
 
-test("live image results open automatically, remain collapsible, and explain failed previews", async () => {
+test("image results stay collapsed until opened, then collapse again and explain failed previews", async () => {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -87,6 +87,10 @@ test("live image results open automatically, remain collapsible, and explain fai
     };
     await act(async () => {
       root.render(<ToolBlock item={completed} />);
+    });
+    expect(container.querySelector("img")).toBeNull();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click();
     });
     expect(container.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,aGVsbG8=");
     await act(async () => {

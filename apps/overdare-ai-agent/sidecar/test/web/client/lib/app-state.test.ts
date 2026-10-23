@@ -518,6 +518,93 @@ test("older tool starts enrich completed results while preserving new realtime m
   expect(state.items.at(-1)).toMatchObject({ kind: "user", text: "new draft message" });
 });
 
+test("older pages keep unchanged items as the same objects so their rows skip rendering", () => {
+  const tool = (id: string, timestamp: number) => ({
+    type: "toolCall" as const,
+    itemId: `tool:${id}`,
+    toolCallId: id,
+    toolName: "read",
+    input: { path: `${id}.ts` },
+    output: `${id} output`,
+    startedAt: timestamp,
+    timestamp,
+  });
+  let state = appReducer(initialThreadState, { type: "select_history", payload: { threadId: "thread" } });
+  state = appReducer(state, {
+    type: "history_page",
+    payload: {
+      threadId: "thread",
+      page: {
+        cwd: "/project",
+        nextCursor: "older",
+        items: [
+          tool("recent", 20),
+          { type: "userMessage", itemId: "user", message: { role: "user", content: "hello", timestamp: 21 } },
+        ],
+      },
+    },
+  });
+  const before = state.items;
+  state = appReducer(state, {
+    type: "history_page",
+    payload: { threadId: "thread", older: true, page: { cwd: "/project", items: [tool("old", 10)] } },
+  });
+  expect(state.items).toHaveLength(3);
+  expect(state.items[1]).toBe(before[0]);
+  expect(state.items[2]).toBe(before[1]);
+});
+
+test("an older spawn still settles from a wait that was loaded on a newer page", () => {
+  let state = appReducer(initialThreadState, { type: "select_history", payload: { threadId: "thread" } });
+  state = appReducer(state, {
+    type: "history_page",
+    payload: {
+      threadId: "thread",
+      page: {
+        cwd: "/project",
+        nextCursor: "older",
+        items: [
+          {
+            type: "toolCall",
+            itemId: "tool:wait",
+            toolCallId: "wait",
+            toolName: "wait",
+            input: { ids: ["child"] },
+            output: "truncated child summary",
+            startedAt: 20,
+            timestamp: 20,
+          },
+        ],
+      },
+    },
+  });
+  state = appReducer(state, {
+    type: "history_page",
+    payload: {
+      threadId: "thread",
+      older: true,
+      page: {
+        cwd: "/project",
+        items: [
+          { type: "userMessage", itemId: "user", message: { role: "user", content: "delegate", timestamp: 5 } },
+          {
+            type: "toolCall",
+            itemId: "tool:spawn",
+            toolCallId: "spawn",
+            toolName: "spawn_agent",
+            input: { message: "work" },
+            output: JSON.stringify({ thread_id: "child", nickname: "Scout" }),
+            startedAt: 10,
+            timestamp: 10,
+          },
+        ],
+      },
+    },
+  });
+  expect(state.items.map((item) => item.kind)).toEqual(["user", "collab", "collab"]);
+  expect(state.items[1]).toMatchObject({ eventType: "spawn", childThreadId: "child", status: "completed" });
+});
+
 test("metadata and recent refreshes preserve earlier history and reject another selection", () => {
   let state = appReducer(initialThreadState, { type: "select_history", payload: { threadId: "thread" } });
   const item = {

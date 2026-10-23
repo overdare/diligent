@@ -17,6 +17,13 @@ const logger = createLogger({ scope: "web.client.threads" });
 
 export const DRAFT_INPUT_KEY = "__draft__";
 
+export interface OpenThreadOptions {
+  /** Settles once client defaults are applied; session model/effort are applied only afterwards. */
+  beforeMetadata?: Promise<unknown>;
+  /** Called once the first history page is on screen, before runtime preparation starts. */
+  onHistoryShown?: () => void;
+}
+
 export function clearDraftThreadInput(threadInputs: Record<string, string>): Record<string, string> {
   if (!(DRAFT_INPUT_KEY in threadInputs)) {
     return threadInputs;
@@ -168,6 +175,7 @@ export function useThreadManager({
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isPreparingThread, setIsPreparingThread] = useState(false);
   const [isLoadingEarlier, setIsLoadingEarlier] = useState(false);
+  const [earlierHistoryFailed, setEarlierHistoryFailed] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const earlierRequestRef = useRef(false);
   useEffect(
@@ -288,6 +296,7 @@ export function useThreadManager({
     setIsLoadingHistory(false);
     setIsPreparingThread(false);
     setIsLoadingEarlier(false);
+    setEarlierHistoryFailed(false);
     earlierRequestRef.current = false;
     setHistoryError(null);
     closeModals();
@@ -300,7 +309,7 @@ export function useThreadManager({
   }, [activeThreadIdRef, deactivateServerThread, dispatch, resetDraftModel, closeModals]);
 
   const openThread = useCallback(
-    async (threadId: string): Promise<void> => {
+    async (threadId: string, options?: OpenThreadOptions): Promise<void> => {
       const rpc = rpcRef.current;
       if (!rpc) return;
       const navigation = ++navigationRef.current;
@@ -311,6 +320,7 @@ export function useThreadManager({
       setIsLoadingHistory(true);
       setIsPreparingThread(false);
       setIsLoadingEarlier(false);
+      setEarlierHistoryFailed(false);
       earlierRequestRef.current = false;
       setHistoryError(null);
       dispatch({ type: "select_history", payload: { threadId } });
@@ -324,10 +334,13 @@ export function useThreadManager({
           setIsLoadingHistory(false);
           setIsPreparingThread(true);
         });
+        options?.onHistoryShown?.();
         const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId }, null);
         if (!isCurrent()) return;
         if (!resumed.found) throw new Error("Conversation could not be restored.");
         const history = await activateServerThread(threadId);
+        if (!isCurrent()) return;
+        await options?.beforeMetadata;
         if (!isCurrent()) return;
         await applySessionModel(history.currentModel);
         if (!isCurrent()) return;
@@ -401,14 +414,19 @@ export function useThreadManager({
     const navigation = navigationRef.current;
     earlierRequestRef.current = true;
     setIsLoadingEarlier(true);
-    setHistoryError(null);
+    setEarlierHistoryFailed(false);
     try {
       const page = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY, { threadId, cursor });
       if (navigation !== navigationRef.current || rpc !== rpcRef.current) return;
       dispatch({ type: "history_page", payload: { threadId, page, older: true } });
     } catch (error) {
-      if (navigation === navigationRef.current)
-        setHistoryError(error instanceof Error ? error.message : "Could not load earlier messages.");
+      if (navigation !== navigationRef.current) return;
+      setEarlierHistoryFailed(true);
+      logger.warn("thread.history_page_failed", {
+        message: "Failed to load earlier history",
+        error,
+        threadId,
+      });
     } finally {
       if (navigation === navigationRef.current) {
         earlierRequestRef.current = false;
@@ -457,6 +475,7 @@ export function useThreadManager({
     isLoadingHistory,
     isPreparingThread,
     isLoadingEarlier,
+    earlierHistoryFailed,
     historyError,
     loadEarlierHistory,
     refreshThreadHistory,

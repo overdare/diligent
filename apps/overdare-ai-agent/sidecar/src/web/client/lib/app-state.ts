@@ -12,6 +12,7 @@ import type {
   ThreadHistoryResponse,
   ThreadReadResponse,
 } from "@diligent/protocol";
+import { normalizeToolName } from "@diligent/protocol";
 import { applyGoalSnapshot, mergeHistoryItems } from "@diligent/runtime/client";
 import type { AgentContextItem } from "./agent-native-bridge";
 import {
@@ -22,8 +23,38 @@ import {
   reduceServerNotification,
   type ThreadState,
 } from "./thread-store";
+import { COLLAB_RENDERED_TOOLS } from "./thread-utils";
 
 export type PendingImage = LocalImageBlock & { webUrl: string };
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) return false;
+  return aKeys.every(
+    (key) =>
+      Object.hasOwn(b, key) && sameValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]),
+  );
+}
+
+/**
+ * Collab records resolve against other records (a later wait or close settles an earlier spawn's status),
+ * so a page containing them is hydrated together with everything already loaded.
+ */
+function pageNeedsFullHydration(items: ThreadHistoryResponse["items"]): boolean {
+  return items.some(
+    (item) =>
+      item.type === "collabEvent" ||
+      (item.type === "toolCall" && COLLAB_RENDERED_TOOLS.has(normalizeToolName(item.toolName))),
+  );
+}
+
+/** Re-hydrated items that did not change keep their identity so their rows skip rendering. */
+function keepIfUnchanged(next: RenderItem, live: RenderItem): RenderItem {
+  return sameValue(next, live) ? live : next;
+}
 
 export type AppAction =
   | { type: "notification"; payload: { notification: DiligentServerNotification; events: AgentEvent[] } }
@@ -93,9 +124,12 @@ export function appReducer(state: ThreadState, action: AppAction): ThreadState {
     const historyItems = older
       ? mergeHistoryItems(page.items, state.historyItems)
       : mergeHistoryItems(state.historyItems, page.items);
+    // Re-hydrating everything per older page grows with the loaded history and stalls fast scrolling;
+    // a self-contained older page is hydrated alone and merged in front of the existing items.
+    const pageOnly = older && state.historyLoaded && !pageNeedsFullHydration(page.items);
     const hydrated = hydrateFromThreadRead(state, {
       cwd: page.cwd,
-      items: historyItems,
+      items: pageOnly ? page.items : historyItems,
       hasFollowUp: false,
       entryCount: 0,
       isRunning: state.threadStatus === "busy",
@@ -108,10 +142,7 @@ export function appReducer(state: ThreadState, action: AppAction): ThreadState {
           ? `${item.kind}:${item.messageId}`
           : item.id;
     const current = new Map(state.items.map((item) => [key(item), item]));
-    const items = hydrated.items.map((item) => {
-      const live = current.get(key(item));
-      current.delete(key(item));
-      if (!live) return item;
+    const mergeLive = (item: RenderItem, live: RenderItem): RenderItem => {
       // Prepending must not rewind streaming output or discard child-agent detail.
       if (live.kind === "collab" && item.kind === "collab") {
         if (older || state.threadStatus === "busy") return { ...item, ...live };
@@ -146,6 +177,12 @@ export function appReducer(state: ThreadState, action: AppAction): ThreadState {
         return live;
       }
       return { ...item, id: live.id };
+    };
+    const items = hydrated.items.map((item) => {
+      const live = current.get(key(item));
+      current.delete(key(item));
+      if (!live) return item;
+      return keepIfUnchanged(mergeLive(item, live), live);
     });
     items.push(...current.values());
     return {
