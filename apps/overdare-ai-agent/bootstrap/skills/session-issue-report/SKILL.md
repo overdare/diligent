@@ -72,7 +72,7 @@ A mistaken approach worth improving:
     "report_reason": "입력 계약을 먼저 확인했다면 피할 수 있는 작업 낭비",
     "suggestion": "오류 뒤 입력형을 먼저 확인하고 숫자 예시를 참고",
     "cause": "도구 입력 계약을 제대로 확인하지 못함",
-    "evidence": {"tool": "studiorpc_instance_upsert", "details": "숫자형 오류를 확인한 뒤에도 문자열을 재전달"}
+    "evidence": {"tool": "studiorpc_execute_luau", "details": "숫자형 오류를 확인한 뒤에도 문자열을 재전달"}
   }
 }
 ```
@@ -89,7 +89,7 @@ A checked Studio bug suspicion:
     "report_reason": "성공 응답과 검증 결과가 서로 달라 확인이 필요함",
     "suggestion": "실제 적용 여부를 검증하고 실패하면 오류를 반환",
     "cause": "Studio 속성 적용 경로 문제로 추정",
-    "evidence": {"tool": "studiorpc_instance_upsert", "details": "동일 객체를 재조회해 변경되지 않았음을 확인"}
+    "evidence": {"tool": "studiorpc_execute_luau", "details": "동일 객체를 재조회해 변경되지 않았음을 확인"}
   }
 }
 ```

@@ -25,7 +25,6 @@ test("getToolInfo maps namespaced built-in tools", () => {
 test("getToolInfo maps Studio RPC tools to specific activity icons", () => {
   expect(getToolInfo("studiorpc_script_edit").icon).toBe("edit");
   expect(getToolInfo("studiorpc_script_edit").activity.done).toBe("Edited Studio script");
-  expect(getToolInfo("studiorpc_instance_upsert").icon).toBe("edit");
   expect(getToolInfo("studiorpc_script_grep").icon).toBe("search");
   expect(getToolInfo("studiorpc_game_play").icon).toBe("terminal");
 });

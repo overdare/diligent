@@ -24,7 +24,6 @@ import { createHubWorldCategoriesListTool } from "./tools/hub-world-categories-l
 import { createInstanceDeleteTool } from "./tools/instance-delete-tool";
 import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
-import { createInstanceUpsertTool } from "./tools/instance-upsert-tool";
 import { createPieInputTools } from "./tools/pie-input";
 import { createRollbackTool } from "./tools/rollback-tool";
 import { createScriptAddTool } from "./tools/script-add-tool";
@@ -256,34 +255,6 @@ function scriptAddTargets(_args: unknown, result: ToolResult): string[] {
   return typeof guid === "string" && guid ? [guid] : [];
 }
 
-/**
- * The scripts an `instance.upsert` batch wrote Lua into. Added instances carry their
- * class in the result, but an update item does not — it is just a guid and a property
- * bag — so an update counts only when it actually set `Source`, which is the same
- * condition under which validating means anything.
- */
-function instanceUpsertTargets(args: unknown, result: ToolResult): string[] {
-  const targets = new Set<string>();
-  const added = result.metadata?.added;
-  if (Array.isArray(added)) {
-    for (const entry of added) {
-      if (!isRecord(entry)) continue;
-      if (typeof entry.class === "string" && SCRIPT_CLASSES.has(entry.class) && typeof entry.guid === "string") {
-        targets.add(entry.guid);
-      }
-    }
-  }
-  const items = isRecord(args) ? args.items : undefined;
-  if (Array.isArray(items)) {
-    for (const item of items) {
-      if (!isRecord(item) || typeof item.guid !== "string") continue;
-      const properties = item.properties;
-      if (isRecord(properties) && typeof properties.Source === "string") targets.add(item.guid);
-    }
-  }
-  return [...targets];
-}
-
 function withApproval(ctx: CoreToolContext, host?: RuntimeToolHost): StudioRpcToolContext {
   return {
     ...ctx,
@@ -408,12 +379,6 @@ export async function createStudioRpcTools(ctx: {
     wrapTool(withSnapshot(createActionSequencerApplyJsonTool(callRpc, writeLock)), ctx.host),
     wrapTool(createInstanceReadTool(ctx.cwd, callRpc), ctx.host),
     wrapTool(withSnapshot(createExecuteLuauTool(callRpc, writeLock)), ctx.host),
-    wrapTool(
-      withSnapshot(
-        withLuaValidate(createInstanceUpsertTool(ctx.cwd, writeLock, applyLevelChanges), instanceUpsertTargets),
-      ),
-      ctx.host,
-    ),
     wrapTool(withSnapshot(createVfxRecipeUpsertTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
     wrapTool(withSnapshot(createInstanceDeleteTool(ctx.cwd, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceMoveTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
@@ -494,6 +459,7 @@ export async function createStudioRpcTools(ctx: {
       name: toolName,
       description,
       parameters: params,
+      inputSchema: mod.inputSchema,
       async execute(args, toolCtx) {
         const ts = getTurnState(toolCtx);
         const warning = capturesBeforeRun ? await ensureSnapshot(ts, toolCtx.signal) : undefined;
@@ -566,6 +532,7 @@ export async function createStudioRpcTools(ctx: {
               render,
               outputImages,
               metadata: { method: rpcMethod, result, ...(failed ? { error: true } : {}) },
+              ...(mod.truncateDirection ? { truncateDirection: mod.truncateDirection } : {}),
             };
           } catch (error) {
             // Same rationale as withSnapshot's catch: a warning generated but

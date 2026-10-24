@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { vfxLayerSourceNames } from "../../src/tools/studiorpc/methods/instance.params";
+import { vfxLayerSourceNames } from "../../src/tools/studiorpc/methods/vfx-recipe.params";
 
 const REF_DIR = join(import.meta.dir, "../../../bootstrap/skills/vfx-recipe/references");
 const LAYER_TO_NAMES: Record<string, readonly string[]> = {

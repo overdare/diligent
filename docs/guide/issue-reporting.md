@@ -32,7 +32,7 @@ arguments; results retain explicit success/error labels. An absent outcome is la
 be successful. Private reasoning and raw user prompts are not excerpted. These attachment filters do not filter the
 regular `/v1/records` telemetry stream. No transcript is read for a report while the report tool is unused.
 
-At submission, `payload.evidence.tool` names the operation being reported, such as `instance_upsert`, rather than
+At submission, `payload.evidence.tool` names the operation being reported, such as `execute_luau`, rather than
 the reporting tool. Its most recent matching execution anchors selection. The provider attaches nearby execution
 records, retaining call/response pairs by their actual tool call IDs, in chronological order and within the existing
 five-record limit. This can preserve a successful write and its subsequent unchanged read-back. Without a matching

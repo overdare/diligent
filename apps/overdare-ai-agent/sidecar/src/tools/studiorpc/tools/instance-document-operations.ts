@@ -1,14 +1,12 @@
 // @summary Mutates instances inside one already-loaded .ovdrjm document.
 
-import { parseInstancePatchProperties } from "../methods/instance-properties";
-import { invalidInstanceOperationError, missingGuidError } from "./instance-status";
+import { missingGuidError } from "./instance-status";
 import {
   clearStaleWorldTransforms,
   findNodeByActorGuid,
   findWorkspaceNode,
   isRecord,
   type OvdrjmNode,
-  removeNodeByActorGuid,
 } from "./ovdrjm-utils";
 
 export interface InstanceDocumentAddItem {
@@ -109,7 +107,7 @@ function syncDescendantMobility(node: OvdrjmNode, mobility: MobilityValue): void
 }
 
 /**
- * Applies the Mobility policy for one property write. Regular upserts ignore a
+ * Applies the Mobility policy for one property write. Writes ignore a
  * Mobility value outside Workspace's direct children.
  */
 function applyMobilityWritePolicy(
@@ -146,19 +144,6 @@ export function normalizeWorkspaceMobility(root: OvdrjmNode): void {
   }
 }
 
-function validateAddParent(item: InstanceDocumentAddItem, parent: OvdrjmNode): void {
-  if (item.class === "MaterialVariant" && parent.InstanceType !== "MaterialService") {
-    throw invalidInstanceOperationError({
-      operation: "instance.upsert",
-      code: "invalid_parent_class",
-      guid: item.parentGuid,
-      role: "parent",
-      class: String(parent.InstanceType ?? "unknown"),
-      message: `MaterialVariant can only be created under MaterialService, but parent is ${String(parent.InstanceType ?? "unknown")}.`,
-    });
-  }
-}
-
 /** Adds items in order, so later items may use GUIDs returned for earlier items. */
 export function addInstancesInDocument(
   document: Record<string, unknown>,
@@ -169,8 +154,7 @@ export function addInstancesInDocument(
   const added: AddedInstanceMetadata[] = [];
   for (const item of items) {
     const parent = findNodeByActorGuid(root, item.parentGuid);
-    if (!parent) throw missingGuidError({ operation: "instance.upsert", guid: item.parentGuid, role: "parent" });
-    validateAddParent(item, parent);
+    if (!parent) throw missingGuidError({ operation: "vfx_recipe.upsert", guid: item.parentGuid, role: "parent" });
 
     const children = Array.isArray(parent.LuaChildren) ? parent.LuaChildren : [];
     parent.LuaChildren = children;
@@ -195,7 +179,7 @@ export function addInstancesInDocument(
   return added;
 }
 
-/** Applies name/property patches without injecting create defaults. */
+/** Applies already-validated name/property patches without injecting create defaults. */
 export function updateInstancesInDocument(
   root: OvdrjmNode,
   items: readonly InstanceDocumentUpdateItem[],
@@ -203,35 +187,13 @@ export function updateInstancesInDocument(
 ): string[] {
   for (const item of items) {
     const target = findNodeByActorGuid(root, item.guid);
-    if (!target) throw missingGuidError({ operation: "instance.upsert", guid: item.guid, role: "target" });
-    const targetClass = typeof target.InstanceType === "string" ? target.InstanceType : "Instance";
-    const parsedProperties = parseInstancePatchProperties(targetClass, item.properties);
-    const properties = applyMobilityWritePolicy(root, item.guid, parsedProperties, options);
+    if (!target) throw missingGuidError({ operation: "vfx_recipe.upsert", guid: item.guid, role: "target" });
+    const properties = applyMobilityWritePolicy(root, item.guid, item.properties, options);
     Object.assign(target, properties);
     if (typeof item.name === "string") target.Name = item.name;
     if ("CFrame" in properties) clearStaleWorldTransforms(target);
   }
   return items.map((item) => item.guid);
-}
-
-/** Deletes requested GUIDs and optionally records already-missing targets. */
-export function deleteInstancesInDocument(
-  root: OvdrjmNode,
-  guids: readonly string[],
-  options: { skipMissing?: boolean } = {},
-): { deletedGuids: string[]; skippedGuids: string[] } {
-  const deletedGuids: string[] = [];
-  const skippedGuids: string[] = [];
-  for (const guid of guids) {
-    if (removeNodeByActorGuid(root, guid)) {
-      deletedGuids.push(guid);
-    } else if (options.skipMissing) {
-      skippedGuids.push(guid);
-    } else {
-      throw missingGuidError({ operation: "instance.delete", guid, role: "target" });
-    }
-  }
-  return { deletedGuids, skippedGuids };
 }
 
 /** Preflight the whole batch before a class-scoped tool can mutate any target. */

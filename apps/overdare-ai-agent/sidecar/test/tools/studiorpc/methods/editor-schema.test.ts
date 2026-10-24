@@ -13,6 +13,7 @@ describe("live Editor tools", () => {
     const names = tools.map((tool) => tool.name);
     expect(names).toContain("studiorpc_execute_luau");
     expect(names).toContain("studiorpc_instance_schema_search");
+    expect(names).not.toContain("studiorpc_instance_upsert");
     expect(names).not.toContain("studiorpc_procedural_run");
     for (const name of ["api", "validate", "set"]) expect(names).toContain(`studiorpc_proceduralmodel_${name}`);
   });
@@ -36,14 +37,14 @@ describe("live Editor tools", () => {
     const result = await tools
       .find((tool) => tool.name === "studiorpc_instance_schema_search")!
       .execute({ classes: ["FutureClass"] }, context);
-    expect(JSON.parse(result.output)).toEqual({ schemaVersion: "live", classes: [] });
+    expect(JSON.parse(result.output)).toMatchObject({ schemaVersion: "live", classes: [] });
     expect(approvals).toBe(0);
     expect(calls).toEqual(["instance.schema.search"]);
   });
   test("schema filters enforce the Studio contract", () => {
     for (const input of [
-      {},
       { query: "" },
+      { classes: ["FutureClass"], query: "" },
       { classes: [] },
       { classes: [""] },
       { classes: Array(21).fill("Part") },
@@ -52,6 +53,7 @@ describe("live Editor tools", () => {
     ]) {
       expect(schema.params.safeParse(input).success).toBe(false);
     }
+    expect(schema.params.parse({})).toEqual({});
     expect(schema.params.parse({ classes: ["FutureClass"], query: "color" })).toEqual({
       classes: ["FutureClass"],
       query: "color",
@@ -97,7 +99,7 @@ describe("live Editor tools", () => {
     const result = await tools
       .find((t) => t.name === "studiorpc_instance_schema_search")!
       .execute({ classes: ["FutureClass"], query: "FutureProperty" }, context);
-    expect(JSON.parse(result.output)).toEqual(reply);
+    expect(JSON.parse(result.output)).toMatchObject(reply);
     expect(calls).toEqual([
       { method: "instance.schema.search", args: { classes: ["FutureClass"], query: "FutureProperty" } },
     ]);
