@@ -12,6 +12,7 @@ import {
   prepareNewThreadForFirstMessage,
   retryLastUserMessage,
   runThreadCompaction,
+  startNewThreadWithGoal,
   waitForDelayedIndicator,
 } from "../../../../src/web/client/lib/use-app-actions";
 import { WEB_IMAGE_ROUTE_PREFIX } from "../../../../src/web/shared/image-routes";
@@ -432,6 +433,67 @@ test("prepareNewThreadForFirstMessage subscribes and hydrates before starting op
       delete (globalThis as { window?: Window }).window;
     }
   }
+});
+
+test("startNewThreadWithGoal starts a conversation and sets its goal without a local user message", async () => {
+  const goalSnapshot = { goal: { id: "goal-1", objective: "Ship goal mode", status: "active" }, sequence: 1 };
+  const request = mock(async (method: string, params: unknown) => {
+    if (method === "thread/start") return { threadId: "thread-goal" };
+    if (method === "thread/goal/set") {
+      expect(params).toEqual({ threadId: "thread-goal", action: "set", objective: "Ship goal mode", maxTurns: 5 });
+      return goalSnapshot;
+    }
+    throw new Error(`unexpected method: ${method} ${JSON.stringify(params)}`);
+  });
+  const history = { cwd: "/repo", items: [], entryCount: 0, isRunning: false, currentModel: "gpt-5" };
+  const applySessionModel = mock(async () => {});
+  const dispatch = mock(() => {});
+
+  const result = await startNewThreadWithGoal({
+    rpc: { request } as never,
+    mode: "default",
+    cwd: "/repo",
+    model: "gpt-5",
+    effort: "medium",
+    activateServerThread: mock(async () => history) as never,
+    applySessionModel,
+    dispatch,
+    isCurrent: () => true,
+    change: { action: "set", objective: "Ship goal mode", maxTurns: 5 },
+  });
+
+  expect(result).toEqual({ threadId: "thread-goal", snapshot: goalSnapshot as never });
+  expect(request.mock.calls.map((call) => call[0])).toEqual(["thread/start", "thread/goal/set"]);
+  expect(dispatch.mock.calls).toEqual([
+    [{ type: "hydrate", payload: { threadId: "thread-goal", mode: "default", history } }],
+    [{ type: "optimistic_thread", payload: { threadId: "thread-goal", message: "Ship goal mode" } }],
+  ]);
+  expect(applySessionModel).toHaveBeenCalledWith("gpt-5");
+});
+
+test("startNewThreadWithGoal does not set a goal after the user leaves the new conversation", async () => {
+  const request = mock(async (method: string) => {
+    if (method === "thread/start") return { threadId: "thread-goal" };
+    throw new Error(`unexpected method: ${method}`);
+  });
+  let current = true;
+
+  await expect(
+    startNewThreadWithGoal({
+      rpc: { request } as never,
+      mode: "default",
+      cwd: "/repo",
+      effort: "medium",
+      activateServerThread: mock(async () => ({ cwd: "/repo", items: [], entryCount: 0, isRunning: false })) as never,
+      applySessionModel: mock(async () => {
+        current = false;
+      }),
+      dispatch: mock(() => {}),
+      isCurrent: () => current,
+      change: { action: "set", objective: "Ship goal mode" },
+    }),
+  ).rejects.toThrow("Conversation selection changed");
+  expect(request.mock.calls.map((call) => call[0])).toEqual(["thread/start"]);
 });
 
 test("prepareNewThreadForFirstMessage passes medium effort through thread start without extra effort request", async () => {
