@@ -1,0 +1,18 @@
+{
+  "checkedOn": "2026-10-07",
+  "endpoint": "https://api.openai.com/v1/decisions",
+  "model": "gpt-6-luna",
+  "credentialKind": "existing Diligent ChatGPT OAuth access token",
+  "expiredAtInitialCheck": false,
+  "openaiApiKeyConfiguredAtInitialCheck": false,
+  "inputScope": "Small synthetic text connectivity question; no game images or private game state sent",
+  "probes": [
+    { "headers": "Bearer and Content-Type", "httpStatus": 401, "errorType": "invalid_request_error", "namedChoiceReturned": false },
+    { "headers": "Existing Diligent ChatGPT User-Agent, originator, version and account header", "clientVersion": "0.159.0", "httpStatus": 401, "errorType": "invalid_request_error", "namedChoiceReturned": false },
+    { "headers": "Same ChatGPT headers with official latest CLI version at check time", "clientVersion": "0.160.1", "httpStatus": 401, "errorType": "invalid_request_error", "namedChoiceReturned": false }
+  ],
+  "versionReference": "https://learn.chatgpt.com/docs/changelog",
+  "authenticationReference": "https://developers.openai.com/api/reference/overview#authentication",
+  "planUsageReference": "https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference",
+  "limits": "Results apply to the tested stored token and public Decisions endpoint. The documented ChatGPT plan-usage inference flow describes Responses, not Decisions. No unsupported backend route was inferred or tested. No token refresh, global header version change, software update or credential write was performed. Tokens/account IDs and raw error messages were not persisted."
+}

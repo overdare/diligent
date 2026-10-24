@@ -1,0 +1,370 @@
+{
+  "harnessName": "current-game-native",
+  "sourceHash": "f696174e5edd752e06b295688881e8119f7c9c2bf00ba3d06fa4213aeb1d13d2",
+  "outcome": "stuck",
+  "reason": "No meaningful progress for 15019ms (limit 15000ms)",
+  "stuck": {
+    "stuck": true,
+    "timeoutMs": 15000,
+    "inactiveMs": 15018.748666999862,
+    "deadlineMs": 5988727.377041,
+    "source": "adapter",
+    "sequence": 40,
+    "lastActionId": "nav:enter_Pivot_101:look",
+    "revision": 818,
+    "state": {
+      "carried": 0,
+      "cells": 35,
+      "collected": {
+        "t6": true
+      },
+      "currentGoal": "Choose a room to search for batteries",
+      "deposited": 1,
+      "effects": {
+        "look_-155_-593_30_l": true,
+        "look_-155_-593_40_l": true,
+        "look_-155_-593_41_l": true,
+        "look_-155_-593_51_l": true,
+        "look_-157_-589_30_l": true,
+        "look_-160_-584_30_l": true,
+        "look_-160_-593_52_l": true,
+        "look_-162_-579_30_l": true,
+        "look_-164_-575_30_l": true,
+        "look_-165_-594_52_l": true,
+        "look_-166_-571_30_l": true,
+        "look_-166_-571_30_r": false,
+        "look_-169_-566_30_r": false,
+        "look_-170_-595_52_l": true,
+        "look_-171_-561_30_r": false,
+        "look_-174_-556_30_r": false,
+        "look_-174_-595_52_l": true,
+        "look_-174_-595_62_l": false,
+        "look_-174_-595_63_l": false,
+        "look_-176_-551_30_r": false,
+        "look_-178_-547_30_r": false,
+        "look_-179_-547_30_r": false,
+        "look_-181_-543_30_r": false,
+        "look_-183_-538_30_r": false,
+        "look_-186_-533_30_r": false,
+        "look_-188_-528_30_r": false,
+        "look_-191_-523_30_r": false,
+        "look_-193_-519_30_r": false,
+        "look_-197_-390_59_l": false,
+        "look_-197_-390_59_r": false,
+        "look_-197_-390_60_l": false,
+        "look_-197_-390_60_r": false,
+        "look_-197_-390_70_l": false,
+        "look_-197_-390_70_r": true,
+        "look_-197_-394_70_l": false,
+        "look_-197_-394_70_r": true,
+        "move_-155_-593_52": true,
+        "move_-164_-575_30": false,
+        "move_-166_-571_30": false,
+        "move_-169_-566_30": false,
+        "move_-171_-561_30": false,
+        "move_-174_-556_30": false,
+        "move_-174_-595_70": true,
+        "move_-175_-586_70": true,
+        "move_-175_-591_70": true,
+        "move_-176_-551_30": false,
+        "move_-176_-580_70": true,
+        "move_-177_-569_70": true,
+        "move_-177_-575_70": true,
+        "move_-178_-547_30": false,
+        "move_-178_-559_70": true,
+        "move_-178_-564_70": true,
+        "move_-178_-565_70": true,
+        "move_-179_-547_30": false,
+        "move_-179_-549_70": true,
+        "move_-179_-554_70": true,
+        "move_-180_-543_70": true,
+        "move_-181_-533_70": true,
+        "move_-181_-538_70": true,
+        "move_-181_-543_30": false,
+        "move_-182_-523_70": true,
+        "move_-182_-528_70": true,
+        "move_-183_-512_70": true,
+        "move_-183_-517_70": true
+      },
+      "health": 100,
+      "localStates": {},
+      "mission": {
+        "complete": false,
+        "count": 1,
+        "revision": 1,
+        "stage": 1,
+        "target": 5
+      },
+      "navigation": {
+        "enter:Pivot_101": {
+          "cursor": 1,
+          "distance": 281.49468067961715,
+          "from": {
+            "x": -982.5110473632812,
+            "y": 582.1488647460938,
+            "z": -1949.7867431640625
+          },
+          "hitDistance": -1,
+          "hitName": "none",
+          "queryRadius": 40,
+          "to": {
+            "x": -1258.599609375,
+            "y": 582.1488647460938,
+            "z": -1894.883544921875
+          },
+          "walkSpeed": 250,
+          "waypoint": {
+            "x": -1258.599609375,
+            "y": 582.1488647460938,
+            "z": -1894.883544921875
+          }
+        },
+        "enter:Pivot_102": {
+          "cursor": 1,
+          "distance": 1549.7390106156813,
+          "from": {
+            "x": -982.5110473632812,
+            "y": 582.1488647460938,
+            "z": -1949.7867431640625
+          },
+          "hitDistance": -1,
+          "hitName": "none",
+          "queryRadius": 40,
+          "to": {
+            "x": -988.5994873046875,
+            "y": 582.1488647460938,
+            "z": -400.0596923828125
+          },
+          "walkSpeed": 250,
+          "waypoint": {
+            "x": -988.5994873046875,
+            "y": 582.1490478515625,
+            "z": -400.0596923828125
+          }
+        },
+        "enter:Pivot_103": {
+          "cursor": 1,
+          "distance": 1549.7390106156813,
+          "from": {
+            "x": -982.5110473632812,
+            "y": 582.1488647460938,
+            "z": -1949.7867431640625
+          },
+          "hitDistance": -1,
+          "hitName": "none",
+          "queryRadius": 40,
+          "to": {
+            "x": -988.5994873046875,
+            "y": 582.1488647460938,
+            "z": -400.0596923828125
+          },
+          "walkSpeed": 250,
+          "waypoint": {
+            "x": -988.5994873046875,
+            "y": 582.1490478515625,
+            "z": -400.0596923828125
+          }
+        },
+        "enter:Pivot_104": {
+          "cursor": 1,
+          "distance": 269.5620016059045,
+          "from": {
+            "x": -982.5110473632812,
+            "y": 582.1488647460938,
+            "z": -1949.7867431640625
+          },
+          "hitDistance": -1,
+          "hitName": "none",
+          "queryRadius": 40,
+          "to": {
+            "x": -718.5994873046875,
+            "y": 582.1488647460938,
+            "z": -1894.883544921875
+          },
+          "walkSpeed": 250,
+          "waypoint": {
+            "x": -718.5994873046875,
+            "y": 582.14892578125,
+            "z": -1894.883544921875
+          }
+        }
+      },
+      "near": {},
+      "opened": {
+        "t1": false
+      },
+      "picked": 1,
+      "promptState": {},
+      "ready": true,
+      "returnOutstanding": false,
+      "roomDefCount": 16,
+      "serverRoom": "none",
+      "shopOpen": false,
+      "space": "hall",
+      "stage": "choose_room",
+      "streamSettled": true,
+      "testGoalMet": true,
+      "uniqueRooms": 1,
+      "usable": true,
+      "walkSpeed": 250,
+      "x": -982.5110473632812,
+      "y": 582.1488647460938,
+      "yaw": 2.0710963689076265,
+      "z": -1949.7867431640625
+    },
+    "progress": {
+      "sequence": 40
+    }
+  },
+  "stats": {
+    "elapsedMs": 94926.12925000023,
+    "observations": 555,
+    "observationErrors": 0,
+    "modelCalls": 31,
+    "decisions": 33,
+    "dispatchedActions": 84,
+    "invalidatedChoices": 0,
+    "gameEventsEmitted": 14,
+    "duplicateGameEvents": 3162,
+    "statusChecks": 68,
+    "traceEvents": 1060,
+    "traceEventsDropped": 0,
+    "logCallbackErrors": 0,
+    "maxObserveLatencyMs": 547.080833000131,
+    "maxObservationAgeMs": 378.47187499981374,
+    "lastRevision": 818,
+    "lastGameTimeSeconds": 363983.90765829996
+  },
+  "decisionEvidence": {
+    "status": "effects_observed",
+    "modelRequests": 31,
+    "modelChoices": 30,
+    "modelDispatches": 30,
+    "modelEffectsConfirmed": 27,
+    "automaticDispatches": 18
+  },
+  "cleanup": {
+    "ownedSession": true,
+    "statusChecked": true,
+    "stopAttempted": true,
+    "stopped": true,
+    "reason": "stopped the same PIE session started by this playtest",
+    "sessionId": "d6ed0673-4801-111d-d95d-64b1053e216d"
+  },
+  "coverage": {
+    "scope": "declared_test_targets",
+    "status": "complete",
+    "totalTargets": 7,
+    "coveredTargets": 7,
+    "percentage": 100,
+    "targets": [
+      {
+        "id": "nav_move",
+        "kind": "action",
+        "description": "Meaningful directional displacement during selected transition",
+        "source": "HumanoidRootPart.Position",
+        "observedSamples": 0,
+        "offeredFrames": 402,
+        "selected": 48,
+        "dispatched": 48,
+        "completed": 48,
+        "effectsConfirmed": 48,
+        "effectsFailed": 0,
+        "status": "covered",
+        "covered": true
+      },
+      {
+        "id": "nav_look",
+        "kind": "action",
+        "description": "Observed camera alignment during selected transition",
+        "source": "CurrentCamera",
+        "observedSamples": 0,
+        "offeredFrames": 249,
+        "selected": 15,
+        "dispatched": 15,
+        "completed": 15,
+        "effectsConfirmed": 13,
+        "effectsFailed": 2,
+        "status": "covered",
+        "covered": true
+      },
+      {
+        "id": "enter_room",
+        "kind": "state",
+        "description": "Server-confirmed room entry",
+        "source": "S2C_PlayerRoomChanged",
+        "observedSamples": 261,
+        "offeredFrames": 0,
+        "selected": 0,
+        "dispatched": 0,
+        "completed": 0,
+        "effectsConfirmed": 0,
+        "effectsFailed": 0,
+        "status": "covered",
+        "covered": true
+      },
+      {
+        "id": "open",
+        "kind": "state",
+        "description": "Authoritative open-state feedback",
+        "source": "S2C_InteractionStateChanged",
+        "observedSamples": 221,
+        "offeredFrames": 0,
+        "selected": 0,
+        "dispatched": 0,
+        "completed": 0,
+        "effectsConfirmed": 0,
+        "effectsFailed": 0,
+        "status": "covered",
+        "covered": true
+      },
+      {
+        "id": "collect",
+        "kind": "state",
+        "description": "Actor-correlated collection and inventory increase",
+        "source": "S2C_MissionItemAssignmentChanged",
+        "observedSamples": 212,
+        "offeredFrames": 0,
+        "selected": 0,
+        "dispatched": 0,
+        "completed": 0,
+        "effectsConfirmed": 0,
+        "effectsFailed": 0,
+        "status": "covered",
+        "covered": true
+      },
+      {
+        "id": "deposit",
+        "kind": "state",
+        "description": "Player-correlated deposit receipt",
+        "source": "S2C_MissionProgressChanged",
+        "observedSamples": 80,
+        "offeredFrames": 0,
+        "selected": 0,
+        "dispatched": 0,
+        "completed": 0,
+        "effectsConfirmed": 0,
+        "effectsFailed": 0,
+        "status": "covered",
+        "covered": true
+      },
+      {
+        "id": "test_goal",
+        "kind": "state",
+        "description": "Configured test condition; distinct from full game clear",
+        "source": "TestConfig",
+        "observedSamples": 80,
+        "offeredFrames": 0,
+        "selected": 0,
+        "dispatched": 0,
+        "completed": 0,
+        "effectsConfirmed": 0,
+        "effectsFailed": 0,
+        "status": "covered",
+        "covered": true
+      }
+    ]
+  },
+  "coveragePath": "/Volumes/overdare-newgame/.overdare/playtests/1791267437795-a4197692/coverage.json",
+  "tracePath": "/Volumes/overdare-newgame/.overdare/playtests/1791267437795-a4197692/trace.jsonl"
+}

@@ -26,6 +26,7 @@ import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
 import { createInstanceUpsertTool } from "./tools/instance-upsert-tool";
 import { createPieInputTools } from "./tools/pie-input";
+import { createPlaytestTools } from "./tools/playtest";
 import { createRollbackTool } from "./tools/rollback-tool";
 import { createScriptAddTool } from "./tools/script-add-tool";
 import { createScriptDeleteTool } from "./tools/script-delete-tool";
@@ -483,6 +484,12 @@ export async function createStudioRpcTools(ctx: {
     // Play-test input drives a running PIE session, not the map, so it takes no
     // write lock and no rollback snapshot.
     ...createPieInputTools(callRpc),
+    ...createPlaytestTools({
+      callRpc,
+      cwd: ctx.cwd,
+      writeLock,
+      beforeMutation: (toolCtx) => ensureSnapshot(getTurnState(toolCtx), toolCtx.signal),
+    }).map((tool) => wrapTool(tool, ctx.host)),
   ];
 
   for (const mod of methodModules) {
