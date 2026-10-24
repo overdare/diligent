@@ -2,6 +2,7 @@
 
 import { createLogger } from "@diligent/logging";
 import type {
+  GoalChange,
   ImageUploadAttachment,
   Mode,
   ModelInfo,
@@ -73,22 +74,7 @@ type SteeringControl = {
   pendingAbortRestartSteerRef: MutableRefObject<PendingSteer | null>;
 };
 
-export async function prepareNewThreadForFirstMessage({
-  rpc,
-  mode,
-  cwd,
-  model,
-  effort,
-  fastMode,
-  activateServerThread,
-  applySessionModel,
-  dispatch,
-  localItemId,
-  localText,
-  contextItems,
-  images,
-  isCurrent,
-}: {
+interface NewThreadOptions {
   rpc: WebRpcClient;
   mode: Mode;
   cwd: string;
@@ -96,14 +82,21 @@ export async function prepareNewThreadForFirstMessage({
   effort: ThinkingEffort;
   fastMode?: boolean;
   activateServerThread: (threadId: string) => Promise<ThreadReadResponse>;
-  applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
   dispatch: Dispatch<AppAction>;
-  localItemId: string;
-  localText: string;
-  contextItems: AgentContextItem[];
-  images: PendingImage[];
   isCurrent: () => boolean;
-}): Promise<{ threadId: string; history: ThreadReadResponse }> {
+}
+
+async function startAndHydrateThread({
+  rpc,
+  mode,
+  cwd,
+  model,
+  effort,
+  fastMode,
+  activateServerThread,
+  dispatch,
+  isCurrent,
+}: NewThreadOptions): Promise<{ threadId: string; history: ThreadReadResponse }> {
   const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
     cwd: cwd || "/",
     mode,
@@ -119,9 +112,44 @@ export async function prepareNewThreadForFirstMessage({
   if (typeof window !== "undefined") {
     replaceThreadUrl(threadId);
   }
-  dispatch({ type: "local_user", payload: { id: localItemId, text: localText, images, contextItems } });
+  return { threadId, history };
+}
+
+export async function prepareNewThreadForFirstMessage({
+  applySessionModel,
+  localItemId,
+  localText,
+  contextItems,
+  images,
+  ...options
+}: NewThreadOptions & {
+  applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
+  localItemId: string;
+  localText: string;
+  contextItems: AgentContextItem[];
+  images: PendingImage[];
+}): Promise<{ threadId: string; history: ThreadReadResponse }> {
+  const { threadId, history } = await startAndHydrateThread(options);
+  options.dispatch({ type: "local_user", payload: { id: localItemId, text: localText, images, contextItems } });
   await applySessionModel(history.currentModel);
   return { threadId, history };
+}
+
+/** A goal can be the first thing in a new conversation: the server starts its first run once the goal is set. */
+export async function startNewThreadWithGoal({
+  applySessionModel,
+  change,
+  ...options
+}: NewThreadOptions & {
+  applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
+  change: Extract<GoalChange, { action: "set" }>;
+}): Promise<{ threadId: string; snapshot: ThreadGoalResponse }> {
+  const { threadId, history } = await startAndHydrateThread(options);
+  options.dispatch({ type: "optimistic_thread", payload: { threadId, message: change.objective } });
+  await applySessionModel(history.currentModel);
+  if (!options.isCurrent()) throw new Error("Conversation selection changed");
+  const snapshot = await options.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_SET, { threadId, ...change });
+  return { threadId, snapshot };
 }
 
 export async function runThreadCompaction({
@@ -615,6 +643,8 @@ export function useAppActions({
 
       if (activeThreadId) {
         clearThreadInput(activeThreadId);
+      } else {
+        clearDraftInput();
       }
 
       // Handled ahead of the switch so `case "default"` never sits beside its `default` clause.
@@ -699,8 +729,56 @@ export function useAppActions({
             dispatch({ type: "show_info_toast", payload: "Goals are not supported by this app server." });
             return;
           }
-          if (!rpc || !activeThreadId) {
-            dispatch({ type: "show_info_toast", payload: "Open a thread before using /goal." });
+          if (!rpc) {
+            dispatch({ type: "show_info_toast", payload: "Not connected to the app server." });
+            return;
+          }
+          if (!activeThreadId) {
+            let change: GoalChange | null;
+            try {
+              change = parseGoalCommand(arg, null);
+            } catch (cause) {
+              dispatch({ type: "show_info_toast", payload: cause instanceof Error ? cause.message : String(cause) });
+              return;
+            }
+            if (change?.action !== "set") {
+              dispatch({ type: "show_info_toast", payload: "No goal is set for this thread." });
+              return;
+            }
+            if (modeRef.current === "plan") {
+              dispatch({ type: "show_info_toast", payload: "Goal execution is unavailable in plan mode" });
+              return;
+            }
+            if (!stateRef.current.runtimeReady) {
+              dispatch({ type: "show_info_toast", payload: "The agent is still starting. Try again in a moment." });
+              return;
+            }
+            const isCurrent = getNavigationGuard();
+            void startNewThreadWithGoal({
+              rpc,
+              mode: modeRef.current,
+              cwd: cwdRef.current || "/",
+              model: currentModelRef.current,
+              effort,
+              fastMode,
+              activateServerThread,
+              applySessionModel,
+              dispatch,
+              isCurrent,
+              change,
+            })
+              .then(({ threadId, snapshot }) => {
+                if (!isCurrent()) return;
+                dispatch({ type: "set_goal_snapshot", payload: { threadId, ...snapshot } });
+                void refreshThreadList(rpc);
+              })
+              .catch((cause) => {
+                if (!isCurrent()) return;
+                dispatch({
+                  type: "show_info_toast",
+                  payload: cause instanceof Error ? cause.message : String(cause),
+                });
+              });
             return;
           }
           void executeGoalCommand({ rpc, threadId: activeThreadId, args: arg })
@@ -819,6 +897,7 @@ export function useAppActions({
       state.activeThreadId,
       setMode,
       clearThreadInput,
+      clearDraftInput,
       slashCommands,
       dispatch,
       startNewThread,
@@ -833,6 +912,14 @@ export function useAppActions({
       currentModel,
       setEffort,
       goalsSupported,
+      modeRef,
+      cwdRef,
+      fastMode,
+      activateServerThread,
+      applySessionModel,
+      currentModelRef,
+      refreshThreadList,
+      getNavigationGuard,
     ],
   );
 

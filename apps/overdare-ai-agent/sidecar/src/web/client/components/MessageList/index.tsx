@@ -33,6 +33,8 @@ const INITIAL_FIRST_ITEM_INDEX = 1_000_000;
 /** How long after a prepend the visible row is pinned while Virtuoso measures the new rows. */
 const PREPEND_ANCHOR_WINDOW_MS = 1_500;
 const WHEEL_LINE_PX = 16;
+// Wide content (code blocks, tables) scrolls on its own; the transcript itself must never scroll sideways.
+const MESSAGE_SCROLLER_STYLE = { height: "100%", overflowX: "hidden" } as const;
 
 interface PrependAnchor {
   /** A reader at the bottom is pinned to the bottom edge until they wheel away from it. */
@@ -533,7 +535,7 @@ function MessageListImpl({
           scrollerRef={(element) => {
             scrollerRef.current = element instanceof HTMLElement ? element : null;
           }}
-          style={{ height: "100%" }}
+          style={MESSAGE_SCROLLER_STYLE}
           className="bg-bg-sunken [overflow-anchor:none]"
           atBottomStateChange={handleAtBottomStateChange}
           atBottomThreshold={CHAT_NEAR_BOTTOM_THRESHOLD_PX}
@@ -558,7 +560,7 @@ function MessageListImpl({
           itemContent={renderRow}
         />
       ) : (
-        <div className="h-full overflow-y-auto bg-bg-sunken px-7 py-6">
+        <div className="h-full overflow-y-auto overflow-x-hidden bg-bg-sunken px-7 py-6">
           <div className="space-y-1">
             {rows.map((row) => (
               <div key={row.key} data-message-list-row={row.key}>
