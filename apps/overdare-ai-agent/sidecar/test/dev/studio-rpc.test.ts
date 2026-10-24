@@ -1,4 +1,4 @@
-// @summary Verifies unified asset imports keep the remote Studio shared-file mapping.
+// @summary Verifies the dev shared-file mapping for asset imports and Studio screenshot paths.
 import { expect, test } from "bun:test";
 import { createDevStudioRpc } from "../../src/dev/studio-rpc";
 
@@ -29,4 +29,24 @@ test("unified import rejects files outside the configured mount before calling S
   });
   await expect(rpc("asset_manager.import", { file: "/elsewhere/sound.wav" })).rejects.toThrow("outside");
   expect(called).toBe(false);
+});
+
+test("screenshot paths inside the remote root are returned as their mounted local paths", async () => {
+  const rpc = createDevStudioRpc(
+    { enabled: true, localFileRoot: "/Volumes/downloads", remoteFileRoot: "C:/Users/jjss/Downloads" },
+    async () => ({ path: "C:/Users/jjss/Downloads/Party/Screenshots/Agent/shot.png", image: { width: 2, height: 1 } }),
+  );
+  expect(await rpc("game.screenshot", {})).toEqual({
+    path: "/Volumes/downloads/Party/Screenshots/Agent/shot.png",
+    image: { width: 2, height: 1 },
+  });
+});
+
+test("screenshot paths outside the remote root are left as Studio reported them", async () => {
+  const result = { path: "D:/Captures/shot.png" };
+  const rpc = createDevStudioRpc(
+    { enabled: true, localFileRoot: "/Volumes/downloads", remoteFileRoot: "C:/Users/jjss/Downloads" },
+    async () => result,
+  );
+  expect(await rpc("game.screenshot", {})).toEqual({ path: "D:/Captures/shot.png" });
 });
