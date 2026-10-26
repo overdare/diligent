@@ -122,7 +122,8 @@ function scoreEntry(content: string, queryTokens: string[]): { matchedTokenCount
         exactTokenCount += 1;
         break;
       }
-      if (contentToken.includes(queryToken) || queryToken.includes(contentToken)) {
+      // Single-character content tokens would match any query containing that character.
+      if (contentToken.includes(queryToken) || (contentToken.length >= 2 && queryToken.includes(contentToken))) {
         matched = true;
       }
     }

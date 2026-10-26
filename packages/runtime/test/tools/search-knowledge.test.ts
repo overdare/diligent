@@ -92,6 +92,20 @@ describe("search_knowledge tool", () => {
     expect(result.metadata?.ids).toEqual([]);
   });
 
+  it("does not let single-character content tokens match longer queries", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
+    await writeKnowledge(tmpDir, [
+      makeKnowledgeEntry({ id: "short-word", content: "Use a cache" }),
+      makeKnowledgeEntry({ id: "korean", content: "\uD55C\uAD6D\uC5B4 \uAF2D \uC0AC\uC6A9" }),
+    ]);
+    const tool = createSearchKnowledgeTool(tmpDir);
+
+    expect((await tool.execute({ query: "package" }, makeCtx())).metadata?.ids).toEqual([]);
+    expect((await tool.execute({ query: "\uAF2D\uC740" }, makeCtx())).metadata?.ids).toEqual([]);
+    expect((await tool.execute({ query: "\uAF2D" }, makeCtx())).metadata?.ids).toEqual(["korean"]);
+    expect((await tool.execute({ query: "\uD55C\uAD6D\uC5B4\uB85C" }, makeCtx())).metadata?.ids).toEqual(["korean"]);
+  });
+
   it("excludes superseded entries from keyword, exact-id, and prefix searches", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
     await writeKnowledge(tmpDir, [
