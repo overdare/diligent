@@ -2,6 +2,7 @@
 
 import type { Tool, ToolContext, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
+import { rankKnowledge } from "../knowledge/ranker";
 import { readKnowledge } from "../knowledge/store";
 import { createSearchKnowledgeRenderPayload } from "./render-payload";
 
@@ -52,7 +53,7 @@ export function createSearchKnowledgeTool(knowledgePath: string): Tool<typeof se
       const idPrefix = args.id_prefix?.trim();
       const queryTokens = tokenize(args.query);
       const entries = await readKnowledge(knowledgePath);
-      const matches = entries
+      const matches = rankKnowledge(entries)
         .map((entry) => ({
           entry,
           score: scoreEntry(entry.content, queryTokens),
@@ -60,7 +61,7 @@ export function createSearchKnowledgeTool(knowledgePath: string): Tool<typeof se
         .filter(({ entry, score }) => {
           if (id && entry.id !== id) return false;
           if (idPrefix && !entry.id.startsWith(idPrefix)) return false;
-          if (queryTokens.length > 0 && score.matchedTokenCount === 0) return false;
+          if (args.query?.trim() && score.matchedTokenCount === 0) return false;
           return true;
         })
         .sort((left, right) => {
@@ -98,10 +99,10 @@ function tokenize(value: string | undefined): string[] {
   return Array.from(
     new Set(
       value
+        .normalize("NFC")
         .toLowerCase()
-        .split(/[^a-z0-9]+/i)
-        .map((token) => token.trim())
-        .filter((token) => token.length >= 2),
+        .split(/[^\p{L}\p{N}\p{M}]+/u)
+        .filter(Boolean),
     ),
   );
 }
@@ -121,7 +122,8 @@ function scoreEntry(content: string, queryTokens: string[]): { matchedTokenCount
         exactTokenCount += 1;
         break;
       }
-      if (contentToken.includes(queryToken) || queryToken.includes(contentToken)) {
+      // Single-character content tokens would match any query containing that character.
+      if (contentToken.includes(queryToken) || (contentToken.length >= 2 && queryToken.includes(contentToken))) {
         matched = true;
       }
     }
