@@ -2,6 +2,7 @@
 
 import { createLogger } from "@diligent/logging";
 import type {
+  GoalChange,
   ImageUploadAttachment,
   Mode,
   ModelInfo,
@@ -73,21 +74,7 @@ type SteeringControl = {
   pendingAbortRestartSteerRef: MutableRefObject<PendingSteer | null>;
 };
 
-export async function prepareNewThreadForFirstMessage({
-  rpc,
-  mode,
-  cwd,
-  model,
-  effort,
-  fastMode,
-  activateServerThread,
-  applySessionModel,
-  dispatch,
-  localItemId,
-  localText,
-  contextItems,
-  images,
-}: {
+interface NewThreadOptions {
   rpc: WebRpcClient;
   mode: Mode;
   cwd: string;
@@ -95,13 +82,21 @@ export async function prepareNewThreadForFirstMessage({
   effort: ThinkingEffort;
   fastMode?: boolean;
   activateServerThread: (threadId: string) => Promise<ThreadReadResponse>;
-  applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
   dispatch: Dispatch<AppAction>;
-  localItemId: string;
-  localText: string;
-  contextItems: AgentContextItem[];
-  images: PendingImage[];
-}): Promise<{ threadId: string; history: ThreadReadResponse }> {
+  isCurrent: () => boolean;
+}
+
+async function startAndHydrateThread({
+  rpc,
+  mode,
+  cwd,
+  model,
+  effort,
+  fastMode,
+  activateServerThread,
+  dispatch,
+  isCurrent,
+}: NewThreadOptions): Promise<{ threadId: string; history: ThreadReadResponse }> {
   const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
     cwd: cwd || "/",
     mode,
@@ -110,34 +105,72 @@ export async function prepareNewThreadForFirstMessage({
     model,
   });
   const threadId = started.threadId;
+  if (!isCurrent()) throw new Error("Conversation selection changed");
   const history = await activateServerThread(threadId);
+  if (!isCurrent()) throw new Error("Conversation selection changed");
   dispatch({ type: "hydrate", payload: { threadId, mode, history } });
   if (typeof window !== "undefined") {
     replaceThreadUrl(threadId);
   }
-  dispatch({ type: "local_user", payload: { id: localItemId, text: localText, images, contextItems } });
+  return { threadId, history };
+}
+
+export async function prepareNewThreadForFirstMessage({
+  applySessionModel,
+  localItemId,
+  localText,
+  contextItems,
+  images,
+  ...options
+}: NewThreadOptions & {
+  applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
+  localItemId: string;
+  localText: string;
+  contextItems: AgentContextItem[];
+  images: PendingImage[];
+}): Promise<{ threadId: string; history: ThreadReadResponse }> {
+  const { threadId, history } = await startAndHydrateThread(options);
+  options.dispatch({ type: "local_user", payload: { id: localItemId, text: localText, images, contextItems } });
   await applySessionModel(history.currentModel);
   return { threadId, history };
+}
+
+/** A goal can be the first thing in a new conversation: the server starts its first run once the goal is set. */
+export async function startNewThreadWithGoal({
+  applySessionModel,
+  change,
+  ...options
+}: NewThreadOptions & {
+  applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
+  change: Extract<GoalChange, { action: "set" }>;
+}): Promise<{ threadId: string; snapshot: ThreadGoalResponse }> {
+  const { threadId, history } = await startAndHydrateThread(options);
+  options.dispatch({ type: "optimistic_thread", payload: { threadId, message: change.objective } });
+  await applySessionModel(history.currentModel);
+  if (!options.isCurrent()) throw new Error("Conversation selection changed");
+  const snapshot = await options.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_SET, { threadId, ...change });
+  return { threadId, snapshot };
 }
 
 export async function runThreadCompaction({
   rpc,
   threadId,
-  mode,
+  refreshThreadHistory,
+  isCurrent,
   dispatch,
 }: {
   rpc: WebRpcClient;
   threadId: string;
-  mode: Mode;
+  refreshThreadHistory: (threadId: string) => Promise<void>;
+  isCurrent: () => boolean;
   dispatch: Dispatch<AppAction>;
 }): Promise<void> {
   try {
     await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START, { threadId }, null);
-    const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
-      threadId,
-    });
-    dispatch({ type: "hydrate", payload: { threadId, mode, history } });
+    if (!isCurrent()) return;
+    await refreshThreadHistory(threadId);
   } catch (error) {
+    if (!isCurrent()) return;
     dispatch({ type: "compaction_error" });
     dispatch({
       type: "show_info_toast",
@@ -298,6 +331,8 @@ export function useAppActions({
   applySessionModel,
   activateServerThread,
   refreshThreadList,
+  refreshThreadHistory,
+  getNavigationGuard,
 }: {
   rpcRef: RefObject<WebRpcClient | null>;
   state: ThreadState;
@@ -326,7 +361,7 @@ export function useAppActions({
   setFastModeState: Dispatch<SetStateAction<boolean>>;
   changeModel: (model: ModelRef, threadId?: string) => Promise<void>;
   startNewThread: () => Promise<void>;
-  openThread: (threadId: string) => Promise<void>;
+  openThread: (threadId: string) => Promise<unknown>;
   openMcpModal: () => void;
   bumpMcpRefreshNonce: () => void;
   setSkills: Dispatch<SetStateAction<SkillInfo[]>>;
@@ -335,11 +370,14 @@ export function useAppActions({
   cwdRef: RefObject<string>;
   applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
   activateServerThread: (threadId: string) => Promise<ThreadReadResponse>;
-  refreshThreadList: (rpc?: WebRpcClient | null) => Promise<void>;
+  refreshThreadList: (rpc?: WebRpcClient | null) => Promise<unknown>;
+  refreshThreadHistory: (threadId: string) => Promise<void>;
+  getNavigationGuard: () => () => boolean;
 }) {
   const sendMessage = useCallback(async (): Promise<void> => {
     const rpc = rpcRef.current;
-    if (!rpc || !canSend) return;
+    if (!rpc || !canSend || !stateRef.current.runtimeReady) return;
+    const isCurrent = getNavigationGuard();
     const typedMessage = activeInput.trim();
     const message = prependContextToMessage(typedMessage, activeContextItems);
     const images = pendingImages;
@@ -370,7 +408,9 @@ export function useAppActions({
           localText: typedMessage,
           contextItems: activeContextItems,
           images,
+          isCurrent,
         });
+        if (!isCurrent()) return;
         threadId = prepared.threadId;
       } else {
         dispatch({
@@ -407,14 +447,20 @@ export function useAppActions({
         content,
         model: currentModelRef.current,
       });
+      if (!isCurrent()) return;
       if (started.userMessageId) {
         dispatch({
           type: "bind_user_message_id",
           payload: { renderItemId: localItemId, messageId: started.userMessageId },
         });
       }
-      await refreshThreadList(rpc);
+      void refreshThreadList(rpc);
     } catch (error) {
+      if (!isCurrent()) return;
+      dispatch({
+        type: "show_info_toast",
+        payload: error instanceof Error ? error.message : "Could not send message.",
+      });
       logger.error("message.send_failed", {
         message: "Failed to send message",
         error,
@@ -441,6 +487,8 @@ export function useAppActions({
     applySessionModel,
     activateServerThread,
     refreshThreadList,
+    getNavigationGuard,
+    stateRef,
   ]);
 
   const setMode = useCallback(
@@ -478,15 +526,16 @@ export function useAppActions({
   const handleCompactionClick = useCallback(() => {
     void (async () => {
       const rpc = rpcRef.current;
-      if (!rpc || !state.activeThreadId || state.isCompacting) return;
+      if (!rpc || !state.activeThreadId || state.isCompacting || !stateRef.current.runtimeReady) return;
       await runThreadCompaction({
         rpc,
         threadId: state.activeThreadId,
-        mode: state.mode,
+        refreshThreadHistory,
+        isCurrent: getNavigationGuard(),
         dispatch,
       });
     })();
-  }, [rpcRef, state.activeThreadId, state.mode, state.isCompacting, dispatch]);
+  }, [rpcRef, state.activeThreadId, state.isCompacting, stateRef, dispatch, refreshThreadHistory, getNavigationGuard]);
 
   const handleAddImages = useCallback(
     async (files: FileList | File[]): Promise<void> => {
@@ -594,6 +643,8 @@ export function useAppActions({
 
       if (activeThreadId) {
         clearThreadInput(activeThreadId);
+      } else {
+        clearDraftInput();
       }
 
       // Handled ahead of the switch so `case "default"` never sits beside its `default` clause.
@@ -678,8 +729,56 @@ export function useAppActions({
             dispatch({ type: "show_info_toast", payload: "Goals are not supported by this app server." });
             return;
           }
-          if (!rpc || !activeThreadId) {
-            dispatch({ type: "show_info_toast", payload: "Open a thread before using /goal." });
+          if (!rpc) {
+            dispatch({ type: "show_info_toast", payload: "Not connected to the app server." });
+            return;
+          }
+          if (!activeThreadId) {
+            let change: GoalChange | null;
+            try {
+              change = parseGoalCommand(arg, null);
+            } catch (cause) {
+              dispatch({ type: "show_info_toast", payload: cause instanceof Error ? cause.message : String(cause) });
+              return;
+            }
+            if (change?.action !== "set") {
+              dispatch({ type: "show_info_toast", payload: "No goal is set for this thread." });
+              return;
+            }
+            if (modeRef.current === "plan") {
+              dispatch({ type: "show_info_toast", payload: "Goal execution is unavailable in plan mode" });
+              return;
+            }
+            if (!stateRef.current.runtimeReady) {
+              dispatch({ type: "show_info_toast", payload: "The agent is still starting. Try again in a moment." });
+              return;
+            }
+            const isCurrent = getNavigationGuard();
+            void startNewThreadWithGoal({
+              rpc,
+              mode: modeRef.current,
+              cwd: cwdRef.current || "/",
+              model: currentModelRef.current,
+              effort,
+              fastMode,
+              activateServerThread,
+              applySessionModel,
+              dispatch,
+              isCurrent,
+              change,
+            })
+              .then(({ threadId, snapshot }) => {
+                if (!isCurrent()) return;
+                dispatch({ type: "set_goal_snapshot", payload: { threadId, ...snapshot } });
+                void refreshThreadList(rpc);
+              })
+              .catch((cause) => {
+                if (!isCurrent()) return;
+                dispatch({
+                  type: "show_info_toast",
+                  payload: cause instanceof Error ? cause.message : String(cause),
+                });
+              });
             return;
           }
           void executeGoalCommand({ rpc, threadId: activeThreadId, args: arg })
@@ -769,7 +868,7 @@ export function useAppActions({
         }
         default: {
           const isSkill = slashCommands.some((command) => command.name === name && command.isSkill);
-          if (isSkill && rpc && activeThreadId) {
+          if (isSkill && rpc && activeThreadId && stateRef.current.runtimeReady) {
             const message = arg ? `/${name} ${arg}` : `/${name}`;
             const localItemId = `local-user-${createUuidV4()}`;
             dispatch({ type: "local_user", payload: { id: localItemId, text: message, images: [] } });
@@ -794,9 +893,11 @@ export function useAppActions({
     },
     [
       rpcRef,
+      stateRef,
       state.activeThreadId,
       setMode,
       clearThreadInput,
+      clearDraftInput,
       slashCommands,
       dispatch,
       startNewThread,
@@ -811,6 +912,14 @@ export function useAppActions({
       currentModel,
       setEffort,
       goalsSupported,
+      modeRef,
+      cwdRef,
+      fastMode,
+      activateServerThread,
+      applySessionModel,
+      currentModelRef,
+      refreshThreadList,
+      getNavigationGuard,
     ],
   );
 
@@ -823,8 +932,9 @@ export function useAppActions({
         return;
       }
     }
+    if (!stateRef.current.runtimeReady) return;
     void sendMessage();
-  }, [activeInput, slashCommands, handleSlashCommand, sendMessage]);
+  }, [activeInput, slashCommands, handleSlashCommand, sendMessage, stateRef]);
 
   const interruptRequestRef = useRef<{ threadId: string; turnId: string | null } | null>(null);
   const handleInterrupt = useCallback(() => {
@@ -835,6 +945,7 @@ export function useAppActions({
     const turnId = snapshot.activeTurnId;
     if (interruptRequestRef.current?.threadId === threadId && interruptRequestRef.current.turnId === turnId) return;
     const request = { threadId, turnId };
+    const isCurrent = getNavigationGuard();
     interruptRequestRef.current = request;
     steeringControl.pendingAbortRestartSteerRef.current = snapshot.pendingSteers[0] ?? null;
     void (async () => {
@@ -842,9 +953,8 @@ export function useAppActions({
         const result = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId });
         if (!result.interrupted) {
           if (interruptRequestRef.current === request) steeringControl.pendingAbortRestartSteerRef.current = null;
-          const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId });
-          if (stateRef.current.activeThreadId === threadId && stateRef.current.activeTurnId === turnId) {
-            dispatch({ type: "hydrate", payload: { threadId, mode: stateRef.current.mode, history } });
+          if (isCurrent() && stateRef.current.activeThreadId === threadId && stateRef.current.activeTurnId === turnId) {
+            await refreshThreadHistory(threadId);
           }
         }
       } catch (error) {
@@ -858,19 +968,29 @@ export function useAppActions({
         if (interruptRequestRef.current === request) interruptRequestRef.current = null;
       }
     })();
-  }, [rpcRef, stateRef, steeringControl, dispatch]);
+  }, [rpcRef, stateRef, steeringControl, refreshThreadHistory, getNavigationGuard]);
 
   const handleRetryLastTurn = useCallback(() => {
     void (async () => {
       const rpc = rpcRef.current;
       const snapshot = stateRef.current;
       const threadId = snapshot.activeThreadId;
-      if (!rpc || !threadId || snapshot.threadStatus === "busy") return;
+      if (!rpc || !threadId || snapshot.threadStatus === "busy" || !snapshot.runtimeReady) return;
+      const isCurrent = getNavigationGuard();
       try {
         const lastUser = snapshot.items.findLast((item) => item.kind === "user");
         if (lastUser?.kind !== "user") throw new Error("There is no previous request to retry.");
-        await retryLastUserMessage({ rpc, threadId, item: lastUser, model: currentModelRef.current, dispatch });
+        await retryLastUserMessage({
+          rpc,
+          threadId,
+          item: lastUser,
+          model: currentModelRef.current,
+          dispatch: (action) => {
+            if (isCurrent()) dispatch(action);
+          },
+        });
       } catch (error) {
+        if (!isCurrent()) return;
         logger.error("turn.retry_failed", { message: "Failed to retry the last turn", error, threadId });
         const reason = error instanceof Error ? error.message : String(error);
         dispatch({
@@ -882,7 +1002,7 @@ export function useAppActions({
         });
       }
     })();
-  }, [currentModelRef, dispatch, rpcRef, stateRef]);
+  }, [currentModelRef, dispatch, rpcRef, stateRef, getNavigationGuard]);
 
   const handleModeChange = useCallback(
     (mode: Mode) => {

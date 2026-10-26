@@ -2,19 +2,21 @@
   "schemaVersion": 1,
   "skills": [
     { "name": "actionsequence", "entry": "actionsequence" },
+    { "name": "action-library", "entry": "action-library" },
     { "name": "agent-guide", "entry": "agent-guide" },
     { "name": "asset-pack-import", "entry": "asset-pack-import" },
     { "name": "autonomous-playtest", "entry": "autonomous-playtest" },
-    { "name": "geometry-recipe", "entry": "geometry-recipe" },
     { "name": "gui-builder", "entry": "gui-builder" },
     { "name": "image-asset-generation", "entry": "image-asset-generation" },
     { "name": "overdare-camera-templates", "entry": "overdare-camera-templates" },
+    { "name": "procedural-model-builder", "entry": "procedural-model-builder" },
     { "name": "record-project-memory", "entry": "record-project-memory" },
     { "name": "session-issue-report", "entry": "session-issue-report" },
     { "name": "vfx-recipe", "entry": "vfx-recipe" },
     { "name": "world-publish", "entry": "world-publish" }
   ],
   "revoked": [
+    { "name": "geometry-recipe", "entry": "geometry-recipe" },
     { "name": "overdare-debug-expert", "entry": "overdare-debug-expert" },
     { "name": "overdare-ui-templates", "entry": "overdare-ui-templates" },
     { "name": "procedural-builder", "entry": "procedural-builder" },

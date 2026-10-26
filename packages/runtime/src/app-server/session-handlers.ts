@@ -1,42 +1,63 @@
 // @summary Session management request handlers: thread list, resume, and delete
 
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+import { z } from "zod";
 import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
-  type ModelRef,
   type SessionSummary,
-  type ThinkingEffort,
+  type ThreadHistoryResponse,
 } from "../protocol/index";
-import { buildSessionContext } from "../session/context-builder";
-import { deleteSession, listSessions, readSessionFile } from "../session/persistence";
-import { generateSessionId } from "../session/types";
-import type { ThreadHandlersContext, ThreadRuntime } from "./thread-handlers";
+import { buildSessionTranscript } from "../session/context-builder";
+import { findSessionPath, readSessionHistoryPage, readSessionPreview } from "../session/history";
+import { deleteSession } from "../session/persistence";
+import { generateSessionId, isSafeSessionId } from "../session/types";
+import type { ThreadHandlersContext, ThreadListScan } from "./thread-handlers";
+import { buildThreadReadItems, type ThreadReadTranscriptEntry } from "./thread-read-builder";
 
 export async function handleThreadResume(
   ctx: ThreadHandlersContext,
   params: { threadId?: string; mostRecent?: boolean },
-): Promise<{ found: boolean; threadId?: string; context?: unknown[] }> {
+): Promise<{ found: boolean; threadId?: string }> {
+  if (!params.threadId) return resumeThread(ctx, params);
+  const existing = ctx.pendingResumes.get(params.threadId);
+  if (existing) return existing;
+  const pending = resumeThread(ctx, params);
+  ctx.pendingResumes.set(params.threadId, pending);
+  try {
+    return await pending;
+  } finally {
+    ctx.pendingResumes.delete(params.threadId);
+  }
+}
+
+async function resumeThread(
+  ctx: ThreadHandlersContext,
+  params: { threadId?: string; mostRecent?: boolean },
+): Promise<{ found: boolean; threadId?: string }> {
   if (params.threadId) {
     const existing = ctx.threads.get(params.threadId);
     if (existing) {
+      if (!existing.isRunning && !existing.turnWork) {
+        await existing.manager.reconcileFromDisk();
+        existing.mode = existing.manager.getCurrentMode() ?? existing.mode;
+        existing.effort = existing.manager.getCurrentEffort() ?? existing.effort;
+        existing.fastMode = existing.manager.getCurrentFastMode() ?? false;
+        existing.model = existing.manager.getCurrentModel() ?? existing.model;
+      }
       const context = existing.manager.getContext();
       ctx.setActiveThreadId(params.threadId);
       await ctx.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED,
         params: { threadId: params.threadId, restoredMessages: context.length },
       });
-      return { found: true, threadId: params.threadId, context };
+      return { found: true, threadId: params.threadId };
     }
   }
 
   for (const cwd of Array.from(ctx.knownCwds)) {
     const placeholderId = params.threadId ?? generateSessionId();
-    const runtime = await ctx.createThreadRuntime(
-      placeholderId,
-      cwd,
-      "default",
-      false,
-      await ctx.getLatestEffortForCwd(cwd),
-    );
+    const runtime = await ctx.createThreadRuntime(placeholderId, cwd, "default", false);
 
     const resumed = await runtime.manager.resume({
       sessionId: params.threadId,
@@ -61,40 +82,132 @@ export async function handleThreadResume(
       params: { threadId, restoredMessages: context.length },
     });
 
-    return { found: true, threadId, context };
+    return { found: true, threadId };
   }
 
   return { found: false };
 }
 
+const ListCursorSchema = z.object({ version: z.literal(1), after: z.string(), scan: z.string().optional() }).strict();
+const LIST_SCAN_TTL_MS = 60_000;
+const LIST_SCAN_LIMIT = 16;
+
+async function scanSessionFiles(ctx: ThreadHandlersContext): Promise<ThreadListScan["files"]> {
+  const perCwd = await Promise.all(
+    Array.from(ctx.knownCwds, async (cwd) => {
+      const paths = await ctx.resolvePaths(cwd);
+      const files: ThreadListScan["files"] = [];
+      await ctx.historyPriority?.idle();
+      for await (const name of new Bun.Glob("*.jsonl").scan(paths.sessions)) {
+        files.push({ key: `${name}\0${cwd}`, path: join(paths.sessions, name) });
+      }
+      return files;
+    }),
+  );
+  return perCwd.flat().sort((a, b) => (a.key < b.key ? 1 : a.key > b.key ? -1 : 0));
+}
+
 export async function handleThreadList(
   ctx: ThreadHandlersContext,
-  limit?: number,
+  limit = 20,
   includeChildren?: boolean,
-): Promise<{ data: SessionSummary[] }> {
-  const result: SessionSummary[] = [];
-
-  for (const cwd of ctx.knownCwds) {
-    const paths = await ctx.resolvePaths(cwd);
-    const sessions = await listSessions(paths.sessions);
-    for (const session of sessions) {
-      result.push({
-        id: session.id,
-        path: session.path,
-        cwd: session.cwd,
-        name: session.name,
-        created: session.created.toISOString(),
-        modified: session.modified.toISOString(),
-        messageCount: session.messageCount,
-        firstUserMessage: session.firstUserMessage,
-        parentSession: session.parentSession,
-      });
+  cursor?: string,
+): Promise<{ data: SessionSummary[]; nextCursor?: string }> {
+  let after: string | undefined;
+  let scanId: string | undefined;
+  if (cursor) {
+    try {
+      const parsed = ListCursorSchema.parse(JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")));
+      after = parsed.after;
+      scanId = parsed.scan;
+    } catch {
+      throw new Error("Invalid session list cursor.");
     }
   }
+  const scans = ctx.threadListScans;
+  const now = Date.now();
+  if (scans) {
+    for (const [id, scan] of scans) if (scan.expiresAt <= now) scans.delete(id);
+  }
+  // Later pages reuse the first page's listing: a slow (network) sessions dir is scanned once per pass.
+  // Sessions created mid-pass sort above `after` either way, so the snapshot hides nothing a rescan would show.
+  const cached = scanId ? scans?.get(scanId) : undefined;
+  const allFiles = cached?.files ?? (await scanSessionFiles(ctx));
+  const files = after === undefined ? allFiles : allFiles.filter((file) => file.key < after);
+  const page = files.slice(0, Math.max(1, Math.min(500, limit)));
+  const hasMore = files.length > page.length;
+  let nextScanId: string | undefined;
+  if (scans && hasMore) {
+    nextScanId = cached && scanId ? scanId : randomUUID();
+    const oldest = scans.keys().next().value;
+    if (!cached && oldest !== undefined && scans.size >= LIST_SCAN_LIMIT) scans.delete(oldest);
+    scans.set(nextScanId, { files: allFiles, expiresAt: now + LIST_SCAN_TTL_MS });
+  } else if (scanId) {
+    scans?.delete(scanId);
+  }
+  const remaining = page.values();
+  const data: SessionSummary[] = [];
+  await Promise.all(
+    Array.from({ length: Math.min(8, page.length) }, async () => {
+      for (const file of remaining) {
+        await ctx.historyPriority?.idle();
+        try {
+          const session = await readSessionPreview(file.path);
+          if (!includeChildren && session.parentSession) continue;
+          data.push({
+            ...session,
+            created: session.created.toISOString(),
+            modified: session.modified.toISOString(),
+          });
+        } catch {
+          // One unreadable file must not hide readable conversations in this batch.
+        }
+      }
+    }),
+  );
+  data.sort((a, b) => Date.parse(b.modified) - Date.parse(a.modified) || b.id.localeCompare(a.id));
+  return {
+    data,
+    nextCursor: hasMore
+      ? Buffer.from(
+          JSON.stringify({
+            version: 1,
+            after: page[page.length - 1].key,
+            ...(nextScanId ? { scan: nextScanId } : {}),
+          }),
+        ).toString("base64url")
+      : undefined,
+  };
+}
 
-  const filtered = includeChildren ? result : result.filter((s) => !s.parentSession);
-  filtered.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
-  return { data: filtered.slice(0, limit ?? 100) };
+export function handleThreadHistory(
+  ctx: ThreadHandlersContext,
+  params: { threadId: string; cursor?: string; limit?: number },
+): Promise<ThreadHistoryResponse> {
+  const read = () => readThreadHistory(ctx, params);
+  return ctx.historyPriority ? ctx.historyPriority.run(read) : read();
+}
+
+async function readThreadHistory(
+  ctx: ThreadHandlersContext,
+  params: { threadId: string; cursor?: string; limit?: number },
+): Promise<ThreadHistoryResponse> {
+  if (!isSafeSessionId(params.threadId)) throw new Error("Invalid thread ID.");
+  const runtime = ctx.threads.get(params.threadId);
+  if (runtime && !runtime.manager.sessionPath) return { cwd: runtime.cwd, items: [] };
+  for (const cwd of ctx.knownCwds) {
+    const paths = await ctx.resolvePaths(cwd);
+    const path = await findSessionPath(paths.sessions, params.threadId);
+    if (!path) continue;
+    const page = await readSessionHistoryPage(path, params);
+    const transcript = buildSessionTranscript(page.entries);
+    return {
+      cwd: page.header.cwd,
+      items: buildThreadReadItems(transcript as ThreadReadTranscriptEntry[]),
+      nextCursor: page.nextCursor,
+    };
+  }
+  throw new Error(`Thread not found: ${params.threadId}`);
 }
 
 export async function handleThreadDelete(ctx: ThreadHandlersContext, threadId: string): Promise<{ deleted: boolean }> {
@@ -127,84 +240,4 @@ export async function handleThreadDelete(ctx: ThreadHandlersContext, threadId: s
   }
 
   return { deleted };
-}
-
-export async function getLatestEffortFromSessions(
-  resolvePaths: (cwd: string) => Promise<{ sessions: string }>,
-  threads: Map<string, ThreadRuntime>,
-  cwd: string,
-  fallback: ThinkingEffort = "medium",
-): Promise<ThinkingEffort> {
-  const paths = await resolvePaths(cwd);
-  const ordered = (await listSessions(paths.sessions))
-    .filter((session) => session.cwd === cwd)
-    .map<SessionSummary>((session) => ({
-      id: session.id,
-      path: session.path,
-      cwd: session.cwd,
-      name: session.name,
-      created: session.created.toISOString(),
-      modified: session.modified.toISOString(),
-      messageCount: session.messageCount,
-      firstUserMessage: session.firstUserMessage,
-      parentSession: session.parentSession,
-    }));
-
-  for (const summary of ordered) {
-    const runtime = threads.get(summary.id);
-    const runtimeEffort = runtime?.manager.getCurrentEffort() ?? runtime?.effort;
-    if (runtimeEffort) return runtimeEffort;
-    if (!summary.path) continue;
-
-    try {
-      const { entries } = await readSessionFile(summary.path);
-      const leafId = entries.length > 0 ? entries[entries.length - 1].id : null;
-      const effort = buildSessionContext(entries, leafId).currentEffort;
-      if (effort) return effort;
-    } catch {
-      // Ignore unreadable session files and continue.
-    }
-  }
-
-  return fallback;
-}
-
-export async function getLatestModelFromSessions(
-  resolvePaths: (cwd: string) => Promise<{ sessions: string }>,
-  threads: Map<string, ThreadRuntime>,
-  cwd: string,
-  fallback?: ModelRef,
-): Promise<ModelRef | undefined> {
-  const paths = await resolvePaths(cwd);
-  const ordered = (await listSessions(paths.sessions))
-    .filter((session) => session.cwd === cwd)
-    .map<SessionSummary>((session) => ({
-      id: session.id,
-      path: session.path,
-      cwd: session.cwd,
-      name: session.name,
-      created: session.created.toISOString(),
-      modified: session.modified.toISOString(),
-      messageCount: session.messageCount,
-      firstUserMessage: session.firstUserMessage,
-      parentSession: session.parentSession,
-    }));
-
-  for (const summary of ordered) {
-    const runtime = threads.get(summary.id);
-    const runtimeModel = runtime?.manager.getCurrentModel() ?? runtime?.model;
-    if (runtimeModel) return runtimeModel;
-    if (!summary.path) continue;
-
-    try {
-      const { entries } = await readSessionFile(summary.path);
-      const leafId = entries.length > 0 ? entries[entries.length - 1].id : null;
-      const model = buildSessionContext(entries, leafId).currentModel;
-      if (model) return model;
-    } catch {
-      // Ignore unreadable session files and continue.
-    }
-  }
-
-  return fallback;
 }

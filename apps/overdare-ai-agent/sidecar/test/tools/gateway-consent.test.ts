@@ -121,6 +121,40 @@ describe("createGatewayConsentService", () => {
     expect(backend.get().noticeAcknowledged).toBe(true);
   });
 
+  test("concurrent refresh() calls share one gateway request and mark the state loaded", async () => {
+    const calls = installConsentSpy("granted");
+    const backend = createGatewayConsentService();
+    expect(backend.isLoaded()).toBe(false);
+
+    await Promise.all([backend.refresh(), backend.refresh()]);
+
+    expect(calls.filter((call) => call.url.endsWith("/v1/consent"))).toHaveLength(1);
+    expect(backend.isLoaded()).toBe(true);
+  });
+
+  test("a refresh that started before set() cannot overwrite it", async () => {
+    const getStarted = Promise.withResolvers<void>();
+    const releaseGet = Promise.withResolvers<void>();
+    globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      if (!String(input).endsWith("/v1/consent")) return new Response("{}", { status: 404 });
+      if ((init?.method ?? "GET") === "GET") {
+        getStarted.resolve();
+        await releaseGet.promise;
+        return new Response(JSON.stringify({ status: "none" }), { status: 200 });
+      }
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    const backend = createGatewayConsentService();
+
+    const refreshing = backend.refresh();
+    await getStarted.promise;
+    await backend.set({ serviceImprovement: true });
+    releaseGet.resolve();
+    await refreshing;
+
+    expect(backend.isGranted()).toBe(true);
+  });
+
   test("set() preserves current state when gateway fails", async () => {
     installConsentSpy("granted");
     const backend = createGatewayConsentService();

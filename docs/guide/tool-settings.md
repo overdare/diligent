@@ -118,8 +118,9 @@ Normalization rules:
 - plugin packages stay present when you want them configured
 - plugin tools store only `false` overrides
 - default `conflictPolicy: "error"` is omitted when possible
+- default `codeMode: "on"` is omitted; explicit `off` and `only` overrides are retained
 
-`tools.codeMode` (`off` | `on` | `only`) switches tool calling to JavaScript `exec` scripts; it is file-only and preserved by tool-settings writes. See `docs/guide/code-mode.md`.
+`tools.codeMode` (`off` | `on` | `only`) defaults to `on`, providing JavaScript `exec` scripts alongside direct tools. It is file-only; tool-settings writes preserve explicit `off` and `only` choices. See `docs/guide/code-mode.md`.
 
 ## Conflict policy
 

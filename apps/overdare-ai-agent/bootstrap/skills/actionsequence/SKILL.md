@@ -7,6 +7,8 @@ description: "Handles Action Sequence asset creation/editing, track layout (Anim
 
 > **Naming rule**: Asset/system = **Action Sequence**, editor = **Action Sequencer** (editor only).
 
+Author ActionSequence assets and tracks with `studiorpc_action_sequencer_service_apply_json`; do not substitute `execute_luau` instance creation or property writes for this authoring path. Read `references/json-format.md` before building the payload.
+
 ### Lifecycle
 
 `ActionRunner:Play(sequencerId)` → asset is cloned under the character's Humanoid → ServerRuntime/ClientRuntime execute → clone is destroyed on sequence end (all child event connections auto-disconnect). ServerRuntime/ClientRuntime callbacks receive the executing character as `self`.

@@ -15,12 +15,25 @@ const levelBrowseMock = mock(async () => [
   { guid: "WORKSPACE_GUID", name: "Workspace", class: "Folder", children: [] },
 ]);
 
+const schemaSearchMock = mock(async (_params?: Record<string, unknown>) => ({
+  schemaVersion: "unicode-build",
+  classes: [
+    {
+      class: "FutureWidget",
+      description: "\uD55C\uAE00 \uC124\uBA85",
+      creatable: true,
+      service: false,
+      properties: [{ name: "Material", description: "\uC7AC\uC9C8" }],
+    },
+  ],
+}));
 const nativeCalls: Array<{ method: string; params?: Record<string, unknown> }> = [];
 
 mock.module("../src/tools/studiorpc/rpc.ts", () => ({
   StudioRpcError,
   applyLevelChanges: async () => ({ ok: true }),
   call: (method: string, params?: Record<string, unknown>) => {
+    if (method === "instance.schema.search") return schemaSearchMock(params);
     if (
       [
         "proceduralmodel.api",
@@ -193,7 +206,7 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("native geometry tools and skill are exposed", async () => {
+  test("native model builder skill and RPCs are exposed without the retired local runner", async () => {
     const registries = await buildRegistries({
       cwd: process.cwd(),
       bootstrapDir: join(import.meta.dir, "../../bootstrap"),
@@ -201,6 +214,7 @@ describe("OVERDARE MCP server", () => {
     });
     expect(registries.tools.has("studiorpc_execute_luau")).toBe(true);
     expect(registries.tools.has("studiorpc_instance_schema_search")).toBe(true);
+    expect(registries.tools.has("studiorpc_instance_upsert")).toBe(false);
     expect(registries.tools.has("studiorpc_procedural_run")).toBe(false);
     expect([...registries.tools.keys()]).toEqual(
       expect.arrayContaining([
@@ -210,9 +224,12 @@ describe("OVERDARE MCP server", () => {
         "studiorpc_proceduralmodel_validate",
       ]),
     );
-    expect(registries.tools.get("load_skill")?.description).toContain("geometry-recipe");
+    const skillCatalog = registries.tools.get("load_skill")?.description;
+    expect(skillCatalog).toContain("procedural-model-builder");
+    expect(skillCatalog).not.toContain("geometry-recipe");
+    expect(skillCatalog).not.toContain("procedural-builder");
     const skill = await registries.tools.get("load_skill")!.execute(
-      { name: "geometry-recipe" },
+      { name: "procedural-model-builder" },
       {
         toolCallId: "geometry-guide",
         signal: new AbortController().signal,
@@ -220,6 +237,40 @@ describe("OVERDARE MCP server", () => {
       },
     );
     expect(skill.metadata?.error).not.toBe(true);
+    expect(skill.output).toContain("studiorpc_proceduralmodel_api");
+    expect(skill.output).not.toContain("studiorpc_instance_upsert");
+  });
+
+  test("MCP full discovery reaches Studio as an empty request and keeps Korean catalog descriptions", async () => {
+    schemaSearchMock.mockClear();
+    const client = await connectClient(await makeBootstrapDir());
+    try {
+      const result = await client.callTool({ name: "studiorpc_instance_schema_search", arguments: {} });
+      expect(schemaSearchMock).toHaveBeenCalledWith({});
+      const content = result.content as Array<{ type: string; text: string }>;
+      const catalog = JSON.parse(content[0].text);
+      expect(catalog.classes[0].description).toBe("\uD55C\uAE00 \uC124\uBA85");
+      expect(catalog.classes[0]).not.toHaveProperty("properties");
+      const tools = await client.listTools();
+      expect(tools.tools.map((t) => t.name)).not.toContain("studiorpc_instance_upsert");
+    } finally {
+      await client.close();
+    }
+  });
+
+  test.each([
+    { query: "" },
+    { classes: ["FutureWidget"], query: "" },
+  ])("MCP rejects an empty query before contacting Studio: %j", async (input) => {
+    schemaSearchMock.mockClear();
+    const client = await connectClient(await makeBootstrapDir());
+    try {
+      const result = await client.callTool({ name: "studiorpc_instance_schema_search", arguments: input });
+      expect(result.isError).toBe(true);
+      expect(schemaSearchMock).not.toHaveBeenCalled();
+    } finally {
+      await client.close();
+    }
   });
 
   test.each([undefined, false])("MCP hides autonomous playtest when its override is %s", async (enabled) => {

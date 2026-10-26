@@ -11,12 +11,8 @@ import {
 } from "./constants";
 import type { CollabItem, ToolItem, VirtualMessageRow } from "./types";
 
-export function estimateRowOuterHeight(row: VirtualMessageRow, index: number, rowCount: number): number {
-  return (
-    row.estimatedSize +
-    (index === 0 ? MESSAGE_LIST_VERTICAL_PADDING_PX : 0) +
-    (index < rowCount - 1 ? MESSAGE_ROW_GAP_PX : MESSAGE_LIST_VERTICAL_PADDING_PX)
-  );
+export function estimateRowOuterHeight(row: VirtualMessageRow): number {
+  return row.estimatedSize + (row.kind === "bottom" ? MESSAGE_LIST_VERTICAL_PADDING_PX : MESSAGE_ROW_GAP_PX);
 }
 
 function estimateTextHeight(text: string, baseHeight: number): number {

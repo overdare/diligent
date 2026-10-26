@@ -129,13 +129,17 @@ describe("applyToolConfigPatch", () => {
     });
   });
 
-  it("keeps the file-only codeMode setting when a tool-settings patch is applied", () => {
+  it("preserves explicit off/only modes across tool-settings patches and omits default on", () => {
     expect(applyToolConfigPatch({ codeMode: "only", builtin: { bash: false } }, { builtin: { bash: true } })).toEqual({
       codeMode: "only",
     });
     expect(applyToolConfigPatch({ codeMode: "off" }, { builtin: { bash: false } })).toEqual({
+      codeMode: "off",
       builtin: { bash: false },
     });
+    expect(
+      applyToolConfigPatch({ codeMode: "on", builtin: { bash: false } }, { builtin: { bash: true } }),
+    ).toBeUndefined();
   });
 });
 

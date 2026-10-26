@@ -19,6 +19,11 @@ export function getRememberedOpen(key: string): boolean | undefined {
   return openStates.get(key);
 }
 
+/** Records a state the reader saw without choosing it, so regrouping does not collapse it under them. */
+export function rememberShownOpen(key: string, open: boolean): void {
+  if (!openStates.has(key)) openStates.set(key, open);
+}
+
 export function useRememberedOpen(key: string, initialOpen: boolean): [boolean, (open: boolean) => void] {
   const [open, setOpenState] = useState(() => openStates.get(key) ?? initialOpen);
   const setOpen = useCallback(

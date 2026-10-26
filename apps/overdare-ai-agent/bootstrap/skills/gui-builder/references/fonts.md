@@ -62,7 +62,7 @@ Choose a supported face for native GUI text. Source: the supplied internal Studi
 
 Replace the sample hierarchy with the verified target.
 
-Use a family asset ID when the catalog provides one. The Editor VM uses `game.StarterGui` or another direct hierarchy path; it does not support `game:GetService`. This restriction applies to the Editor VM, not normal runtime LocalScripts.
+Use a family asset ID when the catalog provides one. In the Editor VM, access StarterGui through `game.StarterGui` or `game:GetService("StarterGui")`.
 
 ```lua
 local label = game.StarterGui.MainGui.TitleLabel
@@ -84,27 +84,6 @@ label.FontFace = Font.fromName(
 	Enum.FontWeight.Bold,
 	Enum.FontStyle.Normal
 )
-```
-
-## Instance upsert assignment
-
-For a focused TextLabel or TextButton edit, pass the public shape below. The sidecar adds the internal `ObjectType: "Font"` tag. Supply all three public members so the authored choice is visible in the request.
-
-```json
-{
-  "items": [
-    {
-      "guid": "<TextLabel or TextButton GUID>",
-      "properties": {
-        "FontFace": {
-          "Family": "ovdrassetid://900004166",
-          "Weight": "SemiBold",
-          "Style": "Normal"
-        }
-      }
-    }
-  ]
-}
 ```
 
 Use `studiorpc_instance_read` after the edit for exact Family, Weight, and Style readback. Readback confirms the authored value, not actual glyph coverage or absence of font fallback. Check a focused Studio screenshot with Studio in the foreground, and play-test the actual viewport when relevant. Inspect clipping, wrapping, text/background contrast, and localized strings.

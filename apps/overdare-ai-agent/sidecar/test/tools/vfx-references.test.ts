@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { vfxLayerSourceNames } from "../../src/tools/studiorpc/methods/instance.params";
+import { vfxLayerSourceNames } from "../../src/tools/studiorpc/methods/vfx-recipe.params";
 
 const REF_DIR = join(import.meta.dir, "../../../bootstrap/skills/vfx-recipe/references");
 const LAYER_TO_NAMES: Record<string, readonly string[]> = {
@@ -17,10 +17,11 @@ describe("vfx-recipe bundled references", () => {
       .filter((line) => line.startsWith("| VFX_"));
     expect(rows.length).toBeGreaterThan(100);
     for (const row of rows) {
-      // | Resource | DisplayName | Category | Subcategory | Genre | Keywords |
+      // | Resource | PresetName | DisplayName | Category | Subcategory | Genre | Keywords |
       const cells = row.split("|").map((c) => c.trim());
       expect(cells[1]).toMatch(/^VFX_/);
-      expect(cells.length).toBe(8); // leading/trailing empty + 6 columns
+      expect(cells.length).toBe(9); // leading/trailing empty + 7 columns
+      expect(cells[2].length).toBeGreaterThan(0);
     }
   });
 

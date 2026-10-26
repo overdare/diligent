@@ -10,13 +10,32 @@ const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
+// Constructing an Intl.DateTimeFormat costs far more than formatting with one, and every rendered
+// message formats its timestamp, so formatters are shared per distinct option set.
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+function cachedFormatter(locale: string | undefined, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale ?? ""}|${JSON.stringify(options)}`;
+  let formatter = formatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, options);
+    formatters.set(key, formatter);
+  }
+  return formatter;
+}
+
+let hour12Preference: boolean | undefined;
+
 function localHour12Preference(): boolean {
-  const hourCycle = new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hourCycle;
-  return hourCycle === "h11" || hourCycle === "h12";
+  if (hour12Preference === undefined) {
+    const hourCycle = cachedFormatter(undefined, { hour: "numeric" }).resolvedOptions().hourCycle;
+    hour12Preference = hourCycle === "h11" || hourCycle === "h12";
+  }
+  return hour12Preference;
 }
 
 function localYear(timestamp: number, timeZone?: string): string {
-  return new Intl.DateTimeFormat("en-US", { year: "numeric", ...(timeZone ? { timeZone } : {}) }).format(timestamp);
+  return cachedFormatter("en-US", { year: "numeric", ...(timeZone ? { timeZone } : {}) }).format(timestamp);
 }
 
 function partValue(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string {
@@ -61,7 +80,7 @@ export function formatMessageTimestamp(timestamp: number, options: MessageTimest
   }
 
   const includeYear = localYear(timestamp, options.timeZone) !== localYear(now, options.timeZone);
-  const formatter = new Intl.DateTimeFormat("en-US", {
+  const formatter = cachedFormatter("en-US", {
     month: "short",
     day: "numeric",
     ...(includeYear ? { year: "numeric" } : {}),
@@ -80,7 +99,7 @@ export function formatMessageTimestampTooltip(
   timestamp: number,
   options: Pick<MessageTimestampFormatOptions, "timeZone"> = {},
 ): string {
-  const formatter = new Intl.DateTimeFormat("en-US", {
+  const formatter = cachedFormatter("en-US", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

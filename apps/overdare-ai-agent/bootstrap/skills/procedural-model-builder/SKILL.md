@@ -1,5 +1,5 @@
 ---
-name: geometry-recipe
+name: procedural-model-builder
 description: Author and edit OVERDARE ProceduralModels — Python geometry recipes baked into MeshParts with material presets and tints. Use when creating a ProceduralModel or changing an existing one's recipe, Size, or attributes.
 ---
 
@@ -17,6 +17,18 @@ Call `studiorpc_proceduralmodel_api` once at the start for a working template, m
 enums, and the available function names, then query it by name for signatures. Recipes use Unreal
 Python (`import unreal`, `unreal.OvdrGeometry`, `ovdr_parts`), not Blender (`bpy`). Do not guess an
 API from memory; if a function you need is not in the returned API, say so instead of inventing one.
+
+Start from a complete, working template or the model's existing working recipe.
+Copy the template and change its marked EDIT sections when present; otherwise
+limit changes to the requested generation rules, parameters and materials. Keep
+its validated imports, entry point, error checks and mesh cleanup unless the
+change requires modifying them. Do not rebuild a working recipe from scratch.
+
+The original material reference uses `Rust` / `RustySteel` for iron-like weathered
+surfaces and `Plank` for sawn timber. These are selection examples, not defaults
+for every surface. Use the current material hints and native reference to confirm
+supported names; do not invent `Iron` or `Steel` from an appearance description,
+or copy the template's Plank onto unrelated surfaces without choosing a material.
 
 Nothing is pre-injected into a recipe; include the imports it needs (`import unreal`,
 `G = unreal.OvdrGeometry`, `import ovdr_parts as parts`, or `from ovdr_brickcolor import bc`).

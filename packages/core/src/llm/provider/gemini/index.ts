@@ -8,9 +8,9 @@ import { classifyProviderHttpError } from "../../provider-errors";
 import type { Model, StreamFunction, StreamOptions, ThinkingEffort, ToolDefinition } from "../../types";
 import { CONTEXT_OVERFLOW_ERROR_MESSAGE, ProviderError, ProviderErrorReason, ProviderErrorType } from "../../types";
 import { convertToAISDKTools, createAISDKStream } from "../ai-sdk";
-import { flattenGeminiUnionSchema, normalizeGeminiToolSchema } from "./tool-schema";
+import { normalizeGeminiToolSchema } from "./tool-schema";
 
-export { flattenGeminiUnionSchema, normalizeGeminiToolSchema } from "./tool-schema";
+export { normalizeGeminiToolSchema } from "./tool-schema";
 
 type ProviderToolUseBlock = Extract<ContentBlock, { type: "provider_tool_use" }>;
 type WebSearchResultBlock = Extract<ContentBlock, { type: "web_search_result" }>;
@@ -50,11 +50,8 @@ export function buildGeminiTools(tools: ToolDefinition[]): ToolSet {
   );
   const compatibleTools = tools.map((definition): ToolDefinition => {
     if (definition.kind !== "function") return definition;
-    // A root union is rejected whatever else the request carries, so it is folded away for every
-    // schema. Size-driven simplification stays tied to native web tools, which are what push a
-    // request over the schema budget.
-    const flattened = flattenGeminiUnionSchema(definition.inputSchema);
-    const compatible = hasNativeWeb ? normalizeGeminiToolSchema(flattened) : flattened;
+    // Resolve refs before moving root branches. Only native-web requests need size-driven pruning.
+    const compatible = normalizeGeminiToolSchema(definition.inputSchema, hasNativeWeb ? undefined : Infinity);
     return { ...definition, inputSchema: asObjectJsonSchema(compatible) };
   });
   const result = convertToAISDKTools(compatibleTools);

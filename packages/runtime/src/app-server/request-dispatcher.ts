@@ -32,9 +32,10 @@ import {
   handleImageUpload,
 } from "./config-handlers";
 import { type ExperimentConfigManager, handleExperimentsList, handleExperimentsSet } from "./experiment-handlers";
+import { readFilePreview, resolveFilePreviewCwd } from "./file-handlers";
 import { handleKnowledgeList, handleKnowledgeUpdate } from "./knowledge-handlers";
 import { handleMcpList, handleMcpLoginStart, handleMcpLogout } from "./mcp-handlers";
-import { handleThreadDelete, handleThreadList, handleThreadResume } from "./session-handlers";
+import { handleThreadDelete, handleThreadHistory, handleThreadList, handleThreadResume } from "./session-handlers";
 import { handleSkillsList, handleSkillsSet, type SkillConfigManager } from "./skill-handlers";
 import { handleSubagentsList, handleSubagentsSet, type SubagentConfigManager } from "./subagent-handlers";
 import {
@@ -64,6 +65,7 @@ export interface ConnectedPeer {
   peer: RpcPeer;
   subscriptions: Set<string>;
   currentThreadId: string | null;
+  threadSelection?: number;
   cwd: string;
   mode: Mode;
   effort: ThinkingEffort;
@@ -164,6 +166,7 @@ export function applySessionDefaults(
   }
 
   const threadScoped: string[] = [
+    DILIGENT_CLIENT_REQUEST_METHODS.FILE_READ,
     DILIGENT_CLIENT_REQUEST_METHODS.TURN_START,
     DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT,
     DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER,
@@ -236,23 +239,35 @@ export async function dispatchClientRequest(
       };
     }
 
-    case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START: {
-      const result = await handleThreadStart(ctx.threadHandlersCtx, request.params);
-      ctx.setConnectionCurrentThreadId(connectionId, result.threadId);
-      return result;
-    }
-
+    case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START:
     case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME: {
-      const result = await handleThreadResume(ctx.threadHandlersCtx, request.params);
-      if (result.found && result.threadId) ctx.setConnectionCurrentThreadId(connectionId, result.threadId);
+      const conn = ctx.getConnection(connectionId);
+      const selection = (conn?.threadSelection ?? 0) + 1;
+      if (conn) conn.threadSelection = selection;
+      const result =
+        request.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START
+          ? await handleThreadStart(ctx.threadHandlersCtx, request.params)
+          : await handleThreadResume(ctx.threadHandlersCtx, request.params);
+      // A slow restore must not become the implicit target after a newer navigation.
+      if (result.threadId && conn?.threadSelection === selection) {
+        ctx.setConnectionCurrentThreadId(connectionId, result.threadId);
+      }
       return result;
     }
 
     case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST:
-      return handleThreadList(ctx.threadHandlersCtx, request.params.limit, request.params.includeChildren);
+      return handleThreadList(
+        ctx.threadHandlersCtx,
+        request.params.limit,
+        request.params.includeChildren,
+        request.params.cursor,
+      );
 
     case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ:
-      return handleThreadRead(ctx.threadHandlersCtx, request.params.threadId);
+      return handleThreadRead(ctx.threadHandlersCtx, request.params.threadId, request.params.includeItems);
+
+    case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY:
+      return handleThreadHistory(ctx.threadHandlersCtx, request.params);
 
     case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_GET:
     case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_SET: {
@@ -487,6 +502,15 @@ export async function dispatchClientRequest(
         server: request.params.server,
         getMcpServers: ctx.threadHandlersCtx.getMcpServers,
       });
+
+    case DILIGENT_CLIENT_REQUEST_METHODS.FILE_READ: {
+      const cwd = await resolveFilePreviewCwd(
+        ctx.threadHandlersCtx,
+        request.params.threadId,
+        ctx.getConnection(connectionId)?.cwd ?? ctx.cwd ?? process.cwd(),
+      );
+      return readFilePreview(cwd, request.params.path);
+    }
 
     case DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD: {
       const conn = ctx.getConnection(connectionId);

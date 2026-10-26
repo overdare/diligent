@@ -4,11 +4,11 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import type { Tool } from "./types";
 
 /**
- * A JSON Schema usable as a function-tool input schema by every provider.
+ * The canonical object-shaped JSON Schema for a function tool, before provider adaptation.
  *
  * The `type: "object"` tag is part of the type on purpose: Anthropic rejects the whole request
- * with `tools.N.custom.input_schema.type: Field required` when it is missing, so making it a
- * type-level obligation stops an unusable schema from reaching any provider adapter.
+ * with `tools.N.custom.input_schema.type: Field required` when it is missing. This makes the
+ * required root type explicit; adapters handle additional provider-specific restrictions.
  */
 export type ObjectJsonSchema = Record<string, unknown> & { type: "object" };
 
@@ -19,7 +19,8 @@ export type ObjectJsonSchema = Record<string, unknown> & { type: "object" };
  *
  * Zod schemas whose top level is a union (`z.union`, `z.discriminatedUnion`) convert to
  * `{ anyOf: [...] }`, which carries no `type`. The branches already describe every accepted
- * shape, so tag the schema as an object instead of rewriting or merging them.
+ * shape, so tag the canonical schema as an object instead of rewriting or merging them.
+ * Provider adapters handle wire compatibility, including unsupported root compositions.
  */
 export function toToolInputSchema(tool: Pick<Tool, "parameters" | "inputSchema">): ObjectJsonSchema {
   return asObjectJsonSchema(tool.inputSchema ?? stripSchemaKeyword(zodToJsonSchema(tool.parameters)));

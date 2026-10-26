@@ -12,6 +12,8 @@ interface SidebarProps {
   threadList: SessionSummary[];
   activeThreadId: string | null;
   attentionThreadIds?: Set<string>;
+  isLoading?: boolean;
+  error?: string | null;
   onNewThread: () => void;
   onOpenThread: (threadId: string) => void;
   onDeleteThread?: (threadId: string) => void;
@@ -22,6 +24,8 @@ function SidebarImpl({
   threadList,
   activeThreadId,
   attentionThreadIds,
+  isLoading,
+  error,
   onNewThread,
   onOpenThread,
   onDeleteThread,
@@ -53,6 +57,12 @@ function SidebarImpl({
           <SquarePen className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
           <span>New conversation</span>
         </button>
+        {isLoading ? <output className="block px-3 py-2 text-xs text-muted">Loading conversations…</output> : null}
+        {error ? (
+          <p role="alert" className="px-3 py-2 text-xs text-danger">
+            {error}
+          </p>
+        ) : null}
 
         {threadList.map((thread) => {
           const isActive = activeThreadId === thread.id;
@@ -81,8 +91,12 @@ function SidebarImpl({
                 </div>
                 <div className="mt-1 flex items-center gap-1.5 text-xs text-muted">
                   <span>{time}</span>
-                  <span className="opacity-40">·</span>
-                  <span>{thread.messageCount} msg</span>
+                  {thread.messageCount !== undefined ? (
+                    <>
+                      <span className="opacity-40">·</span>
+                      <span>{thread.messageCount} msg</span>
+                    </>
+                  ) : null}
                 </div>
               </button>
               {onDeleteThread ? (

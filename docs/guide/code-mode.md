@@ -2,14 +2,14 @@
 
 Code mode lets the model orchestrate tool calls by writing a JavaScript program instead of issuing one tool call per model turn. It follows the shape of Codex Code Mode: an `exec` tool runs a script that calls the other tools as async functions, and a wait tool resumes long-running scripts.
 
-## Enable it
+## Configure it
 
-Code mode is a file-only setting under `tools` in the global `~/.diligent/config.jsonc` (`~/.<namespace>/config.jsonc` for product namespaces such as `~/.overdare/`). The config loader honors `tools` only from the global layer and ignores project-level `tools` overrides.
+Code mode defaults to `on` for root and child agents on every provider. To override it, use the file-only `tools.codeMode` setting in the global `~/.diligent/config.jsonc` (`~/.<namespace>/config.jsonc` for product namespaces such as `~/.overdare/`). The config loader honors `tools` only from the global layer and ignores project-level `tools` overrides.
 
 ```jsonc
 {
   "tools": {
-    "codeMode": "only" // "off" (default) | "on" | "only"
+    "codeMode": "on" // "off" | "on" (default) | "only"
   }
 }
 ```
@@ -17,10 +17,10 @@ Code mode is a file-only setting under `tools` in the global `~/.diligent/config
 | Value | Model-visible tools |
 |---|---|
 | `off` | Unchanged. |
-| `on` | Every direct tool, plus `exec` and `exec_wait`. Saves round trips; tool schemas are still sent. |
+| `on` (default) | Every direct tool, plus `exec` and `exec_wait`. The model can choose either path; tool schemas are still sent. |
 | `only` | `exec`, `exec_wait`, and the direct-only tools. Nested tools are hidden from the tool list; their descriptions and TypeScript declarations move into the `exec` description. |
 
-After a config reload (`config/reload`, e.g. Web/TUI `/reload`) or server restart, new threads use the new value. A thread whose agent is already loaded keeps its tool list until the agent is rebuilt (server restart) or its tools refresh on a model or fast-mode change. Tool-settings writes from Web/TUI preserve the stored value.
+After a config reload (`config/reload`, e.g. Web/TUI `/reload`) or server restart, new threads use the new value. A thread whose agent is already loaded keeps its tool list until the agent is rebuilt (server restart) or its tools refresh on a model or fast-mode change. Existing explicit `off` and `only` settings override the default and survive tool-settings writes from Web/TUI; the default `on` value is omitted when normalizing the stored config.
 
 Direct-only tools never become nested: tools flagged `codeModeDirect` in `packages/runtime/src/tools/tool-metadata.ts` (`plan`, `request_user_input`, `skill`, `read_image`, goal tools, collab tools) and provider-native tools (`modelExposure`). Their results drive client UI, user interaction, or image content that cannot cross the JSON-only guest bridge.
 

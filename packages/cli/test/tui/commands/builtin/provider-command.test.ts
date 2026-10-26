@@ -73,6 +73,7 @@ function createMockContext(pm: ProviderManager): {
     resumeThread: async () => "thread-1",
     deleteThread: async () => true,
     listThreads: async () => [],
+    loadOlderHistory: async () => {},
     readThread: async () => null,
     onModelChanged: () => {},
     onEffortChanged: () => {},

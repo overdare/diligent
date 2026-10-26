@@ -189,6 +189,11 @@ export function App() {
     },
     [closeSidebar, openThread, sidebarIsOverlay],
   );
+  const setPendingDeleteThreadId = threadMgr.setPendingDeleteThreadId;
+  const handleSidebarDeleteThread = useCallback(
+    (id: string) => setPendingDeleteThreadId(id),
+    [setPendingDeleteThreadId],
+  );
   const handleReportMessage = useCallback(
     (item: Extract<RenderItem, { kind: "user" | "assistant" }>) => {
       if (!state.activeThreadId) return;
@@ -272,9 +277,11 @@ export function App() {
             threadList={state.threadList}
             activeThreadId={state.activeThreadId}
             attentionThreadIds={attentionThreadIds}
+            isLoading={threadMgr.isLoadingThreads}
+            error={threadMgr.threadListError}
             onNewThread={handleSidebarNewThread}
             onOpenThread={handleSidebarOpenThread}
-            onDeleteThread={(id) => threadMgr.setPendingDeleteThreadId(id)}
+            onDeleteThread={handleSidebarDeleteThread}
             onClose={closeSidebar}
           />
         </ResponsiveSidebar>
@@ -302,21 +309,46 @@ export function App() {
             }}
           />
 
-          <MessageList
-            items={state.items}
-            threadStatus={state.threadStatus}
-            threadCwd={state.activeThreadCwd ?? undefined}
-            hasProvider={providerMgr.effectiveHasProvider}
-            oauthPending={oauthPending}
-            onOpenProviders={handleOpenProviders}
-            onQuickConnectChatGPT={handleQuickConnectChatGPT}
-            isCompacting={state.isCompacting}
-            approvalPrompt={approvalPrompt}
-            questionPrompt={questionPrompt}
-            onLoadChildThread={loadChildThread}
-            onReportMessage={handleReportMessage}
-            onErrorRecovery={handleErrorRecovery}
-          />
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            {threadMgr.historyError ? (
+              // Overlaid rather than stacked above the list: a status line that comes and goes must not
+              // move the transcript the reader is looking at.
+              <div className="absolute inset-x-0 top-0 z-10 flex flex-col bg-surface-dark/90">
+                <div role="alert" className="px-7 py-2 text-sm text-danger">
+                  {threadMgr.historyError}
+                  {state.activeThreadId ? (
+                    <button
+                      type="button"
+                      className="ml-3 underline"
+                      onClick={() => void threadMgr.openThread(state.activeThreadId!)}
+                    >
+                      Retry opening
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            <MessageList
+              threadId={state.activeThreadId}
+              items={state.items}
+              threadStatus={state.threadStatus}
+              threadCwd={state.activeThreadCwd ?? undefined}
+              hasProvider={providerMgr.effectiveHasProvider}
+              oauthPending={oauthPending}
+              onOpenProviders={handleOpenProviders}
+              onQuickConnectChatGPT={handleQuickConnectChatGPT}
+              isCompacting={state.isCompacting}
+              approvalPrompt={approvalPrompt}
+              questionPrompt={questionPrompt}
+              onLoadChildThread={loadChildThread}
+              onReportMessage={handleReportMessage}
+              onErrorRecovery={handleErrorRecovery}
+              hasEarlierHistory={Boolean(state.historyCursor)}
+              isLoadingEarlierHistory={threadMgr.isLoadingEarlier}
+              earlierHistoryFailed={threadMgr.earlierHistoryFailed}
+              onLoadEarlierHistory={threadMgr.loadEarlierHistory}
+            />
+          </div>
 
           {state.planState?.steps.some((s) => s.status !== "done") && <PlanPanel planState={state.planState!} />}
 

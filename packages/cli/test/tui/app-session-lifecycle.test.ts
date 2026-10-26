@@ -1,9 +1,12 @@
-// @summary Tests resume history hydration behavior in AppSessionLifecycle
+// @summary Tests startup metadata synchronization and bounded history presentation
 
 import { describe, expect, mock, test } from "bun:test";
+import type { ThreadItem } from "@diligent/protocol";
 import { resolveModel } from "@diligent/runtime";
 import { AppRuntimeState } from "../../src/tui/app-runtime-state";
 import { AppSessionLifecycle } from "../../src/tui/app-session-lifecycle";
+import { appendHistoryItems } from "../../src/tui/components/history-items";
+import type { ThreadStore } from "../../src/tui/components/thread-store";
 
 const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
 
@@ -48,6 +51,22 @@ function createLifecycleWithThreadRead(threadRead: unknown, runtime = new AppRun
   });
 
   return {
+    renderHistory: () => {
+      // Rendering fixtures supply items; metadata-only fixtures never call this helper.
+      const history = threadRead as { items: ThreadItem[] };
+      appendHistoryItems(
+        {
+          addUserMessage,
+          addAssistantMessage,
+          addThinkingMessage,
+          addToolResultMessage,
+          addStructuredItem,
+          addLines,
+          handleEvent,
+        } as unknown as ThreadStore,
+        history.items,
+      );
+    },
     lifecycle,
     addUserMessage,
     addAssistantMessage,
@@ -172,8 +191,8 @@ describe("AppSessionLifecycle", () => {
     expect(setupWizardRun).toHaveBeenCalledTimes(1);
   });
 
-  test("hydrateThreadHistory restores user and assistant messages from snapshot items", async () => {
-    const { lifecycle, addUserMessage, addAssistantMessage, addLines, handleEvent } = createLifecycleWithThreadRead({
+  test("bounded history restores user and assistant messages", async () => {
+    const { renderHistory, addUserMessage, addAssistantMessage, handleEvent } = createLifecycleWithThreadRead({
       items: [
         {
           type: "userMessage",
@@ -199,9 +218,7 @@ describe("AppSessionLifecycle", () => {
       ],
     });
 
-    await (lifecycle as never).hydrateThreadHistory();
-
-    expect(addLines).toHaveBeenCalled();
+    renderHistory();
     expect(addUserMessage).toHaveBeenCalledWith("hello");
     expect(addAssistantMessage).toHaveBeenCalledWith("hi there");
     expect(handleEvent).toHaveBeenCalledWith({
@@ -211,8 +228,8 @@ describe("AppSessionLifecycle", () => {
     });
   });
 
-  test("hydrateThreadHistory restores structured context notices", async () => {
-    const { lifecycle, addLines } = createLifecycleWithThreadRead({
+  test("bounded history restores structured context notices", async () => {
+    const { renderHistory, addLines } = createLifecycleWithThreadRead({
       items: [
         {
           type: "contextMessage",
@@ -228,13 +245,13 @@ describe("AppSessionLifecycle", () => {
       ],
     });
 
-    await (lifecycle as never).hydrateThreadHistory();
+    renderHistory();
 
     expect(addLines.mock.calls.flat(2).join("\n")).toContain("Studio changes detected");
     expect(addLines.mock.calls.flat(2).join("\n")).toContain("Added: Ramp");
   });
 
-  test("hydrateThreadHistory restores persisted errors and hints recovery only for the latest failure", async () => {
+  test("bounded history restores persisted errors and hints recovery only for the latest failure", async () => {
     const failure = (itemId: string) => ({
       type: "error",
       itemId,
@@ -245,7 +262,7 @@ describe("AppSessionLifecycle", () => {
         presentation: { message: `Network failed ${itemId}`, recovery: { kind: "retry" } },
       },
     });
-    const { lifecycle, addLines } = createLifecycleWithThreadRead({
+    const { renderHistory, addLines } = createLifecycleWithThreadRead({
       items: [
         failure("e1"),
         { type: "userMessage", itemId: "u2", message: { role: "user", content: "again", timestamp: 3 }, timestamp: 3 },
@@ -253,7 +270,7 @@ describe("AppSessionLifecycle", () => {
       ],
     });
 
-    await (lifecycle as never).hydrateThreadHistory();
+    renderHistory();
 
     const rendered = addLines.mock.calls.flat(2).join("\n");
     expect(rendered).toContain("Network failed e1");
@@ -263,8 +280,8 @@ describe("AppSessionLifecycle", () => {
     expect(rendered.indexOf("Submit the last prompt again")).toBeGreaterThan(rendered.indexOf("Network failed e2"));
   });
 
-  test("hydrateThreadHistory restores provider-native web blocks as plain transcript lines", async () => {
-    const { lifecycle, addAssistantMessage, addStructuredItem, addLines } = createLifecycleWithThreadRead({
+  test("bounded history restores provider-native web blocks as structured transcript items", async () => {
+    const { renderHistory, addAssistantMessage, addStructuredItem } = createLifecycleWithThreadRead({
       items: [
         {
           type: "agentMessage",
@@ -303,10 +320,9 @@ describe("AppSessionLifecycle", () => {
       ],
     });
 
-    await (lifecycle as never).hydrateThreadHistory();
+    renderHistory();
 
     expect(addAssistantMessage).toHaveBeenCalledWith("Here you go.");
     expect(addStructuredItem).toHaveBeenCalled();
-    expect(addLines).toHaveBeenCalledWith(expect.arrayContaining([expect.stringContaining("[source] Example")]));
   });
 });

@@ -79,7 +79,7 @@ function RenderText({ block }: { block: ToolRenderTextBlock }) {
       <pre
         className={cn(
           toolBlockPreClasses,
-          "max-h-72 overflow-y-auto overscroll-contain font-mono text-xs",
+          "max-h-72 overflow-y-auto font-mono text-xs",
           block.isError ? "text-muted" : "text-text/80",
         )}
       >

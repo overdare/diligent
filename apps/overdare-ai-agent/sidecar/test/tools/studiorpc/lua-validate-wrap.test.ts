@@ -138,40 +138,9 @@ describe("scripts are validated by the tool that wrote them", () => {
     expect((validateCalls()[0].params?.targetGuids as string[])[0]).toBeTruthy();
     expect(result.output).toContain("SUMMARY");
   });
-
-  test("instance_upsert validates a script it added", async () => {
-    const tools = await loadTools(makeStudioProject());
-    await tools
-      .get("studiorpc_instance_upsert")!
-      .execute(
-        { items: [{ class: "Script", parentGuid: WORKSPACE_GUID, name: "Made", properties: { Source: "print(1)" } }] },
-        toolContext(),
-      );
-
-    expect(validateCalls()).toHaveLength(1);
-  });
-
-  test("instance_upsert validates an update that set Source", async () => {
-    const tools = await loadTools(makeStudioProject());
-    await tools
-      .get("studiorpc_instance_upsert")!
-      .execute({ items: [{ guid: SCRIPT_GUID, properties: { Source: "print(9)" } }] }, toolContext());
-
-    expect(validateCalls()).toHaveLength(1);
-    expect(validateCalls()[0].params).toMatchObject({ targetGuids: [SCRIPT_GUID] });
-  });
 });
 
 describe("everything else is left alone", () => {
-  test("an upsert that touched no Lua does not validate", async () => {
-    const tools = await loadTools(makeStudioProject());
-    await tools
-      .get("studiorpc_instance_upsert")!
-      .execute({ items: [{ guid: PART_GUID, properties: { Anchored: true } }] }, toolContext());
-
-    expect(validateCalls()).toHaveLength(0);
-  });
-
   test("a rejected edit writes nothing, so it validates nothing", async () => {
     const tools = await loadTools(makeStudioProject(), async () => "reject");
 

@@ -521,13 +521,13 @@ describe("createAppServerConfig", () => {
     });
 
     expect(observed).toEqual({
-      names: baselineAgent.tools.map((tool) => tool.name),
+      names: baselineAgent.tools.map((tool) => tool.name).filter((name) => name !== "exec" && name !== "exec_wait"),
       cwd: "/tmp/test",
       mode: "plan",
       provider: "anthropic",
     });
     expect(observed?.names).not.toContain("bash");
-    expect(transformedAgent.tools.map((tool) => tool.name)).toEqual(["read"]);
+    expect(transformedAgent.tools.map((tool) => tool.name)).toEqual(["read", "exec", "exec_wait"]);
   });
 
   it("constructs built-in-first Agent-scoped loop hooks once per new Agent", async () => {

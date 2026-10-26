@@ -100,6 +100,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
 
   const paths = await ensureDiligentDir(cwd);
   await migrateLegacyConsentConfig(cwd);
+  void options.consentBackend?.refresh?.();
   const bundledToolProviders = options.bundledToolProviders ?? [];
   const runtimeConfig = await loadRuntimeConfig(cwd, paths, {
     bundledToolProviders,
@@ -124,7 +125,10 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
       serverVersion: resolveServerVersionOverride(),
       toImageUrl: (absPath) => toWebImageUrl(absPath),
       getInitializeResult: async () => {
-        await options.consentBackend?.refresh?.();
+        // Remote consent sync must not hold up initialize; clients fetch it via consent/get.
+        const consentBackend = options.consentBackend;
+        void consentBackend?.refresh?.();
+        const consentKnown = consentBackend && (!consentBackend.refresh || consentBackend.isLoaded?.() === true);
         return {
           cwd,
           mode: runtimeConfig.mode,
@@ -139,7 +143,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
             name: s.name,
             description: s.description,
           })),
-          ...(options.consentBackend ? { consent: options.consentBackend.get() } : {}),
+          ...(consentKnown ? { consent: consentBackend.get() } : {}),
         };
       },
     },

@@ -381,7 +381,7 @@ export class AgentRegistry {
 
         const filteredTools = result.tools.filter((tool) => allowedChildToolNames.has(tool.name));
         const exposedTools = applyCodeMode(filteredTools, {
-          codeMode: this.deps.codeMode ?? "off",
+          codeMode: this.deps.codeMode ?? "on",
           session: childCodeModeSession,
           outputStore: this.deps.toolOutputStore ?? toolOutputStore,
         });

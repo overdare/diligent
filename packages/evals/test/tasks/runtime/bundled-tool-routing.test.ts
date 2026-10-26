@@ -64,7 +64,6 @@ describe("bundled-tool-routing", () => {
   });
 
   test("runs natural-intent routing through real runtime assembly for both default profiles", async () => {
-    expect(DEFAULT_PROFILES).toHaveLength(2);
     for (const profile of DEFAULT_PROFILES) {
       const execution = await assembledExecution(profile);
       expect(bundledToolRoutingTask.evaluate(execution), profile.provider).toEqual({ passed: true });
@@ -80,7 +79,6 @@ describe("bundled-tool-routing", () => {
         },
       ]);
       expect(execution.providerCalls).toHaveLength(2);
-      expect(execution.providerCalls.every((call) => call.tools.items.length === 2)).toBe(true);
       expect(execution.toolCalls).toHaveLength(1);
       expect(finalText(execution)).toBe(execution.world.receipt);
     }

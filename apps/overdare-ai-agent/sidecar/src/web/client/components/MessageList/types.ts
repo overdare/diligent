@@ -11,6 +11,7 @@ import type { RenderItem } from "../../lib/thread-store";
 
 export interface MessageListProps {
   items: RenderItem[];
+  threadId?: string | null;
   threadStatus: ThreadStatus;
   threadCwd?: string;
   hasProvider: boolean;
@@ -33,6 +34,11 @@ export interface MessageListProps {
   onReportMessage?: (item: Extract<RenderItem, { kind: "user" | "assistant" }>) => void;
   /** Runs an error item's recovery; offered only on a trailing failure while idle. */
   onErrorRecovery?: (recovery: ErrorRecovery) => void;
+  hasEarlierHistory?: boolean;
+  isLoadingEarlierHistory?: boolean;
+  /** The last earlier-history request failed; paging waits for an explicit retry. */
+  earlierHistoryFailed?: boolean;
+  onLoadEarlierHistory?: () => void;
 }
 
 export type CollabItem = Extract<RenderItem, { kind: "collab" }>;
@@ -51,9 +57,13 @@ export type CollabRow = MessageListRow & { kind: "collab"; items: CollabItem[] }
 export type ToolGroupRow = MessageListRow & { kind: "toolGroup"; items: ToolItem[] };
 export type MessageRow = MessageListRow & { kind: "message"; item: MessageContentItem; suppressThinking?: boolean };
 
+export type EarlierHistoryState = "available" | "loading" | "failed" | "start";
+
 export interface VirtuosoMessageListContext {
-  rowCount: number;
   transcriptKey: string;
+  /** Undefined when the transcript was never paged, so short threads render no header. */
+  earlierHistory?: EarlierHistoryState;
+  onLoadEarlierHistory?: () => void;
 }
 
 export type VirtualMessageRow =

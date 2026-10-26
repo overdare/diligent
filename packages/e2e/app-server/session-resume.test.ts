@@ -1,11 +1,12 @@
 // @summary App-server session e2e tests for persistence, resume, lookup, and list preview
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProviderError, ProviderErrorType } from "@diligent/core/provider-contract";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS, type ThreadReadResponse } from "@diligent/protocol";
 import type { StreamFunction } from "@diligent/runtime";
+import { ensureDiligentDir } from "@diligent/runtime";
 import { createSimpleStream } from "./helpers/fake-stream";
 import { createProtocolClient, type ProtocolTestClient } from "./helpers/protocol-client";
 import { createTestServer } from "./helpers/server-factory";
@@ -19,6 +20,62 @@ afterEach(async () => {
 });
 
 describe("session-resume", () => {
+  for (const operation of ["thread/start", "thread/resume"] as const) {
+    test(`${operation} does not wait for unrelated session history`, async () => {
+      tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-slow-history-"));
+      const first = createProtocolClient(createTestServer({ cwd: tmpDir }));
+      const threadId = await first.initAndStartThread(tmpDir);
+      await first.sendTurnAndWait(threadId, "saved conversation");
+      first.close();
+
+      const paths = await ensureDiligentDir(tmpDir);
+      const slowPath = join(paths.sessions, "unrelated.jsonl");
+      await Bun.write(slowPath, "unreadable unrelated history");
+      const entered = Promise.withResolvers<"unrelated history">();
+      const released = Promise.withResolvers<void>();
+      const file = Bun.file;
+      const delayedFile = ((...args: Parameters<typeof Bun.file>) => {
+        const source = file(...args);
+        if (String(args[0]) !== slowPath) return source;
+        return new Proxy(source, {
+          get(target, key) {
+            if (key === "text") {
+              return async () => {
+                entered.resolve("unrelated history");
+                await released.promise;
+                return target.text();
+              };
+            }
+            const value = Reflect.get(target, key, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      }) as typeof Bun.file;
+      const delayed = spyOn(Bun, "file").mockImplementation(delayedFile);
+
+      client = createProtocolClient(createTestServer({ cwd: tmpDir }));
+      const pending = client.request(operation, operation === "thread/resume" ? { threadId } : { cwd: tmpDir });
+      try {
+        const result = await Promise.race([pending, entered.promise]);
+        expect(result).not.toBe("unrelated history");
+        const activeId = (result as { threadId: string }).threadId;
+        const history = (await client.request("thread/read", { threadId: activeId })) as ThreadReadResponse;
+        if (operation === "thread/resume") {
+          expect(
+            history.items.some((item) => item.type === "userMessage" && item.message.content === "saved conversation"),
+          ).toBe(true);
+        } else {
+          expect(activeId).not.toBe(threadId);
+          expect(history.items).toEqual([]);
+        }
+      } finally {
+        released.resolve();
+        await pending;
+        delayed.mockRestore();
+      }
+    });
+  }
+
   test("thread/resume by threadId restores context", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-resume-"));
     const streamFn = createSimpleStream("resumed ok");
@@ -44,13 +101,17 @@ describe("session-resume", () => {
     const result = (await client.request("thread/resume", { threadId })) as {
       found: boolean;
       threadId?: string;
-      context?: unknown[];
     };
 
     expect(result.found).toBe(true);
     expect(result.threadId).toBe(threadId);
-    expect(result.context).toBeInstanceOf(Array);
-    expect(result.context!.length).toBeGreaterThan(0);
+    const snapshot = (await client.request("thread/read", { threadId })) as ThreadReadResponse;
+    expect(snapshot.items).toContainEqual(
+      expect.objectContaining({
+        type: "userMessage",
+        message: expect.objectContaining({ content: "hello from first server" }),
+      }),
+    );
   });
 
   test("thread/resume mostRecent returns latest thread", async () => {
