@@ -1698,6 +1698,16 @@ describe("game.screenshot", () => {
     expect(calls.find((call) => call.method === "game.screenshot")?.params).toMatchObject(aim);
   });
 
+  test("forwards the PIE session and client that select a client window", async () => {
+    const { calls, tools } = await providerTools({ path: "C:/shot.png" });
+    const screenshot = tools.find((tool) => tool.name === "studiorpc_game_screenshot");
+    const target = { pieSessionId: "377e372c", clientId: "client-2" };
+
+    await screenshot?.execute(target as never, ctx as never);
+
+    expect(calls.find((call) => call.method === "game.screenshot")?.params).toMatchObject(target);
+  });
+
   test("reports the size Studio captured rather than the size that was asked for", async () => {
     const { tools } = await providerTools({
       path: "C:/shot.png",

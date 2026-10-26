@@ -124,6 +124,15 @@ describe("game.screenshot plumbing", () => {
     expect(() => params.parse({ nope: 1 })).toThrow();
   });
 
+  test("a PIE client window is chosen by session and client together", () => {
+    const target = { pieSessionId: "377e372c", clientId: "client-2" };
+    expect(() => params.parse(target)).not.toThrow();
+    expect(normalizeArgs(params.parse(target))).toEqual({ includeGui: true, ...target });
+    expect(() => params.parse({ pieSessionId: "377e372c" })).toThrow();
+    expect(() => params.parse({ clientId: "client-2" })).toThrow();
+    expect(() => params.parse({ pieSessionId: "", clientId: "" })).toThrow();
+  });
+
   test("the picture comes back with the answer, not as a path to go and fetch", async () => {
     const file = join(tmpdir(), `screenshot-attach-${process.pid}.png`);
     writeFileSync(file, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));

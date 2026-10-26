@@ -20,7 +20,8 @@ export const readOnly = true;
 
 export const description =
   "Capture the active OVERDARE Studio viewport and return the PNG with its file path, captured size, and " +
-  "camera. UI is included by default. Use screenshots for rendered layout, clipping, overlap, and visual " +
+  "camera. UI is included by default. Pass pieSessionId and clientId together to capture a specific PIE " +
+  "client window. Use screenshots for rendered layout, clipping, overlap, and visual " +
   "quality; use studiorpc_game_observe for live property values such as colors and contrast. `locate` projects world " +
   "positions or instance names/paths into the same normalized 0..1 coordinates used by input injection. " +
   "`screen` is the unclamped projected bounds and `onScreen` means inside the camera frustum, not visible " +
@@ -37,6 +38,19 @@ const worldPoint = z.object({
 
 export const params = z
   .object({
+    pieSessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("PIE session of the client window to capture; supply together with clientId."),
+    clientId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "PIE client whose window to capture, as listed by studiorpc_game_pie_status; supply together with " +
+          "pieSessionId. Omit both for the default viewport.",
+      ),
     includeGui: z
       .boolean()
       .optional()
@@ -84,7 +98,10 @@ export const params = z
           "coordinates, projected bounds when size is known, ambiguity details, and onScreen.",
       ),
   })
-  .strict();
+  .strict()
+  .refine((args) => (args.pieSessionId === undefined) === (args.clientId === undefined), {
+    message: "pieSessionId and clientId must be supplied together.",
+  });
 // Default at the RPC boundary (not via zod .default) so every call path —
 // agent runtime and MCP server — sends an explicit includeGui to Studio.
 /** locate is computed here from the returned camera; Studio does not know it. */
