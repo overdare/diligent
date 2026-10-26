@@ -129,6 +129,7 @@ export interface CompactionConfig {
    */
   enabled?: boolean;
   reservePercent: number;
+  /** Budget for the provider-native compaction request; local summarization has its own ceiling. */
   timeoutMs?: number;
 }
 

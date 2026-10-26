@@ -9,6 +9,7 @@ import {
   generateSummary,
   NATIVE_COMPACTION_MIN_INPUT_TOKENS,
 } from "../../src/llm/compaction";
+import type { NativeCompactFn } from "../../src/llm/provider/native-compaction";
 
 // --- Helper factories ---
 
@@ -143,6 +144,72 @@ describe("compact", () => {
 
     expect(result.mode).toBe("local");
     expect(result.displaySummary).toBe("local summary");
+  });
+
+  it("skips native compaction for a model the same adapter already reported unsupported", async () => {
+    let nativeCalls = 0;
+    const llmCompactionFn: NativeCompactFn = async () => {
+      nativeCalls += 1;
+      return { status: "unsupported", reason: "status_404" };
+    };
+    const input = {
+      model: { ...TEST_MODEL, provider: "openai" as const },
+      messages: [userMsg("hello")],
+      systemPrompt: [],
+      config: { reservePercent: 16 },
+      llmCompactionFn,
+      streamFn: makeStreamFn("local summary"),
+    };
+
+    await compact(input);
+    const second = await compact(input);
+    await compact({ ...input, model: { ...input.model, modelId: "other-model" } });
+
+    expect(second).toEqual({ mode: "local", displaySummary: "local summary" });
+    expect(nativeCalls).toBe(2);
+  });
+
+  it("falls back to local summarization when native compaction exceeds timeoutMs", async () => {
+    let nativeSignal: AbortSignal | undefined;
+    const result = await compact({
+      model: { ...TEST_MODEL, provider: "openai" },
+      messages: [userMsg("hello")],
+      systemPrompt: [],
+      config: { reservePercent: 16, timeoutMs: 10 },
+      llmCompactionFn: (nativeInput) =>
+        new Promise((_resolve, reject) => {
+          nativeSignal = nativeInput.signal;
+          nativeInput.signal?.addEventListener("abort", () => reject(nativeInput.signal?.reason), { once: true });
+        }),
+      streamFn: makeStreamFn("local summary"),
+    });
+
+    expect(nativeSignal?.aborted).toBe(true);
+    expect(result).toEqual({ mode: "local", displaySummary: "local summary" });
+  });
+
+  it("does not fall back to local summarization when the caller aborts native compaction", async () => {
+    const controller = new AbortController();
+    let localCalls = 0;
+    const pending = compact({
+      model: { ...TEST_MODEL, provider: "openai" },
+      messages: [userMsg("hello")],
+      systemPrompt: [],
+      config: { reservePercent: 16 },
+      signal: controller.signal,
+      llmCompactionFn: (nativeInput) =>
+        new Promise((_resolve, reject) => {
+          nativeInput.signal?.addEventListener("abort", () => reject(new Error("aborted by user")), { once: true });
+        }),
+      streamFn: (model, context, options) => {
+        localCalls += 1;
+        return makeStreamFn("local summary")(model, context, options);
+      },
+    });
+    controller.abort();
+
+    await expect(pending).rejects.toThrow("aborted by user");
+    expect(localCalls).toBe(0);
   });
 
   it("skips native when lookup returns undefined for provider", async () => {
