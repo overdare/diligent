@@ -175,6 +175,11 @@ export async function runCompaction(input: RunCompactionInput): Promise<RunCompa
     };
   }
 
+  const [firstMessage] = messagesToSummarize;
+  const startsWithPreviousSummary =
+    firstMessage?.role === "user" &&
+    typeof firstMessage.content === "string" &&
+    firstMessage.content.startsWith(COMPACTION_SUMMARY_PREFIX);
   const result = await llmCompact({
     model: input.model,
     messages: messagesToSummarize,
@@ -183,6 +188,7 @@ export async function runCompaction(input: RunCompactionInput): Promise<RunCompa
     sessionId: input.sessionId,
     localImageLoader: input.localImageLoader,
     config: input.compactionConfig,
+    pinnedMessageCount: startsWithPreviousSummary ? 1 : 0,
     signal: input.signal,
     streamFn: input.llmMsgStreamFn,
     llmCompactionFn: input.llmCompactionFn,
