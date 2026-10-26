@@ -242,15 +242,16 @@ async function buildModelCallableTools(
 }
 
 export async function buildRegistries(options: McpServerOptions): Promise<McpRegistries> {
+  const experiments = options.experiments ?? resolveExperimentStates(OVERDARE_EXPERIMENTS, undefined);
   const [tools, modelCallableTools, prompts] = await Promise.all([
-    buildToolRegistry(options.cwd, options.experiments, options.studioRpc),
+    buildToolRegistry(options.cwd, experiments, options.studioRpc),
     buildModelCallableTools(
       options.bootstrapDir,
       options.systemPromptPath ?? resolveSystemPromptPath(),
-      options.experiments,
+      experiments,
       options.revocationStatePath,
     ),
-    buildPromptRegistry(options.bootstrapDir, options.experiments),
+    buildPromptRegistry(options.bootstrapDir, experiments),
   ]);
   for (const tool of modelCallableTools) tools.set(tool.name, tool);
   return { tools, prompts };

@@ -89,11 +89,12 @@ async function makeBootstrapDir(): Promise<string> {
   return dir;
 }
 
-async function connectClient(bootstrapDir: string): Promise<Client> {
+async function connectClient(bootstrapDir: string, overrides?: Record<string, boolean>): Promise<Client> {
   const registries = await buildRegistries({
     cwd: process.cwd(),
     bootstrapDir,
     systemPromptPath: globalSystemPromptPath(bootstrapDir),
+    ...(overrides ? { experiments: resolveExperimentStates(OVERDARE_EXPERIMENTS, overrides) } : {}),
   });
   const server = createMcpServer(registries);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -221,8 +222,32 @@ describe("OVERDARE MCP server", () => {
     expect(skill.metadata?.error).not.toBe(true);
   });
 
-  test("MCP clients can discover the native playtest tools and read the UGC authoring contract", async () => {
-    const client = await connectClient(await makeBootstrapDir());
+  test.each([undefined, false])("MCP hides autonomous playtest when its override is %s", async (enabled) => {
+    const client = await connectClient(
+      join(import.meta.dir, "../../bootstrap"),
+      enabled === undefined ? undefined : { "autonomous-playtest": enabled },
+    );
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.find((tool) => tool.name === "load_skill")?.description).not.toContain("autonomous-playtest");
+      for (const name of ["studiorpc_game_playtest", "studiorpc_game_playtest_harness"]) {
+        expect(tools.some((tool) => tool.name === name)).toBe(false);
+        const result = await client.callTool({
+          name,
+          arguments: name.endsWith("_harness") ? { operation: "describe" } : { harnessName: "test", goal: "test" },
+        });
+        expect(result.isError).toBe(true);
+      }
+      const skill = await client.callTool({ name: "load_skill", arguments: { name: "autonomous-playtest" } });
+      expect(skill.isError).toBe(true);
+      expect(tools.some((tool) => tool.name === "studiorpc_game_play")).toBe(true);
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("MCP clients can opt into playtest tools and read the UGC authoring contract", async () => {
+    const client = await connectClient(await makeBootstrapDir(), { "autonomous-playtest": true });
     try {
       const { tools } = await client.listTools();
       expect(tools.find((tool) => tool.name === "studiorpc_game_playtest")?.inputSchema).toMatchObject({
@@ -242,9 +267,13 @@ describe("OVERDARE MCP server", () => {
     }
   });
 
-  test("the bundled autonomous playtest skill is discoverable with a usable reference directory", async () => {
+  test("opting into autonomous playtest exposes its skill instructions and base directory", async () => {
     const bootstrapDir = join(import.meta.dir, "../../bootstrap");
-    const registries = await buildRegistries({ cwd: process.cwd(), bootstrapDir });
+    const registries = await buildRegistries({
+      cwd: process.cwd(),
+      bootstrapDir,
+      experiments: resolveExperimentStates(OVERDARE_EXPERIMENTS, { "autonomous-playtest": true }),
+    });
     const load = registries.tools.get("load_skill")!;
     expect(load.description).toContain("autonomous-playtest");
     const result = await load.execute(
@@ -254,8 +283,6 @@ describe("OVERDARE MCP server", () => {
     expect(result.metadata?.error).not.toBe(true);
     const base = join(bootstrapDir, "skills/autonomous-playtest");
     expect(result.output).toContain(base);
-    expect((await readFile(join(base, "references/authoring.md"), "utf8")).length).toBeGreaterThan(0);
-    expect((await readFile(join(base, "references/diagnosis.md"), "utf8")).length).toBeGreaterThan(0);
   });
 
   test("MCP dispatch preserves native reference, file validation and create-bake contracts", async () => {

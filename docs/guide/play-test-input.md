@@ -294,6 +294,12 @@ even when observation revisions advance or action IDs repeat. The model-start re
 descriptions as well as IDs. Evidence is aggregated before trace truncation; it verifies participation and declared
 effects, not strategy quality or a game win.
 
+The harness tools and skill are opt-in. Set `experiments.overrides["autonomous-playtest"]` to `true` in the
+active global namespace's `config.jsonc` (see [Product experiments](experiments.md)). An omitted or `false`
+override hides both `studiorpc_game_playtest` and `studiorpc_game_playtest_harness`, along with the skill's
+system-prompt entry. Manual play and low-level input tools are unaffected. Restart an MCP/router host after
+changing its config.
+
 For agent-led preparation and maintenance, load the bundled `autonomous-playtest` skill. It derives the
 test inventory from the current project's code and the user's objective rather than copying a sample
 game's bindings or exercising every unrelated feature. `operation: "list"` discovers actual installed

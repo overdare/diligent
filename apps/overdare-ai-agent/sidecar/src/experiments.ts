@@ -13,4 +13,12 @@ export const OVERDARE_EXPERIMENTS: ExperimentDefinition[] = [
     skillNames: ["session-issue-report"],
     toolNames: ["agent_report"],
   },
+  {
+    id: "autonomous-playtest",
+    title: "Autonomous playtest",
+    description: "Let the agent author Studio playtest harnesses and run autonomous or scripted gameplay checks.",
+    defaultEnabled: false,
+    skillNames: ["autonomous-playtest"],
+    toolNames: ["studiorpc_game_playtest", "studiorpc_game_playtest_harness"],
+  },
 ];
