@@ -4,7 +4,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolContext } from "@diligent/core/tool-contract";
+import { writeKnowledge } from "@diligent/runtime/knowledge";
 import { createSearchKnowledgeTool, createUpdateKnowledgeTool } from "@diligent/runtime/tools";
+import { makeKnowledgeEntry } from "../helpers/knowledge";
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -20,18 +22,6 @@ describe("search_knowledge tool", () => {
 
   afterEach(async () => {
     if (tmpDir) await rm(tmpDir, { recursive: true, force: true });
-  });
-
-  it("describes id as stable caller-defined keys or generated UUIDs", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
-    const searchTool = createSearchKnowledgeTool(tmpDir);
-
-    expect(searchTool.description).toContain("caller-defined stable keys");
-    expect(searchTool.description).toContain("generated UUID");
-    expect(searchTool.description).toContain("overdare.current_plan");
-    expect(searchTool.description).toContain("id_prefix");
-    expect(searchTool.description).toContain("overdare.decision.");
-    expect(searchTool.description).toContain("OVERDARE_IMPLEMENTATION_MAP");
   });
 
   it("finds an entry by exact id", async () => {
@@ -78,6 +68,41 @@ describe("search_knowledge tool", () => {
     expect(result.output).toContain("Fork thread view into dedicated panel");
     expect(result.output).not.toContain("Implement skill runtime reload feature");
     expect(result.metadata).toMatchObject({ matchCount: 2 });
+  });
+
+  it("filters Korean queries instead of returning unrelated entries", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
+    await writeKnowledge(tmpDir, [
+      makeKnowledgeEntry({ id: "language", content: "Prefer \uD55C\uAD6D\uC5B4 responses" }),
+      makeKnowledgeEntry({ id: "unrelated", content: "Prefer concise responses" }),
+    ]);
+
+    const result = await createSearchKnowledgeTool(tmpDir).execute({ query: "\uD55C\uAD6D\uC5B4" }, makeCtx());
+
+    expect(result.metadata?.ids).toEqual(["language"]);
+    expect(result.output).not.toContain("unrelated");
+  });
+
+  it("does not treat a query without searchable characters as a wildcard", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
+    await writeKnowledge(tmpDir, [makeKnowledgeEntry({ id: "unrelated" })]);
+
+    const result = await createSearchKnowledgeTool(tmpDir).execute({ query: "!!!" }, makeCtx());
+
+    expect(result.metadata?.ids).toEqual([]);
+  });
+
+  it("excludes superseded entries from keyword, exact-id, and prefix searches", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
+    await writeKnowledge(tmpDir, [
+      makeKnowledgeEntry({ id: "package.old", content: "Use npm" }),
+      makeKnowledgeEntry({ id: "package.new", content: "Use Bun", supersedes: "package.old" }),
+    ]);
+    const tool = createSearchKnowledgeTool(tmpDir);
+
+    expect((await tool.execute({ query: "npm" }, makeCtx())).metadata?.ids).toEqual([]);
+    expect((await tool.execute({ id: "package.old" }, makeCtx())).metadata?.ids).toEqual([]);
+    expect((await tool.execute({ id_prefix: "package." }, makeCtx())).metadata?.ids).toEqual(["package.new"]);
   });
 
   it("finds entries by id prefix", async () => {

@@ -1,4 +1,4 @@
-// @summary Tests for confidence-based knowledge ranking and supersession
+// @summary Tests for confidence priority, recency tie-breaking, and supersession
 import { describe, expect, it } from "bun:test";
 import { rankKnowledge } from "@diligent/runtime/knowledge";
 import { makeKnowledgeEntry } from "../helpers/knowledge";
@@ -13,24 +13,19 @@ describe("Knowledge Ranker", () => {
     expect(ranked[0].id).toBe("new1");
   });
 
-  it("ranks by confidence only", () => {
-    const low = makeKnowledgeEntry({ id: "low", type: "correction", confidence: 0.2 });
-    const high = makeKnowledgeEntry({ id: "high", type: "discovery", confidence: 0.9 });
+  it("prioritizes confidence over recency", () => {
+    const low = makeKnowledgeEntry({ id: "low", confidence: 0.2, timestamp: "2026-10-26T00:00:00Z" });
+    const high = makeKnowledgeEntry({ id: "high", confidence: 0.9, timestamp: "2026-01-01T00:00:00Z" });
 
     const ranked = rankKnowledge([low, high]);
     expect(ranked[0].id).toBe("high");
   });
 
-  it("ignores recency and ranks by confidence only", () => {
-    const recent = makeKnowledgeEntry({ id: "r1", confidence: 0.8, timestamp: new Date().toISOString() });
-    const old = makeKnowledgeEntry({
-      id: "o1",
-      confidence: 0.8,
-      timestamp: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-    });
+  it("prefers recent entries when confidence is equal", () => {
+    const recent = makeKnowledgeEntry({ id: "recent", confidence: 0.8, timestamp: "2026-10-26T00:00:00Z" });
+    const old = makeKnowledgeEntry({ id: "old", confidence: 0.8, timestamp: "2026-01-01T00:00:00Z" });
 
-    const ranked = rankKnowledge([old, recent]);
-    expect(ranked.map((entry) => entry.id).sort()).toEqual(["o1", "r1"]);
+    expect(rankKnowledge([old, recent]).map((entry) => entry.id)).toEqual(["recent", "old"]);
   });
 
   it("returns empty for empty input", () => {

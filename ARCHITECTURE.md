@@ -507,12 +507,16 @@ Core consumes approval hooks; it does not own the policy engine.
 
 Knowledge is persisted separately from sessions and injected back into the system prompt.
 
-- storage: append-only JSONL
+- storage: project-local JSONL
 - API surface: `knowledge/list` and `knowledge/update`
 - runtime tools: `search_knowledge` and `update_knowledge`
 - write actions: `upsert` and `delete`
 
 Knowledge ranking and injection are runtime concerns, not frontend concerns.
+
+Both automatic injection and `search_knowledge` exclude superseded entries. Injection ranks by confidence, then newest timestamp, and skips entries that exceed the remaining estimated token budget. The item limit counts entries actually included; if none fit, no knowledge section is injected.
+
+Search supports exact IDs, ID prefixes, and case-insensitive Unicode keyword matching, including Korean. A supplied query with no searchable characters returns no matches rather than listing all entries.
 
 ### Skills
 
