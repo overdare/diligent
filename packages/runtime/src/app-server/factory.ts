@@ -19,7 +19,7 @@ import { loadRuntimeConfig, type RuntimeConfig } from "../config/runtime";
 import { getGlobalConfigPath, saveGlobalModel } from "../config/writer";
 import { createGoalContextHook } from "../goals/tools";
 import { createLocalImageLoader, type DiligentPaths, ensureDiligentDir, toolOutputStore } from "../infrastructure";
-import { buildKnowledgeSection, readKnowledge } from "../knowledge";
+import { loadKnowledgeSection } from "../knowledge";
 import { discoverSkills } from "../skills";
 import {
   type BundledToolProvider,
@@ -72,10 +72,7 @@ async function withLatestKnowledge(
   knowledgeConfig: RuntimeConfig["diligent"]["knowledge"],
 ): Promise<SystemSection[]> {
   const withoutKnowledge = systemPrompt.filter((section) => section.label !== "knowledge");
-  if (knowledgeConfig?.enabled === false) return withoutKnowledge;
-
-  const entries = await readKnowledge(paths.knowledge);
-  const content = buildKnowledgeSection(entries, knowledgeConfig?.injectionBudget ?? 8192, knowledgeConfig?.maxItems);
+  const content = await loadKnowledgeSection(paths.knowledge, knowledgeConfig);
   if (!content) return withoutKnowledge;
 
   const knowledgeSection: SystemSection = {

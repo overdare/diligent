@@ -33,7 +33,7 @@ import { ProviderAuthPresenter } from "../auth/provider-auth-presenter";
 import type { ExperimentDefinition, ResolvedExperiment } from "../experiments";
 import { resolveExperimentGates, resolveExperimentStates } from "../experiments";
 import type { DiligentPaths } from "../infrastructure/index";
-import { buildKnowledgeSection, readKnowledge } from "../knowledge/index";
+import { loadKnowledgeSection } from "../knowledge/index";
 import { buildBaseSystemPrompt } from "../prompt/index";
 import type { SkillMetadata } from "../skills/index";
 import { discoverSkills, filterAvailableSkills, renderSkillsSection, resolveSkillStates } from "../skills/index";
@@ -163,15 +163,7 @@ export async function loadRuntimeConfig(
   const configured = providerManager.getConfiguredProviders();
   const model = resolveRuntimeModel(config.model, configured);
 
-  // Load knowledge for system prompt injection
-  let knowledgeSection = "";
-  const knowledgeEnabled = config.knowledge?.enabled ?? true;
-  if (knowledgeEnabled) {
-    const knowledgeEntries = await readKnowledge(paths.knowledge);
-    const injectionBudget = config.knowledge?.injectionBudget ?? 8192;
-    const maxItems = config.knowledge?.maxItems;
-    knowledgeSection = buildKnowledgeSection(knowledgeEntries, injectionBudget, maxItems);
-  }
+  const knowledgeSection = await loadKnowledgeSection(paths.knowledge, config.knowledge);
 
   // Load skills
   let discoveredSkills: SkillMetadata[] = [];

@@ -72,4 +72,21 @@ describe("knowledge", () => {
     const persisted = await readKnowledge(paths.knowledge);
     expect(persisted.some((entry) => entry.id === added.entry.id)).toBe(false);
   });
+
+  test("knowledge/update honors a caller-defined id for new entries like the agent tool", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-knowledge-"));
+    const server = createTestServer({ cwd: tmpDir });
+    client = createProtocolClient(server);
+    const threadId = await client.initAndStartThread(tmpDir);
+
+    const created = (await client.request("knowledge/update", {
+      action: "upsert",
+      threadId,
+      id: "project.runtime",
+      type: "preference",
+      content: "Use Bun",
+    })) as { entry: { id: string } };
+
+    expect(created.entry.id).toBe("project.runtime");
+  });
 });

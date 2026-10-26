@@ -681,6 +681,36 @@ describe("createAppServerConfig", () => {
     expect(nextKnowledge[0]?.content).not.toContain("stale knowledge from startup");
   });
 
+  it("creates agents with readable knowledge when the store contains a corrupt line", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "diligent-factory-knowledge-"));
+    tempHomes.push(projectRoot);
+    const config = createAppServerConfig({
+      cwd: projectRoot,
+      runtimeConfig: makeRuntimeConfig({ systemPrompt: [{ label: "base", content: "test" }] }),
+    });
+    const paths = await config.resolvePaths(projectRoot);
+    const valid = {
+      id: "project.preference",
+      timestamp: "2026-07-12T00:00:00.000Z",
+      type: "preference",
+      content: "Use Bun for package scripts.",
+      confidence: 0.8,
+    };
+    await writeFile(join(paths.knowledge, "knowledge.jsonl"), `${JSON.stringify(valid)}\n{"id":"trunc\n`);
+
+    const agent = await config.createAgent({
+      cwd: projectRoot,
+      mode: "default",
+      effort: "medium",
+      model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
+      approve: async () => "once",
+      ask: async () => null,
+    });
+
+    const knowledge = agent.systemPrompt.find((section) => section.label === "knowledge");
+    expect(knowledge?.content).toContain("Use Bun for package scripts.");
+  });
+
   it("keeps collab registry parent tools aligned with execute mode filtering", async () => {
     const observedChildToolNames: string[][] = [];
     const childStream = makeStreamFn([makeAssistant("child done")]);
