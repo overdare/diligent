@@ -131,7 +131,8 @@ export async function createRunReport(cwd: string, name: string, selectedIds: st
     signal.throwIfAborted();
     const directory = join(root, runId);
     const summaryPath = join(directory, "summary.json");
-    const handle = await open(summaryPath, "r");
+    // Read-only: the mode never applies, but static analysis treats a mode-less open as possible creation.
+    const handle = await open(summaryPath, "r", 0o600);
     let bytes: Buffer;
     try {
       const info = await handle.stat();
