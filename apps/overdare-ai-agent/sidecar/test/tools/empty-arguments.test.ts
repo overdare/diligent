@@ -20,6 +20,8 @@ describe("what a caller with no value to give sends", () => {
     expect(dropEmptyOptionals(characterReadParams, { pieSessionId: "377e372c", clientId: "" })).toEqual({
       pieSessionId: "377e372c",
     });
+    // The same blanks on a screenshot mean the default window, not a client called "".
+    expect(dropEmptyOptionals(screenshotParams, { pieSessionId: "", clientId: "" })).toEqual({});
   });
 
   test("every filter on a call that wanted the top level", () => {
