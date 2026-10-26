@@ -57,6 +57,8 @@ type LoopRequest = {
   sessionId?: string;
   signal?: AbortSignal;
   compactionSummary?: Record<string, unknown>;
+  /** Set after a proactive compaction fails so later turns in this run do not pay for it again. */
+  proactiveCompactionFailed?: boolean;
 };
 
 export async function runAgentLoop(
@@ -271,7 +273,7 @@ async function compactIfNeeded(
   }
 
   const decision = getCompactionDecision(decisionMessages, request.config.model.contextWindow, config.reservePercent);
-  if (!decision.shouldCompact) return false;
+  if (!decision.shouldCompact || request.proactiveCompactionFailed) return false;
 
   request.logger.info("compaction_triggered", {
     message: `[agent:compaction] triggered source=${decision.source} estimatedTokens=${decision.estimatedTokens} thresholdTokens=${decision.thresholdTokens} reserveTokens=${decision.reserveTokens}`,
@@ -286,7 +288,25 @@ async function compactIfNeeded(
     },
   });
 
-  return applyCompaction(messages, request, stream, { preservedMessages });
+  try {
+    return await applyCompaction(messages, request, stream, { preservedMessages });
+  } catch (error) {
+    if (request.signal?.aborted) throw error;
+    // The threshold leaves reserve headroom, so the turn can still run; a real overflow is
+    // handled by compactAfterContextOverflow.
+    request.proactiveCompactionFailed = true;
+    request.logger.warn("compaction_failed", {
+      message: `[agent:compaction] proactive compaction failed; continuing without compaction error=${error instanceof Error ? error.message : String(error)}`,
+      sessionId: request.sessionId,
+      error,
+      fields: {
+        estimatedTokens: decision.estimatedTokens,
+        provider: request.config.model.provider,
+        model: request.config.model.modelId,
+      },
+    });
+    return false;
+  }
 }
 
 async function compactAfterContextOverflow(

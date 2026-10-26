@@ -7,13 +7,6 @@ import type { Model, StreamFunction, SystemSection } from "../llm/types";
 import type { AssistantMessage, Message } from "../types";
 import type { AgentStream, CompactionConfig } from "./types";
 
-const DEFAULT_COMPACTION_TIMEOUT_MS = 180_000;
-
-function createCompactionSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-  const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-}
-
 export type { CompactionPrompts, CompactMessagesResult } from "../llm/compaction";
 // Re-export estimateTokens and LLM-layer compaction types so consumers can import from either location
 export { estimateTokens } from "../llm/tokens";
@@ -182,8 +175,11 @@ export async function runCompaction(input: RunCompactionInput): Promise<RunCompa
     };
   }
 
-  const timeoutMs = input.compactionConfig.timeoutMs ?? DEFAULT_COMPACTION_TIMEOUT_MS;
-  const compactionSignal = createCompactionSignal(input.signal, timeoutMs);
+  const [firstMessage] = messagesToSummarize;
+  const startsWithPreviousSummary =
+    firstMessage?.role === "user" &&
+    typeof firstMessage.content === "string" &&
+    firstMessage.content.startsWith(COMPACTION_SUMMARY_PREFIX);
   const result = await llmCompact({
     model: input.model,
     messages: messagesToSummarize,
@@ -192,7 +188,8 @@ export async function runCompaction(input: RunCompactionInput): Promise<RunCompa
     sessionId: input.sessionId,
     localImageLoader: input.localImageLoader,
     config: input.compactionConfig,
-    signal: compactionSignal,
+    pinnedMessageCount: startsWithPreviousSummary ? 1 : 0,
+    signal: input.signal,
     streamFn: input.llmMsgStreamFn,
     llmCompactionFn: input.llmCompactionFn,
   });

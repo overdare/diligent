@@ -11,8 +11,14 @@ import type {
   StreamContext,
   StreamFunction,
 } from "@diligent/core/provider-contract";
-import { resolveMaxTokens } from "@diligent/core/provider-contract";
-import { estimateTokens, getCompactionDecision, runCompaction, shouldCompact } from "../../src/agent/compaction";
+import { ProviderError, ProviderErrorType, resolveMaxTokens } from "@diligent/core/provider-contract";
+import {
+  COMPACTION_SUMMARY_PREFIX,
+  estimateTokens,
+  getCompactionDecision,
+  runCompaction,
+  shouldCompact,
+} from "../../src/agent/compaction";
 import { AgentStream } from "../../src/agent/types";
 import { DEFAULT_COMPACTION_PROMPTS } from "../../src/llm/compaction";
 
@@ -337,6 +343,48 @@ describe("runCompaction", () => {
     expect(result.compacted).toBe(true);
     expect(result.messages).not.toEqual(messages);
     expect(result.tokensAfter).toBeLessThan(result.tokensBefore);
+  });
+
+  it("keeps the previous compaction summary when local summarization overflows", async () => {
+    const previousSummary = userMsg(`${COMPACTION_SUMMARY_PREFIX}\n\nprevious summary`);
+    const messages: Message[] = [
+      previousSummary,
+      userMsg("x".repeat(NATIVE_COMPACTION_MIN_INPUT_TOKENS * 4)),
+      assistantMsg("old answer"),
+      userMsg("latest request"),
+    ];
+    const contexts: StreamContext[] = [];
+    const summaryStream: StreamFunction = (model, context, options) => {
+      contexts.push(context);
+      if (contexts.length > 1) return makeStreamFn("short summary")(model, context, options);
+      const stream = new EventStream<ProviderEvent, ProviderResult>(
+        (event) => event.type === "done" || event.type === "error",
+        (event) => {
+          if (event.type === "error") throw event.error;
+          throw new Error(`Unexpected terminal event: ${event.type}`);
+        },
+      );
+      const error = new ProviderError("context too long", ProviderErrorType.ContextOverflow, false);
+      queueMicrotask(() => stream.push({ type: "error", error }));
+      return stream;
+    };
+
+    const result = await runCompaction({
+      messages,
+      model: TEST_MODEL,
+      systemPrompt: [],
+      compactionConfig: { reservePercent: 16 },
+      llmMsgStreamFn: summaryStream,
+      stream: new AgentStream(),
+    });
+
+    expect(result.compacted).toBe(true);
+    expect(contexts).toHaveLength(2);
+    expect(contexts[1]?.messages[0]).toEqual(previousSummary);
+    expect(contexts[1]?.messages[1]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("1 oldest message was omitted"),
+    });
   });
 
   it("rejects a nonshrinking local result and preserves the source context", async () => {

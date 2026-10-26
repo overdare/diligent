@@ -724,6 +724,34 @@ describe("Agent compactionSummary persistence", () => {
     const summary = (agent as unknown as { compactionSummary?: Record<string, unknown> }).compactionSummary;
     expect(summary).toBeUndefined();
   });
+
+  test("a failed proactive compaction does not fail the turn", async () => {
+    let nativeCalls = 0;
+    const nativeCompactFn: NativeCompactFn = async () => {
+      nativeCalls += 1;
+      throw new Error("compaction exploded");
+    };
+    const streamFn = createMockStreamFunction([
+      makeAssistant([{ type: "text", text: "first response" }]),
+      makeAssistant([{ type: "text", text: "second response" }]),
+    ]);
+    const agent = new Agent({ ...TEST_MODEL, contextWindow: 200_000 }, [{ label: "sys", content: "sys" }], [], {
+      effort: "medium",
+      llmMsgStreamFn: streamFn,
+      llmCompactionFn: nativeCompactFn,
+      compaction: { reservePercent: 70 },
+    });
+    const first = { role: "user" as const, content: `first-${"x".repeat(300_000)}`, timestamp: Date.now() };
+    const fresh = { role: "user" as const, content: "fresh user request", timestamp: Date.now() };
+
+    await agent.prompt(first);
+    const result = await agent.prompt(fresh);
+
+    expect(nativeCalls).toBe(1);
+    expect(streamFn.contexts[1]?.messages).toContainEqual(first);
+    expect(streamFn.contexts[1]?.messages).toContainEqual(fresh);
+    expect(result.at(-1)).toMatchObject({ role: "assistant", content: [{ type: "text", text: "second response" }] });
+  });
 });
 
 describe("Agent automatic compaction eligibility", () => {
