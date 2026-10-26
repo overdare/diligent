@@ -514,6 +514,12 @@ Knowledge is persisted separately from sessions and injected back into the syste
 
 Knowledge ranking and injection are runtime concerns, not frontend concerns.
 
+`packages/runtime/src/knowledge/repository.ts` owns every mutation and lookup. The `update_knowledge` / `search_knowledge` tools and the `knowledge/update` RPC call it, so agent and client writes follow the same rules: an explicit id updates or creates that entry, and restating an active entry with the same type and content without an id refreshes it instead of adding a duplicate.
+
+The store (`knowledge/store.ts`) serializes read-modify-write mutations per file within the process and replaces the file atomically. Lines that are not valid entries are skipped on read and preserved on rewrite, so one corrupt line never blocks agent creation or discards other entries. Separate processes writing the same project store are not coordinated.
+
+Startup and per-agent injection share `loadKnowledgeSection`.
+
 Both automatic injection and `search_knowledge` exclude superseded entries. Injection ranks by confidence, then newest timestamp, and skips entries that exceed the remaining estimated token budget. The item limit counts entries actually included; if none fit, no knowledge section is injected.
 
 Search supports exact IDs, ID prefixes, and case-insensitive Unicode keyword matching, including Korean. A supplied query with no searchable characters returns no matches rather than listing all entries.

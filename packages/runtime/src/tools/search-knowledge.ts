@@ -2,7 +2,7 @@
 
 import type { Tool, ToolContext, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
-import { rankKnowledge } from "../knowledge/ranker";
+import { searchKnowledge } from "../knowledge/repository";
 import { readKnowledge } from "../knowledge/store";
 import { createSearchKnowledgeRenderPayload } from "./render-payload";
 
@@ -49,31 +49,11 @@ export function createSearchKnowledgeTool(knowledgePath: string): Tool<typeof se
       "If multiple matches appear, narrow the query or use the returned id with update_knowledge.",
     parameters: searchKnowledgeSchema,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
-      const id = args.id?.trim();
-      const idPrefix = args.id_prefix?.trim();
-      const queryTokens = tokenize(args.query);
-      const entries = await readKnowledge(knowledgePath);
-      const matches = rankKnowledge(entries)
-        .map((entry) => ({
-          entry,
-          score: scoreEntry(entry.content, queryTokens),
-        }))
-        .filter(({ entry, score }) => {
-          if (id && entry.id !== id) return false;
-          if (idPrefix && !entry.id.startsWith(idPrefix)) return false;
-          if (args.query?.trim() && score.matchedTokenCount === 0) return false;
-          return true;
-        })
-        .sort((left, right) => {
-          if (right.score.matchedTokenCount !== left.score.matchedTokenCount) {
-            return right.score.matchedTokenCount - left.score.matchedTokenCount;
-          }
-          if (right.score.exactTokenCount !== left.score.exactTokenCount) {
-            return right.score.exactTokenCount - left.score.exactTokenCount;
-          }
-          return right.entry.timestamp.localeCompare(left.entry.timestamp);
-        })
-        .map(({ entry }) => entry);
+      const matches = searchKnowledge(await readKnowledge(knowledgePath), {
+        id: args.id?.trim(),
+        idPrefix: args.id_prefix?.trim(),
+        query: args.query,
+      });
 
       const output =
         matches.length === 0
@@ -92,43 +72,4 @@ export function createSearchKnowledgeTool(knowledgePath: string): Tool<typeof se
       };
     },
   };
-}
-
-function tokenize(value: string | undefined): string[] {
-  if (!value) return [];
-  return Array.from(
-    new Set(
-      value
-        .normalize("NFC")
-        .toLowerCase()
-        .split(/[^\p{L}\p{N}\p{M}]+/u)
-        .filter(Boolean),
-    ),
-  );
-}
-
-function scoreEntry(content: string, queryTokens: string[]): { matchedTokenCount: number; exactTokenCount: number } {
-  if (queryTokens.length === 0) return { matchedTokenCount: 0, exactTokenCount: 0 };
-  const contentTokens = tokenize(content);
-  if (contentTokens.length === 0) return { matchedTokenCount: 0, exactTokenCount: 0 };
-
-  let matchedTokenCount = 0;
-  let exactTokenCount = 0;
-  for (const queryToken of queryTokens) {
-    let matched = false;
-    for (const contentToken of contentTokens) {
-      if (contentToken === queryToken) {
-        matched = true;
-        exactTokenCount += 1;
-        break;
-      }
-      // Single-character content tokens would match any query containing that character.
-      if (contentToken.includes(queryToken) || (contentToken.length >= 2 && queryToken.includes(contentToken))) {
-        matched = true;
-      }
-    }
-    if (matched) matchedTokenCount += 1;
-  }
-
-  return { matchedTokenCount, exactTokenCount };
 }

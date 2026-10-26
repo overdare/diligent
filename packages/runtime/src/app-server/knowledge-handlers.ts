@@ -1,6 +1,7 @@
 // @summary Knowledge CRUD request handlers extracted from thread-handlers.ts
 
-import { readKnowledge, writeKnowledge } from "../knowledge/store";
+import { deleteKnowledge, upsertKnowledge } from "../knowledge/repository";
+import { readKnowledge } from "../knowledge/store";
 import type { KnowledgeEntry, KnowledgeType } from "../protocol/index";
 import type { ThreadHandlersContext } from "./thread-handlers";
 
@@ -28,53 +29,24 @@ export async function handleKnowledgeUpdate(
 ): Promise<{ entry?: KnowledgeEntry; deleted?: boolean }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
   const paths = await ctx.resolvePaths(runtime.cwd);
-  const entries = await readKnowledge(paths.knowledge);
 
   if (params.action === "delete") {
     if (!params.id) {
       throw Object.assign(new Error("Knowledge id is required for delete action"), { code: -32602 });
     }
-    const nextEntries = entries.filter((entry) => entry.id !== params.id);
-    const deleted = nextEntries.length !== entries.length;
-    if (deleted) {
-      await writeKnowledge(paths.knowledge, nextEntries);
-    }
-    return { deleted };
+    return { deleted: await deleteKnowledge(paths.knowledge, params.id) };
   }
 
   if (!params.type || !params.content || params.content.trim().length === 0) {
     throw Object.assign(new Error("Knowledge type and content are required for upsert action"), { code: -32602 });
   }
 
-  const now = new Date().toISOString();
-  const requestedContent = params.content.trim();
-
-  if (params.id) {
-    const index = entries.findIndex((entry) => entry.id === params.id);
-    if (index >= 0) {
-      const updated: KnowledgeEntry = {
-        ...entries[index],
-        type: params.type,
-        content: requestedContent,
-        tags: params.tags ?? entries[index].tags,
-        timestamp: now,
-      };
-      entries[index] = updated;
-      await writeKnowledge(paths.knowledge, entries);
-      return { entry: updated };
-    }
-  }
-
-  const entry: KnowledgeEntry = {
-    id: crypto.randomUUID(),
-    timestamp: now,
-    sessionId: runtime.id,
+  const { entry } = await upsertKnowledge(paths.knowledge, {
+    id: params.id,
     type: params.type,
-    content: requestedContent,
-    confidence: 0.8,
+    content: params.content,
     tags: params.tags,
-  };
-  entries.push(entry);
-  await writeKnowledge(paths.knowledge, entries);
+    sessionId: runtime.id,
+  });
   return { entry };
 }

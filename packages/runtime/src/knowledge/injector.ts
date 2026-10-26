@@ -1,8 +1,16 @@
 // @summary Builds ranked knowledge section for system prompt with top-K and token budget constraints
 import { rankKnowledge } from "./ranker";
+import { readKnowledge } from "./store";
 import type { KnowledgeEntry } from "./types";
 
 const DEFAULT_MAX_KNOWLEDGE_ITEMS = 50;
+const DEFAULT_INJECTION_BUDGET = 8192;
+
+export interface KnowledgeInjectionConfig {
+  enabled?: boolean;
+  injectionBudget?: number;
+  maxItems?: number;
+}
 
 /**
  * Build "Project Knowledge" system prompt section.
@@ -29,4 +37,14 @@ export function buildKnowledgeSection(entries: KnowledgeEntry[], budgetTokens: n
   }
 
   return includedItems > 0 ? section : "";
+}
+
+/** Read the store and build the knowledge section, or "" when knowledge injection is disabled. */
+export async function loadKnowledgeSection(
+  knowledgePath: string,
+  config: KnowledgeInjectionConfig | undefined,
+): Promise<string> {
+  if (config?.enabled === false) return "";
+  const entries = await readKnowledge(knowledgePath);
+  return buildKnowledgeSection(entries, config?.injectionBudget ?? DEFAULT_INJECTION_BUDGET, config?.maxItems);
 }

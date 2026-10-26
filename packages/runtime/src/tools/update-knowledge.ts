@@ -2,9 +2,15 @@
 
 import type { Tool, ToolContext, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
-import { readKnowledge, writeKnowledge } from "../knowledge/store";
-import type { KnowledgeEntry, KnowledgeType } from "../knowledge/types";
+import { deleteKnowledge, type KnowledgeUpsertStatus, upsertKnowledge } from "../knowledge/repository";
+import type { KnowledgeType } from "../knowledge/types";
 import { createUpdateKnowledgeRenderPayload } from "./render-payload";
+
+const UPSERT_OUTPUT_PREFIX: Record<KnowledgeUpsertStatus, string> = {
+  created: "Knowledge saved",
+  updated: "Knowledge updated",
+  duplicate: "Knowledge already saved; refreshed existing entry",
+};
 
 const knowledgeTypeSchema = z.enum(["pattern", "discovery", "preference", "correction", "backlog"]);
 
@@ -67,13 +73,9 @@ export function createUpdateKnowledgeTool(
       "Use action='upsert' to save/update an entry, optionally with a stable caller-defined id, or action='delete' with id to remove one.",
     parameters: updateKnowledgeSchema,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
-      const entries = await readKnowledge(knowledgePath);
-
       if (args.action === "delete") {
-        const nextEntries = entries.filter((entry) => entry.id !== args.id);
-        const deleted = nextEntries.length !== entries.length;
+        const deleted = await deleteKnowledge(knowledgePath, args.id!);
         if (deleted) {
-          await writeKnowledge(knowledgePath, nextEntries);
           const output = `Knowledge deleted: ${args.id}`;
           return {
             output,
@@ -89,48 +91,18 @@ export function createUpdateKnowledgeTool(
         };
       }
 
-      const now = new Date().toISOString();
-      const requestedType = args.type as KnowledgeType;
-      const requestedContent = args.content!.trim();
-
-      if (args.id) {
-        const index = entries.findIndex((entry) => entry.id === args.id);
-        if (index >= 0) {
-          const updated: KnowledgeEntry = {
-            ...entries[index],
-            type: requestedType,
-            content: requestedContent,
-            tags: args.tags ?? entries[index].tags,
-            timestamp: now,
-          };
-          entries[index] = updated;
-          await writeKnowledge(knowledgePath, entries);
-          const output = `Knowledge updated: [${updated.type}] ${updated.content}`;
-          return {
-            output,
-            render: createUpdateKnowledgeRenderPayload(args, output, false),
-            metadata: { action: "upsert", knowledgeId: updated.id, updated: true },
-          };
-        }
-      }
-
-      const entry: KnowledgeEntry = {
-        id: args.id?.trim() || crypto.randomUUID(),
-        timestamp: now,
-        sessionId,
-        type: requestedType,
-        content: requestedContent,
-        confidence: 0.8,
+      const { entry, status } = await upsertKnowledge(knowledgePath, {
+        id: args.id,
+        type: args.type as KnowledgeType,
+        content: args.content!,
         tags: args.tags,
-      };
-      entries.push(entry);
-      await writeKnowledge(knowledgePath, entries);
-
-      const output = `Knowledge saved: [${entry.type}] ${entry.content}`;
+        sessionId,
+      });
+      const output = `${UPSERT_OUTPUT_PREFIX[status]}: [${entry.type}] ${entry.content}`;
       return {
         output,
         render: createUpdateKnowledgeRenderPayload(args, output, false),
-        metadata: { action: "upsert", knowledgeId: entry.id, updated: false },
+        metadata: { action: "upsert", knowledgeId: entry.id, updated: status !== "created", status },
       };
     },
   };
