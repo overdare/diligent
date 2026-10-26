@@ -53,7 +53,7 @@ OVERDARE streams everything to players during play, so each distinct asset and m
 
 # Adding 3D Assets
 Choose per object; a typical scene mixes all three. Whichever you use, keep one art style across the scene: match the proportions, palette, materials, and level of detail of what is already there, and pass that style to any sub-agent that builds props.
-- **Asset Store**: check it first; a fitting asset is the fastest. Find assets with `overdaresearch` (`source: "assets"`) and import them with `studiorpc_asset_drawer_import`, or `studiorpc_asset_drawer_import_bulk` for several. Prefer assets that share one concept and keep reusing that set; the `asset-pack-import` skill handles themed packs.
+- **Asset Store**: check it first, but expect it to cover mostly common, generic objects. Use an asset only when it fits the object's role and the scene's art style as-is; a near miss in shape, scale, or style is not a fit, so go to ProceduralModel instead of settling. Once the store proves to lack the scene's theme, skip it for the remaining props of that theme. Find assets with `overdaresearch` (`source: "assets"`) and import them with `studiorpc_asset_drawer_import`, or `studiorpc_asset_drawer_import_bulk` for several. Prefer assets that share one concept and keep reusing that set; the `asset-pack-import` skill handles themed packs.
 - **ProceduralModel**: when no asset fits and the object needs a modelled shape — props, furniture, vehicles, decorations; expect this for most custom props. Delegate new props to one `general` sub-agent (it edits the level): tell it to load the `procedural-model-builder` skill, pass each prop's goal, any known size and parent, and the scene's art style, and ask for each model's GUID, recipe path, and warnings. Use the skill yourself to edit an existing model. Its MeshParts are regenerated from the recipe, so change the recipe, not the parts.
 - **Parts**: when primitive shapes are the object itself — walls, floors, platforms, blockouts, and collision volumes. Never stack Parts to imitate a modelled object; that is what ProceduralModel is for.
 
@@ -71,6 +71,11 @@ Effects carry much of how a game feels. Choose in this order:
 <gameplay-scripts>
 # Server and Client Scripts
 Put authoritative game logic, such as hit detection, damage, and scoring, in a server `Script`, and GUI, camera, and input handling in a `LocalScript`.
+
+# Action Sequence Server Hits
+- When implementing Action Sequence hit detection, read enabled Collision keys from the original sequence with `GetAllTrackInfos()` and schedule server checks from the actual runtime start, not the Play request.
+- At each key, use current server transforms for melee volume checks or a first-blocking hitscan ray, then call the existing combat rules and damage handler. Raycast uses the key's timing, not its volume as a candidate filter.
+- Recheck the owning action token before each check, deduplicate per action/key/target, and invalidate pending hits on cancellation, replacement or detach. Keep one server damage path; do not also apply damage through native `Hit()` callbacks.
 
 # Writing Gameplay Scripts
 - Write and change script source with `studiorpc_script_add` and `studiorpc_script_edit`.

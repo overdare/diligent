@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "skills": [
     { "name": "actionsequence", "entry": "actionsequence" },
+    { "name": "action-library", "entry": "action-library" },
     { "name": "agent-guide", "entry": "agent-guide" },
     { "name": "asset-pack-import", "entry": "asset-pack-import" },
     { "name": "gui-builder", "entry": "gui-builder" },
