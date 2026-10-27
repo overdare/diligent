@@ -136,3 +136,73 @@ for (const boundary of [
     await goal.close();
   });
 }
+
+for (const ending of ["completed", "failed", "stop"] as const) {
+  test(`an ordinary user turn suspends an active goal and resumes it only on success: ${ending}`, async () => {
+    const dir = await mkdtemp(join(tmpdir(), "goal-user-turn-"));
+    dirs.push(dir);
+    let wakes = 0;
+    const goal = await GoalController.open(await openGoalStore(dir, "thread"), "thread", {
+      changed: async () => {},
+      wake: () => {
+        wakes++;
+      },
+    });
+    await goal.change(
+      { action: "set", objective: "Keep the suite green" },
+      { idle: true, enabled: true, mode: "default" },
+    );
+    wakes = 0;
+    const model = { provider: "anthropic" as const, modelId: "claude-sonnet-5" };
+    const { promise: finish, resolve: release } = Promise.withResolvers<void>();
+    const runtime = {
+      id: "thread",
+      cwd: dir,
+      model,
+      mode: "default",
+      effort: "medium",
+      goal,
+      abortController: null,
+      currentTurnId: null,
+      isRunning: false,
+      manager: {
+        getCurrentModel: () => model,
+        runWithOutcome: async () => {
+          await finish;
+          return ending === "failed"
+            ? { status: "failed", error: { name: "Error", message: "provider failed" } }
+            : { status: "completed" };
+        },
+      },
+    } as unknown as ThreadRuntime;
+    const ctx = {
+      resolveThreadRuntime: async () => runtime,
+      ensureGoal: async () => goal,
+      getGoalsConfig: () => undefined,
+      getSkillNames: () => [],
+      getPluginHooks: async () => ({ onUserPromptSubmit: [] }),
+      getUserId: () => "user",
+      emit: async () => {},
+      consumeTurn: async (_runtime: ThreadRuntime, run: Promise<void>) => {
+        await run;
+        resetTurnRuntimeState(runtime);
+        return undefined;
+      },
+    } as unknown as ThreadHandlersContext;
+    await handleTurnStart(ctx, { threadId: runtime.id, message: "Also fix the README" }, "peer", new Map());
+    expect(goal.read().goal).toMatchObject({ status: "paused", reason: "user_turn" });
+    if (ending === "stop") await handleTurnInterrupt(ctx, runtime.id);
+    const work = runtime.turnWork;
+    release();
+    await work;
+    await goal.flush();
+    if (ending === "completed") {
+      expect(goal.read().goal).toMatchObject({ status: "active", reason: undefined });
+      expect(wakes).toBe(1);
+    } else {
+      expect(goal.read().goal).toMatchObject({ status: "paused", reason: ending === "stop" ? "user" : "user_turn" });
+      expect(wakes).toBe(0);
+    }
+    await goal.close();
+  });
+}

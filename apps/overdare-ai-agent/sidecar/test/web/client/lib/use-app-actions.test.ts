@@ -138,7 +138,7 @@ test("executeGoalCommand supports reserved-word objectives with set", async () =
   await executeGoalCommand({
     rpc: { request } as never,
     threadId: "thread-1",
-    args: "set pause until the deploy completes --turns 4",
+    args: "set pause until the deploy completes --runs 4",
   });
 
   expect(request.mock.calls[1]).toEqual([

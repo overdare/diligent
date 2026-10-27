@@ -1,7 +1,8 @@
 // @summary Compact persistent goal status with collapsible details and explicit lifecycle controls
 
 import type { GoalStatus as GoalLifecycleStatus, ThreadGoal } from "@diligent/protocol";
-import { memo, type ReactNode, useState } from "react";
+import { describeGoalReason, formatGoalDuration, goalElapsedMs, goalStatusLabel } from "@diligent/runtime/client";
+import { memo, type ReactNode, useEffect, useState } from "react";
 import { cn } from "../lib/cn";
 import { Check, ChevronDown, X } from "./icons";
 
@@ -15,13 +16,13 @@ export interface GoalStatusProps {
 
 type StatusTone = "active" | "success" | "warning" | "muted";
 
-const STATUS_META: Record<GoalLifecycleStatus, { label: string; tone: StatusTone }> = {
-  active: { label: "In progress", tone: "active" },
-  paused: { label: "Paused", tone: "muted" },
-  blocked: { label: "Blocked", tone: "warning" },
-  budget_limited: { label: "Budget limit reached", tone: "warning" },
-  usage_limited: { label: "Usage limit reached", tone: "warning" },
-  complete: { label: "Complete", tone: "success" },
+const STATUS_TONE: Record<GoalLifecycleStatus, StatusTone> = {
+  active: "active",
+  paused: "muted",
+  blocked: "warning",
+  budget_limited: "warning",
+  usage_limited: "warning",
+  complete: "success",
 };
 
 const TONE_TEXT: Record<StatusTone, string> = {
@@ -40,18 +41,8 @@ const TONE_FILL: Record<StatusTone, string> = {
 
 const compactNumber = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 
-function formatActiveTime(activeTimeMs: number): string {
-  const totalSeconds = Math.floor(activeTimeMs / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  if (minutes > 0) return `${minutes}m ${seconds}s`;
-  return `${seconds}s`;
-}
-
 function usageRatio(goal: ThreadGoal): number {
-  const turnRatio = goal.turnsUsed / goal.maxTurns;
+  const turnRatio = goal.maxTurns === undefined ? 0 : goal.turnsUsed / goal.maxTurns;
   const tokenRatio = goal.tokenBudget === undefined ? 0 : goal.tokensUsed / goal.tokenBudget;
   return Math.min(1, Math.max(turnRatio, tokenRatio));
 }
@@ -74,13 +65,23 @@ function StatusIcon({ tone }: { tone: StatusTone }) {
 
 function GoalStatusImpl({ goal, onPause, onResume, onClear, defaultExpanded = false }: GoalStatusProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const status = STATUS_META[goal.status];
+  const [now, setNow] = useState(() => Date.now());
+  const ticking = goal.status === "active" && goal.runStartedAt !== undefined;
+  useEffect(() => {
+    if (!ticking) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [ticking]);
+  const tone = STATUS_TONE[goal.status];
+  const label = goalStatusLabel(goal);
+  const elapsed = formatGoalDuration(goalElapsedMs(goal, now));
   const canResume = goal.status !== "active" && goal.status !== "complete";
   const tokenSummary =
     goal.tokenBudget === undefined
       ? `${compactNumber.format(goal.tokensUsed)} tokens`
       : `${compactNumber.format(goal.tokensUsed)} / ${compactNumber.format(goal.tokenBudget)} tokens`;
-  const showProgress = goal.status !== "complete";
+  const showProgress = goal.status !== "complete" && (goal.tokenBudget !== undefined || goal.maxTurns !== undefined);
 
   return (
     <section aria-label="Goal status" className="shrink-0 border-t border-border/10 bg-surface-dark px-7 pt-3">
@@ -92,17 +93,21 @@ function GoalStatusImpl({ goal, onPause, onResume, onClear, defaultExpanded = fa
             onClick={() => setExpanded((value) => !value)}
             className="group flex min-w-0 flex-1 items-center gap-3 py-2.5 pr-2 pl-3.5 text-left transition hover:bg-fill-ghost-hover"
           >
-            <StatusIcon tone={status.tone} />
+            <StatusIcon tone={tone} />
             <div className="min-w-0 flex-1">
               <h2 className="truncate text-sm font-medium leading-5 text-text">{goal.objective}</h2>
               <p className="mt-0.5 truncate text-xs leading-4 text-text-tertiary">
-                <span className={cn("font-medium", TONE_TEXT[status.tone])}>{status.label}</span>
+                <span className={cn("font-medium", TONE_TEXT[tone])}>{label}</span>
+                <span className="px-1.5 text-text-tertiary/60">·</span>
+                {elapsed}
                 <span className="px-1.5 text-text-tertiary/60">·</span>
                 {tokenSummary}
-                <span className="px-1.5 text-text-tertiary/60">·</span>
-                {goal.turnsUsed.toLocaleString()} / {goal.maxTurns.toLocaleString()} runs
-                <span className="px-1.5 text-text-tertiary/60">·</span>
-                {formatActiveTime(goal.activeTimeMs)}
+                {goal.maxTurns === undefined ? null : (
+                  <>
+                    <span className="px-1.5 text-text-tertiary/60">·</span>
+                    run {goal.turnsUsed.toLocaleString()} of {goal.maxTurns.toLocaleString()}
+                  </>
+                )}
               </p>
             </div>
             <ChevronDown
@@ -144,7 +149,7 @@ function GoalStatusImpl({ goal, onPause, onResume, onClear, defaultExpanded = fa
         {showProgress ? (
           <div className="h-0.5 bg-border/20">
             <div
-              className={cn("h-full transition-[width]", TONE_FILL[status.tone])}
+              className={cn("h-full transition-[width]", TONE_FILL[tone])}
               style={{ width: `${usageRatio(goal) * 100}%` }}
             />
           </div>
@@ -160,10 +165,10 @@ function GoalStatusImpl({ goal, onPause, onResume, onClear, defaultExpanded = fa
                 <p
                   className={cn(
                     "whitespace-pre-wrap break-words text-xs leading-5",
-                    status.tone === "warning" ? "text-warning" : "text-text-secondary",
+                    tone === "warning" ? "text-warning" : "text-text-secondary",
                   )}
                 >
-                  {goal.reason}
+                  {describeGoalReason(goal.reason)}
                 </p>
               </GoalDetail>
             ) : null}
@@ -175,8 +180,10 @@ function GoalStatusImpl({ goal, onPause, onResume, onClear, defaultExpanded = fa
               </GoalDetail>
             ) : null}
             <p className="text-2xs leading-4 text-text-tertiary">
+              Active {elapsed} across {goal.turnsUsed.toLocaleString()} {goal.turnsUsed === 1 ? "run" : "runs"}
+              {goal.maxTurns === undefined ? "" : ` (limit ${goal.maxTurns.toLocaleString()})`} ·{" "}
               {goal.tokensUsed.toLocaleString()} /{" "}
-              {goal.tokenBudget === undefined ? "unlimited" : goal.tokenBudget.toLocaleString()} tokens ·{" "}
+              {goal.tokenBudget === undefined ? "no budget" : goal.tokenBudget.toLocaleString()} tokens ·{" "}
               {goal.cacheReadTokens.toLocaleString()} cached read tokens (not charged)
             </p>
           </div>

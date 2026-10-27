@@ -34,6 +34,35 @@ async function setup(streamFunction?: StreamFunction, enabled = true) {
   const threadId = await client.initAndStartThread(cwd);
   return { cwd, client, threadId, server };
 }
+const verify = { id: "verify", name: "ls", input: { path: tmpdir() } };
+const userQuestion = {
+  id: "q",
+  name: "request_user_input",
+  input: {
+    questions: [{ id: "q", header: "Choice", question: "Which?", options: [{ label: "A", description: "Option A" }] }],
+  },
+};
+async function readGoal(client: ProtocolTestClient, threadId: string) {
+  return (await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse;
+}
+/** Pause for cleanup, retrying if a goal run bumps the revision in between. */
+async function pauseGoal(client: ProtocolTestClient, threadId: string) {
+  for (let attempt = 0; ; attempt++) {
+    const { goal } = await readGoal(client, threadId);
+    if (!goal || goal.status !== "active") return;
+    try {
+      await client.request("thread/goal/set", {
+        threadId,
+        action: "pause",
+        expectedGoalId: goal.id,
+        expectedRevision: goal.revision,
+      });
+      return;
+    } catch (error) {
+      if (attempt > 5) throw error;
+    }
+  }
+}
 async function setGoal(client: ProtocolTestClient, threadId: string, extra = {}) {
   return (await client.request("thread/goal/set", {
     threadId,
@@ -45,7 +74,7 @@ async function setGoal(client: ProtocolTestClient, threadId: string, extra = {})
 test("automatic continuation stops at evidence-backed completion without fabricating user turns", async () => {
   const first = createSimpleStream("Need another step");
   const complete = createToolUseStream(
-    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verification succeeded" } }],
+    [verify, { id: "done", name: "update_goal", input: { status: "complete", evidence: "Verification succeeded" } }],
     "Done",
   );
   let calls = 0;
@@ -71,18 +100,33 @@ test("automatic continuation stops at evidence-backed completion without fabrica
   expect(inputs.length).toBeGreaterThan(0);
   expect(inputs.every((entry) => entry.visibility === "internal" && entry.source === "goal")).toBe(true);
 });
-test("token budget aborts before the sampled tool callback can report completion", async () => {
-  const { client, threadId } = await setup(
-    createToolUseStream(
-      [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Must not execute" } }],
-      "Done",
-    ),
+test("token budget stops the sampled tool batch and allows one text-only wrap-up reply", async () => {
+  const stream = createToolUseStream(
+    [verify, { id: "done", name: "update_goal", input: { status: "complete", evidence: "Must not execute" } }],
+    "Wrap-up: budget reached",
   );
+  const contexts: string[] = [];
+  const { client, threadId } = await setup((...args) => {
+    contexts.push(JSON.stringify(args[1].messages));
+    return stream(...args);
+  });
   await setGoal(client, threadId, { tokenBudget: 2 });
   await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "budget_limited");
-  const result = (await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse;
-  expect(result.goal).toMatchObject({ status: "budget_limited", tokensUsed: 2 });
+  await client.waitForNotification("turn/completed");
+  const result = await readGoal(client, threadId);
+  expect(result.goal).toMatchObject({ status: "budget_limited", reason: "token_budget", tokensUsed: 4 });
   expect(result.goal?.completionEvidence).toBeUndefined();
+  expect(result.goal?.runStartedAt).toBeUndefined();
+  expect(contexts).toHaveLength(2);
+  expect(contexts[1]).toContain("reached its token budget");
+  const read = (await client.request("thread/read", { threadId })) as {
+    items: Array<{ type: string; message?: unknown; toolName?: string; output?: string }>;
+  };
+  expect(
+    read.items.some((item) => item.type === "agentMessage" && JSON.stringify(item.message).includes("Wrap-up")),
+  ).toBe(true);
+  const completion = read.items.find((item) => item.type === "toolCall" && item.toolName === "update_goal");
+  expect(completion?.output ?? "").not.toContain("Must not execute");
 });
 test("feature gate permits status reads but prevents creating goals", async () => {
   const { client, threadId } = await setup(undefined, false);
@@ -183,11 +227,61 @@ test("ordinary user input takes priority over a waiting automatic goal run", asy
   await expect(client.request("turn/start", { threadId, message: "Work on this instead" })).resolves.toMatchObject({
     accepted: true,
   });
-  await client.waitForNotification("turn/completed");
-  const snapshot = (await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse;
-  expect(snapshot.goal).toMatchObject({ status: "paused", reason: "user_turn" });
+  const suspended = await client.waitFor(
+    (n) => n.method === "thread/goal/updated" && n.params.goal?.reason === "user_turn",
+  );
+  expect(suspended.method === "thread/goal/updated" && suspended.params.goal).toMatchObject({ status: "paused" });
+  const suspendedAt = suspended.method === "thread/goal/updated" ? suspended.params.sequence : 0;
+  // After the user's reply finishes, the goal resumes on its own.
+  await client.waitFor(
+    (n) => n.method === "thread/goal/updated" && n.params.sequence > suspendedAt && n.params.goal?.status === "active",
+  );
   const read = (await client.request("thread/read", { threadId })) as { items: Array<{ type: string }> };
   expect(read.items.filter((item) => item.type === "userMessage")).toHaveLength(1);
+  await pauseGoal(client, threadId);
+});
+
+test("update_goal paused in an ordinary user turn stops the goal at the user's request", async () => {
+  const goalRun = createToolUseStream([userQuestion], "Waiting");
+  const userTurn = createToolUseStream(
+    [{ id: "pause", name: "update_goal", input: { status: "paused", evidence: "User: pause the goal" } }],
+    "Paused as requested",
+  );
+  const { client, threadId } = await setup((...args) =>
+    (JSON.stringify(args[1].messages).includes("please pause the goal") ? userTurn : goalRun)(...args),
+  );
+  const requested = Promise.withResolvers<void>();
+  client.onServerRequest(async () => {
+    requested.resolve();
+    return await new Promise(() => {});
+  });
+  await setGoal(client, threadId);
+  await requested.promise;
+  await client.sendTurnAndWait(threadId, "please pause the goal");
+  await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.reason === "user_request");
+  expect((await readGoal(client, threadId)).goal).toMatchObject({
+    status: "paused",
+    reason: "user_request",
+    turnsUsed: 1,
+  });
+});
+
+test("blocked is rejected on the first goal run and the goal keeps running", async () => {
+  const { client, threadId } = await setup(
+    createToolUseStream(
+      [{ id: "blocked", name: "update_goal", input: { status: "blocked", evidence: "Need credentials" } }],
+      "Still blocked",
+    ),
+  );
+  await setGoal(client, threadId);
+  await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "blocked");
+  const outputs = client.notifications.flatMap((n) =>
+    n.method === "agent/event" && n.params.event.type === "tool_end" ? [n.params.event] : [],
+  );
+  expect(outputs.find((event) => event.toolCallId === "blocked")).toMatchObject({ isError: true });
+  expect(JSON.stringify(outputs)).toContain("Blocked rejected: this is consecutive goal run 1");
+  // The rejected claim becomes the reason once three empty runs stop the goal.
+  expect((await readGoal(client, threadId)).goal).toMatchObject({ reason: "Need credentials", turnsUsed: 3 });
 });
 
 test("child completion wakes the goal and child usage remains attributed after the parent run ends", async () => {
@@ -199,7 +293,7 @@ test("child completion wakes the goal and child usage remains attributed after t
     "Delegated",
   );
   const done = createToolUseStream(
-    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Child inspection finished" } }],
+    [verify, { id: "done", name: "update_goal", input: { status: "complete", evidence: "Child inspection finished" } }],
     "Done",
   );
   const simple = createSimpleStream("Inspected");

@@ -2,6 +2,7 @@
 
 import { sep } from "node:path";
 import type { Mode } from "@diligent/protocol";
+import { formatGoalDuration, goalElapsedMs } from "@diligent/runtime/client";
 import { t } from "../theme";
 import type { StatusBarStore } from "./status-bar-store";
 
@@ -111,7 +112,9 @@ export function renderStatusBar(store: StatusBarStore, width: number): string[] 
     const tokens = info.goal.tokenBudget
       ? `${formatTokensCompact(info.goal.tokensUsed)}/${formatTokensCompact(info.goal.tokenBudget)}`
       : `${formatTokensCompact(info.goal.tokensUsed)} tokens`;
-    leftParts.push(`goal:${info.goal.status} ${tokens} ${info.goal.turnsUsed}/${info.goal.maxTurns} runs`);
+    const elapsed = formatGoalDuration(goalElapsedMs(info.goal, Date.now())).replaceAll(" ", "");
+    const runs = info.goal.maxTurns === undefined ? "" : ` run ${info.goal.turnsUsed}/${info.goal.maxTurns}`;
+    leftParts.push(`goal:${info.goal.status} ${elapsed} ${tokens}${runs}`);
   }
 
   const statusHint = info.status === "busy" ? "ctrl+c to cancel" : info.status === "retry" ? "retrying..." : "";

@@ -17,7 +17,7 @@ const goal: ThreadGoal = {
   turnsUsed: 3,
   tokensUsed: 2_500,
   cacheReadTokens: 800,
-  activeTimeMs: 1_000,
+  activeTimeMs: 252_000,
   accountingScope: "reported_agent_tokens",
   reason: "continuing",
   completionEvidence: "All checks passed",
@@ -62,9 +62,10 @@ describe("/goal", () => {
     expect(fixture.requests).toEqual([{ method: "thread/goal/get", params: { threadId: "thread-1" } }]);
     const output = fixture.lines.join("\n");
     expect(output).toContain("Ship the release");
-    expect(output).toContain("active");
+    expect(output).toContain("In progress");
+    expect(output).toContain("4m 12s active");
     expect(output).toContain("2,500 / 10,000 tokens");
-    expect(output).toContain("3 / 12 runs");
+    expect(output).toContain("3 of 12 (run limit)");
     expect(output).toContain("All checks passed");
     expect(fixture.runAgent).not.toHaveBeenCalled();
   });
@@ -75,7 +76,7 @@ describe("/goal", () => {
       { goal, sequence: 1 },
     ]);
 
-    await goalCommand.handler("Ship the release --tokens 10000 --turns 12", fixture.ctx);
+    await goalCommand.handler("Ship the release --tokens 10000 --runs 12", fixture.ctx);
 
     expect(fixture.requests[1]).toEqual({
       method: "thread/goal/set",
@@ -88,6 +89,33 @@ describe("/goal", () => {
       },
     });
     expect(fixture.runAgent).not.toHaveBeenCalled();
+  });
+
+  test("shows unlimited runs, readable reasons, and live elapsed time for an in-flight run", async () => {
+    const now = Date.now();
+    const fixture = createContext([
+      {
+        goal: {
+          ...goal,
+          status: "paused",
+          reason: "turn_limit",
+          tokenBudget: undefined,
+          maxTurns: undefined,
+          activeTimeMs: 0,
+          runStartedAt: now - 45_000,
+        },
+        sequence: 4,
+      },
+    ]);
+
+    await goalCommand.handler("status", fixture.ctx);
+
+    const output = fixture.lines.join("\n");
+    expect(output).toMatch(/Runs:\S*\s+3\n/);
+    expect(output).not.toContain("run limit)");
+    expect(output).toContain("2,500 / unlimited tokens");
+    expect(output).toMatch(/Elapsed:\S*\s+4[5-9]s active/);
+    expect(output).toContain("Run limit reached. Raise it with /goal edit --runs N (or off), then resume.");
   });
 
   test("uses goal identity for pause and remains available during a running task", async () => {
@@ -123,7 +151,7 @@ describe("/goal", () => {
     ["resume", { action: "resume", expectedGoalId: "goal-1", expectedRevision: 2 }],
     ["clear", { action: "clear", expectedGoalId: "goal-1", expectedRevision: 2 }],
     [
-      "edit Ship safely --tokens 9000 --turns 7",
+      "edit Ship safely --tokens 9000 --runs 7",
       {
         action: "edit",
         objective: "Ship safely",
@@ -134,6 +162,7 @@ describe("/goal", () => {
       },
     ],
     ["set pause after release", { action: "set", objective: "pause after release", expectedRevision: 2 }],
+    ["edit --runs off", { action: "edit", maxTurns: null, expectedGoalId: "goal-1", expectedRevision: 2 }],
   ] as const) {
     test(`dispatches ${args} without ordinary chat`, async () => {
       const fixture = createContext([

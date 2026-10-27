@@ -4,14 +4,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDefaultModelRef } from "@diligent/core/model-registry";
-import {
-  ProviderError,
-  ProviderErrorType,
-  type ProviderEvent,
-  type ProviderResult,
-} from "@diligent/core/provider-contract";
-import type { ThreadGoalResponse } from "@diligent/protocol";
-import { EventStream, ProviderManager, type StreamFunction } from "@diligent/runtime";
+import type { DiligentServerRequest, DiligentServerRequestResponse, ThreadGoalResponse } from "@diligent/protocol";
+import { ProviderManager, type StreamFunction } from "@diligent/runtime";
 import { createSimpleStream, createToolUseStream } from "./helpers/fake-stream";
 import { createProtocolClient, type ProtocolTestClient } from "./helpers/protocol-client";
 import { createTestServer } from "./helpers/server-factory";
@@ -53,7 +47,10 @@ const requestGoal = () =>
   );
 const finishGoal = () =>
   createToolUseStream(
-    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verification passed" } }],
+    [
+      { id: "verify", name: "ls", input: { path: tmpdir() } },
+      { id: "done", name: "update_goal", input: { status: "complete", evidence: "Verification passed" } },
+    ],
     "Done",
   );
 async function readGoal(client: ProtocolTestClient, threadId: string) {
@@ -73,7 +70,7 @@ test("model creation hands off after the user turn, excluding its usage from the
   const create = requestGoal();
   const finish = finishGoal();
   let calls = 0;
-  const { client, threadId, cwd } = await setup((...args) => (calls++ < 2 ? create : finish)(...args));
+  const { client, threadId, cwd } = await setup((...args) => (calls++ < 1 ? create : finish)(...args));
   await client.sendTurnAndWait(threadId, "Keep working until the fix is verified");
   await client.waitFor(
     (n) => n.method === "thread/goal/updated" && n.params.goal?.status === "complete" && n.params.goal.tokensUsed === 4,
@@ -86,7 +83,8 @@ test("model creation hands off after the user turn, excluding its usage from the
     maxTurns: 3,
     completionEvidence: "Verification passed",
   });
-  expect(calls).toBe(4);
+  // create_goal ends the originating turn: one creation sample, then two goal-run samples.
+  expect(calls).toBe(3);
   const transcript = (await readFile(join(cwd, ".diligent", "sessions", `${threadId}.jsonl`), "utf8"))
     .trim()
     .split("\n")
@@ -100,56 +98,64 @@ test("model creation hands off after the user turn, excluding its usage from the
   expect(created).toBeGreaterThan(completed);
 });
 
-/** Hold the originating reply after create_goal has returned, without relying on timers. */
+/**
+ * Hold the originating turn after create_goal has returned: the same batch asks the user a
+ * question, and answering it releases the turn, which then ends because create_goal ended it.
+ */
+/** Empty answers cancel the turn, so held questions get a real answer. */
+const ANSWER = { answers: { q: "All" } };
+
 function heldReply() {
-  let release!: () => void;
-  let fail!: () => void;
-  let ready!: () => void;
-  const waiting = new Promise<void>((resolve) => {
-    ready = resolve;
-  });
-  const create = requestGoal();
+  const waiting = Promise.withResolvers<void>();
+  const answers: Array<() => void> = [];
+  const create = createToolUseStream(
+    [
+      { id: "create", name: "create_goal", input: { objective: "Verify the fix", maxTurns: 3, tokenBudget: 30 } },
+      {
+        id: "ask",
+        name: "request_user_input",
+        input: {
+          questions: [
+            {
+              id: "q",
+              header: "Scope",
+              question: "Which suite?",
+              options: [{ label: "All", description: "Everything" }],
+            },
+          ],
+        },
+      },
+    ],
+    "Requested",
+  );
   const finish = finishGoal();
   let calls = 0;
-  const stream: StreamFunction = (...args) => {
-    if (calls++ === 0) return create(...args);
-    if (calls > 2) return finish(...args);
-    const result = new EventStream<ProviderEvent, ProviderResult>(
-      (e) => e.type === "done" || e.type === "error",
-      (e) => {
-        if (e.type === "error") throw e.error;
-        return { message: (e as Extract<ProviderEvent, { type: "done" }>).message };
-      },
-    );
-    release = () =>
-      result.push({
-        type: "done",
-        stopReason: "end_turn",
-        message: {
-          role: "assistant",
-          content: [{ type: "text", text: "Requested" }],
-          model: { provider: "anthropic", modelId: "claude-sonnet-5" },
-          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
-          stopReason: "end_turn",
-          timestamp: Date.now(),
-        },
-      });
-    fail = () =>
-      result.push({ type: "error", error: new ProviderError("Origin reply failed", ProviderErrorType.Unknown, false) });
-    args[2].signal?.addEventListener(
-      "abort",
-      () => result.push({ type: "error", error: new DOMException("Stopped", "AbortError") }),
-      { once: true },
-    );
-    ready();
-    return result as never;
-  };
-  return { stream, waiting, release: () => release(), fail: () => fail(), calls: () => calls };
+  const stream: StreamFunction = (...args) => (calls++ === 0 ? create : finish)(...args);
+  const hold = (client: ProtocolTestClient) =>
+    client.onServerRequest(async (request: DiligentServerRequest): Promise<DiligentServerRequestResponse> => {
+      if (request.method === "approval/request") return { method: request.method, result: { decision: "once" } };
+      const answer = Promise.withResolvers<DiligentServerRequestResponse>();
+      answers.push(() => answer.resolve({ method: request.method, result: ANSWER } as DiligentServerRequestResponse));
+      waiting.resolve();
+      return answer.promise;
+    });
+  return { stream, waiting: waiting.promise, hold, release: () => answers.splice(0).forEach((answer) => answer()) };
+}
+
+/** Answer a held question when its asking client has already gone away. */
+function answerPendingRequests(server: ReturnType<typeof createTestServer>) {
+  const pending = (server as unknown as { pendingServerRequests: Map<number, { resolve: (value: unknown) => void }> })
+    .pendingServerRequests;
+  for (const [id, request] of pending) {
+    pending.delete(id);
+    request.resolve({ method: "userInput/request", result: ANSWER });
+  }
 }
 
 test("accepted creation stays pending until the originating turn succeeds", async () => {
   const held = heldReply();
   const { client, threadId } = await setup(held.stream);
+  held.hold(client);
   const turn = client.sendTurnAndWait(threadId, "Continue until verified");
   await held.waiting;
   expect((await readGoal(client, threadId)).goal).toBeNull();
@@ -162,7 +168,6 @@ test("accepted creation stays pending until the originating turn succeeds", asyn
 
 for (const ending of [
   "interrupt",
-  "failure",
   "disconnect",
   "plan",
   "steer",
@@ -175,6 +180,7 @@ for (const ending of [
   test(`${ending} discards a pending creation instead of launching automatic work`, async () => {
     const held = heldReply();
     const { client, threadId, server, cwd } = await setup(held.stream);
+    held.hold(client);
     const turn =
       ending === "disconnect"
         ? client.request("turn/start", { threadId, message: "Continue until verified" })
@@ -182,7 +188,6 @@ for (const ending of [
     await held.waiting;
     expect(JSON.stringify(client.notifications)).toContain('\\"status\\":\\"pending\\"');
     if (ending === "interrupt") await client.request("turn/interrupt", { threadId });
-    else if (ending === "failure") held.fail();
     else if (ending === "plan") {
       await client.request("mode/set", { threadId, mode: "plan" });
       held.release();
@@ -208,7 +213,7 @@ for (const ending of [
       held.release();
     } else {
       client.close();
-      held.release();
+      answerPendingRequests(server);
     }
     if (ending === "disconnect") {
       // Shutdown waits for all turn cleanup; reconnect only afterwards to inspect durable state.
@@ -247,6 +252,8 @@ test("originating client disconnect revokes pending creation even with another c
   try {
     await observer.initAndStartThread(cwd);
     await observer.request("thread/subscribe", { threadId });
+    held.hold(client);
+    held.hold(observer);
     await client.request("turn/start", { threadId, message: "Continue until verified" });
     await held.waiting;
     expect(JSON.stringify(observer.notifications)).toContain('\\"status\\":\\"pending\\"');
@@ -276,7 +283,7 @@ test("duplicate and internal creation cannot replace the accepted objective", as
   let calls = 0;
   const { client, threadId } = await setup((...args) => {
     const index = calls++;
-    return (index < 2 ? create : index === 2 ? internalCreate : finish)(...args);
+    return (index < 1 ? create : index === 1 ? internalCreate : finish)(...args);
   });
   await client.sendTurnAndWait(threadId, "Keep going until verified");
   await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "complete");

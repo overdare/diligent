@@ -434,9 +434,12 @@ export async function dispatchClientRequest(
 
     case DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_RELOAD: {
       const result = await handleConfigReload(ctx.reloadConfig, ctx.threadHandlersCtx.threads);
+      const threads = [...ctx.threadHandlersCtx.threads.values()];
       if (ctx.threadHandlersCtx.getGoalsConfig?.()?.enabled === false) {
+        await Promise.all(threads.map((runtime) => runtime.goal?.pause("disabled")));
+      } else {
         await Promise.all(
-          [...ctx.threadHandlersCtx.threads.values()].map((runtime) => runtime.goal?.pause("disabled")),
+          threads.map((runtime) => runtime.goal?.resumeAfterConfigReload({ enabled: true, mode: runtime.mode })),
         );
       }
       return result;

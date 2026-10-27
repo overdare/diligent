@@ -84,6 +84,7 @@ export const DiligentConfigSchema = z
     goals: z
       .object({
         enabled: z.boolean().optional(),
+        /** Optional default goal run limit. Unset = no run limit. */
         defaultMaxTurns: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
       })
       .strict()

@@ -104,3 +104,26 @@ test("goal storage rejects traversal session IDs", async () => {
   const { dir } = await setup();
   await expect(openGoalStore(dir, "../outside")).rejects.toThrow("Invalid session ID");
 });
+
+test("legacy records with the old 20-run default and new records without a run limit both replay", async () => {
+  const { dir, store } = await setup();
+  await store.close();
+  const path = join(dir, "goals/test-session.jsonl");
+  const legacy = { ...goalFixture(), maxTurns: 20 };
+  const { maxTurns: _, ...unlimited } = { ...goalFixture(), id: "g2", runStartedAt: 5 };
+  await appendFile(
+    path,
+    `${JSON.stringify({ version: 1, sequence: 1, type: "snapshot", goal: legacy, epoch: 1, revision: 1 })}\n`,
+  );
+  let reopened = await openGoalStore(dir, "test-session");
+  expect(reopened.read().goal).toMatchObject({ id: "g1", maxTurns: 20 });
+  await reopened.close();
+  await appendFile(
+    path,
+    `${JSON.stringify({ version: 1, sequence: 2, type: "snapshot", goal: unlimited, epoch: 2, revision: 2 })}\n`,
+  );
+  reopened = await openGoalStore(dir, "test-session");
+  expect(reopened.read().goal).toMatchObject({ id: "g2", runStartedAt: 5 });
+  expect(reopened.read().goal?.maxTurns).toBeUndefined();
+  await reopened.close();
+});

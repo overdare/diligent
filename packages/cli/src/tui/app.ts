@@ -726,6 +726,8 @@ export class App {
               tokenBudget: goal.tokenBudget,
               turnsUsed: goal.turnsUsed,
               maxTurns: goal.maxTurns,
+              activeTimeMs: goal.activeTimeMs,
+              runStartedAt: goal.runStartedAt,
             }
           : undefined,
       });

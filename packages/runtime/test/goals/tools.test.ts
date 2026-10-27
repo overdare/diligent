@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ToolContext } from "@diligent/core/tool-contract";
 import { filterToolsByMode } from "../../src/app-server/factory";
-import { createGoalTools, type GoalCreateInput, type GoalToolHost, goalPrompt } from "../../src/goals/tools";
+import { createGoalTools, type GoalCreateInput, type GoalToolHost } from "../../src/goals/tools";
 import { isImmutableTool } from "../../src/tools/immutable";
 
 const context = (signal = new AbortController().signal): ToolContext => ({
@@ -66,7 +66,9 @@ describe("create_goal", () => {
       objective: "Run tests until the regression is fixed",
       tokenBudget: 1200,
       maxTurns: 4,
+      note: "Goal accepted. This response ends now; the first goal run starts automatically after it.",
     });
+    expect(result.endTurn).toBe(true);
   });
 
   test("rejects before buffering when aborted and fails safely if the host disappears", async () => {
@@ -98,25 +100,43 @@ describe("create_goal", () => {
   test("description reserves creation for explicit persistent intent and makes acceptance timing clear", () => {
     const tool = createGoalTools(host(async (input) => ({ status: "pending", ...input })))[0];
     expect(tool.description).toContain("explicitly asks");
-    expect(tool.description).toContain("ordinary task");
+    expect(tool.description).toContain("ordinary tasks");
     expect(tool.description).toContain("quoted");
-    expect(tool.description).toContain("finish the current response");
+    expect(tool.description).toContain("first action");
+    expect(tool.description).toContain("response ends");
     expect(tool.description).toContain("explicitly specified");
   });
 });
 
-test("active-goal prompt keeps goal controls user-owned while allowing explicit user-requested creation", () => {
-  const prompt = goalPrompt({
-    controller: () =>
-      ({
-        read: () => ({
-          goal: { id: "g", objective: "Finish", status: "active" },
-          sequence: 1,
-        }),
-      }) as never,
-    scope: () => undefined,
+describe("update_goal", () => {
+  const updateTool = (controller: unknown, scope?: unknown) =>
+    createGoalTools({ controller: () => controller as never, scope: () => scope as never }).find(
+      (tool) => tool.name === "update_goal",
+    )!;
+
+  test("accepts complete, blocked, and paused, and keeps goal controls user-owned", () => {
+    const tool = updateTool(undefined);
+    for (const status of ["complete", "blocked", "paused"])
+      expect(tool.parameters.safeParse({ status, evidence: "x" }).success).toBe(true);
+    expect(tool.parameters.safeParse({ status: "resumed", evidence: "x" }).success).toBe(false);
+    expect(tool.description).toContain("three consecutive goal runs");
+    expect(tool.description).toContain("only when the user explicitly asks to pause");
+    expect(tool.description).toContain("cannot create, resume, or edit goals");
   });
 
-  expect(prompt).toContain("create_goal only for explicit user intent");
-  expect(prompt).toContain("Only the user can edit, resume, pause, or change goal limits");
+  test("paused needs no goal run; complete and blocked do", async () => {
+    let paused = 0;
+    const controller = {
+      requestPause: async () => {
+        paused++;
+      },
+      snapshot: async () => ({ goal: null, sequence: 1 }),
+    };
+    const tool = updateTool(controller);
+    await tool.execute({ status: "paused", evidence: "User said stop" }, context());
+    expect(paused).toBe(1);
+    await expect(tool.execute({ status: "complete", evidence: "Done" }, context())).rejects.toThrow(
+      "complete and blocked can only be reported from a goal run",
+    );
+  });
 });

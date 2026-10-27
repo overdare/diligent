@@ -26,8 +26,8 @@ describe("parseGoalCommand", () => {
     expect(parseGoalCommand("status", goal)).toBeNull();
   });
 
-  test("sets a goal from an objective with token and turn limits", () => {
-    expect(parseGoalCommand("Ship the release --tokens 12000 --turns 8", goal)).toEqual({
+  test("sets a goal from an objective with token and run limits", () => {
+    expect(parseGoalCommand("Ship the release --tokens 12000 --runs 8", goal)).toEqual({
       action: "set",
       objective: "Ship the release",
       tokenBudget: 12_000,
@@ -62,7 +62,7 @@ describe("parseGoalCommand", () => {
   });
 
   test("edits objective and only the supplied limits", () => {
-    expect(parseGoalCommand("edit Ship safely --turns 12", goal)).toEqual({
+    expect(parseGoalCommand("edit Ship safely --runs 12", goal)).toEqual({
       action: "edit",
       objective: "Ship safely",
       maxTurns: 12,
@@ -71,9 +71,34 @@ describe("parseGoalCommand", () => {
     });
   });
 
+  test("edit may omit the objective and clear limits with off", () => {
+    expect(parseGoalCommand("edit --runs off", goal)).toEqual({
+      action: "edit",
+      maxTurns: null,
+      expectedGoalId: "goal-1",
+      expectedRevision: 3,
+    });
+    expect(parseGoalCommand("edit --tokens off --runs 30", goal)).toEqual({
+      action: "edit",
+      tokenBudget: null,
+      maxTurns: 30,
+      expectedGoalId: "goal-1",
+      expectedRevision: 3,
+    });
+    expect(() => parseGoalCommand("edit", goal)).toThrow("Usage: /goal edit [<objective>]");
+  });
+
+  test("off is rejected outside edit", () => {
+    expect(() => parseGoalCommand("Ship it --runs off", goal)).toThrow("--runs off is only valid with /goal edit");
+    expect(() => parseGoalCommand("set Ship it --tokens off", goal)).toThrow(
+      "--tokens off is only valid with /goal edit",
+    );
+  });
+
   test("rejects malformed limits and unexpected action arguments", () => {
     expect(() => parseGoalCommand("Ship it --tokens nope", goal)).toThrow("--tokens");
-    expect(() => parseGoalCommand("Ship it --turns 0", goal)).toThrow("--turns");
+    expect(() => parseGoalCommand("Ship it --runs 0", goal)).toThrow("--runs");
+    expect(() => parseGoalCommand("Ship it --turns 8", goal)).toThrow("Unknown goal option: --turns");
     expect(() => parseGoalCommand("pause later", goal)).toThrow("Usage");
     expect(() => parseGoalCommand("status later", goal)).toThrow("Usage");
     expect(() => parseGoalCommand("set --tokens 10", goal)).toThrow("objective");

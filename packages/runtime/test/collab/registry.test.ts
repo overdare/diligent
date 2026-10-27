@@ -88,10 +88,12 @@ describe("AgentRegistry", () => {
       let scope: import("../../src/goals/controller").GoalWorkScope | undefined = {
         identity: { goalId: "goal", epoch: 1, outerRunId: "outer" },
         signal: new AbortController().signal,
+        childSignal: new AbortController().signal,
         startedAt: 0,
         recordUsage: (sample) => {
           samples.push(sample);
         },
+        noteTool: () => {},
         childStarted: (id) => {
           live.add(id);
         },
@@ -126,6 +128,33 @@ describe("AgentRegistry", () => {
       const executions = samples as Array<{ executionId?: string }>;
       expect(executions[0].executionId).toBeDefined();
       expect(executions[1].executionId).not.toBe(executions[0].executionId);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("goal-owned children follow the child signal, which a budget crossing aborts before the root run", async () => {
+    const root = await mkdtemp(join(tmpdir(), "goal-child-signal-"));
+    try {
+      const children = new AbortController();
+      children.abort();
+      const registry = new AgentRegistry(
+        makeCollabDeps({
+          cwd: root,
+          paths: await ensureDiligentDir(root),
+          streamFn: makeStreamFn([makeAssistant("child")]),
+          getGoalScope: () => ({
+            identity: { goalId: "goal", epoch: 1, outerRunId: "outer" },
+            signal: new AbortController().signal,
+            childSignal: children.signal,
+            startedAt: 0,
+            recordUsage: () => {},
+            noteTool: () => {},
+            childStarted: () => {},
+            childFinished: () => {},
+          }),
+        }),
+      );
+      expect(() => registry.spawn({ prompt: "Inspect", description: "Inspection" })).toThrow();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -174,7 +174,8 @@ describe("buildCommandList", () => {
     expect(buildCommandList([], { goals: true }).find((command) => command.name === "goal")).toEqual({
       name: "goal",
       description: "Show or control the thread goal",
-      usage: "/goal [set] <objective> [--tokens N] [--turns N] | pause | resume | clear | edit <objective>",
+      usage:
+        "/goal [set] <objective> [--tokens N] [--runs N] | edit [<objective>] [--tokens N|off] [--runs N|off] | pause | resume | clear | status",
     });
   });
 

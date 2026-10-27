@@ -262,7 +262,7 @@ export class AgentRegistry {
     const abortController = new AbortController();
     const goalScope = this.deps.getGoalScope?.();
     const goalExecutionId = crypto.randomUUID();
-    goalScope?.signal.throwIfAborted();
+    goalScope?.childSignal.throwIfAborted();
 
     const parentModel = resolveModel(this.deps.model);
     // Model selection is not the parent's to make. An agent uses its AGENT.md `model_class` when it declares
@@ -554,10 +554,10 @@ export class AgentRegistry {
 
     const cancelGoal = () => abortController.abort();
     goalScope?.childStarted(threadId);
-    goalScope?.signal.addEventListener("abort", cancelGoal, { once: true });
-    if (goalScope?.signal.aborted) cancelGoal();
+    goalScope?.childSignal.addEventListener("abort", cancelGoal, { once: true });
+    if (goalScope?.childSignal.aborted) cancelGoal();
     entry.promise = promise.finally(() => {
-      goalScope?.signal.removeEventListener("abort", cancelGoal);
+      goalScope?.childSignal.removeEventListener("abort", cancelGoal);
       goalScope?.childFinished(threadId);
     });
     this.agents.set(threadId, entry);

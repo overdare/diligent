@@ -32,7 +32,8 @@ test("renders a collapsed summary with objective, lifecycle state, budget progre
   expect(html).toContain("Ship goal mode");
   expect(html).toContain("In progress");
   expect(html).toContain("4.5K / 20K tokens");
-  expect(html).toContain("6 / 15 runs");
+  expect(html).toContain("run 6 of 15");
+  expect(html).toContain("1s");
   expect(html).toContain('aria-expanded="false"');
   expect(html).not.toContain("Working through the checklist");
   expect(html).not.toContain("Focused tests passed");
@@ -49,22 +50,62 @@ test("renders reason, retained evidence, and cache usage when expanded", () => {
   expect(html).toContain('aria-expanded="true"');
   expect(html).toContain("Working through the checklist");
   expect(html).toContain("Focused tests passed");
+  expect(html).toContain("Active 1s across 6 runs (limit 15)");
   expect(html).toContain("4,500 / 20,000 tokens");
   expect(html).toContain("2,000 cached read tokens");
 });
 
-test("labels limited statuses and summarizes long active time", () => {
+test("describes runtime reason codes and shows model-written reasons verbatim", () => {
+  const render = (reason: string) =>
+    renderToStaticMarkup(
+      <GoalStatus
+        goal={{ ...goal, status: "paused", reason }}
+        onPause={() => {}}
+        onResume={() => {}}
+        onClear={() => {}}
+        defaultExpanded
+      />,
+    );
+  expect(render("user_turn")).toContain("Paused for your message");
+  expect(render("user_turn")).toContain("resumes automatically when the reply finishes");
+  expect(render("Need the staging API key")).toContain("Need the staging API key");
+});
+
+test("an unlimited goal shows no run limit and no progress bar", () => {
+  const unlimited = { ...goal, tokenBudget: undefined, maxTurns: undefined, turnsUsed: 1 };
+  const html = renderToStaticMarkup(
+    <GoalStatus goal={unlimited} onPause={() => {}} onResume={() => {}} onClear={() => {}} defaultExpanded />,
+  );
+  expect(html).toContain("4.5K tokens");
+  expect(html).not.toContain(" of ");
+  expect(html).not.toContain("width:");
+  expect(html).toContain("Active 1s across 1 run ·");
+  expect(html).toContain("4,500 / no budget tokens");
+});
+
+test("elapsed time includes the in-flight run", () => {
   const html = renderToStaticMarkup(
     <GoalStatus
-      goal={{ ...goal, status: "budget_limited", activeTimeMs: 3_749_000 }}
+      goal={{ ...goal, activeTimeMs: 60_000, runStartedAt: Date.now() - 12_000 }}
       onPause={() => {}}
       onResume={() => {}}
       onClear={() => {}}
     />,
   );
+  expect(html).toMatch(/1m 1[2-9]s/);
+});
 
-  expect(html).toContain("Budget limit reached");
+test("labels limited statuses and summarizes long active time", () => {
+  const render = (patch: Partial<ThreadGoal>) =>
+    renderToStaticMarkup(
+      <GoalStatus goal={{ ...goal, ...patch }} onPause={() => {}} onResume={() => {}} onClear={() => {}} />,
+    );
+  const html = render({ status: "budget_limited", reason: "token_budget", activeTimeMs: 3_749_000 });
+
+  expect(html).toContain("Token budget reached");
   expect(html).toContain("1h 2m");
+  expect(render({ status: "budget_limited", reason: "turn_limit" })).toContain("Run limit reached");
+  expect(render({ activeTimeMs: 2 * 86_400_000 + 3 * 3_600_000 })).toContain("2d 3h");
 });
 
 test("offers resume for a non-active goal", () => {

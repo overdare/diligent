@@ -154,6 +154,104 @@ it("goal continuation stops when final session write cleanup fails", async () =>
   }
 });
 
+async function startDetachedGoalServer(goalDetachGraceMs: number) {
+  const cwd = await mkdtemp(join(tmpdir(), "goal-detach-grace-"));
+  const server = new DiligentAppServer({
+    ...createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }),
+    getGoalsConfig: () => ({ enabled: true }),
+    goalDetachGraceMs,
+  });
+  const connection = connectTestPeer(server);
+  const { threadId } = readResult(
+    await server.handleRequest(TEST_CONNECTION_ID, { id: 1, method: "thread/start", params: { cwd } }),
+  ) as { threadId: string };
+  readResult(
+    await server.handleRequest(TEST_CONNECTION_ID, { id: 2, method: "thread/goal/get", params: { threadId } }),
+  );
+  const runtime = (server as unknown as { threads: Map<string, ThreadRuntime> }).threads.get(threadId)!;
+  connection.disconnect();
+  await runtime.goal!.change(
+    { action: "set", objective: "Keep working while detached" },
+    { idle: true, enabled: true, mode: "default" },
+  );
+  const cleanup = async () => {
+    await server.shutdown();
+    await rm(cwd, { recursive: true, force: true });
+  };
+  return { server, runtime, cleanup };
+}
+
+/** These tests exercise the server's real detach and goal-wake timers, so they poll real time. */
+async function waitUntil(condition: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const startedAt = Date.now();
+  while (!condition()) {
+    if (Date.now() - startedAt > timeoutMs) throw new Error("Timed out waiting for condition");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+describe("goal disconnect grace", () => {
+  it("the last disconnect defers goal runs and pauses only when the grace period expires", async () => {
+    const { runtime, cleanup } = await startDetachedGoalServer(50);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(runtime.goal?.read().goal).toMatchObject({ status: "active", turnsUsed: 0 });
+      await waitUntil(() => runtime.goal?.read().goal?.status === "paused");
+      expect(runtime.goal?.read().goal).toMatchObject({ reason: "disconnected", turnsUsed: 0 });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("reconnecting within the grace period wakes the deferred goal", async () => {
+    const { server, runtime, cleanup } = await startDetachedGoalServer(10_000);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(runtime.goal?.read().goal?.turnsUsed).toBe(0);
+      const connection = connectTestPeer(server);
+      await waitUntil(() => (runtime.goal?.read().goal?.turnsUsed ?? 0) >= 1);
+      await runtime.goal?.pause("user");
+      await runtime.turnWork;
+      expect(runtime.goal?.read().goal).toMatchObject({ status: "paused", reason: "user" });
+      connection.disconnect();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("goal-owned approvals and questions with no client pause the goal and fail closed", async () => {
+    const { server, runtime, cleanup } = await startDetachedGoalServer(10_000);
+    try {
+      const scope = (await runtime.goal!.beginRun())!;
+      runtime.goalScope = scope;
+      const host = server as unknown as {
+        requestApproval: (threadId: string, request: unknown) => Promise<string>;
+        requestUserInput: (threadId: string, request: unknown) => Promise<unknown>;
+      };
+      expect(
+        await host.requestApproval(runtime.id, { permission: "execute", toolName: "bash", description: "Run" }),
+      ).toBe("reject");
+      expect(runtime.goal?.read().goal).toMatchObject({ status: "paused", reason: "interaction_unavailable" });
+      expect(scope.signal.aborted).toBe(true);
+
+      await runtime.goal!.change(
+        {
+          action: "resume",
+          expectedGoalId: scope.identity.goalId,
+          expectedRevision: runtime.goal!.read().goal!.revision,
+        },
+        { idle: true, enabled: true, mode: "default" },
+      );
+      runtime.goalScope = (await runtime.goal!.beginRun())!;
+      expect(await host.requestUserInput(runtime.id, { questions: [] })).toEqual({ answers: {} });
+      expect(runtime.goal?.read().goal).toMatchObject({ status: "paused", reason: "interaction_unavailable" });
+      runtime.goalScope = undefined;
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
 function readResult(response: JSONRPCResponse): unknown {
   if ("error" in response) {
     throw new Error(response.error.message);
@@ -1133,6 +1231,38 @@ describe("DiligentAppServer", () => {
       } else {
         process.env.HOME = originalHome;
       }
+    }
+  });
+
+  it("a successful config/reload resumes a goal it paused", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-reload-goal-"));
+    const server = new DiligentAppServer({
+      ...createAppServerConfig({ cwd: projectRoot, runtimeConfig: makeFactoryRuntimeConfig() }),
+      getGoalsConfig: () => ({ enabled: true }),
+    });
+    const connection = connectTestPeer(server);
+    try {
+      const { threadId } = readResult(
+        await server.handleRequest(TEST_CONNECTION_ID, { id: 1, method: "thread/start", params: { cwd: projectRoot } }),
+      ) as { threadId: string };
+      readResult(
+        await server.handleRequest(TEST_CONNECTION_ID, { id: 2, method: "thread/goal/get", params: { threadId } }),
+      );
+      const runtime = (server as unknown as { threads: Map<string, ThreadRuntime> }).threads.get(threadId)!;
+      await runtime.goal!.change(
+        { action: "set", objective: "Survive a reload" },
+        { idle: true, enabled: true, mode: "default" },
+      );
+      // Simulate a reload that already paused the goal before its first run was admitted.
+      await runtime.goal!.pause("config_reload");
+      readResult(await server.handleRequest(TEST_CONNECTION_ID, { id: 3, method: "config/reload", params: {} }));
+      expect(runtime.goal?.read().goal).toMatchObject({ status: "active", reason: undefined });
+      await runtime.goal!.pause("user");
+      await runtime.turnWork;
+    } finally {
+      connection.disconnect();
+      await server.shutdown();
+      await rm(projectRoot, { recursive: true, force: true });
     }
   });
 

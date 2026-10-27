@@ -17,11 +17,15 @@ export const ThreadGoalSchema = z.object({
   objective: GoalObjectiveSchema,
   status: GoalStatusSchema,
   tokenBudget: limit.optional(),
-  maxTurns: limit,
+  /** Optional cap on goal runs; absent = no run limit. */
+  maxTurns: limit.optional(),
+  /** Goal runs started (field name kept for ledger/wire compatibility). */
   turnsUsed: counter,
   tokensUsed: counter,
   cacheReadTokens: counter,
   activeTimeMs: counter,
+  /** Epoch ms while a goal-owned run is in flight; lets clients tick elapsed time live. */
+  runStartedAt: counter.optional(),
   accountingScope: z.literal("reported_agent_tokens"),
   reason: z.string().optional(),
   completionEvidence: z.string().optional(),
@@ -29,16 +33,18 @@ export const ThreadGoalSchema = z.object({
   updatedAt: counter,
 });
 export type ThreadGoal = z.infer<typeof ThreadGoalSchema>;
-const limits = { tokenBudget: limit.optional(), maxTurns: limit.optional() };
+const setLimits = { tokenBudget: limit.optional(), maxTurns: limit.optional() };
+/** null clears a limit; omitted retains it. */
+const editLimits = { tokenBudget: limit.nullable().optional(), maxTurns: limit.nullable().optional() };
 const identity = { expectedGoalId: z.string().min(1), expectedRevision: counter };
 export const GoalChangeSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("set"),
     objective: GoalObjectiveSchema,
-    ...limits,
+    ...setLimits,
     expectedRevision: counter.optional(),
   }),
-  z.object({ action: z.literal("edit"), objective: GoalObjectiveSchema, ...limits, ...identity }),
+  z.object({ action: z.literal("edit"), objective: GoalObjectiveSchema.optional(), ...editLimits, ...identity }),
   z.object({ action: z.literal("pause"), ...identity }),
   z.object({ action: z.literal("resume"), ...identity }),
   z.object({ action: z.literal("clear"), ...identity }),

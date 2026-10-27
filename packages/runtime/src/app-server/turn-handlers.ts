@@ -83,6 +83,7 @@ async function initializeTurnRuntime(
   internal?: GoalTurnOptions,
 ): Promise<{ runtime: ThreadRuntime; turnId: string } | null> {
   const runtime = await ctx.resolveThreadRuntime(params.threadId);
+  const turnId = `turn-${crypto.randomUUID().slice(0, 8)}`;
   if (!internal) {
     runtime.goalCreation = undefined;
     runtime.pendingUserStarts = (runtime.pendingUserStarts ?? 0) + 1;
@@ -95,9 +96,9 @@ async function initializeTurnRuntime(
     } else {
       const previousTurn = runtime.currentTurnId;
       const goalOwned = !!runtime.goalScope || runtime.goal?.read().goal?.status === "active";
-      await runtime.goal?.pause("user_turn");
+      await runtime.goal?.suspendForUserTurn(turnId);
       if (goalOwned && runtime.isRunning && runtime.currentTurnId === previousTurn)
-        await handleTurnInterrupt(ctx, runtime.id);
+        await handleTurnInterrupt(ctx, runtime.id, { pauseGoal: false });
       if (runtime.isRunning) throw new Error("A turn is already running for this thread");
     }
     // Reservation is synchronous. User admission has priority over automatic admission,
@@ -105,7 +106,6 @@ async function initializeTurnRuntime(
     if (connectionId) turnInitiators.set(runtime.id, connectionId);
     runtime.abortController = new AbortController();
     runtime.isRunning = true;
-    const turnId = `turn-${crypto.randomUUID().slice(0, 8)}`;
     runtime.currentTurnId = turnId;
     return { runtime, turnId };
   } finally {
@@ -273,7 +273,6 @@ export async function handleTurnStart(
   let scope: GoalWorkScope | undefined;
   let unsubscribeUsage = () => {};
   let unlinkAbort = () => {};
-  let usedTools = false;
   let outcome: SessionRunOutcome = { status: "interrupted" };
   try {
     await ctx.emit({
@@ -304,7 +303,7 @@ export async function handleTurnStart(
     }
 
     if (internal) {
-      scope = (await internal.goal.beginRun()) ?? undefined;
+      scope = (await internal.goal.beginRun({ interruptTools: () => runtime.manager.interruptTools() })) ?? undefined;
       if (!scope || !isCurrent()) return { accepted: true };
       runtime.goalScope = scope;
       const abort = () => controller.abort();
@@ -314,15 +313,15 @@ export async function handleTurnStart(
       let coreTurnId = "";
       unsubscribeUsage = runtime.manager.subscribe((event) => {
         if (event.type === "turn_start") coreTurnId = event.turnId;
-        if (event.type === "tool_start") usedTools = true;
+        if (event.type === "tool_start") scope!.noteTool(event.toolName);
         if (event.type === "usage") scope!.recordUsage({ sessionId: runtime.id, coreTurnId, ...event.usage });
       });
     }
     const { userMessage, content } = internal
-      ? {
-          userMessage: { role: "user" as const, content: params.message, timestamp: Date.now() },
-          content: params.message,
-        }
+      ? (() => {
+          const prompt = internal.goal.continuationPrompt();
+          return { userMessage: { role: "user" as const, content: prompt, timestamp: Date.now() }, content: prompt };
+        })()
       : prepareTurnMessage(ctx, params, runtime);
     const userItemId = generateEntryId();
     const hookOutcome = internal
@@ -369,16 +368,18 @@ export async function handleTurnStart(
         turnId,
       )
       .then(async (cleanupOutcome) => {
-        if (scope) await internal!.goal.settle(scope, cleanupOutcome ?? outcome, usedTools);
-        else if (
-          creation.pending &&
+        if (scope) {
+          await internal!.goal.settle(scope, cleanupOutcome ?? outcome);
+          return;
+        }
+        if (internal) return;
+        const succeeded =
           (cleanupOutcome ?? outcome).status === "completed" &&
           !controller.signal.aborted &&
-          runtime.goalCreation?.create === createGoal &&
           runtime.turnWork === work &&
           !runtime.isRunning &&
-          !runtime.pendingUserStarts
-        ) {
+          !runtime.pendingUserStarts;
+        if (succeeded && creation.pending && runtime.goalCreation?.create === createGoal) {
           // Publish only after the originating run and its session writes succeed. User
           // admission, Stop and host/config changes revoke this capability synchronously.
           const config = ctx.getGoalsConfig?.();
@@ -391,6 +392,9 @@ export async function handleTurnStart(
               defaultMaxTurns: config?.defaultMaxTurns,
             },
           );
+        } else if (succeeded) {
+          const config = ctx.getGoalsConfig?.();
+          await runtime.goal?.resumeAfterUserTurn(turnId, { enabled: config?.enabled !== false, mode: runtime.mode });
         }
       })
       .catch(async (error: unknown) => {
@@ -432,6 +436,7 @@ export async function handleTurnStart(
 export async function handleTurnInterrupt(
   ctx: ThreadHandlersContext,
   threadId?: string,
+  options: { pauseGoal?: boolean } = {},
 ): Promise<{ interrupted: boolean }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
   const hadPendingCreation = !!runtime.goalCreation?.pending;
@@ -439,7 +444,7 @@ export async function handleTurnInterrupt(
   const wasGoalActive = runtime.goal?.read().goal?.status === "active";
   const controller = runtime.abortController;
   const turnId = runtime.currentTurnId;
-  await runtime.goal?.pause("user");
+  if (options.pauseGoal !== false) await runtime.goal?.pause("user");
   if (!controller || !turnId || runtime.abortController !== controller || runtime.currentTurnId !== turnId)
     return { interrupted: wasGoalActive || !!controller || hadPendingCreation };
   // Retire first: synchronous abort callbacks and later cleanup cannot revive this turn.

@@ -34,12 +34,23 @@ describe("StatusBar context window display", () => {
         tokenBudget: 10000,
         turnsUsed: 3,
         maxTurns: 12,
+        activeTimeMs: 252_000,
       },
     });
     const text = stripAnsi(bar.render(120).join(""));
-    expect(text).toContain("goal:active");
-    expect(text).toContain("2.5K/10K");
-    expect(text).toContain("3/12 runs");
+    expect(text).toContain("goal:active 4m12s 2.5K/10K run 3/12");
+  });
+
+  test("shows goal elapsed time and tokens without a run segment when there is no run limit", () => {
+    const bar = new StatusBar();
+    bar.update({
+      model: "test",
+      goal: { status: "paused", tokensUsed: 2500, turnsUsed: 3, activeTimeMs: 45_000 },
+    });
+    const text = stripAnsi(bar.render(120).join(""));
+    expect(text).toContain("goal:paused 45s 2.5K tokens");
+    expect(text).not.toContain("run ");
+    expect(text).not.toContain("/");
   });
 
   test("shows Xk / Yk (X%) format when contextWindow is set", () => {

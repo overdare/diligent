@@ -78,6 +78,8 @@ import type { SubagentConfigManager } from "./subagent-handlers";
 import { resetTurnRuntimeState, type ThreadListScan, type ThreadRuntime } from "./thread-handlers";
 import { handleTurnStart } from "./turn-handlers";
 
+const GOAL_DETACH_GRACE_MS = 120_000;
+
 export type { ConnectedPeer, ModelConfig, ToolConfigManager } from "./request-dispatcher";
 export type { SkillConfigManager } from "./skill-handlers";
 export type { SubagentConfigManager } from "./subagent-handlers";
@@ -109,6 +111,8 @@ export interface CreateAgentArgs {
 
 export interface DiligentAppServerConfig {
   getGoalsConfig?: () => DiligentConfig["goals"];
+  /** How long goal work survives with no connected client before pausing (default 2 minutes). */
+  goalDetachGraceMs?: number;
   serverName?: string;
   serverVersion?: string;
   cwd?: string;
@@ -185,6 +189,8 @@ export class DiligentAppServer {
   private readonly knownCwds = new Set<string>();
   private activeThreadId: string | null = null;
   private closing = false;
+  /** Pauses goals when no client reconnects within the grace period. */
+  private goalDetachTimer?: ReturnType<typeof setTimeout>;
 
   // New multi-connection infrastructure
   private readonly connections = new Map<string, ConnectedPeer>();
@@ -227,6 +233,9 @@ export class DiligentAppServer {
       userId: options?.userId,
     };
     this.connections.set(connectionId, conn);
+    clearTimeout(this.goalDetachTimer);
+    this.goalDetachTimer = undefined;
+    for (const runtime of this.threads.values()) runtime.goal?.wake();
 
     peer.onMessage(async (message) => {
       if (!this.connections.has(connectionId)) return;
@@ -265,12 +274,15 @@ export class DiligentAppServer {
     for (const runtime of this.threads.values()) {
       if (runtime.goalCreation?.connectionId === connectionId) runtime.goalCreation = undefined;
     }
-    // Revoke goal ownership synchronously before the legacy approval fallback can run.
+    // Goal-owned approvals stay fail-closed while detached; new goal runs wait for a client.
     if (this.connections.size === 1) {
-      for (const runtime of this.threads.values()) {
-        runtime.goalCreation = undefined;
-        void runtime.goal?.pause("disconnected").catch(() => {});
-      }
+      for (const runtime of this.threads.values()) runtime.goalCreation = undefined;
+      clearTimeout(this.goalDetachTimer);
+      this.goalDetachTimer = setTimeout(() => {
+        this.goalDetachTimer = undefined;
+        if (this.connections.size > 0) return;
+        for (const runtime of this.threads.values()) void runtime.goal?.pause("disconnected").catch(() => {});
+      }, this.config.goalDetachGraceMs ?? GOAL_DETACH_GRACE_MS);
     }
 
     // Clean up subscriptions for this connection
@@ -300,6 +312,8 @@ export class DiligentAppServer {
   /** Stop automatic work and durably pause goals before a host exits. */
   async shutdown(): Promise<void> {
     this.closing = true;
+    clearTimeout(this.goalDetachTimer);
+    this.goalDetachTimer = undefined;
     for (const runtime of this.threads.values()) {
       runtime.goalCreation = undefined;
       if (runtime.goalTimer) clearTimeout(runtime.goalTimer);
@@ -640,7 +654,12 @@ export class DiligentAppServer {
     request: UserInputRequest,
     options?: import("../tools/capabilities").RuntimeRequestOptions,
   ): Promise<UserInputResponse> {
-    const signal = options?.signal ?? this.threads.get(threadId)?.goalScope?.signal;
+    const runtime = this.threads.get(threadId);
+    const signal = options?.signal ?? runtime?.goalScope?.signal;
+    if (this.connections.size === 0 && (runtime?.goalScope || runtime?.goal?.hasChildren)) {
+      await runtime.goal?.pause("interaction_unavailable");
+      return { answers: {} };
+    }
     // Serialize per thread: if the agent issues several user-input prompts at once
     // (e.g. parallel selectable asset searches), present them one at a time so each
     // is resolved before the next is broadcast.
@@ -704,20 +723,16 @@ export class DiligentAppServer {
           runtime.goal.hasChildren
         )
           return;
-        if (
-          this.config.getGoalsConfig?.()?.enabled === false ||
-          runtime.mode === "plan" ||
-          this.connections.size === 0
-        ) {
+        if (this.config.getGoalsConfig?.()?.enabled === false || runtime.mode === "plan") {
           await runtime.goal.pause("execution_unavailable");
           return;
         }
+        // Reconnecting wakes the goal; the detach timer pauses it if nobody returns.
+        if (this.connections.size === 0) return;
         await handleTurnStart(
           this.buildThreadHandlersContext(),
-          {
-            threadId: runtime.id,
-            message: "Continue working toward the active goal. Verify results before reporting completion.",
-          },
+          // The goal run renders its own continuation prompt after the run is admitted.
+          { threadId: runtime.id, message: "" },
           undefined,
           this.turnInitiators,
           { goal: runtime.goal, isCurrent: () => !this.closing && runtime.goalWakeVersion === version },

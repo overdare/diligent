@@ -1,7 +1,7 @@
 // @summary Goal RPC schema boundaries and backwards-compatible event validation
 import { expect, test } from "bun:test";
 import { AgentEventSchema, DiligentClientRequestSchema, DiligentServerNotificationSchema } from "../src";
-import { GoalChangeSchema, GoalObjectiveSchema } from "../src/goals";
+import { GoalChangeSchema, GoalObjectiveSchema, ThreadGoalSchema } from "../src/goals";
 
 test("goal objectives count Unicode code points and reject blank or oversized input", () => {
   expect(GoalObjectiveSchema.parse("  Fix auth  ")).toBe("Fix auth");
@@ -20,6 +20,35 @@ test("goal mutations validate limits and require identity for existing controls"
     GoalChangeSchema.safeParse({ action: "set", objective: "Fix auth", tokenBudget: Number.MAX_SAFE_INTEGER + 1 })
       .success,
   ).toBe(false);
+});
+
+test("run limits are optional, and only edits may clear limits or omit the objective", () => {
+  const identity = { expectedGoalId: "g", expectedRevision: 1 };
+  expect(GoalChangeSchema.safeParse({ action: "set", objective: "Fix auth", maxTurns: null }).success).toBe(false);
+  expect(GoalChangeSchema.safeParse({ action: "set", objective: "Fix auth", tokenBudget: null }).success).toBe(false);
+  expect(GoalChangeSchema.parse({ action: "edit", maxTurns: null, tokenBudget: null, ...identity })).toEqual({
+    action: "edit",
+    maxTurns: null,
+    tokenBudget: null,
+    ...identity,
+  });
+  expect(GoalChangeSchema.safeParse({ action: "edit", maxTurns: 5, ...identity }).success).toBe(true);
+  const snapshot = {
+    id: "g",
+    threadId: "t",
+    revision: 1,
+    objective: "Fix auth",
+    status: "active",
+    turnsUsed: 2,
+    tokensUsed: 0,
+    cacheReadTokens: 0,
+    activeTimeMs: 0,
+    accountingScope: "reported_agent_tokens",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  expect(ThreadGoalSchema.safeParse(snapshot).success).toBe(true);
+  expect(ThreadGoalSchema.safeParse({ ...snapshot, maxTurns: 20, runStartedAt: 5 }).success).toBe(true);
 });
 
 test("goal requests and clear notifications use the shared protocol", () => {
