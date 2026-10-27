@@ -1022,6 +1022,42 @@ describe("SessionManager", () => {
     expect(stopCalls).toBe(2);
   });
 
+  test("a tool that ends the turn reports normal completion without another sample", async () => {
+    const dir = await setupDir();
+    let providerCalls = 0;
+    const endTool: Tool = {
+      name: "end_turn",
+      description: "End the current outer run after this batch",
+      parameters: z.object({}),
+      async execute() {
+        return { output: "accepted", endTurn: true };
+      },
+    };
+    const toolCall = makeAssistantMessage(
+      [{ type: "tool_call", id: "end-1", name: "end_turn", input: {} }],
+      "tool_use",
+    );
+    const streamFn = createMockStreamFn([toolCall, makeAssistant("never sampled")]);
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [endTool], {
+        effort: "medium",
+        llmMsgStreamFn: (...args) => {
+          providerCalls++;
+          return streamFn(...args);
+        },
+      }),
+    });
+    await mgr.create();
+
+    const outcome = await mgr.runWithOutcome({ role: "user", content: "go", timestamp: Date.now() });
+    await mgr.waitForWrites();
+
+    expect(outcome).toEqual({ status: "completed" });
+    expect(providerCalls).toBe(1);
+  });
+
   test("Stop lifecycle exceptions still reject runWithOutcome() and run()", async () => {
     const dir = await setupDir();
     const mgr = new SessionManager({

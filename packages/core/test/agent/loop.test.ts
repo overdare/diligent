@@ -610,6 +610,75 @@ describe("Agent loop", () => {
   });
 });
 
+describe("Agent loop endTurn", () => {
+  const endTurnTool: Tool = {
+    name: "finish",
+    description: "Ends the turn after its batch",
+    parameters: z.object({ query: z.string() }),
+    supportParallel: true,
+    async execute() {
+      return { output: "accepted", endTurn: true };
+    },
+  };
+
+  test("finishes the batch, then ends normally without another sample", async () => {
+    const sibling = createParallelTool("sibling", 20);
+    const streamFn = createMockStreamFunction([
+      makeAssistant(
+        [
+          { type: "tool_call", id: "tc_finish", name: "finish", input: { query: "a" } },
+          { type: "tool_call", id: "tc_sibling", name: "sibling", input: { query: "b" } },
+        ],
+        "tool_use",
+      ),
+      makeAssistant([{ type: "text", text: "never sampled" }]),
+    ]);
+    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [endTurnTool, sibling], {
+      effort: "medium",
+      llmMsgStreamFn: streamFn,
+    });
+
+    const { events } = await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
+
+    expect(streamFn.contexts).toHaveLength(1);
+    const toolEnds = events.filter((event) => event.type === "tool_end") as Extract<
+      CoreAgentEvent,
+      { type: "tool_end" }
+    >[];
+    expect(toolEnds.map((event) => [event.toolName, event.output])).toEqual(
+      expect.arrayContaining([
+        ["finish", "accepted"],
+        ["sibling", "sibling:b"],
+      ]),
+    );
+    expect(events.find((event) => event.type === "agent_end")).toMatchObject({ stopReason: "completed" });
+  });
+
+  test("pending steering continues the loop after an endTurn batch", async () => {
+    let agent!: Agent;
+    const steeringTool: Tool = {
+      ...endTurnTool,
+      async execute() {
+        agent.steer({ role: "user", content: "one more thing", timestamp: Date.now() });
+        return { output: "accepted", endTurn: true };
+      },
+    };
+    const streamFn = createMockStreamFunction([
+      makeAssistant([{ type: "tool_call", id: "tc_finish", name: "finish", input: { query: "a" } }], "tool_use"),
+      makeAssistant([{ type: "text", text: "handled the steering" }]),
+    ]);
+    agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [steeringTool], {
+      effort: "medium",
+      llmMsgStreamFn: streamFn,
+    });
+
+    const { events } = await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
+
+    expect(streamFn.contexts).toHaveLength(2);
+    expect(events.find((event) => event.type === "agent_end")).toMatchObject({ stopReason: "completed" });
+  });
+});
+
 describe("Agent compactionSummary persistence", () => {
   test("auto-compaction excludes the fresh user message and appends it after native state", async () => {
     const compactionSummary = { type: "compaction", encrypted_content: "opaque-blob" };

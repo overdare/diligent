@@ -61,6 +61,8 @@ export interface ToolResult {
   outputImages?: ImageBlock[];
   render?: ToolRenderPayloadLike;
   abortRequested?: boolean; // When true, tool signals the agent loop to stop after this result
+  /** Finish this tool batch normally, then end the loop without another model sample. */
+  endTurn?: boolean;
   metadata?: Record<string, unknown>;
   truncateDirection?: "head" | "tail" | "head_tail"; // D025: hint for auto-truncation. Default: "tail"
   /**

@@ -6,6 +6,13 @@ import type { ToolContext, ToolRegistry } from "../tool/types";
 import type { ToolCallBlock, ToolResultMessage } from "../types";
 import type { AgentStream } from "./types";
 
+export interface ToolCallExecution {
+  toolCall: ToolCallBlock;
+  toolResult: ToolResultMessage;
+  /** The tool asked the loop to end after this batch without another model sample. */
+  endTurn?: boolean;
+}
+
 export async function runToolCalls(
   toolCalls: ToolCallBlock[],
   signal: AbortSignal | undefined,
@@ -15,16 +22,8 @@ export async function runToolCalls(
   onToolAbort: () => void,
   outputStore?: ToolOutputFileStore,
   sessionId?: string,
-): Promise<{
-  executions: Array<{
-    toolCall: ToolCallBlock;
-    toolResult: ToolResultMessage;
-  }>;
-}> {
-  const executions: Array<{
-    toolCall: ToolCallBlock;
-    toolResult: ToolResultMessage;
-  }> = [];
+): Promise<{ executions: ToolCallExecution[] }> {
+  const executions: ToolCallExecution[] = [];
 
   if (toolCalls.length === 0) {
     return { executions };
@@ -121,7 +120,7 @@ export async function runToolCalls(
 function fillAbortedExecutions(
   toolCalls: ToolCallBlock[],
   itemIds: string[],
-  executions: Array<{ toolCall: ToolCallBlock; toolResult: ToolResultMessage }>,
+  executions: ToolCallExecution[],
   signal: AbortSignal | undefined,
   stream: AgentStream,
   allStarted: boolean,
@@ -170,10 +169,7 @@ function toToolCallExecution(
   itemId: string,
   result: Awaited<ReturnType<typeof executeTool>>,
   stream: AgentStream,
-): {
-  toolCall: ToolCallBlock;
-  toolResult: ToolResultMessage;
-} {
+): ToolCallExecution {
   const toolResult: ToolResultMessage = {
     role: "tool_result",
     toolCallId: toolCall.id,
@@ -198,5 +194,5 @@ function toToolCallExecution(
     metadata: result.metadata,
   });
 
-  return { toolCall, toolResult };
+  return { toolCall, toolResult, ...(result.endTurn ? { endTurn: true } : {}) };
 }
