@@ -7,6 +7,8 @@ description: "Use when the user wants to make the current OVERDARE Studio world 
 
 This document defines the workflow for publishing the current OVERDARE Studio world. The official term is **world**, but users may call it a project, game, map, experience, content, or build.
 
+A request only to prepare a thumbnail for later publishing belongs to `world-thumbnail`; it does not authorize publishing or uploading.
+
 The key decision is **whether this world has already been published**, tracked via the `overdare.publish_state` Knowledge card.
 
 ## Required Tools

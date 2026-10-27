@@ -13,7 +13,8 @@
     { "name": "record-project-memory", "entry": "record-project-memory" },
     { "name": "session-issue-report", "entry": "session-issue-report" },
     { "name": "vfx-recipe", "entry": "vfx-recipe" },
-    { "name": "world-publish", "entry": "world-publish" }
+    { "name": "world-publish", "entry": "world-publish" },
+    { "name": "world-thumbnail", "entry": "world-thumbnail" }
   ],
   "revoked": [
     { "name": "geometry-recipe", "entry": "geometry-recipe" },

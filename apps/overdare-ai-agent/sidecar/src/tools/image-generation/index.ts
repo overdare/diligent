@@ -7,6 +7,7 @@ import { z } from "zod";
 import { buildGridPrompt, gridSchema, storeImageGrid } from "./grid";
 import { type StoredImage, storeGeneratedImage } from "./image-store";
 import { readReferenceImages, resolveReferenceImages } from "./reference-images";
+import { createPrepareWorldThumbnailTool } from "./thumbnail";
 import { inspectTransparency } from "./transparency";
 
 const TOOL_NAME = "generate_image";
@@ -84,7 +85,10 @@ export function createImageGenerationToolProvider(
     displayName: "Image Generation",
     createTools: ({ cwd, host, modelProvider, generateImage }) => {
       if (modelProvider !== "chatgpt") return [];
-      return [createGenerateImageTool(cwd, host, options.generateImage ?? generateImage, DEFAULT_IMAGE_MODEL)];
+      return [
+        createGenerateImageTool(cwd, host, options.generateImage ?? generateImage, DEFAULT_IMAGE_MODEL),
+        createPrepareWorldThumbnailTool(cwd, host),
+      ];
     },
   };
 }

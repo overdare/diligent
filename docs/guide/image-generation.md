@@ -1,6 +1,7 @@
 # Image generation
 
-OVERDARE exposes one `generate_image` tool for generating an image and saving it locally.
+OVERDARE exposes `generate_image` for generating an image and saving it locally, and
+`prepare_world_thumbnail` for preparing an existing image for manual upload.
 Studio import remains a separate operation using the existing
 `studiorpc_asset_manager_import` tool. Generation does not require a Studio connection
 or new Studio RPC methods.
@@ -8,17 +9,17 @@ or new Studio RPC methods.
 ## Tool contract
 
 `generate_image` accepts a `prompt`, optional `referenceImages` file paths, and `background`
-(`auto`, `opaque`, or `transparent`; omitted means `auto`). ChatGPT requests are always sent with
-the internally pinned `gpt-image-2.5-sunburst` request model; the model cannot override it through
-tool arguments. The runtime binds generation to the selected chat provider:
+(`auto`, `opaque`, or `transparent`; omitted means `auto`, or `transparent` for a grid).
+The optional `model` selects `gpt-image-2.5-flare` or `gpt-image-2.5-sunburst`; omission defaults
+to sunburst. The runtime binds generation to the selected chat provider:
 
 | Selected chat provider | Behavior |
 |---|---|
 | `chatgpt` | Call the subscription image endpoint with Diligent's ChatGPT OAuth binding. |
 | Other or unknown | Do not expose the image-generation tool. |
 
-The model cannot override this selection through a tool argument. Only ChatGPT exposes image
-generation; selecting another provider does not fall back to Codex.
+The model cannot override the provider through a tool argument. Only ChatGPT exposes these image
+tools; selecting another provider does not fall back to Codex.
 
 The generation tool description is provider-bound, so unsupported providers do not receive
 the tool. The shared `gui-builder` skill checks tool availability before generating art
@@ -130,6 +131,37 @@ reported settings, and actual alpha inspection separate; follow the repair budge
 when the returned image is unusable.
 
 ## Storage and execution
+
+### World thumbnails
+
+The bundled `world-thumbnail` skill inspects current Studio gameplay/code/assets, asks about
+title inclusion and other missing preferences, and attaches its two Nutty reference PNGs to
+generation. Character/rendering references do not establish game content. The skill produces a
+thumbnail and links for manual upload; it does not publish, import, or upload anything.
+
+`prepare_world_thumbnail({ sourceImage })` is a local companion tool in the same ChatGPT-bound
+tool provider. After approval, it reads an existing PNG/JPEG/WebP, center-crops a non-square source,
+resizes to 1080x1080 without stretching, and encodes real PNG using the existing portable WASM
+codecs. A unique file is written to `<project>/thumbnails/world-thumbnail-<uuid>.png` only if the
+encoded image is strictly smaller than 10,000,000 bytes. Originals and earlier outputs are retained;
+an output-folder symlink cannot redirect the write outside the project. No extra image generation
+or separate 250x250 preview is performed.
+
+The result includes `file`, `directory`, `mediaType`, `width`, `height`, `bytes`, source dimensions,
+crop coordinates, and the final image. The skill visually checks that the crop retains the action,
+character, and optional title, and assesses mobile-scale readability. Final delivery uses the full
+1080x1080 image and project-local file/folder Markdown links supported by both clients (see
+[file links](./file-links.md)). A folder link navigates the project directory viewer; it is not an
+operating-system file-manager command. Local preparation failures can be retried with the saved
+source without spending another generation.
+
+Two development probes on 2026-10-27 requested 1080x1080 with `gpt-image-2.5-flare` through the
+existing Diligent ChatGPT image provider; both returned 1254x1254 PNGs. One also specified the
+provider-level `size: "1080x1080"`. Neither response reported the served model. These observations
+show why local output enforcement is necessary; they do not establish an exhaustive backend size
+capability matrix.
+
+### Generated originals
 
 The storage helper is independent of the image provider. Files are written under
 `<project>/.<storage-namespace>/images/generated/` with unique names. PNG, JPEG, and WebP
