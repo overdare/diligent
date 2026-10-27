@@ -7,8 +7,6 @@ description: Generate or revise standalone game image assets, including cohesive
 
 Use this skill when the requested deliverable is artwork itself. For building or editing a Studio GUI that uses artwork, use `gui-builder` instead.
 
-For a world/game publishing thumbnail, use `world-thumbnail` instead. It inspects the current game, uses the bundled Nutty references, and delivers a verified 1080x1080 PNG with a project-folder link.
-
 ## Generate the requested assets
 
 - For matching isolated assets that can share cell proportions, pass a structured `grid: { rows, columns, items }` to `generate_image`. Put common style and exclusions in `prompt`, and describe each item in row-major order. Prompt wording such as "4 by 3 grid" does not replace the `grid` argument. The tool returns one original sheet plus lossless PNG crops for occupied cells.
