@@ -8,7 +8,7 @@ import { classifyProviderHttpError } from "../../provider-errors";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "../../types";
 import { CONTEXT_OVERFLOW_ERROR_MESSAGE, ProviderError, ProviderErrorReason, ProviderErrorType } from "../../types";
 import { PROVIDER_RESPONSE_HEADER_TIMEOUT_MS } from "../timeouts";
-import { ANTHROPIC_FILES_BETA, getAnthropicImageFiles } from "./image-files";
+import { ANTHROPIC_FILES_BETA, getAnthropicImageFiles, isFileSourceRejection } from "./image-files";
 import { convertMessages } from "./messages";
 import { toAnthropicBlocks } from "./request";
 import {
@@ -110,112 +110,139 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
           context.compactionSummary,
           context.localImageLoader,
         );
-        const { messages, usesFiles } = imageFiles
+        const referenced = imageFiles
           ? await imageFiles.reference(convertedMessages)
           : { messages: convertedMessages, usesFiles: false };
-        const betas = [
-          ...(usesThinkingBindingControls ? ["thinking-binding-controls-2026-08-01"] : []),
-          ...(usesFiles ? [ANTHROPIC_FILES_BETA] : []),
-        ];
-        const requestParams = {
-          model: model.modelId,
-          max_tokens: maxTokens,
-          system: systemBlocks,
-          messages,
-          ...(context.tools.length > 0 && {
-            tools: convertTools(context.tools),
-          }),
-          ...thinkingConfig,
-        } as Anthropic.MessageCreateParams;
-
-        if (process.env.ANTHROPIC_DEBUG_REQUEST === "1") {
-          anthropicLogger.error("request_endpoint", {
-            message: `[anthropic.endpoint] ${debugEndpoint}`,
-            fields: { endpoint: debugEndpoint },
-          });
-          anthropicLogger.error("request_payload", {
-            message: `[anthropic.request] ${JSON.stringify(requestParams, null, 2)}`,
-          });
-        }
-
-        const sdkStream = client.messages.stream(requestParams, {
-          ...(options.signal && { signal: options.signal }),
-          ...(betas.length > 0 && { headers: { "anthropic-beta": betas.join(",") } }),
-        });
-
-        stream.push({ type: "start" });
 
         // Track active tool call for delta routing
         let activeToolId: string | undefined;
+        let emitted = false;
+        const emit = (event: ProviderEvent) => {
+          emitted = true;
+          stream.push(event);
+        };
 
-        sdkStream.on("text", (textDelta) => {
-          stream.push({ type: "text_delta", delta: textDelta });
-        });
+        const send = (messages: Anthropic.MessageParam[], usesFiles: boolean): Promise<Anthropic.Message> => {
+          const betas = [
+            ...(usesThinkingBindingControls ? ["thinking-binding-controls-2026-08-01"] : []),
+            ...(usesFiles ? [ANTHROPIC_FILES_BETA] : []),
+          ];
+          const requestParams = {
+            model: model.modelId,
+            max_tokens: maxTokens,
+            system: systemBlocks,
+            messages,
+            ...(context.tools.length > 0 && {
+              tools: convertTools(context.tools),
+            }),
+            ...thinkingConfig,
+          } as Anthropic.MessageCreateParams;
 
-        sdkStream.on("thinking", (thinkingDelta) => {
-          stream.push({ type: "thinking_delta", delta: thinkingDelta });
-        });
-
-        sdkStream.on("inputJson", (partialJson) => {
-          if (activeToolId) {
-            stream.push({
-              type: "tool_call_delta",
-              id: activeToolId,
-              delta: partialJson,
+          if (process.env.ANTHROPIC_DEBUG_REQUEST === "1") {
+            anthropicLogger.error("request_endpoint", {
+              message: `[anthropic.endpoint] ${debugEndpoint}`,
+              fields: { endpoint: debugEndpoint },
+            });
+            anthropicLogger.error("request_payload", {
+              message: `[anthropic.request] ${JSON.stringify(requestParams, null, 2)}`,
             });
           }
-        });
 
-        sdkStream.on("contentBlock", (block) => {
-          if (block.type === "text") {
-            stream.push({ type: "text_end", text: block.text });
-          } else if (block.type === "thinking") {
-            stream.push({ type: "thinking_end", thinking: block.thinking });
-          } else if (block.type === "server_tool_use") {
-            const providerToolUse = createProviderToolUseBlock(block);
-            if (providerToolUse) {
-              stream.push({ type: "content_block", block: providerToolUse });
-            }
-          } else if (block.type === "tool_use") {
-            stream.push({
-              type: "tool_call_end",
-              id: block.id,
-              name: block.name,
-              input: block.input as Record<string, unknown>,
-            });
-            activeToolId = undefined;
-          } else if (block.type === "web_search_tool_result") {
-            const webSearchResult = createWebSearchResultBlock(block);
-            if (webSearchResult) {
-              stream.push({ type: "content_block", block: webSearchResult });
-            }
-          } else if (block.type === "web_fetch_tool_result") {
-            const webFetchResult = createWebFetchResultBlock(block);
-            if (webFetchResult) {
-              stream.push({ type: "content_block", block: webFetchResult });
-            }
-          }
-        });
+          const sdkStream = client.messages.stream(requestParams, {
+            ...(options.signal && { signal: options.signal }),
+            ...(betas.length > 0 && { headers: { "anthropic-beta": betas.join(",") } }),
+          });
 
-        sdkStream.on("streamEvent", (event) => {
-          if (event.type === "content_block_start") {
-            if (event.content_block.type === "tool_use") {
-              activeToolId = event.content_block.id;
-              stream.push({
-                type: "tool_call_start",
-                id: event.content_block.id,
-                name: event.content_block.name,
+          sdkStream.on("text", (textDelta) => {
+            emit({ type: "text_delta", delta: textDelta });
+          });
+
+          sdkStream.on("thinking", (thinkingDelta) => {
+            emit({ type: "thinking_delta", delta: thinkingDelta });
+          });
+
+          sdkStream.on("inputJson", (partialJson) => {
+            if (activeToolId) {
+              emit({
+                type: "tool_call_delta",
+                id: activeToolId,
+                delta: partialJson,
               });
-            } else if (event.content_block.type === "server_tool_use") {
-              const providerToolUse = createProviderToolUseBlock(event.content_block);
+            }
+          });
+
+          sdkStream.on("contentBlock", (block) => {
+            if (block.type === "text") {
+              emit({ type: "text_end", text: block.text });
+            } else if (block.type === "thinking") {
+              emit({ type: "thinking_end", thinking: block.thinking });
+            } else if (block.type === "server_tool_use") {
+              const providerToolUse = createProviderToolUseBlock(block);
               if (providerToolUse) {
-                stream.push({ type: "content_block", block: providerToolUse });
+                emit({ type: "content_block", block: providerToolUse });
+              }
+            } else if (block.type === "tool_use") {
+              emit({
+                type: "tool_call_end",
+                id: block.id,
+                name: block.name,
+                input: block.input as Record<string, unknown>,
+              });
+              activeToolId = undefined;
+            } else if (block.type === "web_search_tool_result") {
+              const webSearchResult = createWebSearchResultBlock(block);
+              if (webSearchResult) {
+                emit({ type: "content_block", block: webSearchResult });
+              }
+            } else if (block.type === "web_fetch_tool_result") {
+              const webFetchResult = createWebFetchResultBlock(block);
+              if (webFetchResult) {
+                emit({ type: "content_block", block: webFetchResult });
               }
             }
-          }
-        });
+          });
 
-        const finalMessage = await sdkStream.finalMessage();
+          sdkStream.on("streamEvent", (event) => {
+            if (event.type === "content_block_start") {
+              if (event.content_block.type === "tool_use") {
+                activeToolId = event.content_block.id;
+                emit({
+                  type: "tool_call_start",
+                  id: event.content_block.id,
+                  name: event.content_block.name,
+                });
+              } else if (event.content_block.type === "server_tool_use") {
+                const providerToolUse = createProviderToolUseBlock(event.content_block);
+                if (providerToolUse) {
+                  emit({ type: "content_block", block: providerToolUse });
+                }
+              }
+            }
+          });
+
+          return sdkStream.finalMessage();
+        };
+
+        stream.push({ type: "start" });
+
+        let finalMessage: Anthropic.Message;
+        try {
+          finalMessage = await send(referenced.messages, referenced.usesFiles);
+        } catch (err) {
+          if (
+            !imageFiles ||
+            !referenced.usesFiles ||
+            emitted ||
+            !(err instanceof Anthropic.APIError) ||
+            !isFileSourceRejection(err.status)
+          ) {
+            throw err;
+          }
+          // Only an inline success proves the file references caused the rejection.
+          finalMessage = await send(convertedMessages, false);
+          imageFiles.disable(err.message);
+        }
+
         const assistantMessage = mapToAssistantMessage(finalMessage, model);
         stream.push({
           type: "usage",

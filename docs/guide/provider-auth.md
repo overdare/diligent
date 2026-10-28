@@ -244,6 +244,10 @@ and the request body is limited to 32 MB. Base64 images make up most of that bod
 - A custom `provider.anthropic.baseUrl` keeps sending base64, because a proxy may not serve `/v1/files`.
 - After the first upload failure, the provider stops uploading and sends images inline for the rest of
   the process.
+- If Messages answers a file-referencing request with 400, 403, or 404 before any output, the provider
+  resends the same request with base64 images. When that inline request succeeds, the file references
+  were the cause, so later requests send base64 for the rest of the process. When it also fails, the
+  error is unrelated to files and file references stay on.
 - Uploaded files are not deleted. They stay in the API key's workspace, visible to every key with access
   to that workspace. The Files API is not eligible for Zero Data Retention.
 

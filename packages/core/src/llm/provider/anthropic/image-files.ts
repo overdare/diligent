@@ -20,7 +20,8 @@ export interface AnthropicImageReferences {
 /**
  * Every Messages request resends the whole conversation, so base64 images are re-uploaded on each
  * turn. This store uploads each distinct image once and swaps its source for a `file_id`. After the
- * first upload failure it stops trying and leaves every image as base64.
+ * first upload failure, or once Messages rejects file references that it accepts inline, it stops
+ * and leaves every image as base64.
  */
 export class AnthropicImageFiles {
   private readonly fileIds = new Map<string, Promise<string | undefined>>();
@@ -60,6 +61,15 @@ export class AnthropicImageFiles {
     return { messages: usesFiles ? referenced : messages, usesFiles };
   }
 
+  /** Messages rejected file references and accepted the same images inline; send base64 from now on. */
+  disable(reason: string): void {
+    if (this.disabled) return;
+    this.disabled = true;
+    logger.warn("image_file_rejected", {
+      message: `[anthropic] Messages rejected Files API image references; sending images inline: ${reason}`,
+    });
+  }
+
   private fileIdFor(data: string, mediaType: string): Promise<string | undefined> {
     const digest = createHash("sha256").update(data).digest("hex");
     const existing = this.fileIds.get(digest);
@@ -81,6 +91,14 @@ export class AnthropicImageFiles {
     this.fileIds.set(digest, pending);
     return pending;
   }
+}
+
+/**
+ * Statuses a rejected `file` image source can produce (bad or unsupported reference, no access, missing
+ * file). Callers retry inline on these and keep the files only if the inline request also fails.
+ */
+export function isFileSourceRejection(status: number | undefined): boolean {
+  return status === 400 || status === 403 || status === 404;
 }
 
 const storesByApiKey = new Map<string, AnthropicImageFiles>();
