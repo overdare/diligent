@@ -1,5 +1,6 @@
 // @summary Tests for Anthropic message conversion and replay filtering
 import { describe, expect, test } from "bun:test";
+import type Anthropic from "@anthropic-ai/sdk";
 import {
   appendAnthropicConvertedMessage,
   applyAnthropicLastUserCacheBreakpoint,
@@ -7,7 +8,7 @@ import {
   convertMessages,
 } from "../../../../src/llm/provider/anthropic";
 import type { Model } from "../../../../src/llm/types";
-import type { AssistantMessage } from "../../../../src/types";
+import type { AssistantMessage, ContentBlock } from "../../../../src/types";
 
 // We test the event mapping logic by creating a mock that simulates
 // what createAnthropicStream does internally, without hitting the real SDK.
@@ -36,6 +37,15 @@ function makeAssistantMessage(overrides?: Partial<AssistantMessage>): AssistantM
     ...overrides,
   };
 }
+
+function anthropicWebSearchCall(id: string): ContentBlock {
+  return { type: "provider_tool_use", id, provider: "anthropic", name: "web_search", input: { query: "diligent" } };
+}
+
+function nativeWebSearchCall(id: string): Anthropic.ServerToolUseBlockParam {
+  return { type: "server_tool_use", id, name: "web_search", input: { query: "diligent" } };
+}
+
 describe("Anthropic message conversion", () => {
   test("exposes pure compaction, coalescing, and cache-breakpoint stages", () => {
     const prefix = buildAnthropicCompactionPrefix({
@@ -530,5 +540,111 @@ describe("Anthropic message conversion", () => {
     ]);
 
     expect(converted).toEqual([{ role: "assistant", content: [{ type: "text", text: "done" }] }]);
+  });
+
+  describe("Anthropic web search calls without a result", () => {
+    test("drops a paused call once a later user turn ends the assistant turn", async () => {
+      const converted = await convertMessages([
+        { role: "user", content: "find the release date", timestamp: 1 },
+        makeAssistantMessage({
+          content: [{ type: "text", text: "Searching." }, anthropicWebSearchCall("srvtoolu_paused")],
+        }),
+        { role: "user", content: "any update?", timestamp: 3 },
+      ]);
+
+      expect(converted).toEqual([
+        { role: "user", content: [{ type: "text", text: "find the release date" }] },
+        { role: "assistant", content: [{ type: "text", text: "Searching." }] },
+        { role: "user", content: [{ type: "text", text: "any update?", cache_control: { type: "ephemeral" } }] },
+      ]);
+    });
+
+    test("omits an assistant message left with only thinking after dropping the call", async () => {
+      const converted = await convertMessages([
+        { role: "user", content: "first", timestamp: 1 },
+        makeAssistantMessage({
+          content: [{ type: "thinking", thinking: "plan", signature: "sig" }, anthropicWebSearchCall("srvtoolu_cut")],
+          stopReason: "max_tokens",
+        }),
+        { role: "user", content: "second", timestamp: 3 },
+      ]);
+
+      expect(converted).toEqual([
+        { role: "user", content: [{ type: "text", text: "first" }] },
+        { role: "user", content: [{ type: "text", text: "second", cache_control: { type: "ephemeral" } }] },
+      ]);
+    });
+
+    test("drops a deferred call once text follows the client tool results", async () => {
+      const converted = await convertMessages([
+        { role: "user", content: "check the docs and run tests", timestamp: 1 },
+        makeAssistantMessage({
+          content: [
+            anthropicWebSearchCall("srvtoolu_deferred"),
+            { type: "tool_call", id: "toolu_1", name: "bash", input: {} },
+          ],
+          stopReason: "tool_use",
+        }),
+        {
+          role: "tool_result",
+          toolCallId: "toolu_1",
+          toolName: "bash",
+          output: "[Aborted by user]",
+          isError: true,
+          timestamp: 3,
+        },
+        { role: "user", content: "try again", timestamp: 4 },
+      ]);
+
+      expect(converted[1]).toEqual({
+        role: "assistant",
+        content: [{ type: "tool_use", id: "toolu_1", name: "bash", input: {} }],
+      });
+    });
+
+    test("keeps a deferred call while client tool results are the trailing turn", async () => {
+      const converted = await convertMessages([
+        { role: "user", content: "check the docs and run tests", timestamp: 1 },
+        makeAssistantMessage({
+          content: [
+            anthropicWebSearchCall("srvtoolu_deferred"),
+            { type: "tool_call", id: "toolu_1", name: "bash", input: {} },
+          ],
+          stopReason: "tool_use",
+        }),
+        { role: "tool_result", toolCallId: "toolu_1", toolName: "bash", output: "ok", isError: false, timestamp: 3 },
+      ]);
+
+      expect(converted[1]?.content).toContainEqual(nativeWebSearchCall("srvtoolu_deferred"));
+    });
+
+    test("keeps a call whose empty result arrived in the following response", async () => {
+      const converted = await convertMessages([
+        { role: "user", content: "check the docs and run tests", timestamp: 1 },
+        makeAssistantMessage({
+          content: [
+            anthropicWebSearchCall("srvtoolu_deferred"),
+            { type: "tool_call", id: "toolu_1", name: "bash", input: {} },
+          ],
+          stopReason: "tool_use",
+        }),
+        { role: "tool_result", toolCallId: "toolu_1", toolName: "bash", output: "ok", isError: false, timestamp: 3 },
+        makeAssistantMessage({
+          content: [
+            { type: "web_search_result", toolUseId: "srvtoolu_deferred", provider: "anthropic", results: [] },
+            { type: "text", text: "Nothing relevant was found." },
+          ],
+        }),
+        { role: "user", content: "thanks", timestamp: 5 },
+      ]);
+
+      expect(converted[1]?.content).toContainEqual(nativeWebSearchCall("srvtoolu_deferred"));
+      expect(converted[3]?.content).toContainEqual({
+        type: "web_search_tool_result",
+        tool_use_id: "srvtoolu_deferred",
+        caller: { type: "direct" },
+        content: [],
+      });
+    });
   });
 });
