@@ -22,6 +22,50 @@ function control(controller: GoalController) {
   const goal = controller.read().goal!;
   return { expectedGoalId: goal.id, expectedRevision: goal.revision };
 }
+test("uncapped goals continue beyond the former implicit twenty-run limit", async () => {
+  const { controller } = await setup();
+  await controller.change(
+    { action: "set", objective: "Finish the migration" },
+    { idle: true, enabled: true, mode: "default" },
+  );
+  for (let i = 0; i < 25; i++) {
+    const run = await controller.beginRun();
+    expect(run).not.toBeNull();
+    await controller.settle(run!, { status: "completed" }, true);
+  }
+  expect(controller.read().goal).toMatchObject({ status: "active", turnsUsed: 25 });
+  expect(controller.read().goal?.maxTurns).toBeUndefined();
+});
+
+test("explicitly clearing a legacy run limit preserves usage and permits resume", async () => {
+  const { controller } = await setup();
+  const options = { idle: true, enabled: true, mode: "default" };
+  await controller.change({ action: "set", objective: "Finish", maxTurns: 1 }, options);
+  await controller.settle((await controller.beginRun())!, { status: "completed" }, true);
+  await controller.change({ action: "edit", objective: "Finish", maxTurns: null, ...control(controller) }, options);
+  await controller.change({ action: "resume", ...control(controller) }, options);
+  expect(controller.read().goal).toMatchObject({ status: "active", turnsUsed: 1 });
+  expect(controller.read().goal?.maxTurns).toBeUndefined();
+  expect(await controller.beginRun()).not.toBeNull();
+});
+
+test("blocked reports require three goal runs and resuming starts a fresh audit", async () => {
+  const { controller } = await setup();
+  const options = { idle: true, enabled: true, mode: "default" };
+  await controller.change({ action: "set", objective: "Finish" }, options);
+  for (let i = 0; i < 2; i++) {
+    const run = (await controller.beginRun())!;
+    await expect(controller.report(run.identity, "blocked", "Missing access")).rejects.toThrow("three");
+    await controller.settle(run, { status: "completed" }, true);
+  }
+  const third = (await controller.beginRun())!;
+  await controller.report(third.identity, "blocked", "Missing access");
+  expect(controller.read().goal?.status).toBe("blocked");
+  await controller.settle(third, { status: "completed" }, true);
+  await controller.change({ action: "resume", ...control(controller) }, options);
+  const resumed = (await controller.beginRun())!;
+  await expect(controller.report(resumed.identity, "blocked", "Missing access")).rejects.toThrow("three");
+});
 test("pause invalidates in-flight completion and restart never automatically resumes", async () => {
   const { dir, controller } = await setup();
   await controller.change({ action: "set", objective: "Fix the bug" }, { idle: true, enabled: true, mode: "default" });
@@ -115,6 +159,21 @@ test("descendants defer the next outer run until their completion wakes the coor
   expect(await controller.beginRun()).toBeNull();
   run.childFinished("child");
   expect(await controller.beginRun()).not.toBeNull();
+});
+
+test("explicit pause cancels a user replacement waiting for old children to clean up", async () => {
+  const { controller } = await setup();
+  await controller.change({ action: "set", objective: "Finish" }, { idle: true, enabled: true, mode: "default" });
+  const run = (await controller.beginRun())!;
+  run.childStarted("slow-child");
+  await controller.interruptRun();
+  const waiting = controller.waitForChildren(new AbortController().signal).then(
+    () => undefined,
+    (error) => error,
+  );
+  await controller.pause("user");
+  expect(await waiting).toMatchObject({ name: "AbortError" });
+  run.childFinished("slow-child");
 });
 
 test("persistence failure pauses execution and a later successful snapshot can recover controls", async () => {

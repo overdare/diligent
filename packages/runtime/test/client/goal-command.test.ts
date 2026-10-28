@@ -21,6 +21,16 @@ const goal: ThreadGoal = {
 };
 
 describe("parseGoalCommand", () => {
+  test("allows explicitly removing a run cap without changing the objective or usage", () => {
+    expect(parseGoalCommand("edit Ship goal mode --turns unlimited", goal)).toEqual({
+      action: "edit",
+      objective: goal.objective,
+      maxTurns: null,
+      expectedGoalId: goal.id,
+      expectedRevision: goal.revision,
+    });
+    expect(() => parseGoalCommand("set Finish --turns unlimited --turns 3")).toThrow("once");
+  });
   test("uses a bare command for status", () => {
     expect(parseGoalCommand(undefined, goal)).toBeNull();
     expect(parseGoalCommand("status", goal)).toBeNull();

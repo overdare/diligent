@@ -227,6 +227,7 @@ export class DiligentAppServer {
       userId: options?.userId,
     };
     this.connections.set(connectionId, conn);
+    for (const runtime of this.threads.values()) runtime.goal?.wake();
 
     peer.onMessage(async (message) => {
       if (!this.connections.has(connectionId)) return;
@@ -265,13 +266,8 @@ export class DiligentAppServer {
     for (const runtime of this.threads.values()) {
       if (runtime.goalCreation?.connectionId === connectionId) runtime.goalCreation = undefined;
     }
-    // Revoke goal ownership synchronously before the legacy approval fallback can run.
-    if (this.connections.size === 1) {
-      for (const runtime of this.threads.values()) {
-        runtime.goalCreation = undefined;
-        void runtime.goal?.pause("disconnected").catch(() => {});
-      }
-    }
+    // A transport loss is not a user pause. Existing work and durable questions survive;
+    // new automatic runs wait for a connection and are woken by connect().
 
     // Clean up subscriptions for this connection
     for (const [subId, sub] of this.subscriptionMap) {
@@ -624,6 +620,7 @@ export class DiligentAppServer {
         runtime?.goalScope || runtime?.goal?.hasChildren
           ? () => runtime.goal!.pause("interaction_unavailable")
           : undefined,
+      waitForConnection: !!runtime?.goalScope || !!runtime?.goal?.hasChildren,
     });
 
     if (decision === "always") {
@@ -652,6 +649,7 @@ export class DiligentAppServer {
         pendingServerRequests: this.pendingServerRequests,
         allocateServerRequestId: () => this.allocateServerRequestId(),
         signal,
+        waitForConnection: !!this.threads.get(threadId)?.goalScope || !!this.threads.get(threadId)?.goal?.hasChildren,
       }),
     ).finally(() => this.threads.get(threadId)?.goal?.wake());
   }
@@ -704,11 +702,8 @@ export class DiligentAppServer {
           runtime.goal.hasChildren
         )
           return;
-        if (
-          this.config.getGoalsConfig?.()?.enabled === false ||
-          runtime.mode === "plan" ||
-          this.connections.size === 0
-        ) {
+        if (this.connections.size === 0) return;
+        if (this.config.getGoalsConfig?.()?.enabled === false || runtime.mode === "plan") {
           await runtime.goal.pause("execution_unavailable");
           return;
         }

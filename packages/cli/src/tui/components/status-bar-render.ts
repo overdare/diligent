@@ -111,7 +111,9 @@ export function renderStatusBar(store: StatusBarStore, width: number): string[] 
     const tokens = info.goal.tokenBudget
       ? `${formatTokensCompact(info.goal.tokensUsed)}/${formatTokensCompact(info.goal.tokenBudget)}`
       : `${formatTokensCompact(info.goal.tokensUsed)} tokens`;
-    leftParts.push(`goal:${info.goal.status} ${tokens} ${info.goal.turnsUsed}/${info.goal.maxTurns} runs`);
+    leftParts.push(
+      `goal:${info.goal.status} ${tokens} ${info.goal.turnsUsed}/${info.goal.maxTurns ?? "unlimited"} runs`,
+    );
   }
 
   const statusHint = info.status === "busy" ? "ctrl+c to cancel" : info.status === "retry" ? "retrying..." : "";

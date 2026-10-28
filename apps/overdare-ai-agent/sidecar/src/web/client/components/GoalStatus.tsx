@@ -51,7 +51,7 @@ function formatActiveTime(activeTimeMs: number): string {
 }
 
 function usageRatio(goal: ThreadGoal): number {
-  const turnRatio = goal.turnsUsed / goal.maxTurns;
+  const turnRatio = goal.maxTurns === undefined ? 0 : goal.turnsUsed / goal.maxTurns;
   const tokenRatio = goal.tokenBudget === undefined ? 0 : goal.tokensUsed / goal.tokenBudget;
   return Math.min(1, Math.max(turnRatio, tokenRatio));
 }
@@ -100,10 +100,13 @@ function GoalStatusImpl({ goal, onPause, onResume, onClear, defaultExpanded = fa
                 <span className="px-1.5 text-text-tertiary/60">·</span>
                 {tokenSummary}
                 <span className="px-1.5 text-text-tertiary/60">·</span>
-                {goal.turnsUsed.toLocaleString()} / {goal.maxTurns.toLocaleString()} runs
+                {goal.turnsUsed.toLocaleString()} / {goal.maxTurns?.toLocaleString() ?? "unlimited"} runs
                 <span className="px-1.5 text-text-tertiary/60">·</span>
                 {formatActiveTime(goal.activeTimeMs)}
               </p>
+              {goal.status !== "active" && goal.reason ? (
+                <p className="mt-1 break-words text-xs text-text-secondary">{goal.reason}</p>
+              ) : null}
             </div>
             <ChevronDown
               aria-hidden="true"

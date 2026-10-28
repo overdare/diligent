@@ -4,10 +4,10 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProviderEvent, ProviderResult } from "@diligent/core/provider-contract";
-import type { ThreadGoalResponse } from "@diligent/protocol";
-import type { StreamFunction } from "@diligent/runtime";
-import { EventStream } from "@diligent/runtime";
-import { createSimpleStream, createToolUseStream } from "./helpers/fake-stream";
+import type { ContentBlock, ThreadGoalResponse } from "@diligent/protocol";
+import type { RuntimeConfig, StreamFunction } from "@diligent/runtime";
+import { createPermissionEngine, EventStream } from "@diligent/runtime";
+import { createSimpleStream, createSlowStream, createToolUseStream } from "./helpers/fake-stream";
 import { createProtocolClient, type ProtocolTestClient } from "./helpers/protocol-client";
 import { createTestServer } from "./helpers/server-factory";
 
@@ -19,14 +19,14 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.shutdown()));
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
-async function setup(streamFunction?: StreamFunction, enabled = true) {
+async function setup(streamFunction?: StreamFunction, enabled = true, overrides?: Partial<RuntimeConfig>) {
   const cwd = await mkdtemp(join(tmpdir(), "goal-e2e-"));
   dirs.push(cwd);
   const server = createTestServer({
     cwd,
     streamFunction,
     runtimeToolsConfig: {},
-    runtimeConfigOverrides: { diligent: { goals: { enabled } } },
+    runtimeConfigOverrides: { diligent: { goals: { enabled } }, ...overrides },
   });
   const client = createProtocolClient(server);
   servers.push(server);
@@ -89,12 +89,241 @@ test("feature gate permits status reads but prevents creating goals", async () =
   expect(await client.request("thread/goal/get", { threadId })).toEqual({ goal: null, sequence: 0 });
   await expect(setGoal(client, threadId)).rejects.toThrow("disabled");
 });
-test("runtime stops three tool-free continuations without relying on model assertions", async () => {
-  const { client, threadId } = await setup();
+test("runtime stops three empty continuations without relying on model assertions", async () => {
+  const { client, threadId } = await setup(createSimpleStream(""));
   await setGoal(client, threadId);
   await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "blocked");
   const result = (await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse;
   expect(result.goal).toMatchObject({ status: "blocked", reason: "no_progress", turnsUsed: 3 });
+});
+
+test("nonempty assistant output without tools does not trip the empty-run breaker", async () => {
+  let calls = 0;
+  const text = createSimpleStream("The analysis identifies the next requirement.");
+  const complete = createToolUseStream(
+    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "All requirements verified" } }],
+    "Done",
+  );
+  const { client, threadId } = await setup((...args) => (calls++ < 4 ? text : complete)(...args));
+  await setGoal(client, threadId);
+  await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "complete");
+  expect(((await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse).goal).toMatchObject({
+    status: "complete",
+    turnsUsed: 5,
+  });
+});
+
+for (const block of [
+  { type: "thinking", thinking: "Analyzing the remaining requirements" },
+  {
+    type: "thinking",
+    thinking: "",
+    providerState: { provider: "openai", itemId: "reasoning", encryptedContent: "opaque-provider-reasoning" },
+  },
+] satisfies ContentBlock[]) {
+  test(`reasoning activity survives the empty-run breaker (${block.thinking ? "visible" : "encrypted"})`, async () => {
+    const empty = createSimpleStream("");
+    const done = createToolUseStream(
+      [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verified" } }],
+      "Done",
+    );
+    let calls = 0;
+    const { client, threadId } = await setup((...args) => {
+      if (calls++ >= 4) return done(...args);
+      const stream = new EventStream<ProviderEvent, ProviderResult>(
+        (e) => e.type === "done",
+        (e) => ({ message: (e as Extract<ProviderEvent, { type: "done" }>).message }),
+      );
+      void (async () => {
+        for await (const event of empty(...args))
+          stream.push(event.type === "done" ? { ...event, message: { ...event.message, content: [block] } } : event);
+      })();
+      return stream;
+    });
+    await setGoal(client, threadId);
+    await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "complete");
+    expect(((await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse).goal?.turnsUsed).toBe(5);
+  });
+}
+
+test("goal approval is redelivered after reconnect and cannot execute before an explicit decision", async () => {
+  let write: ReturnType<typeof createToolUseStream>;
+  const done = createToolUseStream(
+    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verified" } }],
+    "Done",
+  );
+  let calls = 0;
+  const { client, threadId, server, cwd } = await setup((...args) => (calls++ < 2 ? write : done)(...args), true, {
+    permissionEngine: createPermissionEngine([]),
+  });
+  write = createToolUseStream(
+    [
+      {
+        id: "write",
+        name: "bash",
+        input: { command: "printf approved > approved.txt", description: "Write an approval marker" },
+      },
+    ],
+    "Written",
+  );
+  let requested!: () => void;
+  const request = new Promise<void>((resolve) => {
+    requested = resolve;
+  });
+  client.onServerRequest(async () => {
+    requested();
+    return new Promise(() => {});
+  });
+  await setGoal(client, threadId);
+  await request;
+  client.simulateClose();
+  await expect(readFile(join(cwd, "approved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  const reconnected = createProtocolClient(server);
+  clients.push(reconnected);
+  let approvals = 0;
+  reconnected.onServerRequest(async (req) => {
+    expect(req.method).toBe("approval/request");
+    await expect(readFile(join(cwd, "approved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    approvals++;
+    return { method: "approval/request", result: { decision: "once" } };
+  });
+  await reconnected.initAndStartThread(cwd);
+  await reconnected.request("thread/subscribe", { threadId });
+  await reconnected.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "complete");
+  expect(approvals).toBe(1);
+  expect(await readFile(join(cwd, "approved.txt"), "utf8")).toBe("approved");
+});
+
+test("disconnect and reconnect preserve the active goal without another resume command", async () => {
+  let calls = 0;
+  const slow = createSlowStream("Analyzing", 10);
+  const complete = createToolUseStream(
+    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verified after reconnect" } }],
+    "Done",
+  );
+  const { client, threadId, server, cwd } = await setup((...args) => (calls++ === 0 ? slow : complete)(...args));
+  await setGoal(client, threadId);
+  await client.waitFor((n) => n.method === "agent/event" && n.params.event.type === "message_start");
+  client.simulateClose();
+  const reconnected = createProtocolClient(server);
+  clients.push(reconnected);
+  await reconnected.initAndStartThread(cwd);
+  await reconnected.request("thread/subscribe", { threadId });
+  const goal = ((await reconnected.request("thread/goal/get", { threadId })) as ThreadGoalResponse).goal;
+  expect(goal?.status).toBe("active");
+  await reconnected.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "complete");
+});
+
+test("goal questions survive disconnect and are answered after resubscription", async () => {
+  const question = createToolUseStream(
+    [
+      {
+        id: "question",
+        name: "request_user_input",
+        input: {
+          questions: [
+            {
+              id: "choice",
+              header: "Choice",
+              question: "Which option?",
+              options: [{ label: "A", description: "Option A" }],
+            },
+          ],
+        },
+      },
+    ],
+    "Answer received",
+  );
+  const complete = createToolUseStream(
+    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Answered and verified" } }],
+    "Done",
+  );
+  let calls = 0;
+  const { client, threadId, server, cwd } = await setup((...args) => (calls++ < 2 ? question : complete)(...args));
+  let requested!: () => void;
+  const request = new Promise<void>((resolve) => {
+    requested = resolve;
+  });
+  client.onServerRequest(async () => {
+    requested();
+    return new Promise(() => {});
+  });
+  await setGoal(client, threadId);
+  await request;
+  client.simulateClose();
+  const reconnected = createProtocolClient(server);
+  clients.push(reconnected);
+  let delivered = 0;
+  reconnected.onServerRequest(async (req) => {
+    expect(req.method).toBe("userInput/request");
+    delivered++;
+    return { method: "userInput/request", result: { answers: { choice: "A" } } };
+  });
+  await reconnected.initAndStartThread(cwd);
+  await reconnected.request("thread/subscribe", { threadId });
+  await reconnected.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "complete");
+  expect(delivered).toBe(1);
+});
+
+test("idle offline goals defer the next run and resume on reconnect without resetting usage", async () => {
+  let release!: () => Promise<void>;
+  let calls = 0;
+  const text = createSimpleStream("Analysis complete; implementation remains");
+  const complete = createToolUseStream(
+    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verified" } }],
+    "Done",
+  );
+  let sampled!: () => void;
+  const sampling = new Promise<void>((resolve) => {
+    sampled = resolve;
+  });
+  const { client, threadId, server, cwd } = await setup((...args) => {
+    if (calls++ > 0) return complete(...args);
+    const stream = new EventStream<ProviderEvent, ProviderResult>(
+      (e) => e.type === "done",
+      (e) => ({ message: (e as Extract<ProviderEvent, { type: "done" }>).message }),
+    );
+    release = async () => {
+      for await (const event of text(...args)) stream.push(event);
+    };
+    sampled();
+    return stream;
+  });
+  await setGoal(client, threadId);
+  await sampling;
+  client.simulateClose();
+  // Ensure elapsed-time settlement is observable even with millisecond clock resolution.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await release();
+  // Observe the persisted settlement rather than racing a timeout against the provider.
+  const ledger = join(cwd, ".diligent", "sessions", "goals", `${threadId}.jsonl`);
+  let settled = false;
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    const content = await readFile(ledger, "utf8");
+    const records = content
+      .slice(0, content.lastIndexOf("\n"))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    if (records.at(-1)?.goal?.activeTimeMs > 0) {
+      settled = true;
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  expect(settled).toBe(true);
+  expect(calls).toBe(1);
+  const reconnected = createProtocolClient(server);
+  clients.push(reconnected);
+  await reconnected.initAndStartThread(cwd);
+  await reconnected.request("thread/subscribe", { threadId });
+  await reconnected.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "complete");
+  await reconnected.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.tokensUsed === 6);
+  expect(((await reconnected.request("thread/goal/get", { threadId })) as ThreadGoalResponse).goal).toMatchObject({
+    turnsUsed: 2,
+    tokensUsed: 6,
+  });
 });
 
 test("Stop pauses the goal between runs and rejects stale client changes", async () => {
@@ -120,6 +349,30 @@ test("Stop pauses the goal between runs and rejects stale client changes", async
   })) as ThreadGoalResponse;
   expect(cleared.goal).toBeNull();
   expect(cleared.sequence).toBeGreaterThan(paused.sequence);
+});
+
+test("a user follow-up can report an explicitly requested pause through the goal tool", async () => {
+  const slow = createSlowStream("Working", 10);
+  const pause = createToolUseStream(
+    [
+      {
+        id: "pause",
+        name: "update_goal",
+        input: { status: "paused", evidence: "The user explicitly requested a pause" },
+      },
+    ],
+    "Paused",
+  );
+  let calls = 0;
+  const { client, threadId } = await setup((...args) => (calls++ === 0 ? slow : pause)(...args));
+  await setGoal(client, threadId);
+  await client.waitFor((n) => n.method === "agent/event" && n.params.event.type === "message_start");
+  await client.request("turn/start", { threadId, message: "Pause this goal now" });
+  await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "paused");
+  expect(((await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse).goal).toMatchObject({
+    status: "paused",
+    reason: "The user explicitly requested a pause",
+  });
 });
 
 test("pausing cancels unanswered questions and persists the paused state", async () => {
@@ -154,7 +407,7 @@ test("pausing cancels unanswered questions and persists the paused state", async
   expect(result.goal?.status).toBe("paused");
 });
 
-test("ordinary user input takes priority over a waiting automatic goal run", async () => {
+test("ordinary user input takes priority without pausing the active goal", async () => {
   const stream = createToolUseStream(
     [
       {
@@ -169,7 +422,12 @@ test("ordinary user input takes priority over a waiting automatic goal run", asy
     ],
     "User request handled",
   );
-  const { client, threadId } = await setup(stream);
+  let calls = 0;
+  const complete = createToolUseStream(
+    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Follow-up verified" } }],
+    "Done",
+  );
+  const { client, threadId } = await setup((...args) => (calls++ === 0 ? stream : complete)(...args));
   let requested!: () => void;
   const pending = new Promise<void>((resolve) => {
     requested = resolve;
@@ -185,7 +443,8 @@ test("ordinary user input takes priority over a waiting automatic goal run", asy
   });
   await client.waitForNotification("turn/completed");
   const snapshot = (await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse;
-  expect(snapshot.goal).toMatchObject({ status: "paused", reason: "user_turn" });
+  expect(snapshot.goal?.status).not.toBe("paused");
+  await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "complete");
   const read = (await client.request("thread/read", { threadId })) as { items: Array<{ type: string }> };
   expect(read.items.filter((item) => item.type === "userMessage")).toHaveLength(1);
 });

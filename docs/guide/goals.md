@@ -10,7 +10,8 @@ checks, and optional subagents still do the work.
 
 Goal support is enabled by default; no configuration is required. To disable
 creation and automatic execution, set `goals.enabled` to `false` and reload.
-You can also customize the default outer-run limit:
+Goals have no implicit run-count or token limit. To explicitly apply a default
+outer-run limit to newly created goals, configure:
 
 ```json
 {
@@ -25,6 +26,7 @@ Web and TUI share the same commands and protocol:
 /goal
 /goal pause
 /goal edit Fix the auth tests and run the complete auth suite --turns 30 --tokens 100000
+/goal edit Fix the auth tests and run the complete auth suite --turns unlimited
 /goal resume
 /goal clear
 ```
@@ -53,29 +55,40 @@ and with the feature enabled. It rejects duplicate pending requests and creation
 when any goal already exists, including a completed one. Manage existing goals
 through `/goal`; automatic continuations and child agents cannot create goals.
 The model must pass `tokenBudget`/`maxTurns` only if the user specified those limits;
-otherwise the normal configured maximum applies. Default-enabled support does
+otherwise only an explicitly configured default maximum applies. Default-enabled support does
 not turn every normal chat message into persistent work.
 
 `/goal <objective>` is shorthand for `set`. Use explicit `set` when an objective
 starts with a reserved action such as `pause` or `status`. Limits are positive
 safe integers; the objective supports at most 4,000 Unicode code points.
 Without `--tokens`, there is no token cap. Without `--turns`, the configured
-maximum (20 when unspecified) applies. A turn here means an **outer agent run**,
+maximum applies if configured; otherwise runs are unlimited. `--turns unlimited`
+explicitly removes a run cap, including a configured default. A turn here means an **outer agent run**,
 which can include multiple model/tool rounds, not one API request or tool call.
 
 Set/resume starts automatically when the root thread is idle and outside plan
 mode. Set/edit/resume rejects while execution or its cleanup is in flight.
 Pause before editing; edits retain accumulated usage. Increase an exhausted
-limit before resuming. Omitted edit limits retain their previous values. Clear
+limit before resuming, or remove the run cap with `edit <objective> --turns unlimited`.
+Existing ledgers retain their numeric limits and usage: older implicit limits cannot
+be distinguished from limits users explicitly requested. Omitted edit limits retain their previous values. Clear
 the old goal or finish it before setting a replacement. Completed goals cannot
 be edited; set a new goal with fresh counters instead. No command expands the
 agent's authority, answers permission prompts automatically, or starts goals in
 child sessions.
 
-Stop pauses an active goal even between runs. A new ordinary user turn pauses
-the goal with reason `user_turn`, giving the user priority. Plan mode, configuration
-reload, host shutdown, or losing all connected clients also pauses
-goal work. Resume is explicit; reconnecting or reading history never starts it.
+Stop pauses an active goal even between runs. The model can also honor an explicit
+natural-language request to pause or stop using `update_goal` with `paused`;
+instructions forbid model-initiated pauses. Use `/goal pause` for a direct runtime pause.
+A new ordinary user turn takes
+priority over the current run, cancels its outstanding work, and continues under
+the same active goal, including its accounting and limits. Steering also preserves
+the active goal. Plan mode, configuration reload, and host shutdown pause goal work.
+Losing the last client connection does not pause a goal: the current run can finish,
+but admission of another automatic run waits for a client to reconnect. Pending
+goal approvals and questions survive disconnect and are redelivered on subscription;
+missing clients never grant permission. Explicitly paused goals stay paused across
+reconnect and history reads. Process restart still requires explicit resume.
 If owned work is still cleaning up, configuration reload or an agent-rebuilding
 mode/model change rejects without dropping that work's registry. Retry after
 cleanup. Settings saved before a reload failure remain on disk and are applied
@@ -84,7 +97,12 @@ by the next successful reload.
 ## Success, failures, and recovery
 
 The working model checks results and calls `update_goal` with `complete` and
-non-empty evidence, or `blocked` and an unavoidable blocking reason. The runtime
+non-empty evidence, or `blocked` and an unavoidable blocking reason. Instructions
+require a requirement-by-requirement completion audit and the same blocker across
+at least three consecutive goal runs with no safe next action. The runtime rejects
+blocked reports before three runs since creation, resume, or user replacement;
+equivalence of blockers and the availability of alternatives remain model assessments.
+The runtime
 checks ownership, current execution, and that goal-owned children have settled
 before accepting completion. Evidence is the model's assessment, not an
 independent proof or a second model's verdict. Beyond explicit-request creation,
@@ -95,8 +113,10 @@ diagnose and retry. After the provider's existing retry mechanism is exhausted,
 structured retryable network/server/rate-limit failures receive up to three
 additional goal-level retries with backoff (up to 60 seconds per retry).
 Provider usage/quota exhaustion becomes `usage_limited`, not an automatic retry.
-Other unrecoverable run failures become `blocked`. Three consecutive tool-free
-runs with no active owned child become `blocked: no_progress`. A successful run
+Other unrecoverable run failures become `blocked`. Three consecutive empty
+runs with no activity or active owned child become `blocked: no_progress`.
+Nonempty assistant text, thinking, tools, steering, and compaction count as activity;
+the guard does not equate absence of tool calls with absence of progress. A successful run
 resets the transient retry streak; explicit resume resets both streaks.
 
 States are `active`, `paused`, `blocked`, `budget_limited`, `usage_limited`, and
@@ -120,7 +140,8 @@ core turn identity, plus a unique execution identity when a child is resumed.
 Replay deduplicates them, including late child usage, and
 never transfers an old goal's spend to a replacement. Active time measures root
 run elapsed time (including waiting inside a run), not the sum of child times
-or idle backoff. Normal user work and unrelated children are not charged.
+or idle backoff. User follow-ups while a goal is active are goal-owned; ordinary
+work outside active goals and unrelated children are not charged.
 
 ## Persistence and protocol
 

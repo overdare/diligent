@@ -24,6 +24,11 @@ afterEach(() => {
 });
 
 describe("StatusBar context window display", () => {
+  test("shows unlimited runs when no goal cap was requested", () => {
+    const bar = new StatusBar();
+    bar.update({ goal: { status: "active", tokensUsed: 1, turnsUsed: 27 } });
+    expect(stripAnsi(bar.render(160).join(""))).toContain("27/unlimited runs");
+  });
   test("shows compact goal state and run progress", () => {
     const bar = new StatusBar();
     bar.update({

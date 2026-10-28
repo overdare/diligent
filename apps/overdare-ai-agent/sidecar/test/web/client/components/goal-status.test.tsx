@@ -24,6 +24,20 @@ const goal: ThreadGoal = {
   updatedAt: 2,
 };
 
+test("renders uncapped runs without invalid progress and exposes stop reasons while collapsed", () => {
+  const html = renderToStaticMarkup(
+    <GoalStatus
+      goal={{ ...goal, maxTurns: undefined, tokenBudget: undefined, status: "paused", reason: "restart" }}
+      onPause={() => {}}
+      onResume={() => {}}
+      onClear={() => {}}
+    />,
+  );
+  expect(html).toContain("6 / unlimited runs");
+  expect(html).toContain("restart");
+  expect(html).not.toContain("NaN");
+});
+
 test("renders a collapsed summary with objective, lifecycle state, budget progress, and controls", () => {
   const html = renderToStaticMarkup(
     <GoalStatus goal={goal} onPause={() => {}} onResume={() => {}} onClear={() => {}} />,

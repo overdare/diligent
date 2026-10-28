@@ -17,7 +17,7 @@ export const ThreadGoalSchema = z.object({
   objective: GoalObjectiveSchema,
   status: GoalStatusSchema,
   tokenBudget: limit.optional(),
-  maxTurns: limit,
+  maxTurns: limit.optional(),
   turnsUsed: counter,
   tokensUsed: counter,
   cacheReadTokens: counter,
@@ -29,7 +29,7 @@ export const ThreadGoalSchema = z.object({
   updatedAt: counter,
 });
 export type ThreadGoal = z.infer<typeof ThreadGoalSchema>;
-const limits = { tokenBudget: limit.optional(), maxTurns: limit.optional() };
+const limits = { tokenBudget: limit.optional(), maxTurns: limit.nullable().optional() };
 const identity = { expectedGoalId: z.string().min(1), expectedRevision: counter };
 export const GoalChangeSchema = z.discriminatedUnion("action", [
   z.object({

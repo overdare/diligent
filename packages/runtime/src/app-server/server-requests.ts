@@ -42,6 +42,7 @@ export async function handleServerResponseMessage(args: HandleServerResponseArgs
 
   const pending = args.pendingServerRequests.get(reqId);
   if (!pending) return;
+  if (!pending.sentTo.has(args.connectionId)) return;
 
   if (pending.timeoutId !== null) clearTimeout(pending.timeoutId);
   args.pendingServerRequests.delete(reqId);
@@ -68,6 +69,7 @@ export async function handleServerResponseMessage(args: HandleServerResponseArgs
 }
 
 interface BroadcastServerRequestArgs {
+  waitForConnection?: boolean;
   signal?: AbortSignal;
   method: string;
   params: unknown;
@@ -82,7 +84,7 @@ export async function broadcastServerRequest(
   args: BroadcastServerRequestArgs,
 ): Promise<DiligentServerRequestResponse | null> {
   args.signal?.throwIfAborted();
-  if (args.connections.size === 0) return null;
+  if (args.connections.size === 0 && !args.waitForConnection) return null;
 
   const id = args.allocateServerRequestId();
   const sentTo = new Set<string>();
@@ -143,6 +145,7 @@ export async function broadcastServerRequest(
 }
 
 interface RequestApprovalArgs {
+  waitForConnection?: boolean;
   /** Goal work must never interpret a missing decision as permission. */
   onUnavailable?: () => Promise<void>;
   signal?: AbortSignal;
@@ -160,7 +163,7 @@ export async function requestApprovalFromConnections(args: RequestApprovalArgs):
     await args.onUnavailable();
     return "reject";
   };
-  if (args.connections.size === 0) return unavailable();
+  if (args.connections.size === 0 && !args.waitForConnection) return unavailable();
 
   const response = await broadcastServerRequest({
     method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
@@ -170,6 +173,8 @@ export async function requestApprovalFromConnections(args: RequestApprovalArgs):
     allocateServerRequestId: args.allocateServerRequestId,
     threadId: args.threadId,
     signal: args.signal,
+    waitForConnection: args.waitForConnection,
+    timeoutMs: args.waitForConnection ? null : undefined,
   });
   if (!response) return unavailable();
 
@@ -179,6 +184,7 @@ export async function requestApprovalFromConnections(args: RequestApprovalArgs):
 }
 
 interface RequestUserInputArgs {
+  waitForConnection?: boolean;
   signal?: AbortSignal;
   threadId: string;
   request: UserInputRequest;
@@ -189,7 +195,7 @@ interface RequestUserInputArgs {
 
 export async function requestUserInputFromConnections(args: RequestUserInputArgs): Promise<UserInputResponse> {
   args.signal?.throwIfAborted();
-  if (args.connections.size === 0) return { answers: {} };
+  if (args.connections.size === 0 && !args.waitForConnection) return { answers: {} };
 
   const response = await broadcastServerRequest({
     method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
@@ -198,6 +204,7 @@ export async function requestUserInputFromConnections(args: RequestUserInputArgs
     pendingServerRequests: args.pendingServerRequests,
     allocateServerRequestId: args.allocateServerRequestId,
     timeoutMs: null,
+    waitForConnection: args.waitForConnection,
     signal: args.signal,
     threadId: args.threadId,
   });

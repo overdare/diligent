@@ -24,6 +24,8 @@ export class GoalController {
   private cancellation = new AbortController();
   private children = new Set<string>();
   private noProgress = 0;
+  private blockedAuditStartTurns = 0;
+  private childWaiters = new Set<() => void>();
   private retries = 0;
   private retryNotBefore = 0;
   private activeRunId?: string;
@@ -110,6 +112,37 @@ export class GoalController {
     this.goal.reason = reason;
     await this.save();
   }
+  /** Replace the current execution with user input without revoking the objective. */
+  async interruptRun(): Promise<void> {
+    if (this.goal?.status !== "active") return;
+    this.invalidate();
+    this.noProgress = 0;
+    this.retries = 0;
+    this.retryNotBefore = 0;
+    this.blockedAuditStartTurns = this.goal.turnsUsed;
+    await this.save();
+  }
+  async waitForChildren(signal: AbortSignal): Promise<void> {
+    const cancellation = AbortSignal.any([signal, this.cancellation.signal]);
+    cancellation.throwIfAborted();
+    if (!this.children.size) return;
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        this.childWaiters.delete(done);
+        cancellation.removeEventListener("abort", cancel);
+      };
+      const done = () => {
+        cleanup();
+        resolve();
+      };
+      const cancel = () => {
+        cleanup();
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      this.childWaiters.add(done);
+      cancellation.addEventListener("abort", cancel, { once: true });
+    });
+  }
   async change(
     input: GoalChange,
     options: { idle: boolean; enabled: boolean; mode: string; defaultMaxTurns?: number },
@@ -143,6 +176,7 @@ export class GoalController {
         throw new Error("An unfinished goal exists; edit or clear it first");
       this.invalidate();
       this.noProgress = 0;
+      this.blockedAuditStartTurns = 0;
       this.retries = 0;
       this.retryNotBefore = 0;
       const now = Date.now();
@@ -153,7 +187,7 @@ export class GoalController {
         objective: change.objective,
         status: "active",
         tokenBudget: change.tokenBudget,
-        maxTurns: change.maxTurns ?? options.defaultMaxTurns ?? 20,
+        maxTurns: change.maxTurns === null ? undefined : (change.maxTurns ?? options.defaultMaxTurns),
         turnsUsed: 0,
         tokensUsed: 0,
         cacheReadTokens: 0,
@@ -169,7 +203,7 @@ export class GoalController {
         ...this.goal!,
         objective: change.objective,
         tokenBudget: change.tokenBudget ?? this.goal!.tokenBudget,
-        maxTurns: change.maxTurns ?? this.goal!.maxTurns,
+        maxTurns: change.maxTurns === null ? undefined : (change.maxTurns ?? this.goal!.maxTurns),
       };
     } else {
       if (this.goal!.status === "complete" || this.goal!.status === "active")
@@ -177,6 +211,7 @@ export class GoalController {
       if (this.limited()) throw new Error("Raise the exhausted limit before resuming");
       this.invalidate();
       this.noProgress = 0;
+      this.blockedAuditStartTurns = this.goal!.turnsUsed;
       this.retries = 0;
       this.retryNotBefore = 0;
       this.goal!.status = "active";
@@ -188,7 +223,7 @@ export class GoalController {
   private limited(): boolean {
     return (
       !!this.goal &&
-      (this.goal.turnsUsed >= this.goal.maxTurns ||
+      ((this.goal.maxTurns !== undefined && this.goal.turnsUsed >= this.goal.maxTurns) ||
         (this.goal.tokenBudget !== undefined && this.goal.tokensUsed >= this.goal.tokenBudget))
     );
   }
@@ -232,6 +267,7 @@ export class GoalController {
       },
       childFinished: (id) => {
         this.children.delete(id);
+        if (!this.children.size) for (const done of this.childWaiters) done();
         if (!this.children.size && !this.activeRunId && this.goal?.status === "active")
           this.host.wake(Math.max(0, this.retryNotBefore - Date.now()));
       },
@@ -261,9 +297,13 @@ export class GoalController {
       }
     }
   }
-  async report(identity: GoalRunIdentity, status: "complete" | "blocked", evidence: string): Promise<void> {
+  async report(identity: GoalRunIdentity, status: "complete" | "blocked" | "paused", evidence: string): Promise<void> {
     if (!this.isCurrent(identity)) throw new Error("Stale goal execution");
     if (!evidence.trim()) throw new Error("Non-empty evidence or a blocking reason is required");
+    if (status === "blocked" && this.goal!.turnsUsed - this.blockedAuditStartTurns < 3)
+      throw new Error(
+        "Keep the goal active: a blocker must persist for at least three consecutive goal runs. Recheck it and take any safe next action before reporting blocked.",
+      );
     if (status === "complete" && this.children.size)
       throw new Error("Wait for goal-owned children before declaring completion");
     this.goal!.status = status;
@@ -274,7 +314,7 @@ export class GoalController {
     }
     await this.save();
   }
-  async settle(scope: GoalWorkScope, outcome: SessionRunOutcome, usedTools: boolean): Promise<void> {
+  async settle(scope: GoalWorkScope, outcome: SessionRunOutcome, hasActivity: boolean): Promise<void> {
     const owned =
       this.goal?.id === scope.identity.goalId &&
       this.epoch === scope.identity.epoch &&
@@ -313,7 +353,7 @@ export class GoalController {
       }
     } else {
       this.retries = 0;
-      this.noProgress = usedTools || this.children.size > 0 ? 0 : this.noProgress + 1;
+      this.noProgress = hasActivity || this.children.size > 0 ? 0 : this.noProgress + 1;
       if (this.noProgress >= 3) {
         this.goal!.status = "blocked";
         this.goal!.reason = "no_progress";

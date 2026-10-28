@@ -3,7 +3,7 @@
 import type { GoalChange, ThreadGoal, ThreadGoalResponse } from "@diligent/protocol";
 
 const GOAL_USAGE =
-  "/goal [set] <objective> [--tokens N] [--turns N] | edit <objective> [--tokens N] [--turns N] | pause | resume | clear";
+  "/goal [set] <objective> [--tokens N] [--turns N|unlimited] | edit <objective> [--tokens N] [--turns N|unlimited] | pause | resume | clear";
 
 function requireCurrentGoal(goal: ThreadGoal | null | undefined): ThreadGoal {
   if (!goal) {
@@ -26,22 +26,21 @@ function parsePositiveInteger(flag: "--tokens" | "--turns", value: string | unde
 function parseObjectiveAndLimits(tokens: string[]): {
   objective: string;
   tokenBudget?: number;
-  maxTurns?: number;
+  maxTurns?: number | null;
 } {
   const objectiveParts: string[] = [];
   let tokenBudget: number | undefined;
-  let maxTurns: number | undefined;
+  let maxTurns: number | null | undefined;
 
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
     if (token === "--tokens" || token === "--turns") {
-      const value = parsePositiveInteger(token, tokens[index + 1]);
       if (token === "--tokens") {
         if (tokenBudget !== undefined) throw new Error("--tokens may only be specified once.");
-        tokenBudget = value;
+        tokenBudget = parsePositiveInteger(token, tokens[index + 1]);
       } else {
         if (maxTurns !== undefined) throw new Error("--turns may only be specified once.");
-        maxTurns = value;
+        maxTurns = tokens[index + 1] === "unlimited" ? null : parsePositiveInteger(token, tokens[index + 1]);
       }
       index += 1;
       continue;

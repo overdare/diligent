@@ -14,7 +14,7 @@ function formatGoalLines(goal: ThreadGoal | null): string[] {
     `  ${t.bold}Goal:${t.reset}     ${goal.objective}`,
     `  ${t.bold}State:${t.reset}    ${goal.status}`,
     `  ${t.bold}Usage:${t.reset}    ${goal.tokensUsed.toLocaleString()} / ${tokenLimit} tokens`,
-    `  ${t.bold}Runs:${t.reset}     ${goal.turnsUsed.toLocaleString()} / ${goal.maxTurns.toLocaleString()} runs`,
+    `  ${t.bold}Runs:${t.reset}     ${goal.turnsUsed.toLocaleString()} / ${goal.maxTurns?.toLocaleString() ?? "unlimited"} runs`,
     `  ${t.bold}Cached:${t.reset}   ${goal.cacheReadTokens.toLocaleString()} read tokens (not charged)`,
     `  ${t.bold}Active:${t.reset}   ${Math.floor(goal.activeTimeMs / 1000).toLocaleString()} seconds`,
   ];

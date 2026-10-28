@@ -118,5 +118,7 @@ test("active-goal prompt keeps goal controls user-owned while allowing explicit 
   });
 
   expect(prompt).toContain("create_goal only for explicit user intent");
-  expect(prompt).toContain("Only the user can edit, resume, pause, or change goal limits");
+  expect(prompt).toContain("Only the user can edit, resume, or change goal limits");
+  expect(prompt).toContain("paused only when the user explicitly requests");
+  expect(prompt).toContain("three consecutive goal runs");
 });
