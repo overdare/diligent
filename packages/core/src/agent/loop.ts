@@ -234,7 +234,8 @@ export async function runAgentLoop(
         toolResults: executions.map((execution) => execution.toolResult),
       });
 
-      if (signal.aborted || (toolCalls.length === 0 && hooks.pendingSteeringCount() === 0)) break;
+      const endTurn = toolCalls.length === 0 || executions.some((execution) => execution.endTurn);
+      if (signal.aborted || (endTurn && hooks.pendingSteeringCount() === 0)) break;
     }
   } catch (err) {
     if (!userSignal?.aborted) {

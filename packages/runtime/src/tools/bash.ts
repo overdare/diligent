@@ -153,6 +153,7 @@ export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof
         ),
         truncateDirection: "head_tail",
         metadata: {
+          error: isError,
           exitCode,
           timedOut,
           aborted,

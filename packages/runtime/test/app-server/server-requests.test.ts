@@ -13,6 +13,52 @@ import {
 } from "@diligent/runtime/app-server/server-requests";
 
 describe("broadcastServerRequest", () => {
+  it("ignores responses from clients that have not received an offline durable approval", async () => {
+    const pending = new Map();
+    const response = requestApprovalFromConnections({
+      threadId: "thread",
+      request: { permission: "execute", toolName: "bash", description: "Run tests" },
+      connections: new Map(),
+      pendingServerRequests: pending,
+      allocateServerRequestId: () => 42,
+      waitForConnection: true,
+    });
+    const answer = (connectionId: string) =>
+      handleServerResponseMessage({
+        connectionId,
+        message: { id: 42, result: { decision: "always" } },
+        pendingServerRequests: pending,
+        getConnectionById: () => undefined,
+      });
+    await answer("unsubscribed");
+    expect(pending.has(42)).toBe(true);
+    pending.get(42).sentTo.add("subscriber");
+    await answer("subscriber");
+    expect(await response).toBe("always");
+  });
+  it("queues goal approval while offline and keeps it cancellable without granting permission", async () => {
+    const pending = new Map();
+    const controller = new AbortController();
+    let unavailable = false;
+    const response = requestApprovalFromConnections({
+      threadId: "thread",
+      request: { permission: "execute", toolName: "bash", description: "Run tests" },
+      connections: new Map(),
+      pendingServerRequests: pending,
+      allocateServerRequestId: () => 42,
+      signal: controller.signal,
+      waitForConnection: true,
+      onUnavailable: async () => {
+        unavailable = true;
+      },
+    });
+    expect(pending.get(42)?.durable).toBe(true);
+    expect(pending.get(42)?.timeoutId).toBeNull();
+    expect(unavailable).toBe(false);
+    controller.abort();
+    await expect(response).rejects.toMatchObject({ name: "AbortError" });
+    expect(pending.size).toBe(0);
+  });
   it("goal approval rejects missing and unanswered consumers instead of granting once", async () => {
     let paused = 0;
     const pending = new Map();
@@ -195,7 +241,9 @@ describe("broadcastServerRequest", () => {
       threadId: "thread-1",
     });
 
-    // Original connection dropped; a brand-new connection delivers the answer with the same id.
+    // Resubscription redelivers the original request to the new connection.
+    pending.get(11).sentTo.delete("conn-old");
+    pending.get(11).sentTo.add("conn-new");
     await handleServerResponseMessage({
       connectionId: "conn-new",
       message: { id: 11, result: { answers: { q1: "late" } } },

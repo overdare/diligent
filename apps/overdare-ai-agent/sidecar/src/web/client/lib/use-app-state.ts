@@ -10,7 +10,7 @@ import { findModelInfo, normalizeThinkingEffort } from "./model-thinking-helpers
 import { buildCommandList } from "./slash-commands";
 import { initialThreadState } from "./thread-store";
 import { useAppActions } from "./use-app-actions";
-import { useAppBootstrap, useAppRpcBindings } from "./use-app-lifecycle";
+import { useAppBootstrap, useAppRpcBindings, useGoalReconciliation } from "./use-app-lifecycle";
 import { useConsentState } from "./use-consent-state";
 import { useFeedbackState } from "./use-feedback-state";
 import { useModalState } from "./use-modal-state";
@@ -81,6 +81,7 @@ export function useAppState({
   );
 
   activeThreadIdRef.current = state.activeThreadId;
+  useGoalReconciliation(rpcRef, state.activeThreadId, connection === "connected", goalsSupported, dispatch);
 
   const threadMgr = useThreadManager({
     rpcRef,

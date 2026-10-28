@@ -3,7 +3,7 @@
 import type { GoalChange, ThreadGoal, ThreadGoalResponse } from "@diligent/protocol";
 
 const GOAL_USAGE =
-  "/goal [set] <objective> [--tokens N] [--turns N] | edit <objective> [--tokens N] [--turns N] | pause | resume | clear";
+  "/goal [set] <objective> [--tokens N] [--turns N|unlimited] | edit [objective] [--tokens N|off] [--turns N|off] | pause | resume | clear (--runs aliases --turns)";
 
 function requireCurrentGoal(goal: ThreadGoal | null | undefined): ThreadGoal {
   if (!goal) {
@@ -23,25 +23,28 @@ function parsePositiveInteger(flag: "--tokens" | "--turns", value: string | unde
   return parsed;
 }
 
-function parseObjectiveAndLimits(tokens: string[]): {
-  objective: string;
-  tokenBudget?: number;
-  maxTurns?: number;
+function parseObjectiveAndLimits(
+  tokens: string[],
+  editing = false,
+): {
+  objective?: string;
+  tokenBudget?: number | null;
+  maxTurns?: number | null;
 } {
   const objectiveParts: string[] = [];
-  let tokenBudget: number | undefined;
-  let maxTurns: number | undefined;
+  let tokenBudget: number | null | undefined;
+  let maxTurns: number | null | undefined;
 
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
-    if (token === "--tokens" || token === "--turns") {
-      const value = parsePositiveInteger(token, tokens[index + 1]);
+    if (token === "--tokens" || token === "--turns" || token === "--runs") {
+      const remove = ["off", "unlimited"].includes(tokens[index + 1]);
       if (token === "--tokens") {
         if (tokenBudget !== undefined) throw new Error("--tokens may only be specified once.");
-        tokenBudget = value;
+        tokenBudget = editing && remove ? null : parsePositiveInteger(token, tokens[index + 1]);
       } else {
         if (maxTurns !== undefined) throw new Error("--turns may only be specified once.");
-        maxTurns = value;
+        maxTurns = remove ? null : parsePositiveInteger("--turns", tokens[index + 1]);
       }
       index += 1;
       continue;
@@ -53,11 +56,13 @@ function parseObjectiveAndLimits(tokens: string[]): {
   }
 
   const objective = objectiveParts.join(" ").trim();
-  if (!objective) {
+  if (!objective && !editing) {
     throw new Error(`A goal objective is required. Usage: ${GOAL_USAGE}`);
   }
+  if (editing && !objective && tokenBudget === undefined && maxTurns === undefined)
+    throw new Error(`Supply an objective or limit to edit. Usage: ${GOAL_USAGE}`);
   return {
-    objective,
+    ...(objective ? { objective } : {}),
     ...(tokenBudget === undefined ? {} : { tokenBudget }),
     ...(maxTurns === undefined ? {} : { maxTurns }),
   };
@@ -85,7 +90,7 @@ export function parseGoalCommand(args: string | undefined, currentGoal?: ThreadG
     const goal = requireCurrentGoal(currentGoal);
     return {
       action: "edit",
-      ...parseObjectiveAndLimits(tokens.slice(1)),
+      ...parseObjectiveAndLimits(tokens.slice(1), true),
       expectedGoalId: goal.id,
       expectedRevision: goal.revision,
     };
@@ -96,10 +101,53 @@ export function parseGoalCommand(args: string | undefined, currentGoal?: ThreadG
   return {
     action: "set",
     ...parsed,
+    objective: parsed.objective!,
+    tokenBudget: parsed.tokenBudget ?? undefined,
     ...(currentGoal ? { expectedRevision: currentGoal.revision } : {}),
   };
 }
 
 export function applyGoalSnapshot(current: ThreadGoalResponse, incoming: ThreadGoalResponse): ThreadGoalResponse {
+  // Null is only published after a durable clear, which advances the sequence.
+  // A failed initial set can publish a paused goal before the first durable write.
+  if (incoming.sequence === current.sequence && current.goal && !incoming.goal) return current;
+  // A storage failure has a newer in-memory revision at the same durable sequence.
+  if (
+    incoming.sequence === current.sequence &&
+    incoming.goal &&
+    current.goal &&
+    incoming.goal.revision < current.goal.revision
+  )
+    return current;
   return incoming.sequence < current.sequence ? current : incoming;
+}
+
+const GOAL_REASONS: Record<string, string> = {
+  user: "Paused at your request.",
+  restart: "The server restarted. Resume to continue the existing goal.",
+  shutdown: "The server shut down. Resume to continue the existing goal.",
+  persistence_error: "Goal state could not be saved. Check available disk space and write access, then resume.",
+  no_progress: "The agent repeatedly returned without making progress.",
+  token_budget: "The goal's token budget was reached. Increase the budget before resuming.",
+  turn_limit: "The goal's run limit was reached. Change the limit before resuming.",
+  interrupted: "Execution was interrupted.",
+  config_reload: "Configuration changed. Resume when the new configuration is ready.",
+  interaction_unavailable: "The required user interaction could not be opened.",
+  execution_unavailable: "The execution environment is unavailable.",
+  runtime_error: "A runtime error interrupted the goal.",
+  plan_mode: "Goal execution is unavailable in plan mode. Switch modes before resuming.",
+  disabled: "Goal mode is disabled. Enable it before resuming.",
+  deleted: "The thread was deleted.",
+};
+
+export function goalStopMessage(goal: ThreadGoal): string | undefined {
+  if (goal.status === "active" || goal.status === "complete") return undefined;
+  const fallback = {
+    paused: "Execution is paused.",
+    blocked: "Execution needs attention before it can continue.",
+    budget_limited: "A goal budget was reached. Increase the budget before resuming.",
+    usage_limited: "The provider's usage limit was reached. Resume after the limit resets or access is restored.",
+  }[goal.status];
+  const reason = goal.reason?.trim();
+  return `Goal stopped: ${reason ? (GOAL_REASONS[reason] ?? reason) : fallback}`;
 }

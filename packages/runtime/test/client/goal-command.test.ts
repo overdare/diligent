@@ -21,6 +21,28 @@ const goal: ThreadGoal = {
 };
 
 describe("parseGoalCommand", () => {
+  test("edits limits without replacing the objective, including aliases and explicit removal", () => {
+    expect(parseGoalCommand("edit --tokens off --runs unlimited", goal)).toEqual({
+      action: "edit",
+      tokenBudget: null,
+      maxTurns: null,
+      expectedGoalId: goal.id,
+      expectedRevision: goal.revision,
+    });
+    expect(() => parseGoalCommand("edit", goal)).toThrow("edit");
+    expect(() => parseGoalCommand("edit --runs 2 --turns 3", goal)).toThrow("once");
+    expect(() => parseGoalCommand("set Finish --tokens off")).toThrow("positive");
+  });
+  test("allows explicitly removing a run cap without changing the objective or usage", () => {
+    expect(parseGoalCommand("edit Ship goal mode --turns unlimited", goal)).toEqual({
+      action: "edit",
+      objective: goal.objective,
+      maxTurns: null,
+      expectedGoalId: goal.id,
+      expectedRevision: goal.revision,
+    });
+    expect(() => parseGoalCommand("set Finish --turns unlimited --turns 3")).toThrow("once");
+  });
   test("uses a bare command for status", () => {
     expect(parseGoalCommand(undefined, goal)).toBeNull();
     expect(parseGoalCommand("status", goal)).toBeNull();
@@ -86,6 +108,20 @@ describe("parseGoalCommand", () => {
 });
 
 describe("applyGoalSnapshot", () => {
+  test("failed initial creation supersedes an empty snapshot at the same durable sequence", () => {
+    const empty = { goal: null, sequence: 0 };
+    const failed = { goal: { ...goal, status: "paused" as const, reason: "persistence_error" }, sequence: 0 };
+    expect(applyGoalSnapshot(empty, failed)).toEqual(failed);
+    expect(applyGoalSnapshot(failed, empty)).toEqual(failed);
+    expect(applyGoalSnapshot(failed, { goal: null, sequence: 1 })).toEqual({ goal: null, sequence: 1 });
+  });
+  test("does not replace an unsaved failure snapshot with a delayed durable snapshot", () => {
+    const paused = {
+      goal: { ...goal, revision: 4, status: "paused" as const, reason: "persistence_error" },
+      sequence: 4,
+    };
+    expect(applyGoalSnapshot(paused, { goal, sequence: 4 })).toEqual(paused);
+  });
   test("does not let an older notification restore a cleared or replaced goal", () => {
     const cleared = { goal: null, sequence: 8 };
     expect(applyGoalSnapshot(cleared, { goal, sequence: 7 })).toEqual(cleared);

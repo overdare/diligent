@@ -55,7 +55,7 @@ test("plan mode pauses the goal without orphaning a live child registry", async 
 });
 
 test("a per-turn model change does not replace the agent while a goal-owned child is cleaning up", async () => {
-  const { controller } = await goalWithChild();
+  const { controller, scope } = await goalWithChild();
   const agent = { id: "goal-agent" };
   const runtime = {
     id: "thread",
@@ -101,5 +101,7 @@ test("a per-turn model change does not replace the agent while a goal-owned chil
   ).rejects.toThrow("goal-owned work");
 
   expect(runtime.agent).toBe(agent);
+  expect(scope.signal.aborted).toBe(false);
+  expect(controller.read().goal?.status).toBe("active");
   expect(runtime.model).toEqual({ provider: "anthropic", modelId: "claude-sonnet-5" });
 });

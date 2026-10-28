@@ -24,6 +24,8 @@ export {
 export type { Mode } from "./agent/mode";
 export type { AgentEvent, ChildAgentEvent, RuntimeAgentEvent } from "./agent-event";
 export { type FileLink, parseFileLink } from "./client/file-link";
-export { applyGoalSnapshot, parseGoalCommand } from "./client/goal-command";
+export { applyGoalSnapshot, goalStopMessage, parseGoalCommand } from "./client/goal-command";
+export { formatGoalDuration, goalElapsedMs } from "./client/goal-format";
+export { startGoalSync } from "./client/goal-sync";
 export { mergeHistoryItems, mergeSessionSummaries } from "./client/history-pages";
 export { ProtocolNotificationAdapter } from "./notification-adapter";

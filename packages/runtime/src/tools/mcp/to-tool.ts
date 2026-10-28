@@ -82,7 +82,7 @@ export function mapMcpCallResult(
     output,
     ...(outputImages.length > 0 ? { outputImages } : {}),
     ...(outputLimit ? { maxOutputBytes: outputLimit.maxBytes } : {}),
-    metadata: { mcpServer: serverName, mcpTool: toolName, isError: result.isError },
+    metadata: { mcpServer: serverName, mcpTool: toolName, isError: result.isError, error: result.isError },
   };
 }
 

@@ -535,6 +535,27 @@ describe("AgentRegistry", () => {
     await expect(registry.wait(["unknown-id"], 1000)).rejects.toThrow(/Unknown agent/);
   });
 
+  it("unknown child references expose exact owned IDs without silently targeting another agent", async () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("Verified review")),
+      }),
+    );
+    const child = registry.spawn({ prompt: "Review", description: "Read-only review" });
+    await registry.wait([child.threadId], 1000);
+    const typo = `${child.threadId}-typo`;
+    await expect(registry.wait([typo], 1000)).rejects.toThrow(`"threadId":"${child.threadId}"`);
+    expect(() => registry.spawn({ prompt: "Continue", description: "Review", resumeId: typo })).toThrow(
+      `"threadId":"${child.threadId}"`,
+    );
+    await expect(registry.sendInput(typo, "Continue")).rejects.toThrow(`"threadId":"${child.threadId}"`);
+    await expect(registry.close(typo)).rejects.toThrow(`"threadId":"${child.threadId}"`);
+    expect(registry.getKnownAgents()).toHaveLength(1);
+    const recovered = await registry.wait([child.threadId], 1000);
+    expect(recovered.status[child.threadId]).toEqual({ kind: "completed", output: "Verified review" });
+    await registry.shutdownAll();
+  });
+
   it("getNickname returns undefined for unknown agent", () => {
     const registry = new AgentRegistry(makeCollabDeps());
     expect(registry.getNickname("bad-id")).toBeUndefined();

@@ -49,7 +49,7 @@ export async function handleSkillsSet(
   }
 
   await writeGlobalSkillsConfig({ overrides: params.overrides });
-  await handleConfigReload(reloadConfig, ctx.threads);
+  await handleConfigReload(reloadConfig, ctx.threads, () => ctx.getGoalsConfig?.()?.enabled !== false);
 
   const after = await manager.resolve(cwd);
   return buildSkillsListResponse(after);

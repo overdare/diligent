@@ -96,7 +96,12 @@ describe("mcpToolToDiligentTool", () => {
     expect(result.outputImages).toEqual([
       { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
     ]);
-    expect(result.metadata).toMatchObject({ mcpServer: "github", mcpTool: "search_issues", isError: false });
+    expect(result.metadata).toMatchObject({
+      mcpServer: "github",
+      mcpTool: "search_issues",
+      isError: false,
+      error: false,
+    });
   });
 
   test("drops unsupported image media types", async () => {
@@ -119,7 +124,7 @@ describe("mcpToolToDiligentTool", () => {
     });
     const result = await tool.execute({ q: "open" }, makeCtx());
     expect(result.output).toMatch(/error/i);
-    expect(result.metadata).toMatchObject({ isError: true });
+    expect(result.metadata).toMatchObject({ isError: true, error: true });
   });
 
   test("applies the output limit as a per-result byte cap", () => {

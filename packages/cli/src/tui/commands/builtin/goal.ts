@@ -2,7 +2,7 @@
 
 import type { ThreadGoal } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
-import { parseGoalCommand } from "@diligent/runtime/client";
+import { formatGoalDuration, goalElapsedMs, goalStopMessage, parseGoalCommand } from "@diligent/runtime/client";
 import { t } from "../../theme";
 import type { Command } from "../types";
 
@@ -14,11 +14,13 @@ function formatGoalLines(goal: ThreadGoal | null): string[] {
     `  ${t.bold}Goal:${t.reset}     ${goal.objective}`,
     `  ${t.bold}State:${t.reset}    ${goal.status}`,
     `  ${t.bold}Usage:${t.reset}    ${goal.tokensUsed.toLocaleString()} / ${tokenLimit} tokens`,
-    `  ${t.bold}Runs:${t.reset}     ${goal.turnsUsed.toLocaleString()} / ${goal.maxTurns.toLocaleString()} runs`,
+    `  ${t.bold}Runs:${t.reset}     ${goal.turnsUsed.toLocaleString()} / ${goal.maxTurns?.toLocaleString() ?? "unlimited"} runs`,
     `  ${t.bold}Cached:${t.reset}   ${goal.cacheReadTokens.toLocaleString()} read tokens (not charged)`,
-    `  ${t.bold}Active:${t.reset}   ${Math.floor(goal.activeTimeMs / 1000).toLocaleString()} seconds`,
+    `  ${t.bold}Active:${t.reset}   ${formatGoalDuration(goalElapsedMs(goal))}`,
   ];
-  if (goal.reason) lines.push(`  ${t.bold}Reason:${t.reset}   ${goal.reason}`);
+  const stopMessage = goalStopMessage(goal);
+  if (stopMessage) lines.push(`  ${t.warn}${stopMessage}${t.reset}`, `  Resume: /goal resume`);
+  else if (goal.reason) lines.push(`  ${t.bold}Reason:${t.reset}   ${goal.reason}`);
   if (goal.completionEvidence) lines.push(`  ${t.bold}Evidence:${t.reset} ${goal.completionEvidence}`);
   return lines;
 }

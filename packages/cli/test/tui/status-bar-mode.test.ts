@@ -24,6 +24,13 @@ afterEach(() => {
 });
 
 describe("StatusBar context window display", () => {
+  test("shows time and tokens without a run counter when no goal cap was requested", () => {
+    const bar = new StatusBar();
+    bar.update({ goal: { status: "active", tokensUsed: 1, turnsUsed: 27, activeTimeMs: 2000 } });
+    const text = stripAnsi(bar.render(160).join(""));
+    expect(text).toContain("2s 1 tokens");
+    expect(text).not.toContain("runs");
+  });
   test("shows compact goal state and run progress", () => {
     const bar = new StatusBar();
     bar.update({

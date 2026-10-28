@@ -6,6 +6,12 @@ import type { ToolContext, ToolRegistry } from "../tool/types";
 import type { ToolCallBlock, ToolResultMessage } from "../types";
 import type { AgentStream } from "./types";
 
+interface ToolCallExecution {
+  toolCall: ToolCallBlock;
+  toolResult: ToolResultMessage;
+  endTurn?: boolean;
+}
+
 export async function runToolCalls(
   toolCalls: ToolCallBlock[],
   signal: AbortSignal | undefined,
@@ -16,15 +22,9 @@ export async function runToolCalls(
   outputStore?: ToolOutputFileStore,
   sessionId?: string,
 ): Promise<{
-  executions: Array<{
-    toolCall: ToolCallBlock;
-    toolResult: ToolResultMessage;
-  }>;
+  executions: ToolCallExecution[];
 }> {
-  const executions: Array<{
-    toolCall: ToolCallBlock;
-    toolResult: ToolResultMessage;
-  }> = [];
+  const executions: ToolCallExecution[] = [];
 
   if (toolCalls.length === 0) {
     return { executions };
@@ -170,10 +170,7 @@ function toToolCallExecution(
   itemId: string,
   result: Awaited<ReturnType<typeof executeTool>>,
   stream: AgentStream,
-): {
-  toolCall: ToolCallBlock;
-  toolResult: ToolResultMessage;
-} {
+): ToolCallExecution {
   const toolResult: ToolResultMessage = {
     role: "tool_result",
     toolCallId: toolCall.id,
@@ -198,5 +195,5 @@ function toToolCallExecution(
     metadata: result.metadata,
   });
 
-  return { toolCall, toolResult };
+  return { toolCall, toolResult, endTurn: !toolResult.isError && result.endTurn };
 }

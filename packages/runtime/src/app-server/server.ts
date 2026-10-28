@@ -11,6 +11,7 @@ import {
   type ProviderName,
   type StreamFunction,
 } from "@diligent/core/provider-contract";
+import { createLogger } from "@diligent/logging";
 import type { RuntimeAgent } from "../agent/runtime-agent";
 import type { AgentEvent } from "../agent-event";
 import type { ApprovalRequest, ApprovalResponse, PermissionEngine } from "../approval/types";
@@ -227,6 +228,7 @@ export class DiligentAppServer {
       userId: options?.userId,
     };
     this.connections.set(connectionId, conn);
+    for (const runtime of this.threads.values()) runtime.goal?.wake();
 
     peer.onMessage(async (message) => {
       if (!this.connections.has(connectionId)) return;
@@ -265,13 +267,8 @@ export class DiligentAppServer {
     for (const runtime of this.threads.values()) {
       if (runtime.goalCreation?.connectionId === connectionId) runtime.goalCreation = undefined;
     }
-    // Revoke goal ownership synchronously before the legacy approval fallback can run.
-    if (this.connections.size === 1) {
-      for (const runtime of this.threads.values()) {
-        runtime.goalCreation = undefined;
-        void runtime.goal?.pause("disconnected").catch(() => {});
-      }
-    }
+    // A transport loss is not a user pause. Existing work and durable questions survive;
+    // new automatic runs wait for a connection and are woken by connect().
 
     // Clean up subscriptions for this connection
     for (const [subId, sub] of this.subscriptionMap) {
@@ -543,9 +540,7 @@ export class DiligentAppServer {
 
     if (!threadId) {
       // No threadId → broadcast to all connections
-      for (const conn of this.connections.values()) {
-        await conn.peer.send(notification);
-      }
+      await Promise.all([...this.connections.values()].map((conn) => this.deliverNotification(conn, notification)));
       return;
     }
 
@@ -560,6 +555,7 @@ export class DiligentAppServer {
     const subscribers = [...this.connections.values()].filter((c) => c.subscriptions.has(threadId));
     const targets = subscribers.length > 0 ? subscribers : [...this.connections.values()];
 
+    const deliveries: Promise<void>[] = [];
     for (const conn of targets) {
       if (isTurnLifecycle && this.threads.get(threadId)?.currentTurnId !== turnAtEmission) continue;
       // Skip the turn initiator's own user-message echo. Structured context
@@ -578,8 +574,9 @@ export class DiligentAppServer {
           continue;
         }
       }
-      await conn.peer.send(notification);
+      deliveries.push(this.deliverNotification(conn, notification));
     }
+    await Promise.all(deliveries);
   }
 
   private resolveRuntimeProvider(runtime: ThreadRuntime | undefined): ProviderName | undefined {
@@ -588,6 +585,45 @@ export class DiligentAppServer {
     if (parsedProvider.success) return parsedProvider.data;
     const model = runtime?.runningModelSnapshot ?? runtime?.model;
     return model ? model.provider : undefined;
+  }
+
+  private readonly stalledNotificationPeers = new WeakMap<ConnectedPeer, Set<Promise<void>>>();
+
+  private async deliverNotification(conn: ConnectedPeer, notification: DiligentServerNotification): Promise<void> {
+    if (this.stalledNotificationPeers.has(conn)) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const sending = Promise.resolve(conn.peer.send(notification));
+      // Do not accumulate more notifications behind a transport that has stopped
+      // draining. Resume delivery when it recovers; clients reconcile snapshots.
+      const settled = () => {
+        const stalled = this.stalledNotificationPeers.get(conn);
+        stalled?.delete(sending);
+        if (stalled?.size === 0) this.stalledNotificationPeers.delete(conn);
+      };
+      void sending.then(settled, settled);
+      await Promise.race([
+        sending,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            const stalled = this.stalledNotificationPeers.get(conn) ?? new Set<Promise<void>>();
+            stalled.add(sending);
+            this.stalledNotificationPeers.set(conn, stalled);
+            reject(new Error("Notification delivery timed out"));
+          }, 5_000);
+        }),
+      ]);
+    } catch (error) {
+      // A failed UI transport cannot interrupt agent execution or starve other
+      // subscribers. Clients rehydrate history and reconcile goal snapshots.
+      createLogger({ scope: "runtime.app-server" }).warn("notification.failed", {
+        message: "Client notification could not be delivered",
+        fields: { connectionId: conn.id, method: notification.method },
+        error,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   // ─── Server request broadcasting ────────────────────────────────────────────
@@ -624,6 +660,7 @@ export class DiligentAppServer {
         runtime?.goalScope || runtime?.goal?.hasChildren
           ? () => runtime.goal!.pause("interaction_unavailable")
           : undefined,
+      waitForConnection: !!runtime?.goalScope || !!runtime?.goal?.hasChildren,
     });
 
     if (decision === "always") {
@@ -652,6 +689,7 @@ export class DiligentAppServer {
         pendingServerRequests: this.pendingServerRequests,
         allocateServerRequestId: () => this.allocateServerRequestId(),
         signal,
+        waitForConnection: !!this.threads.get(threadId)?.goalScope || !!this.threads.get(threadId)?.goal?.hasChildren,
       }),
     ).finally(() => this.threads.get(threadId)?.goal?.wake());
   }
@@ -704,11 +742,8 @@ export class DiligentAppServer {
           runtime.goal.hasChildren
         )
           return;
-        if (
-          this.config.getGoalsConfig?.()?.enabled === false ||
-          runtime.mode === "plan" ||
-          this.connections.size === 0
-        ) {
+        if (this.connections.size === 0) return;
+        if (this.config.getGoalsConfig?.()?.enabled === false || runtime.mode === "plan") {
           await runtime.goal.pause("execution_unavailable");
           return;
         }

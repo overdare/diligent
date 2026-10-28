@@ -344,6 +344,21 @@ describe("wait tool", () => {
 });
 
 describe("send_input tool", () => {
+  it("returns exact owned child IDs when the model mistypes its target", async () => {
+    const { tools, registry } = createCollabTools(
+      makeCollabDeps({
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("Reviewed")),
+      }),
+    );
+    const child = registry.spawn({ prompt: "Review", description: "Review" });
+    await registry.wait([child.threadId], 1000);
+    const tool = tools.find((tool) => tool.name === "send_input")!;
+    await expect(tool.execute({ id: `${child.threadId}-typo`, message: "Continue" }, makeCtx())).rejects.toThrow(
+      `"threadId":"${child.threadId}"`,
+    );
+    expect(registry.getStatus(child.threadId).kind).toBe("completed");
+    await registry.shutdownAll();
+  });
   it("throws for unknown agent", async () => {
     const { tools } = createCollabTools(makeCollabDeps());
     const sendTool = tools.find((t) => t.name === "send_input")!;

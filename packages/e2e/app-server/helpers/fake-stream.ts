@@ -44,7 +44,11 @@ export function createSimpleStream(text: string): StreamFunction {
  * Creates a StreamFunction that emits tool calls on the first invocation,
  * then a final text response on subsequent invocations.
  */
-export function createToolUseStream(toolCalls: ToolCallSpec[], finalText: string): StreamFunction {
+export function createToolUseStream(
+  toolCalls: ToolCallSpec[],
+  finalText: string,
+  leadingText?: string,
+): StreamFunction {
   let callCount = 0;
   return () => {
     const stream = new EventStream<ProviderEvent, ProviderResult>(
@@ -55,6 +59,7 @@ export function createToolUseStream(toolCalls: ToolCallSpec[], finalText: string
     queueMicrotask(() => {
       stream.push({ type: "start" });
       if (iteration === 0 && toolCalls.length > 0) {
+        if (leadingText) stream.push({ type: "text_delta", delta: leadingText });
         // First call: emit tool calls
         for (const tc of toolCalls) {
           stream.push({ type: "tool_call_start", id: tc.id, name: tc.name });
@@ -65,12 +70,15 @@ export function createToolUseStream(toolCalls: ToolCallSpec[], finalText: string
           stopReason: "tool_use",
           message: {
             role: "assistant",
-            content: toolCalls.map((tc) => ({
-              type: "tool_call" as const,
-              id: tc.id,
-              name: tc.name,
-              input: tc.input,
-            })),
+            content: [
+              ...(leadingText ? [{ type: "text" as const, text: leadingText }] : []),
+              ...toolCalls.map((tc) => ({
+                type: "tool_call" as const,
+                id: tc.id,
+                name: tc.name,
+                input: tc.input,
+              })),
+            ],
             model: { provider: "anthropic", modelId: "claude-sonnet-5" },
             usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
             stopReason: "tool_use",
@@ -95,6 +103,41 @@ export function createToolUseStream(toolCalls: ToolCallSpec[], finalText: string
       }
     });
     return stream as never;
+  };
+}
+
+/** Deliver a synthetic answer, then cite its runtime-observed source when completing a goal. */
+export function createGoalCompletionStream(evidence: string, finalText = "Done"): StreamFunction {
+  const inspect = createToolUseStream([{ id: "inspect-goal", name: "get_goal", input: {} }], finalText, finalText);
+  let finish: StreamFunction | undefined;
+  let calls = 0;
+  return (...args) => {
+    if (calls++ === 0) return inspect(...args);
+    if (!finish) {
+      const result = [...args[1].messages]
+        .reverse()
+        .find((message) => message.role === "tool_result" && message.toolCallId === "inspect-goal");
+      if (!result || result.role !== "tool_result") throw new Error("Missing goal evidence response");
+      const snapshot = JSON.parse(result.output);
+      const source = snapshot.evidenceSources?.findLast((item: { kind: string }) => item.kind === "answer");
+      finish = createToolUseStream(
+        [
+          {
+            id: "done",
+            name: "update_goal",
+            input: {
+              status: "complete",
+              evidence,
+              verification: [
+                { requirement: "Deliver the requested answer", sourceId: source?.id ?? "missing", quote: finalText },
+              ],
+            },
+          },
+        ],
+        finalText,
+      );
+    }
+    return finish(...args);
   };
 }
 

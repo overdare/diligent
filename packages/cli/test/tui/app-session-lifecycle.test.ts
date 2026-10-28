@@ -79,6 +79,39 @@ function createLifecycleWithThreadRead(threadRead: unknown, runtime = new AppRun
 }
 
 describe("AppSessionLifecycle", () => {
+  test("opening a stopped thread shows its reason and resume command without waiting for a new event", async () => {
+    const runtime = new AppRuntimeState("default", "medium");
+    runtime.currentThreadId = "thread";
+    const { lifecycle, addLines } = createLifecycleWithThreadRead(
+      {
+        currentEffort: "medium",
+        currentMode: "default",
+        goalSequence: 2,
+        goal: {
+          id: "goal",
+          threadId: "thread",
+          revision: 2,
+          objective: "Finish",
+          status: "paused",
+          reason: "persistence_error",
+          turnsUsed: 1,
+          tokensUsed: 0,
+          cacheReadTokens: 0,
+          activeTimeMs: 0,
+          accountingScope: "reported_agent_tokens",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+      runtime,
+    );
+    await lifecycle.syncActiveThreadState();
+    expect(addLines.mock.calls.flat(2).join(" ")).toContain("Goal state could not be saved");
+    expect(addLines.mock.calls.flat(2).join(" ")).toContain("/goal resume");
+    const count = addLines.mock.calls.length;
+    await lifecycle.syncActiveThreadState();
+    expect(addLines.mock.calls).toHaveLength(count);
+  });
   test("stale hydration cannot roll back a goal notification or cross a thread switch", async () => {
     const runtime = new AppRuntimeState("default", "medium");
     runtime.currentThreadId = "thread";

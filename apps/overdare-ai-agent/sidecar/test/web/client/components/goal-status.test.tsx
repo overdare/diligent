@@ -24,6 +24,21 @@ const goal: ThreadGoal = {
   updatedAt: 2,
 };
 
+test("renders uncapped runs without invalid progress and exposes stop reasons while collapsed", () => {
+  const html = renderToStaticMarkup(
+    <GoalStatus
+      goal={{ ...goal, maxTurns: undefined, tokenBudget: undefined, status: "paused", reason: "restart" }}
+      onPause={() => {}}
+      onResume={() => {}}
+      onClear={() => {}}
+    />,
+  );
+  expect(html).not.toContain("runs");
+  expect(html).not.toContain("width:");
+  expect(html).toContain("restart");
+  expect(html).not.toContain("NaN");
+});
+
 test("renders a collapsed summary with objective, lifecycle state, budget progress, and controls", () => {
   const html = renderToStaticMarkup(
     <GoalStatus goal={goal} onPause={() => {}} onResume={() => {}} onClear={() => {}} />,
@@ -74,6 +89,35 @@ test("offers resume for a non-active goal", () => {
 
   expect(html).toContain("Resume");
   expect(html).not.toContain(">Pause<");
+});
+
+for (const status of ["paused", "blocked", "budget_limited", "usage_limited"] as const) {
+  test(`shows an accessible stop message and Resume while ${status} is collapsed`, () => {
+    const html = renderToStaticMarkup(
+      <GoalStatus
+        goal={{ ...goal, status, reason: undefined }}
+        onPause={() => {}}
+        onResume={() => {}}
+        onClear={() => {}}
+      />,
+    );
+    expect(html).toContain("<output");
+    expect(html).toContain("Resume");
+    expect(html).toContain("Goal stopped");
+  });
+}
+
+test("explains storage failures without exposing only an internal reason code", () => {
+  const html = renderToStaticMarkup(
+    <GoalStatus
+      goal={{ ...goal, status: "paused", reason: "persistence_error" }}
+      onPause={() => {}}
+      onResume={() => {}}
+      onClear={() => {}}
+    />,
+  );
+  expect(html).toContain("Goal state could not be saved");
+  expect(html).toContain("Resume");
 });
 
 test("hides the usage bar once the goal is complete", () => {

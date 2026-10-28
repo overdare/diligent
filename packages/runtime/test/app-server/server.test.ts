@@ -37,9 +37,139 @@ import { handleImageUpload } from "@diligent/runtime/app-server/config-handlers"
 import { ensureDiligentDir } from "@diligent/runtime/infrastructure";
 import { SessionWriter } from "@diligent/runtime/session";
 import { z } from "zod";
-import type { ThreadRuntime } from "../../src/app-server/thread-handlers";
+import { handleThreadCompactStart, type ThreadRuntime } from "../../src/app-server/thread-handlers";
 
 const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
+
+for (const failedStatus of ["busy", "idle"] as const) {
+  it(`manual compaction releases ownership when ${failedStatus} notification delivery fails`, async () => {
+    let wakes = 0;
+    const runtime = {
+      id: "thread",
+      isRunning: false,
+      manager: {
+        compactNow: async () => ({ compacted: false, entryCount: 0, tokensBefore: 0, tokensAfter: 0, summary: "" }),
+      },
+      goal: {
+        wake: () => {
+          expect(runtime.isRunning).toBe(false);
+          wakes++;
+        },
+      },
+    } as unknown as ThreadRuntime;
+    await expect(
+      handleThreadCompactStart(
+        {
+          resolveThreadRuntime: async () => runtime,
+          emit: async (notification: DiligentServerNotification) => {
+            if (notification.method === "thread/status/changed" && notification.params.status === failedStatus)
+              throw new Error("Peer disconnected");
+          },
+        } as never,
+        runtime.id,
+      ),
+    ).rejects.toThrow("Peer disconnected");
+    expect(runtime.isRunning).toBe(false);
+    expect(wakes).toBe(1);
+  });
+}
+
+for (const outcome of ["compacted", "skipped", "failed", "paused"] as const) {
+  it(`manual compaction releases goal scheduling after a consumed wake: ${outcome}`, async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "goal-compaction-wake-"));
+    const server = new DiligentAppServer({
+      ...createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }),
+      getGoalsConfig: () => ({ enabled: true }),
+    });
+    const connection = connectTestPeer(server);
+    let release!: () => void;
+    let compacting: Promise<unknown> | undefined;
+    try {
+      const { threadId } = readResult(
+        await server.handleRequest(TEST_CONNECTION_ID, {
+          id: 1,
+          method: "thread/start",
+          params: { cwd },
+        }),
+      ) as { threadId: string };
+      readResult(
+        await server.handleRequest(TEST_CONNECTION_ID, {
+          id: 2,
+          method: "thread/goal/set",
+          params: { threadId, action: "set", objective: "Finish after compaction" },
+        }),
+      );
+      const runtime = (server as unknown as { threads: Map<string, ThreadRuntime> }).threads.get(threadId)!;
+      clearTimeout(runtime.goalTimer);
+      runtime.goalTimer = undefined;
+      let entered!: () => void;
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      runtime.manager.compactNow = async () => {
+        entered();
+        await gate;
+        if (outcome === "failed") throw new Error("Temporary compaction failure");
+        return {
+          compacted: outcome === "compacted",
+          entryCount: 1,
+          tokensBefore: 60000,
+          tokensAfter: 10000,
+          summary: "Retained work",
+        };
+      };
+      let resumed = 0;
+      runtime.manager.runWithOutcome = async () => {
+        resumed++;
+        runtime.goal!.observe(runtime.goalScope!.identity, {
+          id: "proof",
+          kind: "answer",
+          text: "Remaining work verified",
+        });
+        await runtime.goal!.report(runtime.goalScope!.identity, "complete", "Remaining work verified", {
+          verification: [{ requirement: "Finish", sourceId: "proof", quote: "Remaining work verified" }],
+        });
+        return { status: "completed" };
+      };
+      compacting = server.handleRequest(TEST_CONNECTION_ID, {
+        id: 3,
+        method: "thread/compact/start",
+        params: { threadId },
+      });
+      await started;
+      // A reconnect, child completion, or retry timer can wake the goal while compacting.
+      runtime.goal!.wake();
+      const deadline = Date.now() + 1000;
+      while (runtime.goalTimer && Date.now() < deadline) await Bun.sleep(5);
+      expect(runtime.goalTimer).toBeUndefined();
+      expect(resumed).toBe(0);
+      expect(runtime.isRunning).toBe(true);
+      if (outcome === "paused") await runtime.goal!.pause("user");
+      release();
+      await compacting;
+      if (outcome === "paused") {
+        await Bun.sleep(20);
+        expect(runtime.goal!.read().goal).toMatchObject({ status: "paused", reason: "user" });
+        expect(resumed).toBe(0);
+      } else {
+        const completionDeadline = Date.now() + 1000;
+        while (runtime.goal!.read().goal?.status === "active" && Date.now() < completionDeadline) await Bun.sleep(5);
+        expect(runtime.goal!.read().goal?.status).toBe("complete");
+        expect(resumed).toBe(1);
+      }
+      await runtime.turnWork;
+    } finally {
+      release?.();
+      await compacting;
+      connection.disconnect();
+      await server.shutdown();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+}
 
 it("keeps scheduled goal work alive while no client request is pending", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "goal-scheduler-liveness-"));
@@ -68,6 +198,129 @@ it("keeps scheduled goal work alive while no client request is pending", async (
     await runtime.goal?.pause("user");
     expect(runtime.goalTimer).toBeUndefined();
   } finally {
+    connection.disconnect();
+    await server.shutdown();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+it("a failed notification recipient cannot prevent delivery to other clients", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "goal-notification-fanout-"));
+  const server = new DiligentAppServer(createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }));
+  const broken = connectTestPeer(server, "broken");
+  const healthy = connectTestPeer(server, "healthy");
+  broken.setNotificationListener(() => {
+    throw new Error("Connection closed");
+  });
+  const notifications: DiligentServerNotification[] = [
+    { method: "thread/goal/updated", params: { threadId: "thread", goal: null, sequence: 1 } },
+    { method: "thread/status/changed", params: { threadId: "thread", status: "idle", threadStatus: "idle" } },
+  ];
+  try {
+    for (const notification of notifications) {
+      await (server as unknown as { emit: (n: DiligentServerNotification) => Promise<void> }).emit(notification);
+    }
+    expect(healthy.notifications).toEqual(notifications);
+  } finally {
+    broken.disconnect();
+    healthy.disconnect();
+    await server.shutdown();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+it("a pending notification recipient does not delay healthy recipients", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "goal-pending-fanout-"));
+  const server = new DiligentAppServer(createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }));
+  const slow = connectTestPeer(server, "slow");
+  const healthy = connectTestPeer(server, "healthy");
+  let release!: () => void;
+  slow.setNotificationListener(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  let received!: () => void;
+  const delivered = new Promise<void>((resolve) => {
+    received = resolve;
+  });
+  healthy.setNotificationListener(() => received());
+  const sending = (server as unknown as { emit: (n: DiligentServerNotification) => Promise<void> }).emit({
+    method: "thread/goal/updated",
+    params: { threadId: "thread", goal: null, sequence: 1 },
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    expect(
+      await Promise.race([
+        delivered.then(() => true),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), 1000);
+        }),
+      ]),
+    ).toBe(true);
+  } finally {
+    clearTimeout(timer);
+    release();
+    await sending;
+    slow.disconnect();
+    healthy.disconnect();
+    await server.shutdown();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+it("another completed send cannot release a peer whose timed-out send is still pending", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "goal-pending-suspension-"));
+  const server = new DiligentAppServer(createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }));
+  const connection = connectTestPeer(server);
+  let releaseA!: () => void;
+  let releaseB!: () => void;
+  const a = new Promise<void>((resolve) => {
+    releaseA = resolve;
+  });
+  const b = new Promise<void>((resolve) => {
+    releaseB = resolve;
+  });
+  connection.setNotificationListener((n) =>
+    n.method === "thread/goal/updated"
+      ? n.params.sequence === 1
+        ? a
+        : n.params.sequence === 2
+          ? b
+          : undefined
+      : undefined,
+  );
+  const timeouts: Array<() => void> = [];
+  const realTimeout = globalThis.setTimeout;
+  const timer = spyOn(globalThis, "setTimeout").mockImplementation((callback) => {
+    timeouts.push(callback as () => void);
+    return realTimeout(callback, 60_000);
+  });
+  const emit = (sequence: number) =>
+    (server as unknown as { emit: (n: DiligentServerNotification) => Promise<void> }).emit({
+      method: "thread/goal/updated",
+      params: { threadId: "thread", goal: null, sequence },
+    });
+  try {
+    const first = emit(1);
+    const second = emit(2);
+    timeouts[0]();
+    await first;
+    releaseB();
+    await second;
+    await emit(3);
+    expect(connection.notifications).toHaveLength(2);
+    releaseA();
+    await a;
+    await Promise.resolve();
+    await emit(4);
+    expect(connection.notifications.at(-1)).toMatchObject({ params: { sequence: 4 } });
+  } finally {
+    releaseA();
+    releaseB();
+    timer.mockRestore();
     connection.disconnect();
     await server.shutdown();
     await rm(cwd, { recursive: true, force: true });

@@ -17,11 +17,12 @@ export const ThreadGoalSchema = z.object({
   objective: GoalObjectiveSchema,
   status: GoalStatusSchema,
   tokenBudget: limit.optional(),
-  maxTurns: limit,
+  maxTurns: limit.optional(),
   turnsUsed: counter,
   tokensUsed: counter,
   cacheReadTokens: counter,
   activeTimeMs: counter,
+  runStartedAt: counter.optional(),
   accountingScope: z.literal("reported_agent_tokens"),
   reason: z.string().optional(),
   completionEvidence: z.string().optional(),
@@ -29,20 +30,35 @@ export const ThreadGoalSchema = z.object({
   updatedAt: counter,
 });
 export type ThreadGoal = z.infer<typeof ThreadGoalSchema>;
-const limits = { tokenBudget: limit.optional(), maxTurns: limit.optional() };
+const limits = { tokenBudget: limit.optional(), maxTurns: limit.nullable().optional() };
 const identity = { expectedGoalId: z.string().min(1), expectedRevision: counter };
-export const GoalChangeSchema = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("set"),
-    objective: GoalObjectiveSchema,
-    ...limits,
-    expectedRevision: counter.optional(),
-  }),
-  z.object({ action: z.literal("edit"), objective: GoalObjectiveSchema, ...limits, ...identity }),
-  z.object({ action: z.literal("pause"), ...identity }),
-  z.object({ action: z.literal("resume"), ...identity }),
-  z.object({ action: z.literal("clear"), ...identity }),
-]);
+export const GoalChangeSchema = z
+  .discriminatedUnion("action", [
+    z.object({
+      action: z.literal("set"),
+      objective: GoalObjectiveSchema,
+      ...limits,
+      expectedRevision: counter.optional(),
+    }),
+    z.object({
+      action: z.literal("edit"),
+      objective: GoalObjectiveSchema.optional(),
+      maxTurns: limit.nullable().optional(),
+      tokenBudget: limit.nullable().optional(),
+      ...identity,
+    }),
+    z.object({ action: z.literal("pause"), ...identity }),
+    z.object({ action: z.literal("resume"), ...identity }),
+    z.object({ action: z.literal("clear"), ...identity }),
+  ])
+  .refine(
+    (change) =>
+      change.action !== "edit" ||
+      change.objective !== undefined ||
+      change.maxTurns !== undefined ||
+      change.tokenBudget !== undefined,
+    "Supply an objective or limit to edit",
+  );
 export type GoalChange = z.infer<typeof GoalChangeSchema>;
 export const ThreadGoalGetParamsSchema = z.object({ threadId: z.string().min(1) });
 export const ThreadGoalSetParamsSchema = z.intersection(ThreadGoalGetParamsSchema, GoalChangeSchema);
