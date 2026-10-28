@@ -192,6 +192,10 @@ test("ordinary user input takes priority over a waiting automatic goal run", asy
 
 test("child completion wakes the goal and child usage remains attributed after the parent run ends", async () => {
   let releaseChild!: () => Promise<void>;
+  let markChildStarted!: () => void;
+  const childStarted = new Promise<void>((resolve) => {
+    markChildStarted = resolve;
+  });
   let rootCalls = 0;
   let childCalls = 0;
   const spawn = createToolUseStream(
@@ -217,10 +221,12 @@ test("child completion wakes the goal and child usage remains attributed after t
     args[2].signal?.addEventListener("abort", () => stream.error(new DOMException("Aborted", "AbortError")), {
       once: true,
     });
+    markChildStarted();
     return stream;
   });
   await setGoal(client, threadId);
   await client.waitForNotification("turn/completed");
+  await childStarted;
   expect(rootCalls).toBe(2);
   expect(childCalls).toBe(1);
   await releaseChild();

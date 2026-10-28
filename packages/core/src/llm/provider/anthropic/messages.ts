@@ -24,7 +24,51 @@ export async function convertMessages(
     result = appendAnthropicConvertedMessage(result, converted);
   }
 
-  return applyAnthropicLastUserCacheBreakpoint(result);
+  return applyAnthropicLastUserCacheBreakpoint(dropUnresolvedServerToolUses(result));
+}
+
+/**
+ * Anthropic accepts a server_tool_use without its result block only while that assistant turn is still open:
+ * as the final message (pause_turn) or followed solely by client tool_result blocks (the API then runs the
+ * deferred call). Once a later turn ends it, every request fails with a 400, so replay drops the call.
+ */
+function dropUnresolvedServerToolUses(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  const resolvedIds = new Set<string>();
+  for (const message of messages) {
+    if (typeof message.content === "string") continue;
+    for (const block of message.content) {
+      if (block.type === "web_search_tool_result" || block.type === "web_fetch_tool_result") {
+        resolvedIds.add(block.tool_use_id);
+      }
+    }
+  }
+
+  let openTurnIndex = messages.length - 1;
+  while (openTurnIndex >= 0 && isToolResultOnlyMessage(messages[openTurnIndex])) openTurnIndex--;
+
+  const result: Anthropic.MessageParam[] = [];
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
+    if (message.role !== "assistant" || typeof message.content === "string" || index === openTurnIndex) {
+      result.push(message);
+      continue;
+    }
+    const content = message.content.filter((block) => block.type !== "server_tool_use" || resolvedIds.has(block.id));
+    if (content.length === message.content.length) {
+      result.push(message);
+    } else if (content.some((block) => block.type !== "thinking")) {
+      result.push({ ...message, content });
+    }
+  }
+  return result;
+}
+
+function isToolResultOnlyMessage(message: Anthropic.MessageParam): boolean {
+  return (
+    message.role === "user" &&
+    typeof message.content !== "string" &&
+    message.content.every((block) => block.type === "tool_result")
+  );
 }
 
 export function buildAnthropicCompactionPrefix(compactionSummary?: Record<string, unknown>): Anthropic.MessageParam[] {
