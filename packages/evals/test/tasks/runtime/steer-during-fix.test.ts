@@ -299,7 +299,7 @@ describe("steer-during-fix runtime eval", () => {
     const result = await runRuntimeEvalExecution({
       task: steerDuringFixTask,
       seed,
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: (model, context, options) => {
         providerCall += 1;
         const world = resultWorld(seed);

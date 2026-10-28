@@ -109,7 +109,7 @@ describe("effortCommand", () => {
 
   it("shows the fixed OpenAI effort options in the picker", async () => {
     let items: ListPickerItem[] = [];
-    const ctx = makeContext("gpt-5.6-terra", {
+    const ctx = makeContext("gpt-6.1-terra", {
       app: {
         confirm: async () => true,
         pick: async (options) => {

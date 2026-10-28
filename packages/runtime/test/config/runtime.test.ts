@@ -39,8 +39,8 @@ afterEach(async () => {
 
 describe("loadRuntimeConfig", () => {
   it("preserves the last selected model when its provider is configured", () => {
-    expect(resolveRuntimeModel({ provider: "openai", modelId: "gpt-5.6-terra" }, ["openai"]).modelId).toBe(
-      "gpt-5.6-terra",
+    expect(resolveRuntimeModel({ provider: "openai", modelId: "gpt-6.1-terra" }, ["openai"]).modelId).toBe(
+      "gpt-6.1-terra",
     );
   });
 

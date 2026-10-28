@@ -78,7 +78,7 @@ describe("runRuntimeEvalExecution", () => {
     const result = await runRuntimeEvalExecution({
       task: skillAutoSelectTask,
       seed,
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: (model, context, options) => {
         const cwd = cwdFromContext(context);
         scripted ??= sequenceStream([
@@ -174,7 +174,7 @@ describe("runRuntimeEvalExecution", () => {
     const result = await runRuntimeEvalExecution({
       task: manualCompactionResumeTask,
       seed,
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: sequenceStream([
         assistantMessage([{ type: "text", text: "ACK" }]),
         assistantMessage([{ type: "text", text: `Retain alpha ${alpha} and beta ${beta} for the resumed task.` }]),
@@ -219,7 +219,7 @@ describe("runRuntimeEvalExecution", () => {
     const result = await runRuntimeEvalExecution({
       task: clarifyThenExecuteTask,
       seed,
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: sequenceStream([
         assistantMessage(
           [
@@ -278,7 +278,7 @@ describe("runRuntimeEvalExecution", () => {
     const result = await runRuntimeEvalExecution({
       task: inputCancelResumeTask,
       seed,
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: sequenceStream([
         assistantMessage(
           [
@@ -334,7 +334,7 @@ describe("runRuntimeEvalExecution", () => {
     const result = await runRuntimeEvalExecution({
       task: hookContextFollowTask,
       seed,
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: sequenceStream([
         assistantMessage(
           [
@@ -450,7 +450,7 @@ describe("runRuntimeEvalExecution", () => {
     const result = await runRuntimeEvalExecution({
       task: instructionHierarchyTask,
       seed,
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction,
     });
 
@@ -717,7 +717,7 @@ describe("runRuntimeEvalExecution", () => {
     const result = await runRuntimeEvalExecution({
       task,
       seed: "seed",
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: sequenceStream([assistantMessage([{ type: "text", text: "Done." }])]),
     });
 
@@ -737,7 +737,7 @@ describe("runRuntimeEvalExecution", () => {
     const result = await runRuntimeEvalExecution({
       task: planToExecuteTask,
       seed,
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: (model, context, options) => {
         const cwd = cwdFromContext(context);
         scripted ??= sequenceStream([
@@ -789,7 +789,7 @@ describe("runRuntimeEvalExecution", () => {
     const result = await runRuntimeEvalExecution({
       task: knowledgeRecallTask,
       seed,
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: sequenceStream([
         assistantMessage(
           [
@@ -821,7 +821,7 @@ describe("runRuntimeEvalExecution", () => {
     const result = await runRuntimeEvalExecution({
       task: knowledgeIntentSplitTask,
       seed,
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: sequenceStream([
         assistantMessage(
           [
@@ -987,7 +987,7 @@ describe("runRuntimeEvalExecution", () => {
     const result = await runRuntimeEvalExecution({
       task: readImagePairTask,
       seed,
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: imagePairStream(expected),
     });
 
@@ -1750,7 +1750,7 @@ describe("runRuntimeEvalExecution", () => {
     const result = await runRuntimeEvalExecution({
       task,
       seed: "bounded-seed",
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: (model, context, options) => {
         sourceToolCount = context.tools.length;
         return stream(model, context, options);
@@ -1911,7 +1911,7 @@ describe("runRuntimeEvalExecution", () => {
     const result = await runRuntimeEvalExecution({
       task,
       seed: "full-output-failure",
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: (model, context, options) => {
         if (phase++ === 0)
           return sequenceStream([

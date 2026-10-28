@@ -49,7 +49,7 @@ describe("auto-compaction-resume runtime eval", () => {
 
       const profile = {
         provider: "openai",
-        model: "gpt-5.6-terra",
+        model: "gpt-6.1-terra",
         effort: "medium",
       } as const;
       const baseline = await createFixtureRuntimeConfig(world, profile);
@@ -303,7 +303,7 @@ async function assembledExecution(seed: string) {
   const result = await runRuntimeEvalExecution({
     task: autoCompactionResumeTask,
     seed,
-    profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+    profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
     streamFunction,
   });
   return { result, observations };

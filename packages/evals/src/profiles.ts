@@ -17,7 +17,7 @@ import type { EvalProfile, EvalProvider } from "./task";
 const EVAL_EFFORT = "medium" as const;
 
 export const DEFAULT_PROFILES: readonly EvalProfile[] = [
-  { provider: "openai", model: "gpt-5.6-terra", effort: EVAL_EFFORT },
+  { provider: "openai", model: "gpt-6.1-terra", effort: EVAL_EFFORT },
   { provider: "anthropic", model: "claude-sonnet-5", effort: EVAL_EFFORT },
 ];
 

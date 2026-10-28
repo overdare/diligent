@@ -546,7 +546,7 @@ describe("native compaction adapters", () => {
     }));
 
     const result = await adapter({
-      model: { ...OPENAI_MODEL, modelId: "gpt-5.6-terra", provider: "chatgpt" },
+      model: { ...OPENAI_MODEL, modelId: "gpt-6.1-terra", provider: "chatgpt" },
       systemPrompt: [],
       messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
     });

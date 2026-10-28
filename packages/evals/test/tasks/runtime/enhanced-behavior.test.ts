@@ -39,7 +39,7 @@ describe("enhanced runtime eval behaviors", () => {
     const result = await runRuntimeEvalExecution({
       task: mcpNeedsAuthAbstainTask,
       seed: "shared-seed-123",
-      profile: { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+      profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: stream,
     });
 

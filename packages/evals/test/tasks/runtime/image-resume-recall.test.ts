@@ -160,7 +160,7 @@ describe("image-resume-recall", () => {
 
   test("materializes the PNG before and after restart while captured evidence stays redacted", async () => {
     for (const profile of [
-      { provider: "openai" as const, model: "gpt-5.6-terra", effort: "medium" as const },
+      { provider: "openai" as const, model: "gpt-6.1-terra", effort: "medium" as const },
       { provider: "anthropic" as const, model: "claude-sonnet-5", effort: "medium" as const },
     ]) {
       const execution = await assembledExecution(profile);
@@ -176,7 +176,7 @@ describe("image-resume-recall", () => {
 });
 
 async function assembledExecution(
-  profile: EvalProfile = { provider: "openai", model: "gpt-5.6-terra", effort: "medium" },
+  profile: EvalProfile = { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
 ): Promise<RuntimeEvalExecution<ImageResumeRecallWorld>> {
   const result = await runRuntimeEvalExecution({
     task: imageResumeRecallTask,

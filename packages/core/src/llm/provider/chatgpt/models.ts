@@ -4,14 +4,14 @@ import { defineProviderModelClasses } from "../../model-class";
 
 export const CHATGPT_MODEL_CLASSES = defineProviderModelClasses({
   pro: { defaultModelId: "gpt-6.1-sol" },
-  general: { defaultModelId: "gpt-5.6-terra" },
+  general: { defaultModelId: "gpt-6.1-terra" },
   lite: { defaultModelId: "gpt-6-luna" },
 });
 
 export const CHATGPT_MODELS = defineProviderModels("chatgpt", [
   {
-    modelId: "gpt-5.6-terra",
-    display: "ChatGPT 5.6 Terra",
+    modelId: "gpt-6.1-terra",
+    display: "ChatGPT 6.1 Terra",
     contextWindow: 500_000,
     maxOutputTokens: 128_000,
     supportsThinking: true,
