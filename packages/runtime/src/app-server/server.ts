@@ -103,7 +103,11 @@ export interface CreateAgentArgs {
   existingAgent?: RuntimeAgent;
   /** Called when a child agent's turn completes or is interrupted. Propagated to the collab registry. */
   onChildStop?: (info: ChildStopInfo) => Promise<void>;
-  /** User ID propagated to child agent stop hooks. */
+  /** Routes durable child entries through the same host observers as parent entries. */
+  onChildEntryAppended?: (info: AppendedEntryInfo) => void;
+  /** Resolve the current turn owner when a retained registry spawns a child. */
+  getUserId?: () => string | undefined;
+  /** Authenticated user propagated to child persistence and lifecycle hooks. */
   userId?: string;
 }
 
@@ -784,6 +788,8 @@ export class DiligentAppServer {
           getSessionId: () => runtime.manager.sessionId,
           existingAgent: runtime.agent,
           onChildStop: (info) => this.runStopHooksFor(info),
+          onChildEntryAppended: (info) => this.runEntryAppendedHooks(info),
+          getUserId: () => runtime.currentTurnUserId,
           userId: runtime.currentTurnUserId,
         };
         let agent = runtime.agent;
