@@ -89,6 +89,8 @@ export class SessionManager {
     this.state.replaceCommitted(entries);
 
     this.repairEntries();
+    // Resume callers may read the session file as soon as this method returns.
+    await this.persistence.waitForWrites();
 
     return true;
   }

@@ -12,11 +12,12 @@ import { ProviderError } from "@diligent/core/provider-contract";
 import type { Tool } from "@diligent/core/tool-contract";
 import { type LogRecord, resetDefaultLogSinkForTests, setDefaultLogSink } from "@diligent/logging";
 import { resolvePaths } from "@diligent/runtime/infrastructure";
-import type { SessionManagerConfig } from "@diligent/runtime/session";
-import { readSessionFile, SessionManager } from "@diligent/runtime/session";
+import type { SessionEntry, SessionManagerConfig } from "@diligent/runtime/session";
+import { appendEntry, createSessionFile, readSessionFile, SessionManager } from "@diligent/runtime/session";
 import { z } from "zod";
 import type { AgentEvent } from "../../src/agent-event";
 import { getSessionExecutionContext, runWithSessionExecutionContext } from "../../src/session/execution-context";
+import { SessionWriter } from "../../src/session/persistence";
 
 const TEST_ROOT = join(tmpdir(), `diligent-sm-test-${Date.now()}`);
 const COMPACTION_MIN_INPUT_TOKENS = 50_000;
@@ -737,6 +738,56 @@ describe("SessionManager", () => {
     const ctx = mgr2.getContext();
     expect(ctx.length).toBeGreaterThanOrEqual(2);
     expect(ctx[0].role).toBe("user");
+  });
+
+  test("resume() waits for orphaned tool call repairs to reach disk", async () => {
+    const dir = await setupDir();
+    const saved = await createSessionFile(resolvePaths(dir).sessions, dir);
+    await appendEntry(saved.path, {
+      type: "message",
+      id: "orphan",
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      message: makeAssistantMessage([{ type: "tool_call", id: "orphan-call", name: "read", input: {} }], "tool_use"),
+    });
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const write = SessionWriter.prototype.write;
+    const delayed = spyOn(SessionWriter.prototype, "write").mockImplementation(async function (
+      this: SessionWriter,
+      entry: SessionEntry,
+    ) {
+      entered.resolve();
+      await release.promise;
+      await write.call(this, entry);
+    });
+    let resumed = false;
+    const resume = mgr.resume({ sessionId: saved.header.id }).then((found) => {
+      resumed = true;
+      return found;
+    });
+    try {
+      await entered.promise;
+      // Drain ready promise continuations while the repair write remains explicitly blocked.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(resumed).toBe(false);
+      release.resolve();
+      expect(await resume).toBe(true);
+      // No explicit flush: a completed resume must make the repair safe for disk readers.
+      const { entries } = await readSessionFile(saved.path);
+      expect(entries).toHaveLength(2);
+      expect(entries[1]).toMatchObject({
+        type: "message",
+        parentId: "orphan",
+        message: { role: "tool_result", toolCallId: "orphan-call", output: "[Cancelled]" },
+      });
+    } finally {
+      release.resolve();
+      await resume;
+      await mgr.waitForWrites();
+      delayed.mockRestore();
+    }
   });
 
   test("resume() returns false when no sessions exist", async () => {
