@@ -90,9 +90,10 @@ const storesByApiKey = new Map<string, AnthropicImageFiles>();
  * custom base URL may not serve `/v1/files`, so only the official endpoint gets a store.
  */
 export function getAnthropicImageFiles(apiKey: string, baseUrl: string): AnthropicImageFiles | undefined {
-  if (baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "") !== ANTHROPIC_OFFICIAL_BASE_URL) return undefined;
-  const key = createHash("sha256").update(apiKey).digest("hex");
-  const existing = storesByApiKey.get(key);
+  const url = URL.parse(baseUrl);
+  const path = url?.pathname.replaceAll("/", "");
+  if (url?.origin !== ANTHROPIC_OFFICIAL_BASE_URL || (path !== "" && path !== "v1")) return undefined;
+  const existing = storesByApiKey.get(apiKey);
   if (existing) return existing;
   let client: Anthropic | undefined;
   const store = new AnthropicImageFiles(async (bytes, mediaType, filename) => {
@@ -101,6 +102,6 @@ export function getAnthropicImageFiles(apiKey: string, baseUrl: string): Anthrop
     const uploaded = await client.beta.files.upload({ file: await toFile(bytes, filename, { type: mediaType }) });
     return uploaded.id;
   });
-  storesByApiKey.set(key, store);
+  storesByApiKey.set(apiKey, store);
   return store;
 }
