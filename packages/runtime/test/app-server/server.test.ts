@@ -957,7 +957,7 @@ describe("DiligentAppServer", () => {
     await server.handleRequest(TEST_CONNECTION_ID, {
       id: 602,
       method: "config/set",
-      params: { threadId: threadA, model: { provider: "openai", modelId: "gpt-5.6-terra" } },
+      params: { threadId: threadA, model: { provider: "openai", modelId: "gpt-6.1-terra" } },
     });
 
     const readA = await server.handleRequest(TEST_CONNECTION_ID, {
@@ -967,7 +967,7 @@ describe("DiligentAppServer", () => {
     });
     expect((readResult(readA) as { currentModel?: { provider: string; modelId: string } }).currentModel).toEqual({
       provider: "openai",
-      modelId: "gpt-5.6-terra",
+      modelId: "gpt-6.1-terra",
     });
 
     const readB = await server.handleRequest(TEST_CONNECTION_ID, {
@@ -1002,7 +1002,7 @@ describe("DiligentAppServer", () => {
     });
     expect((readResult(resumedRead) as { currentModel?: { provider: string; modelId: string } }).currentModel).toEqual({
       provider: "openai",
-      modelId: "gpt-5.6-terra",
+      modelId: "gpt-6.1-terra",
     });
 
     const newThread = await resumedServer.handleRequest(TEST_CONNECTION_ID, {
@@ -1019,7 +1019,7 @@ describe("DiligentAppServer", () => {
     });
     expect(
       (readResult(newThreadRead) as { currentModel?: { provider: string; modelId: string } }).currentModel,
-    ).toEqual({ provider: "openai", modelId: "gpt-5.6-terra" });
+    ).toEqual({ provider: "openai", modelId: "gpt-6.1-terra" });
   });
 
   it("refreshes selected-model bundled capabilities after a same-provider model change", async () => {
@@ -1253,7 +1253,7 @@ describe("DiligentAppServer", () => {
     await server.handleRequest(TEST_CONNECTION_ID, {
       id: 614,
       method: "turn/start",
-      params: { threadId, message: "second", model: { provider: "openai", modelId: "gpt-5.6-terra" } },
+      params: { threadId, message: "second", model: { provider: "openai", modelId: "gpt-6.1-terra" } },
     });
     expect(await secondOutcome).toBe("completed");
 
@@ -1284,7 +1284,7 @@ describe("DiligentAppServer", () => {
       .filter((entry) => entry.type === "message" && entry.message?.role === "assistant")
       .map((entry) => entry.message?.model);
 
-    expect(assistantModels).toEqual([{ provider: "openai", modelId: "gpt-5.6-terra" }]);
+    expect(assistantModels).toEqual([{ provider: "openai", modelId: "gpt-6.1-terra" }]);
   });
 
   it("uses runtime config default effort for new threads", async () => {
