@@ -20,10 +20,22 @@ export interface ChatGPTWebSocketSessionOptions {
 }
 
 export interface ChatGPTWebSocketExchange {
-  /** Resolves after the request has been written to the socket. */
-  opened: Promise<void>;
+  /** Resolves with the physical connection id after the request has been written to the socket. */
+  opened: Promise<number>;
   /** Response payloads for this exchange, ending at a terminal response event. */
   events: AsyncIterable<Record<string, unknown>>;
+}
+
+export interface ChatGPTWebSocketRequestOptions {
+  /** Shorter wait for the first response frame; later frames use the session idle timeout. */
+  firstEventTimeoutMs?: number;
+}
+
+/** A reused socket stayed silent past the per-request first-event bound; the socket was discarded. */
+export class ChatGPTWebSocketFirstEventTimeoutError extends ProviderError {
+  constructor() {
+    super("ChatGPT WebSocket timed out waiting for the first response event", ProviderErrorType.Network, true);
+  }
 }
 
 type QueueWaiter<T> = {
@@ -89,11 +101,12 @@ async function decodeMessage(data: unknown): Promise<{ text: string; byteLength:
 
 type ActiveExchange = {
   queue: AsyncEventQueue<Record<string, unknown>>;
-  resolveOpened: () => void;
+  resolveOpened: (connectionId: number) => void;
   rejectOpened: (error: Error) => void;
   signal?: AbortSignal;
   onAbort: () => void;
   timer?: ReturnType<typeof setTimeout>;
+  firstEventTimeoutMs?: number;
 };
 
 type ConnectingSocket = {
@@ -112,6 +125,7 @@ type ConnectingSocket = {
  */
 export class ChatGPTWebSocketSession {
   private socket?: WebSocket;
+  private socketId = 0;
   private connecting?: ConnectingSocket;
   private socketCleanup?: () => void;
   private active?: ActiveExchange;
@@ -121,23 +135,28 @@ export class ChatGPTWebSocketSession {
 
   constructor(private readonly options: ChatGPTWebSocketSessionOptions) {}
 
-  streamRequest(request: Record<string, unknown>, signal?: AbortSignal): ChatGPTWebSocketExchange {
+  /** Id of the currently open physical socket; undefined while closed or connecting. */
+  get openConnectionId(): number | undefined {
+    return this.socket?.readyState === 1 && !this.connecting ? this.socketId : undefined;
+  }
+
+  streamRequest(
+    request: Record<string, unknown>,
+    signal?: AbortSignal,
+    requestOptions: ChatGPTWebSocketRequestOptions = {},
+  ): ChatGPTWebSocketExchange {
     if (this.disposed) throw new Error("ChatGPT WebSocket session has been disposed");
     if (this.active) throw new Error("ChatGPT WebSocket session already has an active exchange");
 
     const queue = new AsyncEventQueue<Record<string, unknown>>();
-    let resolveOpened!: () => void;
-    let rejectOpened!: (error: Error) => void;
-    const opened = new Promise<void>((resolve, reject) => {
-      resolveOpened = resolve;
-      rejectOpened = reject;
-    });
+    const { promise: opened, resolve: resolveOpened, reject: rejectOpened } = Promise.withResolvers<number>();
     const active: ActiveExchange = {
       queue,
       resolveOpened,
       rejectOpened,
       signal,
       onAbort: () => this.invalidate(new ProviderError("Aborted", ProviderErrorType.Unknown, false)),
+      firstEventTimeoutMs: requestOptions.firstEventTimeoutMs,
     };
     this.active = active;
     if (signal) signal.addEventListener("abort", active.onAbort, { once: true });
@@ -174,8 +193,17 @@ export class ChatGPTWebSocketSession {
         );
         return;
       }
-      active.resolveOpened();
-      this.resetTimeout(active, "ChatGPT WebSocket idle timeout waiting for response");
+      active.resolveOpened(this.socketId);
+      if (active.firstEventTimeoutMs === undefined) {
+        this.resetTimeout(active, "ChatGPT WebSocket idle timeout waiting for response");
+      } else {
+        clearTimeout(active.timer);
+        active.timer = setTimeout(() => {
+          const timeout = new ChatGPTWebSocketFirstEventTimeoutError();
+          this.options.diagnostics?.onTimeout?.(timeout.message, this.pendingMessageCount);
+          this.invalidate(timeout);
+        }, active.firstEventTimeoutMs);
+      }
     } catch (error) {
       if (this.active === active) this.invalidate(this.asNetworkError(error));
     }
@@ -206,6 +234,7 @@ export class ChatGPTWebSocketSession {
         const socket = this.options.webSocketFactory(this.options.url, headers);
         connecting.socket = socket;
         this.socket = socket;
+        this.socketId += 1;
 
         const onOpen = () => {
           if (this.connecting !== connecting) return;
@@ -319,12 +348,12 @@ export class ChatGPTWebSocketSession {
     this.invalidate(new ProviderError("ChatGPT WebSocket connection failed", ProviderErrorType.Network, true));
   }
 
-  private resetTimeout(active: ActiveExchange, message: string): void {
+  private resetTimeout(active: ActiveExchange, message: string, timeoutMs = this.options.idleTimeoutMs): void {
     if (active.timer) clearTimeout(active.timer);
     active.timer = setTimeout(() => {
       this.options.diagnostics?.onTimeout?.(message, this.pendingMessageCount);
       this.invalidate(new ProviderError(message, ProviderErrorType.Network, true));
-    }, this.options.idleTimeoutMs);
+    }, timeoutMs);
   }
 
   private invalidate(error: Error, terminate = true): void {

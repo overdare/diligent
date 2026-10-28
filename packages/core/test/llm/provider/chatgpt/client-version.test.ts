@@ -44,7 +44,9 @@ describe("ChatGPT client version", () => {
     const compatibleVersion = "0.159.0";
     const model = resolveModel({ provider: "chatgpt", modelId: "gpt-6.1-sol" });
     const streamed = await captureVersionHeader(() =>
-      collectEvents(createChatGPTStream(() => testTokens())(model, TEST_CONTEXT, { effort: "low" })),
+      collectEvents(
+        createChatGPTStream(() => testTokens(), { useWebSocket: false })(model, TEST_CONTEXT, { effort: "low" }),
+      ),
     );
     const compacted = await captureVersionHeader(() =>
       createChatGPTNativeCompaction(() => testTokens())({
@@ -56,7 +58,6 @@ describe("ChatGPT client version", () => {
     const harness = createWebSocketHarness((_body, socket) => completeWebSocketResponse(socket));
     await collectEvents(
       createChatGPTStream(() => testTokens(), {
-        useWebSocketForGpt56: true,
         webSocketFactory: harness.factory,
       })(model, TEST_CONTEXT, { effort: "low" }),
     );
@@ -70,7 +71,11 @@ describe("ChatGPT client version", () => {
 
   test("streaming and compaction pin the same version", async () => {
     const streamed = await captureVersionHeader(() =>
-      collectEvents(createChatGPTStream(() => testTokens())(SUBSCRIPTION_MODEL, TEST_CONTEXT, { effort: "medium" })),
+      collectEvents(
+        createChatGPTStream(() => testTokens(), { useWebSocket: false })(SUBSCRIPTION_MODEL, TEST_CONTEXT, {
+          effort: "medium",
+        }),
+      ),
     );
     const compacted = await captureVersionHeader(() =>
       createChatGPTNativeCompaction(() => testTokens())({
@@ -88,7 +93,9 @@ describe("ChatGPT client version", () => {
     for (const modelId of ["gpt-6-luna"]) {
       const model = resolveModel({ provider: "chatgpt", modelId });
       const streamed = await captureVersionHeader(() =>
-        collectEvents(createChatGPTStream(() => testTokens())(model, TEST_CONTEXT, { effort: "medium" })),
+        collectEvents(
+          createChatGPTStream(() => testTokens(), { useWebSocket: false })(model, TEST_CONTEXT, { effort: "medium" }),
+        ),
       );
 
       expect(streamed).toBeDefined();

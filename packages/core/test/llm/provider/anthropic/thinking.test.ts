@@ -2,6 +2,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { APIConnectionError, APIError } from "@anthropic-ai/sdk/core/error.mjs";
 import { resolveModel } from "../../../../src/llm/models";
+import { PROVIDER_RESPONSE_HEADER_TIMEOUT_MS } from "../../../../src/llm/provider/timeouts";
 import type { Model, StreamContext, StreamOptions, ToolDefinition } from "../../../../src/llm/types";
 
 const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
@@ -89,7 +90,7 @@ describe("createAnthropicStream", () => {
     expect(anthropicConstructorOptions[0]).toEqual({
       apiKey: "test-key",
       baseURL: "https://api.anthropic.com",
-      timeout: 15_000,
+      timeout: PROVIDER_RESPONSE_HEADER_TIMEOUT_MS,
       maxRetries: 0,
     });
   });
@@ -108,7 +109,7 @@ describe("createAnthropicStream", () => {
     expect(anthropicConstructorOptions[0]).toEqual({
       apiKey: "test-key",
       baseURL: "https://example.anthropic.local",
-      timeout: 15_000,
+      timeout: PROVIDER_RESPONSE_HEADER_TIMEOUT_MS,
       maxRetries: 0,
     });
   });

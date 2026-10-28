@@ -1,6 +1,7 @@
 // @summary Tests that OpenAI SDK clients are constructed with explicit timeout and no retries.
 import { describe, expect, test } from "bun:test";
 import { createOpenAIClient } from "../../../../src/llm/provider/openai";
+import { PROVIDER_RESPONSE_HEADER_TIMEOUT_MS } from "../../../../src/llm/provider/timeouts";
 
 describe("createOpenAIClient", () => {
   test("constructs the SDK client with explicit timeout and no retries", () => {
@@ -8,7 +9,7 @@ describe("createOpenAIClient", () => {
 
     expect(client.apiKey).toBe("test-key");
     expect(client.baseURL).toBe("https://api.openai.com/v1");
-    expect(client.timeout).toBe(15_000);
+    expect(client.timeout).toBe(PROVIDER_RESPONSE_HEADER_TIMEOUT_MS);
     expect(client.maxRetries).toBe(0);
   });
 
@@ -16,7 +17,7 @@ describe("createOpenAIClient", () => {
     const client = createOpenAIClient("test-key", "https://openai-proxy.example/v1");
 
     expect(client.baseURL).toBe("https://openai-proxy.example/v1");
-    expect(client.timeout).toBe(15_000);
+    expect(client.timeout).toBe(PROVIDER_RESPONSE_HEADER_TIMEOUT_MS);
     expect(client.maxRetries).toBe(0);
   });
 });

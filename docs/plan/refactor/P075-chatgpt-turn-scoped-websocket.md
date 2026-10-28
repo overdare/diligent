@@ -1,6 +1,6 @@
 ---
 id: P075
-status: backlog
+status: done
 created: 2026-07-14
 ---
 
@@ -627,6 +627,11 @@ stable:
 5. A public provider configuration for WebSocket enablement and fallback
    thresholds.
 6. A lower-level WebSocket client that exposes failed upgrade HTTP responses.
+
+Follow-ups 1–3 are implemented and WebSocket is now the default for Responses Lite models: a
+conversation-owned `StreamSessionScope` keeps one socket across turns, and
+`openai/responses-chain.ts` chains requests with `previous_response_id`. Current behavior is
+documented in `docs/guide/provider-auth.md` ("ChatGPT subscription transport").
 
 ## Decisions Referenced
 

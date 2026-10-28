@@ -1,25 +1,31 @@
-// @summary Ephemeral per-turn resource scope for provider stream state
+// @summary Caller-owned resource scopes for provider stream state: per turn and per conversation
 
 export interface StreamTurnResource<T> {
   value: T;
   dispose: () => void | Promise<void>;
 }
 
-export interface StreamTurnScope {
-  readonly turnStateRef: { value: string | undefined };
+export interface StreamResourceScope {
   getOrCreate<T>(key: symbol, create: () => StreamTurnResource<T>): T;
   dispose(): Promise<void>;
 }
 
-export function createStreamTurnScope(): StreamTurnScope {
+/** Provider resources that live as long as one logical conversation, across user turns. */
+export type StreamSessionScope = StreamResourceScope;
+
+export interface StreamTurnScope extends StreamResourceScope {
+  readonly turnStateRef: { value: string | undefined };
+  /** Conversation-lifetime scope owned by the session host; disposing the turn leaves it intact. */
+  readonly session?: StreamSessionScope;
+}
+
+function createResourceScope(label: string): StreamResourceScope {
   const resources = new Map<symbol, StreamTurnResource<unknown>>();
-  const turnStateRef = { value: undefined as string | undefined };
   let disposePromise: Promise<void> | undefined;
 
   return {
-    turnStateRef,
     getOrCreate<T>(key: symbol, create: () => StreamTurnResource<T>): T {
-      if (disposePromise) throw new Error("Stream turn scope has been disposed");
+      if (disposePromise) throw new Error(`${label} has been disposed`);
       const existing = resources.get(key);
       if (existing) return existing.value as T;
       const resource = create();
@@ -39,9 +45,23 @@ export function createStreamTurnScope(): StreamTurnScope {
         }
         resources.clear();
         if (errors.length === 1) throw errors[0];
-        if (errors.length > 1) throw new AggregateError(errors, "Failed to dispose stream turn scope resources");
+        if (errors.length > 1) throw new AggregateError(errors, `Failed to dispose ${label} resources`);
       })();
       return disposePromise;
     },
+  };
+}
+
+export function createStreamSessionScope(): StreamSessionScope {
+  return createResourceScope("Stream session scope");
+}
+
+export function createStreamTurnScope(options: { session?: StreamSessionScope } = {}): StreamTurnScope {
+  const scope = createResourceScope("Stream turn scope");
+  return {
+    turnStateRef: { value: undefined },
+    session: options.session,
+    getOrCreate: scope.getOrCreate,
+    dispose: scope.dispose,
   };
 }

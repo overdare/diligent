@@ -7,6 +7,7 @@ import { isNetworkError } from "../../errors";
 import { classifyProviderHttpError } from "../../provider-errors";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "../../types";
 import { CONTEXT_OVERFLOW_ERROR_MESSAGE, ProviderError, ProviderErrorReason, ProviderErrorType } from "../../types";
+import { PROVIDER_RESPONSE_HEADER_TIMEOUT_MS } from "../timeouts";
 import { convertMessages } from "./messages";
 import { toAnthropicBlocks } from "./request";
 import {
@@ -44,7 +45,7 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
   const client = new Anthropic({
     apiKey: resolvedApiKey,
     baseURL: resolvedSdkBaseUrl,
-    timeout: 15_000,
+    timeout: PROVIDER_RESPONSE_HEADER_TIMEOUT_MS,
     maxRetries: 0,
   });
 

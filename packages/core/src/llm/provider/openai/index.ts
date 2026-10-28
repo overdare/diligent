@@ -7,6 +7,7 @@ import { ProviderError, ProviderErrorType } from "../../types";
 
 export { createOpenAINativeCompaction } from "./native-compaction";
 
+import { PROVIDER_RESPONSE_HEADER_TIMEOUT_MS } from "../timeouts";
 import { buildResponsesRequestBody, type OpenAIImageDetail } from "./responses";
 import { classifyOpenAIFamilyError, iterateOpenAIStreamWithIdleTimeout, parseOpenAIRetryAfter } from "./shared";
 import { handleResponsesAPIEvents } from "./sse";
@@ -96,7 +97,7 @@ export function createOpenAIClient(apiKey: string, baseUrl?: string): OpenAI {
   return new OpenAI({
     apiKey,
     baseURL: baseUrl,
-    timeout: 15_000,
+    timeout: PROVIDER_RESPONSE_HEADER_TIMEOUT_MS,
     maxRetries: 0,
   });
 }

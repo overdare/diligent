@@ -398,6 +398,7 @@ export class SessionManager {
 
   dispose(): void {
     this.sessionCache.reset();
+    this.orchestrator.dispose();
   }
 }
 

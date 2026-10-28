@@ -132,9 +132,6 @@ export async function loadRuntimeConfig(
     const chatgptAuth = createChatGPTOAuthBinding({
       initialTokens: oauthTokens,
       onTokensRefreshed: (tokens) => saveOAuthTokens(tokens, authStore),
-      streamOptions: {
-        useWebSocketForGpt56: process.env.DILIGENT_CHATGPT_WEBSOCKET === "1",
-      },
     });
     try {
       await chatgptAuth.auth.ensureFresh?.();

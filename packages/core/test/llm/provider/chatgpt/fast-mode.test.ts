@@ -26,7 +26,7 @@ for (const transport of ["http", "websocket"] as const) {
       completeWebSocketResponse(socket);
     });
     const stream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: transport === "websocket",
+      useWebSocket: transport === "websocket",
       webSocketFactory: harness.factory,
     });
     const model = resolveModel({ provider: "chatgpt", modelId: "gpt-6.1-sol" });
@@ -47,7 +47,7 @@ test("Fast mode does not add a service tier to unsupported models", async () => 
     body = JSON.parse(String(init?.body));
     return chatGPTSuccessResponse();
   }) as typeof fetch;
-  const stream = createChatGPTStream(() => testTokens());
+  const stream = createChatGPTStream(() => testTokens(), { useWebSocket: false });
   const model = { ...resolveModel({ provider: "chatgpt", modelId: "gpt-6.1-sol" }), supportsFastMode: false };
   await collectEvents(stream(model, TEST_CONTEXT, { fastMode: true }));
   expect(body?.model).toBe(model.modelId);
