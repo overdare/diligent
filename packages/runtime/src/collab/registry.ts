@@ -215,6 +215,20 @@ export class AgentRegistry {
     this.collabEventHandler?.(event);
   }
 
+  private unknownAgentError(message: string): Error {
+    const known = this.getKnownAgents()
+      .slice(-20)
+      .map(({ threadId, nickname, status }) => ({
+        threadId,
+        nickname,
+        status: status.kind,
+      }));
+    return new Error(
+      `${message}. Recent known agents in this session: ${JSON.stringify(known)}. ` +
+        "Copy an exact threadId from the original spawn result or this list and retry. An unknown ID does not mean the original agent was lost.",
+    );
+  }
+
   /**
    * Spawn a new sub-agent in the background.
    * Synchronous — returns immediately with {threadId, nickname}.
@@ -246,7 +260,7 @@ export class AgentRegistry {
     }
     const restoredEntry = resumeId ? this.agents.get(resumeId) : undefined;
     if (resumeId && !restoredEntry) {
-      throw new Error(`Unknown resume target: ${resumeId}`);
+      throw this.unknownAgentError(`Unknown resume target: ${resumeId}`);
     }
     if (restoredEntry && !isFinal(restoredEntry.status)) {
       throw new Error(`Cannot resume active agent: ${resumeId}`);
@@ -580,7 +594,7 @@ export class AgentRegistry {
   ): Promise<{ status: Record<string, AgentStatus>; timedOut: boolean }> {
     const unknownIds = ids.filter((id) => !this.agents.has(id));
     if (unknownIds.length > 0) {
-      throw new Error(`Unknown agent IDs: ${unknownIds.join(", ")}`);
+      throw this.unknownAgentError(`Unknown agent IDs: ${unknownIds.join(", ")}`);
     }
 
     const waitCallId = `wait-${Date.now()}`;
@@ -698,7 +712,7 @@ export class AgentRegistry {
    */
   async sendInput(threadId: string, message: string, options?: { interrupt?: boolean }): Promise<void> {
     const entry = this.agents.get(threadId);
-    if (!entry) throw new Error(`Unknown agent: ${threadId}`);
+    if (!entry) throw this.unknownAgentError(`Unknown agent: ${threadId}`);
     if (isFinal(entry.status)) {
       throw new Error(
         `Agent ${entry.nickname} is not running (${entry.status.kind}). ` +
@@ -731,7 +745,7 @@ export class AgentRegistry {
   /** Abort an agent and wait for it to settle. Returns final status. */
   async close(threadId: string): Promise<AgentStatus> {
     const entry = this.agents.get(threadId);
-    if (!entry) throw new Error(`Unknown agent: ${threadId}`);
+    if (!entry) throw this.unknownAgentError(`Unknown agent: ${threadId}`);
 
     const closeCallId = `close-${threadId}`;
     this.emit({
@@ -762,7 +776,7 @@ export class AgentRegistry {
 
   getStatus(threadId: string): AgentStatus {
     const entry = this.agents.get(threadId);
-    if (!entry) throw new Error(`Unknown agent: ${threadId}`);
+    if (!entry) throw this.unknownAgentError(`Unknown agent: ${threadId}`);
     return entry.status;
   }
 

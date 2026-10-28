@@ -37,9 +37,132 @@ import { handleImageUpload } from "@diligent/runtime/app-server/config-handlers"
 import { ensureDiligentDir } from "@diligent/runtime/infrastructure";
 import { SessionWriter } from "@diligent/runtime/session";
 import { z } from "zod";
-import type { ThreadRuntime } from "../../src/app-server/thread-handlers";
+import { handleThreadCompactStart, type ThreadRuntime } from "../../src/app-server/thread-handlers";
 
 const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
+
+for (const failedStatus of ["busy", "idle"] as const) {
+  it(`manual compaction releases ownership when ${failedStatus} notification delivery fails`, async () => {
+    let wakes = 0;
+    const runtime = {
+      id: "thread",
+      isRunning: false,
+      manager: {
+        compactNow: async () => ({ compacted: false, entryCount: 0, tokensBefore: 0, tokensAfter: 0, summary: "" }),
+      },
+      goal: {
+        wake: () => {
+          expect(runtime.isRunning).toBe(false);
+          wakes++;
+        },
+      },
+    } as unknown as ThreadRuntime;
+    await expect(
+      handleThreadCompactStart(
+        {
+          resolveThreadRuntime: async () => runtime,
+          emit: async (notification: DiligentServerNotification) => {
+            if (notification.method === "thread/status/changed" && notification.params.status === failedStatus)
+              throw new Error("Peer disconnected");
+          },
+        } as never,
+        runtime.id,
+      ),
+    ).rejects.toThrow("Peer disconnected");
+    expect(runtime.isRunning).toBe(false);
+    expect(wakes).toBe(1);
+  });
+}
+
+for (const outcome of ["compacted", "skipped", "failed", "paused"] as const) {
+  it(`manual compaction releases goal scheduling after a consumed wake: ${outcome}`, async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "goal-compaction-wake-"));
+    const server = new DiligentAppServer({
+      ...createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }),
+      getGoalsConfig: () => ({ enabled: true }),
+    });
+    const connection = connectTestPeer(server);
+    let release!: () => void;
+    let compacting: Promise<unknown> | undefined;
+    try {
+      const { threadId } = readResult(
+        await server.handleRequest(TEST_CONNECTION_ID, {
+          id: 1,
+          method: "thread/start",
+          params: { cwd },
+        }),
+      ) as { threadId: string };
+      readResult(
+        await server.handleRequest(TEST_CONNECTION_ID, {
+          id: 2,
+          method: "thread/goal/set",
+          params: { threadId, action: "set", objective: "Finish after compaction" },
+        }),
+      );
+      const runtime = (server as unknown as { threads: Map<string, ThreadRuntime> }).threads.get(threadId)!;
+      clearTimeout(runtime.goalTimer);
+      runtime.goalTimer = undefined;
+      let entered!: () => void;
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      runtime.manager.compactNow = async () => {
+        entered();
+        await gate;
+        if (outcome === "failed") throw new Error("Temporary compaction failure");
+        return {
+          compacted: outcome === "compacted",
+          entryCount: 1,
+          tokensBefore: 60000,
+          tokensAfter: 10000,
+          summary: "Retained work",
+        };
+      };
+      let resumed = 0;
+      runtime.manager.runWithOutcome = async () => {
+        resumed++;
+        await runtime.goal!.report(runtime.goalScope!.identity, "complete", "Remaining work verified");
+        return { status: "completed" };
+      };
+      compacting = server.handleRequest(TEST_CONNECTION_ID, {
+        id: 3,
+        method: "thread/compact/start",
+        params: { threadId },
+      });
+      await started;
+      // A reconnect, child completion, or retry timer can wake the goal while compacting.
+      runtime.goal!.wake();
+      const deadline = Date.now() + 1000;
+      while (runtime.goalTimer && Date.now() < deadline) await Bun.sleep(5);
+      expect(runtime.goalTimer).toBeUndefined();
+      expect(resumed).toBe(0);
+      expect(runtime.isRunning).toBe(true);
+      if (outcome === "paused") await runtime.goal!.pause("user");
+      release();
+      await compacting;
+      if (outcome === "paused") {
+        await Bun.sleep(20);
+        expect(runtime.goal!.read().goal).toMatchObject({ status: "paused", reason: "user" });
+        expect(resumed).toBe(0);
+      } else {
+        const completionDeadline = Date.now() + 1000;
+        while (runtime.goal!.read().goal?.status === "active" && Date.now() < completionDeadline) await Bun.sleep(5);
+        expect(runtime.goal!.read().goal?.status).toBe("complete");
+        expect(resumed).toBe(1);
+      }
+      await runtime.turnWork;
+    } finally {
+      release?.();
+      await compacting;
+      connection.disconnect();
+      await server.shutdown();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+}
 
 it("keeps scheduled goal work alive while no client request is pending", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "goal-scheduler-liveness-"));

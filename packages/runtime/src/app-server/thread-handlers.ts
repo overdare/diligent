@@ -242,12 +242,11 @@ export async function handleThreadCompactStart(
   if (runtime.isRunning || runtime.turnWork) throw new Error("Cannot compact while a turn is running");
 
   runtime.isRunning = true;
-  await ctx.emit({
-    method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
-    params: { threadId: runtime.id, status: "busy" },
-  });
-
   try {
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+      params: { threadId: runtime.id, status: "busy" },
+    });
     const result = await runtime.manager.compactNow();
     if (result.compacted) {
       await ctx.emit({
@@ -278,10 +277,17 @@ export async function handleThreadCompactStart(
     throw error;
   } finally {
     runtime.isRunning = false;
-    await ctx.emit({
-      method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
-      params: { threadId: runtime.id, status: "idle" },
-    });
+    try {
+      await ctx.emit({
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+        params: { threadId: runtime.id, status: "idle" },
+      });
+    } finally {
+      // A scheduled wake may have been consumed while compaction owned the thread.
+      // Release it even if a peer disconnects during notification delivery.
+      // wake() preserves explicit pauses and any remaining retry backoff.
+      runtime.goal?.wake();
+    }
   }
 }
 

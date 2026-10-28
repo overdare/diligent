@@ -89,6 +89,8 @@ but admission of another automatic run waits for a client to reconnect. Pending
 goal approvals and questions survive disconnect and are redelivered on subscription;
 missing clients never grant permission. Explicitly paused goals stay paused across
 reconnect and history reads. Process restart still requires explicit resume.
+Manual context compaction releases the thread back to the goal scheduler when it
+finishes, even when compaction is skipped or fails; an explicit pause still wins.
 If owned work is still cleaning up, configuration reload or an agent-rebuilding
 mode/model change rejects without dropping that work's registry. Retry after
 cleanup. Settings saved before a reload failure remain on disk and are applied

@@ -25,6 +25,22 @@
 
 ## Verification
 
+### Follow-up lifecycle audit
+
+- Reproduce automatic continuation lost while manual compaction owns the thread.
+- Cover successful, skipped, failed, and explicitly paused compaction outcomes before changing the handler.
+- Restore scheduling only after compaction releases the thread, retaining user pause and retry backoff semantics.
+- Provide bounded, session-owned child IDs in unknown-target errors so a mistyped ID is recoverable without guessing or silently selecting another child.
+- Run a live coding repair through transient setup failure, failing tests, user input, child review, and final verification.
+
+Follow-up results:
+
+- Reproduced lost compaction wake on successful, skipped, and failed compaction before the fix. All three now continue; explicit pause remains paused.
+- Reproduced busy/idle notification failures stranding thread ownership or scheduling. Both now release ownership and re-wake safely.
+- A real ChatGPT 6 Luna run mistyped a child ID and unnecessarily requested user intervention. The repaired build recovered an intentionally invalid ID from its diagnostic, retrieved the original child, and completed with one child and zero user-input requests.
+- Live repair task recovered from a transient setup failure and ten failing tests, passed all twelve fixture tests without changing the test file, consumed a child review, and generated a verified JSON report.
+- Follow-up full suite: 2,822 passed, 0 failed. Typecheck, lint, and focused retry-backoff verification passed. Independent review found no remaining actionable issues.
+
 - `bun test`: 2,814 passed, 0 failed, including app-server end-to-end coverage.
 - `bun run overdare-ai-agent:web:test`: 608 passed, 0 failed.
 - `bun run typecheck`: passed.

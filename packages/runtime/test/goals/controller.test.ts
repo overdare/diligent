@@ -309,6 +309,9 @@ test("terminal runtime failures cancel owned children and child wake preserves r
     );
     run.childFinished("child");
     expect(wakes.at(-1)).toBe(10_000);
+    clock.mockReturnValue(1500);
+    controller.wake();
+    expect(wakes.at(-1)).toBe(9500);
     const next = (await controller.beginRun())!;
     next.childStarted("child2");
     await controller.settle(
