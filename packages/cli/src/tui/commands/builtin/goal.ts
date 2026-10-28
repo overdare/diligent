@@ -2,7 +2,7 @@
 
 import type { ThreadGoal } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
-import { parseGoalCommand } from "@diligent/runtime/client";
+import { goalStopMessage, parseGoalCommand } from "@diligent/runtime/client";
 import { t } from "../../theme";
 import type { Command } from "../types";
 
@@ -18,7 +18,9 @@ function formatGoalLines(goal: ThreadGoal | null): string[] {
     `  ${t.bold}Cached:${t.reset}   ${goal.cacheReadTokens.toLocaleString()} read tokens (not charged)`,
     `  ${t.bold}Active:${t.reset}   ${Math.floor(goal.activeTimeMs / 1000).toLocaleString()} seconds`,
   ];
-  if (goal.reason) lines.push(`  ${t.bold}Reason:${t.reset}   ${goal.reason}`);
+  const stopMessage = goalStopMessage(goal);
+  if (stopMessage) lines.push(`  ${t.warn}${stopMessage}${t.reset}`, `  Resume: /goal resume`);
+  else if (goal.reason) lines.push(`  ${t.bold}Reason:${t.reset}   ${goal.reason}`);
   if (goal.completionEvidence) lines.push(`  ${t.bold}Evidence:${t.reset} ${goal.completionEvidence}`);
   return lines;
 }

@@ -14,9 +14,11 @@ import type {
 } from "@diligent/protocol";
 import {
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
+  DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_VERSION,
 } from "@diligent/protocol";
+import { startGoalSync } from "@diligent/runtime/client";
 import { type Dispatch, type MutableRefObject, type RefObject, type SetStateAction, useEffect } from "react";
 import { type ConsentState, ConsentStateSchema, WEB_CONSENT_GET_METHOD } from "../../shared/consent-protocol";
 import {
@@ -33,6 +35,33 @@ import type { ThreadState } from "./thread-store";
 import type { OpenThreadOptions } from "./use-thread-manager";
 
 const logger = createLogger({ scope: "web.client.lifecycle" });
+
+export function useGoalReconciliation(
+  rpcRef: RefObject<WebRpcClient | null>,
+  threadId: string | null,
+  connected: boolean,
+  enabled: boolean,
+  dispatch: Dispatch<AppAction>,
+) {
+  useEffect(() => {
+    const rpc = rpcRef.current;
+    if (!rpc || !connected || !enabled || !threadId) return;
+    const sync = startGoalSync({
+      currentThreadId: () => threadId,
+      read: (id) => rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_GET, { threadId: id }),
+      publish: (id, snapshot) => dispatch({ type: "set_goal_snapshot", payload: { threadId: id, ...snapshot } }),
+      onError: (error) => logger.debug("goal.sync_failed", { message: "Goal state sync unavailable", error }),
+    });
+    const refresh = () => {
+      void sync.refresh();
+    };
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      sync.dispose();
+    };
+  }, [rpcRef, threadId, connected, enabled, dispatch]);
+}
 
 type WebInitializeResponse = InitializeResponse & { consent?: ConsentState };
 

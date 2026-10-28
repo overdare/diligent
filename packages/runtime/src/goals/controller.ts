@@ -1,8 +1,12 @@
 // @summary Durable goal lifecycle and run ownership, independent of any client or model
+
+import { createLogger } from "@diligent/logging";
 import { type GoalChange, GoalChangeSchema, type ThreadGoal } from "@diligent/protocol";
 import type { SessionRunOutcome } from "../session/types";
 import { chargeableGoalTokens, type GoalRunIdentity, type GoalUsageSample, goalSampleKey } from "./accounting";
 import type { GoalStore } from "./store";
+
+const logger = createLogger({ scope: "runtime.goals" });
 
 export interface GoalWorkScope {
   identity: GoalRunIdentity;
@@ -31,6 +35,7 @@ export class GoalController {
   private activeRunId?: string;
   private writes: Promise<void> = Promise.resolve();
   private failure: unknown;
+  private clearingGoal: ThreadGoal | null = null;
   private constructor(
     private store: GoalStore,
     private threadId: string,
@@ -52,8 +57,15 @@ export class GoalController {
   }
   async snapshot(): Promise<{ goal: ThreadGoal | null; sequence: number }> {
     await this.writes;
-    // Recover storage/notification availability without ever resuming autonomous work.
-    if (this.failure) await this.save(true);
+    // Reads must still expose the stopped goal while storage is unavailable.
+    // Recovery only persists that paused state; it never resumes execution.
+    if (this.failure) {
+      try {
+        await this.save(true);
+      } catch {
+        return this.read();
+      }
+    }
     await this.flush();
     const state = this.store.read();
     return { goal: state.goal, sequence: state.sequence };
@@ -71,19 +83,45 @@ export class GoalController {
   }
   private enqueue(write: Promise<void>, recovery = false): void {
     this.writes = Promise.all([this.writes, write])
-      .then(async () => {
+      .then(() => {
         // Already queued writes may succeed after a failure. Only an explicit
         // paused recovery snapshot may publish again or clear the failure latch.
         if (this.failure && !recovery) return;
         const state = this.store.read();
-        await this.host.changed({ goal: state.goal, sequence: state.sequence });
         if (recovery) this.failure = undefined;
+        void this.publish({ goal: state.goal, sequence: state.sequence });
       })
       .catch((error: unknown) => {
         this.failure = error;
         this.invalidate();
-        if (this.goal) this.goal = { ...this.goal, status: "paused", reason: "persistence_error" };
+        this.revision++;
+        const stoppedGoal = this.goal ?? this.clearingGoal;
+        if (stoppedGoal)
+          this.goal = {
+            ...stoppedGoal,
+            revision: this.revision,
+            status: "paused",
+            reason: "persistence_error",
+            updatedAt: Date.now(),
+          };
+        logger.error("storage.failed", { message: "Goal state could not be saved", threadId: this.threadId, error });
+        // The failure cannot be persisted yet, but connected clients need the
+        // authoritative in-memory stop state and explicit recovery controls.
+        void this.publish(this.read());
       });
+  }
+  private async publish(snapshot: ReturnType<GoalController["read"]>): Promise<void> {
+    try {
+      await this.host.changed(snapshot);
+    } catch (error) {
+      // Delivery is best effort. Clients reconcile through goal/get; transport
+      // failures must never invalidate ownership or poison the storage latch.
+      logger.warn("notification.failed", {
+        message: "Goal update could not be delivered",
+        threadId: this.threadId,
+        error,
+      });
+    }
   }
   async flush(): Promise<void> {
     await this.writes;
@@ -147,6 +185,9 @@ export class GoalController {
     input: GoalChange,
     options: { idle: boolean; enabled: boolean; mode: string; defaultMaxTurns?: number },
   ): Promise<void> {
+    // Recover through snapshot() first. A failed write must never leave an
+    // attempted resume active in memory, even when no new snapshot is durable.
+    if (this.failure) throw this.failure;
     const change = GoalChangeSchema.parse(input);
     if (change.action !== "set") {
       if (!this.goal || change.expectedGoalId !== this.goal.id || change.expectedRevision !== this.goal.revision)
@@ -167,8 +208,13 @@ export class GoalController {
     }
     if (change.action === "clear") {
       this.invalidate();
+      this.clearingGoal = this.goal;
       this.goal = null;
-      await this.save();
+      try {
+        await this.save();
+      } finally {
+        this.clearingGoal = null;
+      }
       return;
     }
     if (change.action === "set") {

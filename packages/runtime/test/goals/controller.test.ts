@@ -188,6 +188,99 @@ test("persistence failure pauses execution and a later successful snapshot can r
   expect((await controller.snapshot()).goal?.status).toBe("active");
 });
 
+test("notification failures do not cancel owned work or prevent continuation and persisted recovery", async () => {
+  const { store, dir } = await setup();
+  let unavailable = false;
+  const wakes: number[] = [];
+  const controller = await GoalController.open(store, "session", {
+    changed: async () => {
+      if (unavailable) throw new Error("Connection closed");
+    },
+    wake: (delay = 0) => {
+      wakes.push(delay);
+    },
+  });
+  await controller.change({ action: "set", objective: "Finish" }, { idle: true, enabled: true, mode: "default" });
+  const run = (await controller.beginRun())!;
+  unavailable = true;
+  run.recordUsage({
+    sessionId: "session",
+    coreTurnId: "a",
+    inputTokens: 1,
+    outputTokens: 2,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  });
+  await controller.flush();
+  expect(run.signal.aborted).toBe(false);
+  const before = wakes.length;
+  await controller.settle(run, { status: "completed" }, true);
+  expect(wakes.length).toBeGreaterThan(before);
+  expect((await controller.snapshot()).goal).toMatchObject({ status: "active", tokensUsed: 3 });
+  expect((await openGoalStore(dir, "session")).read().goal?.status).toBe("active");
+  unavailable = false;
+  await controller.pause("user");
+  expect((await controller.snapshot()).goal).toMatchObject({ status: "paused", reason: "user" });
+});
+
+test("pending notification delivery cannot hold a durable goal change open", async () => {
+  const { store } = await setup();
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const controller = await GoalController.open(store, "session", { changed: () => pending, wake: () => {} });
+  const setting = controller.change(
+    { action: "set", objective: "Finish" },
+    { idle: true, enabled: true, mode: "default" },
+  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const finished = await Promise.race([
+      setting.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), 1000);
+      }),
+    ]);
+    expect(finished).toBe(true);
+    expect(store.read().goal?.status).toBe("active");
+  } finally {
+    clearTimeout(timer);
+    release();
+    await setting;
+  }
+});
+
+test("persistent storage failure publishes and exposes paused controls without permitting resume", async () => {
+  const { store } = await setup();
+  const snapshots: Array<ReturnType<GoalController["read"]>> = [];
+  const controller = await GoalController.open(store, "session", {
+    changed: async (snapshot) => {
+      snapshots.push(snapshot);
+    },
+    wake: () => {},
+  });
+  const options = { idle: true, enabled: true, mode: "default" };
+  await controller.change({ action: "set", objective: "Finish" }, options);
+  const run = (await controller.beginRun())!;
+  const append = spyOn(store, "append").mockRejectedValue(new Error("Disk full"));
+  try {
+    await expect(controller.pause("user")).rejects.toThrow("Disk full");
+    expect(run.signal.aborted).toBe(true);
+    expect(snapshots.at(-1)?.goal).toMatchObject({ status: "paused", reason: "persistence_error" });
+    const snapshot = await controller.snapshot();
+    expect(snapshot.goal).toMatchObject({ status: "paused", reason: "persistence_error" });
+    expect(snapshot.goal!.revision).toBeGreaterThan(store.read().goal!.revision);
+    await expect(controller.change({ action: "resume", ...control(controller) }, options)).rejects.toThrow("Disk full");
+    expect(controller.read().goal?.status).toBe("paused");
+  } finally {
+    append.mockRestore();
+  }
+  await controller.snapshot();
+  await controller.change({ action: "resume", ...control(controller) }, options);
+  expect((await controller.beginRun())?.signal.aborted).toBe(false);
+});
+
 test("queued writes cannot publish active state after a prior persistence failure", async () => {
   const { store } = await setup();
   const statuses: Array<string | undefined> = [];
@@ -228,6 +321,29 @@ test("queued writes cannot publish active state after a prior persistence failur
     tokensUsed: 4,
   });
   expect(statuses.at(-1)).toBe("paused");
+});
+
+test("a failed clear retains the paused goal and its recovery controls until the clear is durable", async () => {
+  const { controller, store } = await setup();
+  const options = { idle: true, enabled: true, mode: "default" };
+  await controller.change({ action: "set", objective: "Finish", tokenBudget: 100 }, options);
+  const before = controller.read();
+  const append = spyOn(store, "append").mockRejectedValue(new Error("Disk full"));
+  try {
+    await expect(controller.change({ action: "clear", ...control(controller) }, options)).rejects.toThrow("Disk full");
+    expect((await controller.snapshot()).goal).toMatchObject({
+      id: before.goal!.id,
+      objective: "Finish",
+      tokenBudget: 100,
+      status: "paused",
+      reason: "persistence_error",
+    });
+  } finally {
+    append.mockRestore();
+  }
+  await controller.snapshot();
+  await controller.change({ action: "clear", ...control(controller) }, options);
+  expect((await controller.snapshot()).goal).toBeNull();
 });
 
 test("completed goals require guarded replacement, not edits preserving stale success", async () => {

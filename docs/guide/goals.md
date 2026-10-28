@@ -166,6 +166,27 @@ conflict and ignore older sequence numbers. `capabilities.goals` advertises
 protocol support, independently of whether the configuration enables creation.
 Older peers may omit this capability.
 
+Notification delivery is independent of goal persistence and execution. A failed
+recipient does not block delivery to other clients, and goal writes do not wait
+for a UI transport to drain. Notification sends have a bounded delivery wait;
+a stalled recipient is skipped until its timed-out sends settle, preventing
+unbounded queues behind that recipient. Web and TUI reconcile goal snapshots every five
+seconds while connected; Web also refreshes on focus. A disconnected client must
+reconnect before it can display current server state.
+
+Actual storage failures cancel owned execution and expose an in-memory
+`paused: persistence_error` snapshot even while the disk remains unavailable.
+Reads retry persisting that paused snapshot, but never resume execution. Failed
+clear operations retain the goal and its recovery controls until a clear can be
+saved. At an equal ledger sequence, clients retain a newer goal revision and do
+not let a delayed empty snapshot erase an unsaved failure state.
+
+Stopped goals show a readable reason and a Resume button on the collapsed Web
+card. TUI displays the reason and `/goal resume` both on a stop notification and
+when opening a stopped thread. Resume retains the objective and usage, and still
+requires writable storage, an available execution environment, and any exhausted
+goal budget to be raised first.
+
 Automatic input is persisted with `visibility: internal` and `source: goal`.
 It bypasses slash-skill rewriting and `UserPromptSubmit`, does not fabricate a
 user chat bubble, and retains normal Stop hooks. The current goal is injected at

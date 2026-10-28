@@ -100,5 +100,46 @@ export function parseGoalCommand(args: string | undefined, currentGoal?: ThreadG
 }
 
 export function applyGoalSnapshot(current: ThreadGoalResponse, incoming: ThreadGoalResponse): ThreadGoalResponse {
+  // Null is only published after a durable clear, which advances the sequence.
+  // A failed initial set can publish a paused goal before the first durable write.
+  if (incoming.sequence === current.sequence && current.goal && !incoming.goal) return current;
+  // A storage failure has a newer in-memory revision at the same durable sequence.
+  if (
+    incoming.sequence === current.sequence &&
+    incoming.goal &&
+    current.goal &&
+    incoming.goal.revision < current.goal.revision
+  )
+    return current;
   return incoming.sequence < current.sequence ? current : incoming;
+}
+
+const GOAL_REASONS: Record<string, string> = {
+  user: "Paused at your request.",
+  restart: "The server restarted. Resume to continue the existing goal.",
+  shutdown: "The server shut down. Resume to continue the existing goal.",
+  persistence_error: "Goal state could not be saved. Check available disk space and write access, then resume.",
+  no_progress: "The agent repeatedly returned without making progress.",
+  token_budget: "The goal's token budget was reached. Increase the budget before resuming.",
+  turn_limit: "The goal's run limit was reached. Change the limit before resuming.",
+  interrupted: "Execution was interrupted.",
+  config_reload: "Configuration changed. Resume when the new configuration is ready.",
+  interaction_unavailable: "The required user interaction could not be opened.",
+  execution_unavailable: "The execution environment is unavailable.",
+  runtime_error: "A runtime error interrupted the goal.",
+  plan_mode: "Goal execution is unavailable in plan mode. Switch modes before resuming.",
+  disabled: "Goal mode is disabled. Enable it before resuming.",
+  deleted: "The thread was deleted.",
+};
+
+export function goalStopMessage(goal: ThreadGoal): string | undefined {
+  if (goal.status === "active" || goal.status === "complete") return undefined;
+  const fallback = {
+    paused: "Execution is paused.",
+    blocked: "Execution needs attention before it can continue.",
+    budget_limited: "A goal budget was reached. Increase the budget before resuming.",
+    usage_limited: "The provider's usage limit was reached. Resume after the limit resets or access is restored.",
+  }[goal.status];
+  const reason = goal.reason?.trim();
+  return `Goal stopped: ${reason ? (GOAL_REASONS[reason] ?? reason) : fallback}`;
 }

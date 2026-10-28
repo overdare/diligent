@@ -1,6 +1,7 @@
 // @summary Compact persistent goal status with collapsible details and explicit lifecycle controls
 
 import type { GoalStatus as GoalLifecycleStatus, ThreadGoal } from "@diligent/protocol";
+import { goalStopMessage } from "@diligent/runtime/client";
 import { memo, type ReactNode, useState } from "react";
 import { cn } from "../lib/cn";
 import { Check, ChevronDown, X } from "./icons";
@@ -76,6 +77,7 @@ function GoalStatusImpl({ goal, onPause, onResume, onClear, defaultExpanded = fa
   const [expanded, setExpanded] = useState(defaultExpanded);
   const status = STATUS_META[goal.status];
   const canResume = goal.status !== "active" && goal.status !== "complete";
+  const stopMessage = goalStopMessage(goal);
   const tokenSummary =
     goal.tokenBudget === undefined
       ? `${compactNumber.format(goal.tokensUsed)} tokens`
@@ -104,9 +106,6 @@ function GoalStatusImpl({ goal, onPause, onResume, onClear, defaultExpanded = fa
                 <span className="px-1.5 text-text-tertiary/60">·</span>
                 {formatActiveTime(goal.activeTimeMs)}
               </p>
-              {goal.status !== "active" && goal.reason ? (
-                <p className="mt-1 break-words text-xs text-text-secondary">{goal.reason}</p>
-              ) : null}
             </div>
             <ChevronDown
               aria-hidden="true"
@@ -128,7 +127,7 @@ function GoalStatusImpl({ goal, onPause, onResume, onClear, defaultExpanded = fa
             <button
               type="button"
               onClick={onResume}
-              className="rounded-md px-2.5 py-1 text-xs text-text-secondary transition hover:bg-fill-ghost-hover hover:text-text"
+              className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90"
             >
               Resume
             </button>
@@ -143,6 +142,15 @@ function GoalStatusImpl({ goal, onPause, onResume, onClear, defaultExpanded = fa
             <span className="sr-only">Clear</span>
           </button>
         </div>
+
+        {stopMessage ? (
+          <output
+            aria-live="polite"
+            className="block break-words border-t border-border/20 px-4 py-2 text-xs leading-5 text-text-secondary"
+          >
+            {stopMessage}
+          </output>
+        ) : null}
 
         {showProgress ? (
           <div className="h-0.5 bg-border/20">

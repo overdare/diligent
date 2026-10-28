@@ -96,6 +96,20 @@ describe("parseGoalCommand", () => {
 });
 
 describe("applyGoalSnapshot", () => {
+  test("failed initial creation supersedes an empty snapshot at the same durable sequence", () => {
+    const empty = { goal: null, sequence: 0 };
+    const failed = { goal: { ...goal, status: "paused" as const, reason: "persistence_error" }, sequence: 0 };
+    expect(applyGoalSnapshot(empty, failed)).toEqual(failed);
+    expect(applyGoalSnapshot(failed, empty)).toEqual(failed);
+    expect(applyGoalSnapshot(failed, { goal: null, sequence: 1 })).toEqual({ goal: null, sequence: 1 });
+  });
+  test("does not replace an unsaved failure snapshot with a delayed durable snapshot", () => {
+    const paused = {
+      goal: { ...goal, revision: 4, status: "paused" as const, reason: "persistence_error" },
+      sequence: 4,
+    };
+    expect(applyGoalSnapshot(paused, { goal, sequence: 4 })).toEqual(paused);
+  });
   test("does not let an older notification restore a cleared or replaced goal", () => {
     const cleared = { goal: null, sequence: 8 };
     expect(applyGoalSnapshot(cleared, { goal, sequence: 7 })).toEqual(cleared);

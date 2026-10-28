@@ -71,6 +71,63 @@ test("automatic continuation stops at evidence-backed completion without fabrica
   expect(inputs.length).toBeGreaterThan(0);
   expect(inputs.every((entry) => entry.visibility === "internal" && entry.source === "goal")).toBe(true);
 });
+
+test("notification transport failures do not stop automatic goal continuation", async () => {
+  const first = createSimpleStream("Need another step");
+  const done = createToolUseStream(
+    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verified" } }],
+    "Done",
+  );
+  let calls = 0;
+  const { client, threadId, server } = await setup((...args) => (calls++ === 0 ? first : done)(...args));
+  const disconnect = server.connect("broken-notifications", {
+    send: (message) => {
+      if ("method" in message && !("id" in message)) throw new Error("Broken notification transport");
+    },
+    onMessage: () => {},
+  });
+  try {
+    await setGoal(client, threadId);
+    await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "complete");
+    expect(((await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse).goal).toMatchObject({
+      status: "complete",
+      turnsUsed: 2,
+    });
+    expect(
+      client.notifications.some(
+        (n) => n.method === "thread/goal/updated" && n.params.goal?.reason === "persistence_error",
+      ),
+    ).toBe(false);
+  } finally {
+    disconnect();
+  }
+});
+
+test("an unresponsive notification transport cannot indefinitely stall goal runs", async () => {
+  const first = createSimpleStream("Need another step");
+  const done = createToolUseStream(
+    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verified" } }],
+    "Done",
+  );
+  let calls = 0;
+  const { client, threadId, server } = await setup((...args) => (calls++ === 0 ? first : done)(...args));
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const disconnect = server.connect("unresponsive-notifications", { send: () => pending, onMessage: () => {} });
+  try {
+    await setGoal(client, threadId);
+    await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "complete", 8000);
+    expect(((await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse).goal).toMatchObject({
+      status: "complete",
+      turnsUsed: 2,
+    });
+  } finally {
+    release();
+    disconnect();
+  }
+}, 10000);
 test("token budget aborts before the sampled tool callback can report completion", async () => {
   const { client, threadId } = await setup(
     createToolUseStream(

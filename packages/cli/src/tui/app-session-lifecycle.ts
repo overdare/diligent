@@ -2,7 +2,7 @@
 
 import { DILIGENT_CLIENT_NOTIFICATION_METHODS, DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import { formatModelRef, resolveModel } from "@diligent/runtime";
-import { applyGoalSnapshot } from "@diligent/runtime/client";
+import { applyGoalSnapshot, goalStopMessage } from "@diligent/runtime/client";
 import type { AppConfig } from "../config";
 import { DEFAULT_PROVIDER, getDefaultModelRef, type ProviderName } from "../provider-manager";
 import { buildWelcomeBanner } from "./app-presenter";
@@ -119,11 +119,19 @@ export class AppSessionLifecycle {
 
     this.deps.runtime.currentEffort = thread.currentEffort;
     this.deps.runtime.currentFastMode = thread.currentFastMode ?? false;
+    const previous = this.deps.runtime.goalSnapshot.goal;
     this.deps.runtime.goalSnapshot = applyGoalSnapshot(this.deps.runtime.goalSnapshot ?? { goal: null, sequence: 0 }, {
       goal: thread.goal ?? null,
       sequence: thread.goalSequence ?? 0,
     });
     const goal = this.deps.runtime.goalSnapshot.goal;
+    const stopMessage = goal && goalStopMessage(goal);
+    if (
+      stopMessage &&
+      (previous?.id !== goal.id || previous?.status !== goal.status || previous?.reason !== goal.reason)
+    ) {
+      this.deps.chatView.addLines([stopMessage, "Resume: /goal resume"], { separateBefore: true });
+    }
 
     let activeModel = this.deps.config.model;
     let modelId = formatModelRef(activeModel);

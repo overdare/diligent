@@ -49,3 +49,18 @@ Follow-up results:
 - Independent review findings addressed: hidden reasoning activity, undelivered approval responses, and model-change rejection cancelling existing work.
 - Explicit natural-language pause reporting is supported through the goal tool with user-request-only instructions; the runtime transition is covered end to end.
 - Implementation was verified before publication; commit and PR text summarize the product improvement without internal thresholds.
+
+## Notification and recovery follow-up
+
+- Separate notification delivery failures from durable write failures; preserve execution on delivery failure and log diagnostics.
+- Publish and return an authoritative paused snapshot during a storage outage; keep explicit resume guarded by a successful write.
+- Reconcile visible goal state periodically in Web and TUI, discard stale responses, and show readable stop reasons with resume controls.
+- Add regression tests first, verify runtime and both clients, then update the existing PR with product-level wording.
+
+### Follow-up verification
+
+- Delivery rejection, non-settling transports, overlapping sends, persistent storage outages, failed clears, and stale snapshots have regression coverage.
+- Web and TUI recover missed stop updates and present readable reasons with explicit resume controls.
+- Live Web pause, reload, and Resume completed the same goal; the output file was independently verified as exactly four bytes (`BETA`).
+- One full-suite run exposed an intermittent concurrent-session-restore assertion; the isolated suite and subsequent full run passed.
+- Final validation: 2,838 repository tests and 614 Web tests passed; typecheck, lint, and whitespace checks passed.

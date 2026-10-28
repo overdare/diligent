@@ -17,7 +17,7 @@ import {
   nextCycledMode,
 } from "@diligent/protocol";
 import { type DiligentPaths, formatModelRef, type SkillMetadata } from "@diligent/runtime";
-import { applyGoalSnapshot } from "@diligent/runtime/client";
+import { applyGoalSnapshot, goalStopMessage, startGoalSync } from "@diligent/runtime/client";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
 import { AppDialogs } from "./app-dialogs";
@@ -77,6 +77,7 @@ export class App {
 
   // State
   private rpcClient: SpawnedAppServer | null = null;
+  private goalSync?: ReturnType<typeof startGoalSync>;
   private runtime: AppRuntimeState;
   private shouldBellOnComplete: boolean;
   private viewModel: TuiViewModel;
@@ -414,6 +415,7 @@ export class App {
   }
 
   private async restartRpcClient(): Promise<void> {
+    this.goalSync?.dispose();
     this.rpcClient?.setNotificationListener(null);
     this.rpcClient?.setServerRequestHandler(null);
     await this.rpcClient?.dispose().catch(() => {});
@@ -425,6 +427,18 @@ export class App {
     });
     this.rpcClient.setNotificationListener((notification) => this.handleServerNotification(notification));
     this.rpcClient.setServerRequestHandler((requestId, request) => this.handleServerRequest(requestId, request));
+    const rpc = this.rpcClient;
+    this.goalSync = startGoalSync({
+      currentThreadId: () => (this.runtime.goalsSupported ? this.runtime.currentThreadId : null),
+      read: (threadId) => rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_GET, { threadId }),
+      publish: (threadId, snapshot) => {
+        void this.handleServerNotification({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_GOAL_UPDATED,
+          params: { threadId, ...snapshot },
+        });
+      },
+      onError: (error) => this.handleAppServerStderr(`Goal state sync unavailable: ${String(error)}`),
+    });
   }
 
   private handleInput(data: string): void {
@@ -715,8 +729,16 @@ export class App {
       notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_GOAL_UPDATED &&
       notification.params.threadId === this.runtime.currentThreadId
     ) {
+      const previous = this.runtime.goalSnapshot.goal;
       this.runtime.goalSnapshot = applyGoalSnapshot(this.runtime.goalSnapshot, notification.params);
       const goal = this.runtime.goalSnapshot.goal;
+      const stopMessage = goal && goalStopMessage(goal);
+      if (
+        stopMessage &&
+        (previous?.id !== goal.id || previous?.status !== goal.status || previous?.reason !== goal.reason)
+      ) {
+        this.chatView.addLines([`${t.warn}${stopMessage}${t.reset}`, "Resume: /goal resume"], { separateBefore: true });
+      }
       if (goal?.status !== "active") this.runtime.cancelRequested = false;
       this.statusBar.update({
         goal: goal
@@ -785,6 +807,7 @@ export class App {
 
   /** Stop the TUI */
   stop(): void {
+    this.goalSync?.dispose();
     this.threadManager.dispose();
     if (this.streamRenderTimer) {
       clearTimeout(this.streamRenderTimer);

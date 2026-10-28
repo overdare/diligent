@@ -54,6 +54,12 @@ function createContext(responses: ThreadGoalResponse[]) {
 }
 
 describe("/goal", () => {
+  test("explains a stopped goal and the explicit resume command", async () => {
+    const fixture = createContext([{ goal: { ...goal, status: "paused", reason: "persistence_error" }, sequence: 4 }]);
+    await goalCommand.handler(undefined, fixture.ctx);
+    expect(fixture.lines.join("\n")).toContain("Goal state could not be saved");
+    expect(fixture.lines.join("\n")).toContain("/goal resume");
+  });
   test("shows the current goal without sending an ordinary chat message", async () => {
     const fixture = createContext([{ goal, sequence: 4 }]);
 

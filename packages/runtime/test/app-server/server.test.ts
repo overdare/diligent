@@ -197,6 +197,129 @@ it("keeps scheduled goal work alive while no client request is pending", async (
   }
 });
 
+it("a failed notification recipient cannot prevent delivery to other clients", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "goal-notification-fanout-"));
+  const server = new DiligentAppServer(createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }));
+  const broken = connectTestPeer(server, "broken");
+  const healthy = connectTestPeer(server, "healthy");
+  broken.setNotificationListener(() => {
+    throw new Error("Connection closed");
+  });
+  const notifications: DiligentServerNotification[] = [
+    { method: "thread/goal/updated", params: { threadId: "thread", goal: null, sequence: 1 } },
+    { method: "thread/status/changed", params: { threadId: "thread", status: "idle", threadStatus: "idle" } },
+  ];
+  try {
+    for (const notification of notifications) {
+      await (server as unknown as { emit: (n: DiligentServerNotification) => Promise<void> }).emit(notification);
+    }
+    expect(healthy.notifications).toEqual(notifications);
+  } finally {
+    broken.disconnect();
+    healthy.disconnect();
+    await server.shutdown();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+it("a pending notification recipient does not delay healthy recipients", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "goal-pending-fanout-"));
+  const server = new DiligentAppServer(createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }));
+  const slow = connectTestPeer(server, "slow");
+  const healthy = connectTestPeer(server, "healthy");
+  let release!: () => void;
+  slow.setNotificationListener(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  let received!: () => void;
+  const delivered = new Promise<void>((resolve) => {
+    received = resolve;
+  });
+  healthy.setNotificationListener(() => received());
+  const sending = (server as unknown as { emit: (n: DiligentServerNotification) => Promise<void> }).emit({
+    method: "thread/goal/updated",
+    params: { threadId: "thread", goal: null, sequence: 1 },
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    expect(
+      await Promise.race([
+        delivered.then(() => true),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), 1000);
+        }),
+      ]),
+    ).toBe(true);
+  } finally {
+    clearTimeout(timer);
+    release();
+    await sending;
+    slow.disconnect();
+    healthy.disconnect();
+    await server.shutdown();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+it("another completed send cannot release a peer whose timed-out send is still pending", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "goal-pending-suspension-"));
+  const server = new DiligentAppServer(createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }));
+  const connection = connectTestPeer(server);
+  let releaseA!: () => void;
+  let releaseB!: () => void;
+  const a = new Promise<void>((resolve) => {
+    releaseA = resolve;
+  });
+  const b = new Promise<void>((resolve) => {
+    releaseB = resolve;
+  });
+  connection.setNotificationListener((n) =>
+    n.method === "thread/goal/updated"
+      ? n.params.sequence === 1
+        ? a
+        : n.params.sequence === 2
+          ? b
+          : undefined
+      : undefined,
+  );
+  const timeouts: Array<() => void> = [];
+  const realTimeout = globalThis.setTimeout;
+  const timer = spyOn(globalThis, "setTimeout").mockImplementation((callback) => {
+    timeouts.push(callback as () => void);
+    return realTimeout(callback, 60_000);
+  });
+  const emit = (sequence: number) =>
+    (server as unknown as { emit: (n: DiligentServerNotification) => Promise<void> }).emit({
+      method: "thread/goal/updated",
+      params: { threadId: "thread", goal: null, sequence },
+    });
+  try {
+    const first = emit(1);
+    const second = emit(2);
+    timeouts[0]();
+    await first;
+    releaseB();
+    await second;
+    await emit(3);
+    expect(connection.notifications).toHaveLength(2);
+    releaseA();
+    await a;
+    await Promise.resolve();
+    await emit(4);
+    expect(connection.notifications.at(-1)).toMatchObject({ params: { sequence: 4 } });
+  } finally {
+    releaseA();
+    releaseB();
+    timer.mockRestore();
+    connection.disconnect();
+    await server.shutdown();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 it("host shutdown cancels an ordinary root run before waiting for its cleanup", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "goal-host-shutdown-"));
   const server = new DiligentAppServer(createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }));
