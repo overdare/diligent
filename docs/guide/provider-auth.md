@@ -204,6 +204,30 @@ The shared protocol exposes `ModelInfo.supportsFastMode`, `thread/start.fastMode
 See [OpenAI Fast mode](https://developers.openai.com/api/docs/guides/fast-mode) and
 [Codex speed and usage](https://developers.openai.com/codex/speed) for provider policies and pricing.
 
+## ChatGPT subscription transport
+
+The ChatGPT Codex endpoint only accepts `store: false`, and rejects `previous_response_id` over
+HTTP. Responses Lite models therefore use the Codex WebSocket transport by default:
+
+- One socket per conversation. The runtime `TurnOrchestrator` owns a stream session scope
+  (`createStreamSessionScope`) and hands it to every turn as `turnScope.session`; the socket and its
+  chain baseline live there and are released when the session is re-created, resumed, or deleted.
+- After a completed response, the next request on the same socket sends only the appended input
+  items with `previous_response_id`. The strict-prefix check lives in the provider-neutral
+  `openai/responses-chain.ts`; any history edit, compaction, option change, or new socket sends the
+  full input instead.
+- The server keeps chained responses only in that connection's memory (connections last at most
+  60 minutes). A rejected `previous_response_id`, or a reused socket that sends no first frame within
+  30 seconds, replays the full input on a fresh socket inside the same provider call.
+- The `x-codex-turn-state` sticky-routing token travels per request in `client_metadata` and is
+  captured from the `codex.response.metadata` frame, so a socket shared across turns never replays
+  another turn's token.
+- Two consecutive WebSocket transport failures switch that ChatGPT stream instance to HTTP/SSE, which
+  resends the full input each request under a 15-second response-header timeout.
+
+Set `DILIGENT_DEBUG_CHATGPT_WEBSOCKET=1` to log content-safe frame summaries, including
+`inputItems=` counts that show whether a request was chained.
+
 ## Refresh and runtime binding
 
 Runtime binds external auth into `ProviderManager` and refreshes ChatGPT OAuth tokens automatically before provider use when needed.
