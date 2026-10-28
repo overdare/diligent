@@ -17,6 +17,13 @@ session and rejects conflicting attribution. Reports use the same project attrib
 any entry exists, an explicitly configured project is sufficient; without either source, reporting is unavailable.
 The tool never scans the filesystem for a session or asks the model to supply identities or authentication.
 
+Child and nested-child sessions use the same durable-entry observer as parent sessions. Each child captures the
+current authenticated user when it starts or resumes, so an already-running child cannot be reassigned when the
+parent's turn owner changes. Nested children retain that captured owner and link to their immediate parent.
+Reports from children therefore bind to their own transcript and sequence rather than a parent's evidence.
+This propagates the existing consent-gated telemetry path; it does not bypass consent or backfill previously
+untransmitted history. Archive availability can still lag record delivery.
+
 The append observer retains only binding metadata: user/project identity, durable sequence and the exact transcript
 path supplied by the runtime. It does not build or maintain a report-excerpt cache. Only when `agent_report` is
 executed does the tool open that bound session's JSONL file, verify its header identity/version, and stream entries

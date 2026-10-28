@@ -196,6 +196,8 @@ export class AgentRegistry {
       streamFn: next.streamFn,
       onCollabEvent: next.onCollabEvent,
       onChildStop: next.onChildStop,
+      onChildEntryAppended: next.onChildEntryAppended,
+      getUserId: next.getUserId,
       userId: next.userId,
       agentLoopHookFactories: next.agentLoopHookFactories,
       codeMode: next.codeMode,
@@ -339,6 +341,8 @@ export class AgentRegistry {
     // The `let childManager` binding is valid because onStop is only called
     // after the manager has been fully constructed and run() settles.
     const onChildStop = this.deps.onChildStop;
+    const onEntryAppended = this.deps.onChildEntryAppended;
+    const userId = this.deps.getUserId ? this.deps.getUserId() : this.deps.userId;
     let childManager: SessionManager;
     // The child agent is rebuilt per turn; one session keeps its yielded exec cells and store across turns.
     const childCodeModeSession = new CodeModeSession();
@@ -346,6 +350,8 @@ export class AgentRegistry {
     const childManagerConfig: Parameters<typeof factory>[0] = {
       cwd: this.deps.cwd,
       paths: this.deps.paths,
+      getUserId: () => userId,
+      onEntryAppended,
       onStop: onChildStop
         ? (context) =>
             onChildStop({
@@ -355,7 +361,7 @@ export class AgentRegistry {
               model: childModel,
               provider: childModel.provider,
               effort: childEffort,
-              userId: this.deps.userId,
+              userId,
               context,
             })
         : undefined,
@@ -376,6 +382,10 @@ export class AgentRegistry {
 
         const childDeps = {
           ...this.deps,
+          userId,
+          getUserId: () => userId,
+          onChildEntryAppended: onEntryAppended,
+          getParentSessionId: () => childManager.sessionId,
           getGoalScope: () => goalScope,
           parentTools: childTools,
           ask: childAsk,

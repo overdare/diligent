@@ -143,6 +143,8 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
     getSessionId,
     existingAgent,
     onChildStop,
+    onChildEntryAppended,
+    getUserId,
     userId,
   } = request;
   const paths = await getPaths();
@@ -190,6 +192,8 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
       onChildStop,
       userId,
       toolOutputStore: selectedOutputStore,
+      onChildEntryAppended,
+      getUserId,
       agentLoopHookFactories: bundledToolProviders
         ?.map((provider) => provider.createAgentLoopHooks)
         .filter((factory) => factory !== undefined),
@@ -238,6 +242,8 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
       onChildStop,
       userId,
       codeMode,
+      onChildEntryAppended,
+      getUserId,
     });
   }
   // `filteredTools` stays the direct list: children inherit it and apply code mode to their own copy.

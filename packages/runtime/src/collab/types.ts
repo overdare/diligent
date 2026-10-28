@@ -95,8 +95,12 @@ export interface CollabToolDeps {
   streamFn?: import("@diligent/core/provider-contract").StreamFunction;
   /** Parent-selected full-output store, retained by every nested collaboration registry. */
   toolOutputStore?: ToolOutputFileStore;
-  /** User ID to propagate into child stop hook inputs. */
+  /** Authenticated user captured for a child execution's persistence and lifecycle. */
   userId?: string;
+  /** Resolve the owner at spawn/resume; active children retain the captured identity. */
+  getUserId?: () => string | undefined;
+  /** Host observer for durable child entries, inherited by nested children. */
+  onChildEntryAppended?: import("../session/manager").SessionManagerConfig["onEntryAppended"];
   /** Runs the same external Stop lifecycle used for parent turns. */
   onChildStop?: (info: ChildStopInfo) => Promise<void>;
   /** Product hook factories are retained through nesting; each child receives fresh hook instances. */
