@@ -22,10 +22,9 @@ afterEach(restoreChatGPTStreamTestState);
 
 const MODEL = resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" });
 
-function completeWithId(socket: FakeChatGPTWebSocket, responseId: string, extra: Record<string, unknown>[] = []): void {
+function completeWithId(socket: FakeChatGPTWebSocket, responseId: string): void {
   queueMicrotask(() => {
     socket.emit({ type: "response.created", response: { id: responseId, status: "in_progress" } });
-    for (const payload of extra) socket.emit(payload);
     socket.emit({ type: "response.output_text.delta", delta: `answer ${responseId}` });
     socket.emit({
       type: "response.completed",
@@ -168,38 +167,6 @@ describe("ChatGPT WebSocket chaining", () => {
     expect(second.some((event) => event.type === "done")).toBe(true);
     expect(harness.requests).toHaveLength(2);
     expect(sent[1]?.previous_response_id).toBeUndefined();
-    await session.dispose();
-  });
-
-  test("replays the turn token per request within a turn but never into the next turn", async () => {
-    const sent: Record<string, unknown>[] = [];
-    const harness = createWebSocketHarness((body, socket) => {
-      sent.push(body);
-      completeWithId(socket, `resp_${sent.length}`, [
-        { type: "codex.response.metadata", headers: { "x-codex-turn-state": `turn-token-${sent.length}` } },
-      ]);
-    });
-    const stream = createChatGPTStream(() => testTokens(), { webSocketFactory: harness.factory });
-    const session = createStreamSessionScope();
-    const turnScope = createStreamTurnScope({ session });
-    const options = {
-      effort: "medium" as const,
-      sessionId: "session-1",
-      turnScope,
-      turnStateRef: turnScope.turnStateRef,
-    };
-
-    const first = await collectEvents(stream(MODEL, TEST_CONTEXT, options));
-    const followUp = nextTurnContext(TEST_CONTEXT, doneMessage(first), "tool follow-up");
-    await collectEvents(stream(MODEL, followUp, options));
-    await turnScope.dispose();
-    const second = await runTurn(stream, session, TEST_CONTEXT);
-
-    expect(second.some((event) => event.type === "done")).toBe(true);
-    expect(harness.requests[0]?.headers["x-codex-turn-state"]).toBeUndefined();
-    expect(sent[0]?.client_metadata).toBeUndefined();
-    expect(sent[1]?.client_metadata).toEqual({ "x-codex-turn-state": "turn-token-1" });
-    expect(sent[2]?.client_metadata).toBeUndefined();
     await session.dispose();
   });
 });

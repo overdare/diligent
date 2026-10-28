@@ -219,9 +219,8 @@ HTTP. Responses Lite models therefore use the Codex WebSocket transport by defau
 - The server keeps chained responses only in that connection's memory (connections last at most
   60 minutes). A rejected `previous_response_id`, or a reused socket that sends no first frame within
   30 seconds, replays the full input on a fresh socket inside the same provider call.
-- The `x-codex-turn-state` sticky-routing token travels per request in `client_metadata` and is
-  captured from the `codex.response.metadata` frame, so a socket shared across turns never replays
-  another turn's token.
+- The socket is not tied to one turn, so it carries no `x-codex-turn-state`; that sticky-routing
+  token is used only by HTTP/SSE requests within a turn.
 - Two consecutive WebSocket transport failures switch that ChatGPT stream instance to HTTP/SSE, which
   resends the full input each request under a 15-second response-header timeout.
 

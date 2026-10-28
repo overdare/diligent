@@ -140,10 +140,6 @@ export class ChatGPTWebSocketSession {
     return this.socket?.readyState === 1 && !this.connecting ? this.socketId : undefined;
   }
 
-  get busy(): boolean {
-    return this.active !== undefined;
-  }
-
   streamRequest(
     request: Record<string, unknown>,
     signal?: AbortSignal,

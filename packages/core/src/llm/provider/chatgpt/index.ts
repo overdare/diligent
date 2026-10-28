@@ -70,12 +70,8 @@ type ChatGPTTransportState = {
 /** One physical-socket owner plus the chain baseline the server holds on that socket. */
 type ChatGPTWebSocketChannel = {
   session: ChatGPTWebSocketSession;
-  accountId: string | undefined;
   chain?: { baseline: ResponsesChainBaseline; connectionId: number };
 };
-
-/** Scope-held slot so an account switch can replace the channel without disposing the scope. */
-type ChatGPTWebSocketChannelSlot = { channel?: ChatGPTWebSocketChannel };
 
 function createDefaultWebSocket(url: string, headers: Record<string, string>): WebSocket {
   const BunWebSocket = WebSocket as unknown as new (
@@ -300,7 +296,6 @@ type ChatGPTWebSocketObservation = {
 async function* observeChatGPTWebSocketEvents(
   events: AsyncIterable<Record<string, unknown>>,
   observation: ChatGPTWebSocketObservation,
-  turnStateRef: { value: string | undefined } | undefined,
 ): AsyncGenerator<Record<string, unknown>> {
   for await (const payload of events) {
     observation.sawEvent = true;
@@ -309,22 +304,6 @@ async function* observeChatGPTWebSocketEvents(
       observation.responseId = response.id;
     }
     if (payload.type === "response.completed") observation.completed = true;
-    // WebSocket frames cannot carry response headers; the server mirrors them, including the sticky
-    // turn token, into a `codex.response.metadata` frame (codex-rs also reads `response.metadata`).
-    const headers = payload.headers;
-    if (
-      (payload.type === "codex.response.metadata" || payload.type === "response.metadata") &&
-      turnStateRef &&
-      turnStateRef.value === undefined &&
-      headers &&
-      typeof headers === "object"
-    ) {
-      for (const [name, value] of Object.entries(headers)) {
-        if (name.toLowerCase() === CHATGPT_TURN_STATE_HEADER && typeof value === "string" && value.length > 0) {
-          turnStateRef.value = value;
-        }
-      }
-    }
     yield payload;
   }
 }
@@ -339,24 +318,10 @@ async function streamChatGPTWebSocket(input: {
   model: Model;
   options: StreamOptions;
   requestBody: Record<string, unknown>;
-  slot: ChatGPTWebSocketChannelSlot | undefined;
-  accountId: string | undefined;
-  createSession: () => ChatGPTWebSocketSession;
+  channel: ChatGPTWebSocketChannel;
   chainedFirstEventTimeoutMs: number;
 }): Promise<void> {
-  const { stream, model, options, requestBody, slot } = input;
-  if (slot?.channel && slot.channel.accountId !== input.accountId) {
-    await slot.channel.session.dispose();
-    slot.channel = undefined;
-  }
-  if (slot && !slot.channel) slot.channel = { session: input.createSession(), accountId: input.accountId };
-  // A second concurrent sample in one conversation cannot share the socket; it runs unchained alone.
-  const ephemeral =
-    !slot?.channel || slot.channel.session.busy
-      ? { session: input.createSession(), accountId: input.accountId }
-      : undefined;
-  const channel: ChatGPTWebSocketChannel = ephemeral ?? (slot?.channel as ChatGPTWebSocketChannel);
-
+  const { stream, model, options, requestBody, channel } = input;
   let doneMessage: AssistantMessage | undefined;
   stream.subscribe((event) => {
     if (event.type === "done") doneMessage = event.message;
@@ -367,60 +332,54 @@ async function streamChatGPTWebSocket(input: {
       ? planResponsesChainedInput(channel.chain.baseline, requestBody)
       : undefined;
   let started = false;
-  try {
-    for (;;) {
-      channel.chain = undefined;
-      const turnState = options.turnStateRef?.value;
-      const request = {
-        type: "response.create",
-        ...requestBody,
-        ...(chained && { previous_response_id: chained.previousResponseId, input: chained.input }),
-        ...(turnState !== undefined && { client_metadata: { [CHATGPT_TURN_STATE_HEADER]: turnState } }),
-      };
-      const exchange = channel.session.streamRequest(
-        request,
-        options.signal,
-        chained ? { firstEventTimeoutMs: input.chainedFirstEventTimeoutMs } : {},
-      );
-      const observation: ChatGPTWebSocketObservation = { sawEvent: false, completed: false };
-      try {
-        const connectionId = await exchange.opened;
-        if (!started) {
-          stream.push({ type: "start" });
-          started = true;
-        }
-        await handleResponsesAPIEvents(
-          observeChatGPTWebSocketEvents(exchange.events, observation, options.turnStateRef),
-          stream,
-          model,
-          options.signal,
-        );
-        if (
-          observation.completed &&
-          observation.responseId &&
-          doneMessage &&
-          channel.session.openConnectionId === connectionId
-        ) {
-          channel.chain = {
-            connectionId,
-            baseline: createResponsesChainBaseline(
-              requestBody,
-              observation.responseId,
-              assistantMessageToResponseItems(doneMessage, "chatgpt"),
-            ),
-          };
-        }
-        return;
-      } catch (error) {
-        if (chained && !observation.sawEvent && isReplayableChainFailure(error)) {
-          chained = undefined;
-          continue;
-        }
-        throw error;
+  for (;;) {
+    channel.chain = undefined;
+    const request = {
+      type: "response.create",
+      ...requestBody,
+      ...(chained && { previous_response_id: chained.previousResponseId, input: chained.input }),
+    };
+    const exchange = channel.session.streamRequest(
+      request,
+      options.signal,
+      chained ? { firstEventTimeoutMs: input.chainedFirstEventTimeoutMs } : {},
+    );
+    const observation: ChatGPTWebSocketObservation = { sawEvent: false, completed: false };
+    try {
+      const connectionId = await exchange.opened;
+      if (!started) {
+        stream.push({ type: "start" });
+        started = true;
       }
+      await handleResponsesAPIEvents(
+        observeChatGPTWebSocketEvents(exchange.events, observation),
+        stream,
+        model,
+        options.signal,
+      );
+      if (
+        observation.completed &&
+        observation.responseId &&
+        doneMessage &&
+        channel.session.openConnectionId === connectionId
+      ) {
+        channel.chain = {
+          connectionId,
+          baseline: createResponsesChainBaseline(
+            requestBody,
+            observation.responseId,
+            assistantMessageToResponseItems(doneMessage, "chatgpt"),
+          ),
+        };
+      }
+      return;
+    } catch (error) {
+      if (chained && !observation.sawEvent && isReplayableChainFailure(error)) {
+        chained = undefined;
+        continue;
+      }
+      throw error;
     }
-  } finally {
-    await ephemeral?.session.dispose();
   }
 }
 
@@ -505,27 +464,35 @@ export function createChatGPTStream(
         const requestBody = useResponsesLite ? toResponsesLiteRequestBody(standardBody) : standardBody;
 
         if (useWebSocket) {
-          const scope = options.turnScope?.session ?? options.turnScope;
-          await streamChatGPTWebSocket({
-            stream,
-            model,
-            options,
-            requestBody,
-            slot: scope?.getOrCreate(channelKey, () => {
-              const value: ChatGPTWebSocketChannelSlot = {};
-              return { value, dispose: () => value.channel?.session.dispose() };
+          // The socket outlives turns, so it never carries one turn's x-codex-turn-state header.
+          const createChannel = (): ChatGPTWebSocketChannel => ({
+            session: createChatGPTWebSocketSessionForProvider({
+              resolveHeaders: () => resolveHeaders(false),
+              webSocketFactory: providerOptions.webSocketFactory ?? createDefaultWebSocket,
+              idleTimeoutMs: providerOptions.webSocketIdleTimeoutMs ?? CHATGPT_WEBSOCKET_IDLE_TIMEOUT_MS,
             }),
-            accountId: getTokens().account_id,
-            // Sockets outlive turns, so the turn token travels per request in client_metadata.
-            createSession: () =>
-              createChatGPTWebSocketSessionForProvider({
-                resolveHeaders: () => resolveHeaders(false),
-                webSocketFactory: providerOptions.webSocketFactory ?? createDefaultWebSocket,
-                idleTimeoutMs: providerOptions.webSocketIdleTimeoutMs ?? CHATGPT_WEBSOCKET_IDLE_TIMEOUT_MS,
-              }),
-            chainedFirstEventTimeoutMs:
-              providerOptions.webSocketChainedFirstEventTimeoutMs ?? CHATGPT_WEBSOCKET_CHAINED_FIRST_EVENT_TIMEOUT_MS,
           });
+          const scope = options.turnScope?.session ?? options.turnScope;
+          const ephemeral = scope ? undefined : createChannel();
+          const channel =
+            ephemeral ??
+            scope?.getOrCreate(channelKey, () => {
+              const value = createChannel();
+              return { value, dispose: () => value.session.dispose() };
+            });
+          try {
+            await streamChatGPTWebSocket({
+              stream,
+              model,
+              options,
+              requestBody,
+              channel: channel as ChatGPTWebSocketChannel,
+              chainedFirstEventTimeoutMs:
+                providerOptions.webSocketChainedFirstEventTimeoutMs ?? CHATGPT_WEBSOCKET_CHAINED_FIRST_EVENT_TIMEOUT_MS,
+            });
+          } finally {
+            await ephemeral?.session.dispose();
+          }
           transportState.consecutiveTransportFailures = 0;
           return;
         }
