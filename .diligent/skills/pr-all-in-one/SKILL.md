@@ -1,6 +1,6 @@
 ---
 name: pr-all-in-one
-description: Prepare or update a Diligent pull request from the current work, preserving user intent, decision context, verification logs, and useful review notes. Use when the user invokes pr-all-in-one, asks to open a PR, update an existing PR, prepare PR text, or wants a Korean-friendly PR workflow for this repository.
+description: Prepare or update a Diligent pull request from the current work, preserving user intent, decision context, verification logs, and useful review notes, written in clear Korean or English. Use when the user invokes pr-all-in-one, asks to open a PR, update an existing PR, prepare PR text, or wants a Korean-friendly PR workflow for this repository.
 ---
 
 # PR All In One
@@ -18,7 +18,7 @@ This is not a review-resolution automation. Diligent does not yet rely on heavy 
 - Do not auto-commit unrelated or ambiguous local changes. Ask when scope ownership is unclear.
 - Preserve existing PR body context, screenshots, recordings, uploaded artifacts, and useful verification history when updating an open PR.
 - Never delete existing content in the PR's screenshots/recordings section when updating a PR. Preserve it verbatim unless the user explicitly asks to remove it.
-- When the PR body is written in Korean, run the finished draft through `humanize-korean` exactly once before creating or updating the PR.
+- Write PR prose with `references/pr-writing-style.md` from the first draft: STE-style structure at about 80% strength plus fluent-korean grammar rules. Check the draft once and edit only rule violations.
 - Do not add AI signatures, generated-by footers, or co-author trailers unless the user explicitly asks.
 
 ## Branch Naming
@@ -166,6 +166,8 @@ Do not add a default `Related links` section. If the user explicitly provides an
 
 Use Korean for the PR body when appropriate, but keep command names, file paths, and code identifiers exact.
 
+Read `references/pr-writing-style.md` before drafting and write every section to its strength level. Write the body correctly in one draft instead of planning a later rewrite pass.
+
 Prefer writing the body to a temporary markdown file and using `--body-file` to avoid shell quoting issues:
 
 ```bash
@@ -173,18 +175,15 @@ gh pr create --draft --base <target> --title "<title>" --body-file /tmp/diligent
 gh pr edit <number-or-url> --title "<title>" --body-file /tmp/diligent-pr-body.md
 ```
 
-### 8. Humanize Korean PR Body
+### 8. Check PR Prose Once
 
-When the PR body contains Korean prose:
+Before `gh pr create` or `gh pr edit`, run the single check pass from `references/pr-writing-style.md` on the completed draft. This applies to Korean and English bodies.
 
-- Invoke the `humanize-korean` skill once on the completed PR body draft before `gh pr create` or `gh pr edit`.
-- Treat this as a style pass only. Do not add, remove, or reinterpret facts, commit details, verification results, issue references, file paths, command names, checkboxes, code identifiers, screenshots, or uploaded links.
-- Preserve Markdown structure exactly enough for GitHub rendering: headings, checklists, tables, fenced code blocks, links, and issue references must remain valid.
-- Use the humanized `final.md` result as the new PR body source after removing any trailing `<!-- HUMANIZE-SUMMARY ... -->` block from the body that will be uploaded to GitHub.
-- If the humanized output changes technical facts or breaks Markdown, discard the humanized output, keep the original draft, and note the failed style pass in `Review Notes`.
-- Do not run repeated humanization loops unless the user explicitly asks.
-
-If the PR body is English-only or body-only mode is being used to draft English text, skip this step.
+- Edit only sentences that break a named rule. Leave passing sentences unchanged.
+- Do not add, remove, or reinterpret facts, commit details, verification results, issue references, file paths, command names, checkboxes, code identifiers, hedges, screenshots, or uploaded links.
+- Keep Markdown valid for GitHub rendering: headings, checklists, tables, fenced code blocks, links, and issue references.
+- Compare the draft and the checked body for fact drift. Revert any sentence whose facts changed.
+- Do not run `humanize-korean` or repeated style loops unless the user explicitly asks.
 
 ### 9. Preserve Existing PR Context
 
@@ -192,7 +191,7 @@ When updating an open PR:
 
 - Preserve uploaded images, recordings, and user-attachment links.
 - Preserve all existing content under `Screenshots or Recording` or equivalent screenshot/video sections. Reinsert it verbatim into the updated PR body even when regenerating the rest of the description.
-- Preserve existing `Background and intent` content unless it is clearly stale.
+- Preserve existing `Background and intent` content unless it is clearly stale. Do not restyle preserved text unless its facts change.
 - Append new verification results instead of deleting useful prior logs.
 - Keep known limitations and follow-up notes visible.
 - Update the title and body so they describe all commits currently in the PR.
