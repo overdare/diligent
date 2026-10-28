@@ -97,18 +97,84 @@ describe("ChatGPT WebSocket chaining", () => {
     expect(harness.requests[0]?.socket.closed).toBe(true);
   });
 
-  test("replays the full input in the same call when the server rejects the previous response id", async () => {
+  const rejectionShapes: Array<{ name: string; frames: Record<string, unknown>[] }> = [
+    {
+      name: "an immediate error frame",
+      frames: [
+        {
+          type: "error",
+          status: 400,
+          error: { type: "invalid_request_error", message: "Invalid `previous_response_id`." },
+        },
+      ],
+    },
+    {
+      name: "an error frame after response.created",
+      frames: [
+        { type: "response.created", response: { id: "resp_rejected", status: "in_progress" } },
+        { type: "error", status: 400, error: { type: "invalid_request_error", code: "previous_response_not_found" } },
+      ],
+    },
+    {
+      name: "a response.failed frame",
+      frames: [
+        {
+          type: "response.failed",
+          response: {
+            id: "resp_rejected",
+            status: "failed",
+            error: { code: "previous_response_not_found", message: "Previous response not found." },
+          },
+        },
+      ],
+    },
+  ];
+
+  for (const shape of rejectionShapes) {
+    test(`replays the full input in the same call when the server rejects the chain with ${shape.name}`, async () => {
+      const sent: Record<string, unknown>[] = [];
+      const harness = createWebSocketHarness((body, socket) => {
+        sent.push(body);
+        if (body.previous_response_id) {
+          queueMicrotask(() => {
+            for (const frame of shape.frames) socket.emit(frame);
+          });
+          return;
+        }
+        completeWithId(socket, `resp_${sent.length}`);
+      });
+      const stream = createChatGPTStream(() => testTokens(), { webSocketFactory: harness.factory });
+      const session = createStreamSessionScope();
+
+      const first = await runTurn(stream, session, TEST_CONTEXT);
+      const secondContext = nextTurnContext(TEST_CONTEXT, doneMessage(first), "second question");
+      const second = await runTurn(stream, session, secondContext);
+
+      expect(second.some((event) => event.type === "error")).toBe(false);
+      expect(second.filter((event) => event.type === "start")).toHaveLength(1);
+      expect(sent).toHaveLength(3);
+      expect(sent[1]?.previous_response_id).toBe("resp_1");
+      expect(sent[2]?.previous_response_id).toBeUndefined();
+      expect(sent[2]?.input).toEqual(
+        sent[0] && [
+          ...(sent[0].input as unknown[]),
+          { role: "assistant", content: "answer resp_1" },
+          { type: "message", role: "user", content: [{ type: "input_text", text: "second question" }] },
+        ],
+      );
+      await session.dispose();
+    });
+  }
+
+  test("surfaces a chain rejection without replaying once output reached the consumer", async () => {
     const sent: Record<string, unknown>[] = [];
     const harness = createWebSocketHarness((body, socket) => {
       sent.push(body);
       if (body.previous_response_id) {
-        queueMicrotask(() =>
-          socket.emit({
-            type: "error",
-            status: 400,
-            error: { type: "invalid_request_error", message: "Invalid `previous_response_id`." },
-          }),
-        );
+        queueMicrotask(() => {
+          socket.emit({ type: "response.output_text.delta", delta: "partial" });
+          socket.emit({ type: "error", status: 400, error: { code: "previous_response_not_found" } });
+        });
         return;
       }
       completeWithId(socket, `resp_${sent.length}`);
@@ -117,14 +183,10 @@ describe("ChatGPT WebSocket chaining", () => {
     const session = createStreamSessionScope();
 
     const first = await runTurn(stream, session, TEST_CONTEXT);
-    const secondContext = nextTurnContext(TEST_CONTEXT, doneMessage(first), "second question");
-    const second = await runTurn(stream, session, secondContext);
+    const second = await runTurn(stream, session, nextTurnContext(TEST_CONTEXT, doneMessage(first), "again"));
 
-    expect(second.some((event) => event.type === "error")).toBe(false);
-    expect(second.filter((event) => event.type === "start")).toHaveLength(1);
-    expect(sent).toHaveLength(3);
-    expect(sent[2]?.previous_response_id).toBeUndefined();
-    expect((sent[2]?.input as unknown[]).length).toBeGreaterThan((sent[1]?.input as unknown[]).length);
+    expect(second.some((event) => event.type === "error")).toBe(true);
+    expect(sent).toHaveLength(2);
     await session.dispose();
   });
 

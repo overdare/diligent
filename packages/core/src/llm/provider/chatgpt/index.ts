@@ -288,7 +288,6 @@ function isReplayableChainFailure(error: unknown): boolean {
 }
 
 type ChatGPTWebSocketObservation = {
-  sawEvent: boolean;
   completed: boolean;
   responseId?: string;
 };
@@ -296,14 +295,22 @@ type ChatGPTWebSocketObservation = {
 async function* observeChatGPTWebSocketEvents(
   events: AsyncIterable<Record<string, unknown>>,
   observation: ChatGPTWebSocketObservation,
+  chained: boolean,
 ): AsyncGenerator<Record<string, unknown>> {
   for await (const payload of events) {
-    observation.sawEvent = true;
     const response = payload.response;
     if (response && typeof response === "object" && "id" in response && typeof response.id === "string") {
       observation.responseId = response.id;
     }
     if (payload.type === "response.completed") observation.completed = true;
+    // A chain rejection reported as response.failed must reach the replay path instead of the
+    // stream; otherwise it would surface as a terminal error for a request the full input can serve.
+    if (chained && payload.type === "response.failed" && response && typeof response === "object") {
+      const failure = JSON.stringify("error" in response ? response.error : undefined) ?? "";
+      if (/previous_response/i.test(failure)) {
+        throw new ProviderError(`ChatGPT rejected previous_response_id: ${failure}`, ProviderErrorType.Unknown, false);
+      }
+    }
     yield payload;
   }
 }
@@ -323,8 +330,11 @@ async function streamChatGPTWebSocket(input: {
 }): Promise<void> {
   const { stream, model, options, requestBody, channel } = input;
   let doneMessage: AssistantMessage | undefined;
+  // Replaying inside this call is safe only while nothing past `start` has reached the consumer.
+  let emittedEvents = 0;
   stream.subscribe((event) => {
     if (event.type === "done") doneMessage = event.message;
+    if (event.type !== "start") emittedEvents += 1;
   });
 
   let chained: ResponsesChainedInput | undefined =
@@ -344,7 +354,7 @@ async function streamChatGPTWebSocket(input: {
       options.signal,
       chained ? { firstEventTimeoutMs: input.chainedFirstEventTimeoutMs } : {},
     );
-    const observation: ChatGPTWebSocketObservation = { sawEvent: false, completed: false };
+    const observation: ChatGPTWebSocketObservation = { completed: false };
     try {
       const connectionId = await exchange.opened;
       if (!started) {
@@ -352,7 +362,7 @@ async function streamChatGPTWebSocket(input: {
         started = true;
       }
       await handleResponsesAPIEvents(
-        observeChatGPTWebSocketEvents(exchange.events, observation),
+        observeChatGPTWebSocketEvents(exchange.events, observation, chained !== undefined),
         stream,
         model,
         options.signal,
@@ -374,7 +384,7 @@ async function streamChatGPTWebSocket(input: {
       }
       return;
     } catch (error) {
-      if (chained && !observation.sawEvent && isReplayableChainFailure(error)) {
+      if (chained && emittedEvents === 0 && isReplayableChainFailure(error)) {
         chained = undefined;
         continue;
       }
