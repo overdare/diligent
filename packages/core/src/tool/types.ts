@@ -57,6 +57,8 @@ export type NestedToolEvent =
 // D020: Tool result
 export interface ToolResult {
   output: string;
+  /** Finish successfully after the current tool batch, without sampling another response. */
+  endTurn?: boolean;
   /** Optional image content blocks returned alongside text. Provider support varies — Anthropic embeds them in tool_result content; other providers fall back to text-only. */
   outputImages?: ImageBlock[];
   render?: ToolRenderPayloadLike;

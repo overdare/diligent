@@ -27,6 +27,7 @@ describe("bash tool", () => {
     expect(result.render?.outputSummary).toBe("Command failed (exit 42)");
     expect(result.render?.blocks[0]).toMatchObject({ type: "command", isError: true });
     expect(result.metadata?.exitCode).toBe(42);
+    expect(result.metadata?.error).toBe(true);
   });
 
   test("timeout → kills process, timeout message", async () => {
@@ -34,6 +35,7 @@ describe("bash tool", () => {
     expect(result.output).toContain("Timed out");
     expect(result.render?.outputSummary).toBe("Command timed out");
     expect(result.metadata?.timedOut).toBe(true);
+    expect(result.metadata?.error).toBe(true);
   }, 5000);
 
   test("AbortSignal → kills process, aborted message", async () => {
@@ -44,6 +46,7 @@ describe("bash tool", () => {
     expect(result.output).toContain("Aborted");
     expect(result.render?.outputSummary).toBe("Command aborted");
     expect(result.metadata?.aborted).toBe(true);
+    expect(result.metadata?.error).toBe(true);
   }, 5000);
 
   test("stderr output → merged with [stderr] prefix", async () => {

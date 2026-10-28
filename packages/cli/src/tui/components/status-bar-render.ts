@@ -2,6 +2,7 @@
 
 import { sep } from "node:path";
 import type { Mode } from "@diligent/protocol";
+import { formatGoalDuration, goalElapsedMs } from "@diligent/runtime/client";
 import { t } from "../theme";
 import type { StatusBarStore } from "./status-bar-store";
 
@@ -112,7 +113,7 @@ export function renderStatusBar(store: StatusBarStore, width: number): string[] 
       ? `${formatTokensCompact(info.goal.tokensUsed)}/${formatTokensCompact(info.goal.tokenBudget)}`
       : `${formatTokensCompact(info.goal.tokensUsed)} tokens`;
     leftParts.push(
-      `goal:${info.goal.status} ${tokens} ${info.goal.turnsUsed}/${info.goal.maxTurns ?? "unlimited"} runs`,
+      `goal:${info.goal.status} ${formatGoalDuration(goalElapsedMs({ ...info.goal, activeTimeMs: info.goal.activeTimeMs ?? 0 }))} ${tokens}${info.goal.maxTurns === undefined ? "" : ` ${info.goal.turnsUsed}/${info.goal.maxTurns} runs`}`,
     );
   }
 

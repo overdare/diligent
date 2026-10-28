@@ -374,7 +374,13 @@ export async function dispatchClientRequest(
     case DILIGENT_CLIENT_REQUEST_METHODS.EXPERIMENTS_SET: {
       const manager = ctx.experimentConfig;
       if (!manager) throw Object.assign(new Error("Experiment config not available"), { code: -32601 });
-      return handleExperimentsSet(manager, ctx.reloadConfig, ctx.threadHandlersCtx.threads, request.params);
+      return handleExperimentsSet(
+        manager,
+        ctx.reloadConfig,
+        ctx.threadHandlersCtx.threads,
+        request.params,
+        () => ctx.threadHandlersCtx.getGoalsConfig?.()?.enabled !== false,
+      );
     }
 
     case DILIGENT_CLIENT_REQUEST_METHODS.SUBAGENTS_LIST: {
@@ -433,7 +439,11 @@ export async function dispatchClientRequest(
     }
 
     case DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_RELOAD: {
-      const result = await handleConfigReload(ctx.reloadConfig, ctx.threadHandlersCtx.threads);
+      const result = await handleConfigReload(
+        ctx.reloadConfig,
+        ctx.threadHandlersCtx.threads,
+        () => ctx.threadHandlersCtx.getGoalsConfig?.()?.enabled !== false,
+      );
       if (ctx.threadHandlersCtx.getGoalsConfig?.()?.enabled === false) {
         await Promise.all(
           [...ctx.threadHandlersCtx.threads.values()].map((runtime) => runtime.goal?.pause("disabled")),

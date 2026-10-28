@@ -124,7 +124,14 @@ for (const outcome of ["compacted", "skipped", "failed", "paused"] as const) {
       let resumed = 0;
       runtime.manager.runWithOutcome = async () => {
         resumed++;
-        await runtime.goal!.report(runtime.goalScope!.identity, "complete", "Remaining work verified");
+        runtime.goal!.observe(runtime.goalScope!.identity, {
+          id: "proof",
+          kind: "answer",
+          text: "Remaining work verified",
+        });
+        await runtime.goal!.report(runtime.goalScope!.identity, "complete", "Remaining work verified", {
+          verification: [{ requirement: "Finish", sourceId: "proof", quote: "Remaining work verified" }],
+        });
         return { status: "completed" };
       };
       compacting = server.handleRequest(TEST_CONNECTION_ID, {

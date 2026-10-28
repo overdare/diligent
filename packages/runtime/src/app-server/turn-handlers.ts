@@ -268,7 +268,7 @@ export async function handleTurnStart(
     if (!runtime.goal) throw new Error("Goal mode is unavailable");
     if (creation.pending || runtime.goal.read().goal)
       throw new Error("A goal already exists or is pending; use /goal to manage it");
-    creation.pending = { ...input };
+    creation.pending = { objective: input.objective };
     return { status: "pending", ...creation.pending };
   };
   const creation: NonNullable<ThreadRuntime["goalCreation"]> = { connectionId, create: createGoal };
@@ -336,9 +336,22 @@ export async function handleTurnStart(
         let coreTurnId = "";
         unsubscribeUsage = runtime.manager.subscribe((event) => {
           if (event.type === "turn_start") coreTurnId = event.turnId;
+          if (event.type === "tool_end" && !["create_goal", "get_goal", "update_goal"].includes(event.toolName)) {
+            goal!.observe(scope!.identity, {
+              id: event.toolCallId,
+              kind: "tool",
+              text: event.output,
+              isError: event.isError,
+            });
+          }
           if (event.type === "tool_start" || event.type === "compaction_end" || event.type === "steering_injected")
             hasActivity = true;
           if (event.type === "message_end" && event.message.role === "assistant") {
+            const text = event.message.content
+              .filter((block) => block.type === "text")
+              .map((block) => block.text)
+              .join("\n");
+            goal!.observe(scope!.identity, { id: event.itemId, kind: "answer", text });
             hasActivity ||= event.message.content.some((block) =>
               block.type === "text"
                 ? !!block.text.trim()

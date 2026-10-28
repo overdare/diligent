@@ -3,7 +3,7 @@
 import type { GoalChange, ThreadGoal, ThreadGoalResponse } from "@diligent/protocol";
 
 const GOAL_USAGE =
-  "/goal [set] <objective> [--tokens N] [--turns N|unlimited] | edit <objective> [--tokens N] [--turns N|unlimited] | pause | resume | clear";
+  "/goal [set] <objective> [--tokens N] [--turns N|unlimited] | edit [objective] [--tokens N|off] [--turns N|off] | pause | resume | clear (--runs aliases --turns)";
 
 function requireCurrentGoal(goal: ThreadGoal | null | undefined): ThreadGoal {
   if (!goal) {
@@ -23,24 +23,28 @@ function parsePositiveInteger(flag: "--tokens" | "--turns", value: string | unde
   return parsed;
 }
 
-function parseObjectiveAndLimits(tokens: string[]): {
-  objective: string;
-  tokenBudget?: number;
+function parseObjectiveAndLimits(
+  tokens: string[],
+  editing = false,
+): {
+  objective?: string;
+  tokenBudget?: number | null;
   maxTurns?: number | null;
 } {
   const objectiveParts: string[] = [];
-  let tokenBudget: number | undefined;
+  let tokenBudget: number | null | undefined;
   let maxTurns: number | null | undefined;
 
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
-    if (token === "--tokens" || token === "--turns") {
+    if (token === "--tokens" || token === "--turns" || token === "--runs") {
+      const remove = ["off", "unlimited"].includes(tokens[index + 1]);
       if (token === "--tokens") {
         if (tokenBudget !== undefined) throw new Error("--tokens may only be specified once.");
-        tokenBudget = parsePositiveInteger(token, tokens[index + 1]);
+        tokenBudget = editing && remove ? null : parsePositiveInteger(token, tokens[index + 1]);
       } else {
         if (maxTurns !== undefined) throw new Error("--turns may only be specified once.");
-        maxTurns = tokens[index + 1] === "unlimited" ? null : parsePositiveInteger(token, tokens[index + 1]);
+        maxTurns = remove ? null : parsePositiveInteger("--turns", tokens[index + 1]);
       }
       index += 1;
       continue;
@@ -52,11 +56,13 @@ function parseObjectiveAndLimits(tokens: string[]): {
   }
 
   const objective = objectiveParts.join(" ").trim();
-  if (!objective) {
+  if (!objective && !editing) {
     throw new Error(`A goal objective is required. Usage: ${GOAL_USAGE}`);
   }
+  if (editing && !objective && tokenBudget === undefined && maxTurns === undefined)
+    throw new Error(`Supply an objective or limit to edit. Usage: ${GOAL_USAGE}`);
   return {
-    objective,
+    ...(objective ? { objective } : {}),
     ...(tokenBudget === undefined ? {} : { tokenBudget }),
     ...(maxTurns === undefined ? {} : { maxTurns }),
   };
@@ -84,7 +90,7 @@ export function parseGoalCommand(args: string | undefined, currentGoal?: ThreadG
     const goal = requireCurrentGoal(currentGoal);
     return {
       action: "edit",
-      ...parseObjectiveAndLimits(tokens.slice(1)),
+      ...parseObjectiveAndLimits(tokens.slice(1), true),
       expectedGoalId: goal.id,
       expectedRevision: goal.revision,
     };
@@ -95,6 +101,8 @@ export function parseGoalCommand(args: string | undefined, currentGoal?: ThreadG
   return {
     action: "set",
     ...parsed,
+    objective: parsed.objective!,
+    tokenBudget: parsed.tokenBudget ?? undefined,
     ...(currentGoal ? { expectedRevision: currentGoal.revision } : {}),
   };
 }

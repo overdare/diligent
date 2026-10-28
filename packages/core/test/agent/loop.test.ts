@@ -171,6 +171,66 @@ async function runAgent(
 
 describe("Agent loop", () => {
   test.each([
+    "handoff",
+    "companion",
+  ])("endTurn distinguishes a failed handoff from a recoverable companion failure: %s", async (failed) => {
+    const stream = createMockStreamFunction([
+      makeAssistant(
+        [
+          { type: "tool_call", id: "handoff", name: "handoff", input: {} },
+          { type: "tool_call", id: "companion", name: "companion", input: {} },
+        ],
+        "tool_use",
+      ),
+      makeAssistant([{ type: "text", text: "Recover the failed handoff" }]),
+    ]);
+    const tools: Tool[] = ["handoff", "companion"].map((name) => ({
+      name,
+      description: name,
+      parameters: z.object({}),
+      execute: async () => ({ output: name, endTurn: name === "handoff", metadata: { error: name === failed } }),
+    }));
+    const agent = new Agent(TEST_MODEL, [], tools, { llmMsgStreamFn: stream });
+    const { result, events } = await runAgent(agent, { role: "user", content: "Start", timestamp: Date.now() });
+    expect(stream.contexts).toHaveLength(failed === "handoff" ? 2 : 1);
+    expect(result.filter((message) => message.role === "tool_result")).toHaveLength(2);
+    expect(events.find((event) => event.type === "tool_end" && event.toolName === failed)).toMatchObject({
+      isError: true,
+    });
+  });
+  test.each([
+    false,
+    true,
+  ])("endTurn completes the entire tool batch without another sample (parallel=%s)", async (supportParallel) => {
+    const calls: string[] = [];
+    const stream = createMockStreamFunction([
+      makeAssistant(
+        [
+          { type: "tool_call", id: "handoff", name: "handoff", input: {} },
+          { type: "tool_call", id: "other", name: "other", input: {} },
+        ],
+        "tool_use",
+      ),
+      makeAssistant([{ type: "text", text: "Must not sample" }]),
+    ]);
+    const tools: Tool[] = ["handoff", "other"].map((name) => ({
+      name,
+      description: name,
+      parameters: z.object({}),
+      supportParallel,
+      execute: async () => {
+        calls.push(name);
+        return { output: name, endTurn: name === "handoff" };
+      },
+    }));
+    const agent = new Agent(TEST_MODEL, [], tools, { llmMsgStreamFn: stream });
+    const { events, result } = await runAgent(agent, { role: "user", content: "Start", timestamp: Date.now() });
+    expect(calls).toEqual(["handoff", "other"]);
+    expect(stream.contexts).toHaveLength(1);
+    expect(result.filter((message) => message.role === "tool_result")).toHaveLength(2);
+    expect(events.find((event) => event.type === "agent_end")).toMatchObject({ stopReason: "completed" });
+  });
+  test.each([
     false,
     true,
   ])("shared tools receive the executing session in parallel=%s batches", async (supportParallel) => {

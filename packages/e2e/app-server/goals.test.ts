@@ -7,7 +7,12 @@ import type { ProviderEvent, ProviderResult } from "@diligent/core/provider-cont
 import type { ContentBlock, ThreadGoalResponse } from "@diligent/protocol";
 import type { RuntimeConfig, StreamFunction } from "@diligent/runtime";
 import { createPermissionEngine, EventStream } from "@diligent/runtime";
-import { createSimpleStream, createSlowStream, createToolUseStream } from "./helpers/fake-stream";
+import {
+  createGoalCompletionStream,
+  createSimpleStream,
+  createSlowStream,
+  createToolUseStream,
+} from "./helpers/fake-stream";
 import { createProtocolClient, type ProtocolTestClient } from "./helpers/protocol-client";
 import { createTestServer } from "./helpers/server-factory";
 
@@ -42,12 +47,71 @@ async function setGoal(client: ProtocolTestClient, threadId: string, extra = {})
     ...extra,
   })) as ThreadGoalResponse;
 }
-test("automatic continuation stops at evidence-backed completion without fabricating user turns", async () => {
-  const first = createSimpleStream("Need another step");
-  const complete = createToolUseStream(
-    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verification succeeded" } }],
+test("completion rejects failed and control-tool citations but accepts an observed successful result", async () => {
+  const verification = (sourceId: string, quote: string) => ({
+    status: "complete",
+    evidence: "Checked the output",
+    verification: [{ requirement: "Produce VERIFIED", sourceId, quote }],
+  });
+  const stream = createToolUseStream(
+    [
+      { id: "failure", name: "bash", input: { command: "printf FAILED; exit 1" } },
+      { id: "reject-failure", name: "update_goal", input: verification("failure", "FAILED") },
+      { id: "inspect", name: "get_goal", input: {} },
+      { id: "reject-control", name: "update_goal", input: verification("inspect", "active") },
+      { id: "success", name: "bash", input: { command: "printf VERIFIED" } },
+      { id: "accept-success", name: "update_goal", input: verification("success", "VERIFIED") },
+    ],
     "Done",
   );
+  const { client, threadId } = await setup(stream);
+  await setGoal(client, threadId);
+  await client.waitForNotification("turn/completed");
+  const events = client.notifications.flatMap((n) =>
+    n.method === "agent/event" && n.params.event.type === "tool_end" ? [n.params.event] : [],
+  );
+  for (const id of ["reject-failure", "reject-control"])
+    expect(events.find((event) => event.toolCallId === id)).toMatchObject({
+      isError: true,
+      output: expect.stringContaining("evidence source"),
+    });
+  expect(events.find((event) => event.toolCallId === "accept-success")).toMatchObject({ isError: false });
+  const result = (await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse;
+  expect(result.goal).toMatchObject({
+    status: "complete",
+    completionEvidence: expect.stringContaining("VERIFIED [success]"),
+  });
+});
+
+test("a blocker claim ends its run and stops only after distinct consecutive revalidations", async () => {
+  let calls = 0;
+  const { client, threadId } = await setup((...args) => {
+    const run = calls++;
+    if (run < 3) return createSimpleStream("Still working")(...args);
+    return createToolUseStream(
+      [
+        {
+          id: `blocked-${run}`,
+          name: "update_goal",
+          input: {
+            status: "blocked",
+            blockerKey: "missing-access",
+            evidence: `Access rechecked on run ${run + 1}`,
+          },
+        },
+      ],
+      "Should not sample",
+    )(...args);
+  });
+  await setGoal(client, threadId);
+  await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "blocked");
+  const result = (await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse;
+  expect(result.goal).toMatchObject({ status: "blocked", turnsUsed: 6, reason: "Access rechecked on run 6" });
+  expect(calls).toBe(6);
+});
+test("automatic continuation stops at evidence-backed completion without fabricating user turns", async () => {
+  const first = createSimpleStream("Need another step");
+  const complete = createGoalCompletionStream("Verification succeeded");
   let calls = 0;
   const { client, threadId, cwd } = await setup((...args) => (calls++ === 0 ? first : complete)(...args));
   await setGoal(client, threadId);
@@ -74,10 +138,7 @@ test("automatic continuation stops at evidence-backed completion without fabrica
 
 test("notification transport failures do not stop automatic goal continuation", async () => {
   const first = createSimpleStream("Need another step");
-  const done = createToolUseStream(
-    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verified" } }],
-    "Done",
-  );
+  const done = createGoalCompletionStream("Verified");
   let calls = 0;
   const { client, threadId, server } = await setup((...args) => (calls++ === 0 ? first : done)(...args));
   const disconnect = server.connect("broken-notifications", {
@@ -105,10 +166,7 @@ test("notification transport failures do not stop automatic goal continuation", 
 
 test("an unresponsive notification transport cannot indefinitely stall goal runs", async () => {
   const first = createSimpleStream("Need another step");
-  const done = createToolUseStream(
-    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verified" } }],
-    "Done",
-  );
+  const done = createGoalCompletionStream("Verified");
   let calls = 0;
   const { client, threadId, server } = await setup((...args) => (calls++ === 0 ? first : done)(...args));
   let release!: () => void;
@@ -129,12 +187,7 @@ test("an unresponsive notification transport cannot indefinitely stall goal runs
   }
 }, 10000);
 test("token budget aborts before the sampled tool callback can report completion", async () => {
-  const { client, threadId } = await setup(
-    createToolUseStream(
-      [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Must not execute" } }],
-      "Done",
-    ),
-  );
+  const { client, threadId } = await setup(createGoalCompletionStream("Must not execute"));
   await setGoal(client, threadId, { tokenBudget: 2 });
   await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "budget_limited");
   const result = (await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse;
@@ -157,10 +210,7 @@ test("runtime stops three empty continuations without relying on model assertion
 test("nonempty assistant output without tools does not trip the empty-run breaker", async () => {
   let calls = 0;
   const text = createSimpleStream("The analysis identifies the next requirement.");
-  const complete = createToolUseStream(
-    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "All requirements verified" } }],
-    "Done",
-  );
+  const complete = createGoalCompletionStream("All requirements verified");
   const { client, threadId } = await setup((...args) => (calls++ < 4 ? text : complete)(...args));
   await setGoal(client, threadId);
   await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "complete");
@@ -180,10 +230,7 @@ for (const block of [
 ] satisfies ContentBlock[]) {
   test(`reasoning activity survives the empty-run breaker (${block.thinking ? "visible" : "encrypted"})`, async () => {
     const empty = createSimpleStream("");
-    const done = createToolUseStream(
-      [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verified" } }],
-      "Done",
-    );
+    const done = createGoalCompletionStream("Verified");
     let calls = 0;
     const { client, threadId } = await setup((...args) => {
       if (calls++ >= 4) return done(...args);
@@ -205,10 +252,7 @@ for (const block of [
 
 test("goal approval is redelivered after reconnect and cannot execute before an explicit decision", async () => {
   let write: ReturnType<typeof createToolUseStream>;
-  const done = createToolUseStream(
-    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verified" } }],
-    "Done",
-  );
+  const done = createGoalCompletionStream("Verified");
   let calls = 0;
   const { client, threadId, server, cwd } = await setup((...args) => (calls++ < 2 ? write : done)(...args), true, {
     permissionEngine: createPermissionEngine([]),
@@ -254,10 +298,7 @@ test("goal approval is redelivered after reconnect and cannot execute before an 
 test("disconnect and reconnect preserve the active goal without another resume command", async () => {
   let calls = 0;
   const slow = createSlowStream("Analyzing", 10);
-  const complete = createToolUseStream(
-    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verified after reconnect" } }],
-    "Done",
-  );
+  const complete = createGoalCompletionStream("Verified after reconnect");
   const { client, threadId, server, cwd } = await setup((...args) => (calls++ === 0 ? slow : complete)(...args));
   await setGoal(client, threadId);
   await client.waitFor((n) => n.method === "agent/event" && n.params.event.type === "message_start");
@@ -291,10 +332,7 @@ test("goal questions survive disconnect and are answered after resubscription", 
     ],
     "Answer received",
   );
-  const complete = createToolUseStream(
-    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Answered and verified" } }],
-    "Done",
-  );
+  const complete = createGoalCompletionStream("Answered and verified");
   let calls = 0;
   const { client, threadId, server, cwd } = await setup((...args) => (calls++ < 2 ? question : complete)(...args));
   let requested!: () => void;
@@ -326,10 +364,7 @@ test("idle offline goals defer the next run and resume on reconnect without rese
   let release!: () => Promise<void>;
   let calls = 0;
   const text = createSimpleStream("Analysis complete; implementation remains");
-  const complete = createToolUseStream(
-    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Verified" } }],
-    "Done",
-  );
+  const complete = createGoalCompletionStream("Verified");
   let sampled!: () => void;
   const sampling = new Promise<void>((resolve) => {
     sampled = resolve;
@@ -480,10 +515,7 @@ test("ordinary user input takes priority without pausing the active goal", async
     "User request handled",
   );
   let calls = 0;
-  const complete = createToolUseStream(
-    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Follow-up verified" } }],
-    "Done",
-  );
+  const complete = createGoalCompletionStream("Follow-up verified");
   const { client, threadId } = await setup((...args) => (calls++ === 0 ? stream : complete)(...args));
   let requested!: () => void;
   const pending = new Promise<void>((resolve) => {
@@ -514,10 +546,7 @@ test("child completion wakes the goal and child usage remains attributed after t
     [{ id: "spawn", name: "spawn_agent", input: { message: "Inspect the implementation" } }],
     "Delegated",
   );
-  const done = createToolUseStream(
-    [{ id: "done", name: "update_goal", input: { status: "complete", evidence: "Child inspection finished" } }],
-    "Done",
-  );
+  const done = createGoalCompletionStream("Child inspection finished");
   const simple = createSimpleStream("Inspected");
   const { client, threadId } = await setup((...args) => {
     if (args[1].tools.some((tool) => "name" in tool && tool.name === "get_goal"))

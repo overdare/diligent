@@ -33,7 +33,8 @@ test("renders uncapped runs without invalid progress and exposes stop reasons wh
       onClear={() => {}}
     />,
   );
-  expect(html).toContain("6 / unlimited runs");
+  expect(html).not.toContain("runs");
+  expect(html).not.toContain("width:");
   expect(html).toContain("restart");
   expect(html).not.toContain("NaN");
 });

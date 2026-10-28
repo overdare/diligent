@@ -20,6 +20,8 @@ export interface StatusBarInfo {
     tokenBudget?: number;
     turnsUsed: number;
     maxTurns?: number;
+    activeTimeMs?: number;
+    runStartedAt?: number;
   };
 }
 

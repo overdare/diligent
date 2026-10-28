@@ -68,7 +68,7 @@ export async function handleSubagentsSet(
     );
   }
   await writeGlobalAgentsConfig({ overrides: params.overrides });
-  await handleConfigReload(reloadConfig, ctx.threads);
+  await handleConfigReload(reloadConfig, ctx.threads, () => ctx.getGoalsConfig?.()?.enabled !== false);
   return buildSubagentsListResponse(await manager.resolve(cwd));
 }
 

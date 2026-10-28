@@ -26,17 +26,17 @@ describe("create_goal", () => {
     ]);
   });
 
-  test("uses the shared objective bounds and safe positive integer limits", () => {
+  test("uses shared objective bounds and rejects model-supplied execution limits", () => {
     const tool = createGoalTools(host(async (input) => ({ status: "pending", ...input })))[0];
-    expect(
-      tool.parameters.safeParse({ objective: "Ship the verified fix", tokenBudget: 5000, maxTurns: 8 }).success,
-    ).toBe(true);
+    expect(tool.parameters.safeParse({ objective: "Ship the verified fix" }).success).toBe(true);
     for (const input of [
       { objective: "   " },
       { objective: "x".repeat(4001) },
       { objective: "Ship", tokenBudget: 0 },
       { objective: "Ship", maxTurns: 1.5 },
       { objective: "Ship", maxTurns: Number.MAX_SAFE_INTEGER + 1 },
+      { objective: "Ship", maxTurns: 3 },
+      { objective: "Ship", tokenBudget: 5000 },
     ]) {
       expect(tool.parameters.safeParse(input).success).toBe(false);
     }
@@ -53,19 +53,18 @@ describe("create_goal", () => {
     const controller = new AbortController();
 
     const result = await tool.execute(
-      { objective: "Run tests until the regression is fixed", tokenBudget: 1200, maxTurns: 4 },
+      { objective: "Run tests until the regression is fixed" },
       context(controller.signal),
     );
 
     expect(received).toEqual({
-      input: { objective: "Run tests until the regression is fixed", tokenBudget: 1200, maxTurns: 4 },
+      input: { objective: "Run tests until the regression is fixed" },
       signal: controller.signal,
     });
+    expect(result.endTurn).toBe(true);
     expect(JSON.parse(result.output)).toEqual({
       status: "pending",
       objective: "Run tests until the regression is fixed",
-      tokenBudget: 1200,
-      maxTurns: 4,
     });
   });
 
@@ -101,7 +100,7 @@ describe("create_goal", () => {
     expect(tool.description).toContain("ordinary task");
     expect(tool.description).toContain("quoted");
     expect(tool.description).toContain("finish the current response");
-    expect(tool.description).toContain("explicitly specified");
+    expect(tool.description).toContain("never invent execution limits");
   });
 });
 
@@ -109,6 +108,7 @@ test("active-goal prompt keeps goal controls user-owned while allowing explicit 
   const prompt = goalPrompt({
     controller: () =>
       ({
+        audit: () => ({}),
         read: () => ({
           goal: { id: "g", objective: "Finish", status: "active" },
           sequence: 1,

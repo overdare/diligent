@@ -22,6 +22,112 @@ function control(controller: GoalController) {
   const goal = controller.read().goal!;
   return { expectedGoalId: goal.id, expectedRevision: goal.revision };
 }
+test("elapsed time freezes on pause and stale or repeated settlement cannot double charge", async () => {
+  const { controller } = await setup();
+  const clock = spyOn(Date, "now").mockReturnValue(1000);
+  try {
+    const options = { idle: true, enabled: true, mode: "default" };
+    await controller.change({ action: "set", objective: "Finish" }, options);
+    const first = (await controller.beginRun())!;
+    expect(controller.read().goal?.runStartedAt).toBe(1000);
+    clock.mockReturnValue(1500);
+    await controller.pause("user");
+    clock.mockReturnValue(3000);
+    await controller.settle(first, { status: "interrupted" }, true);
+    expect(controller.read().goal).toMatchObject({ activeTimeMs: 500, runStartedAt: undefined });
+    await controller.change({ action: "resume", ...control(controller) }, options);
+    const next = (await controller.beginRun())!;
+    clock.mockReturnValue(4000);
+    const revision = controller.read().goal!.revision;
+    await controller.settle(first, { status: "interrupted" }, true);
+    expect(controller.read().goal!.revision).toBe(revision);
+    expect(controller.read().goal?.runStartedAt).toBe(3000);
+    await controller.settle(next, { status: "completed" }, true);
+    const settledRevision = controller.read().goal!.revision;
+    clock.mockReturnValue(6000);
+    await controller.settle(next, { status: "completed" }, true);
+    expect(controller.read().goal!.revision).toBe(settledRevision);
+    expect(controller.read().goal?.activeTimeMs).toBe(1500);
+  } finally {
+    clock.mockRestore();
+  }
+});
+test("a first blocker claim on a later run and duplicate claims do not pass the audit", async () => {
+  const { controller } = await setup();
+  await controller.change({ action: "set", objective: "Finish" }, { idle: true, enabled: true, mode: "default" });
+  for (let i = 0; i < 3; i++) await controller.settle((await controller.beginRun())!, { status: "completed" }, true);
+  const run = (await controller.beginRun())!;
+  for (let i = 0; i < 3; i++)
+    await controller.report(run.identity, "blocked", "Missing access", { blockerKey: "access" });
+  expect(controller.read().goal?.status).toBe("active");
+  expect(controller.audit().blocker?.consecutiveRuns).toBe(1);
+});
+
+test("blocker audit resets on a changed blocker, a claim-free run, and resume", async () => {
+  const { controller } = await setup();
+  const options = { idle: true, enabled: true, mode: "default" };
+  await controller.change({ action: "set", objective: "Finish" }, options);
+  for (const key of ["access", "access", undefined, "access", "network", "network", "network"]) {
+    const run = (await controller.beginRun())!;
+    if (key) await controller.report(run.identity, "blocked", `Revalidated ${key}`, { blockerKey: key });
+    await controller.settle(run, { status: "completed" }, true);
+    if (!key) expect(controller.audit().blocker).toBeUndefined();
+    if (key !== "network") expect(controller.read().goal?.status).toBe("active");
+  }
+  expect(controller.read().goal?.status).toBe("blocked");
+  await controller.change({ action: "resume", ...control(controller) }, options);
+  const run = (await controller.beginRun())!;
+  await controller.report(run.identity, "blocked", "Still missing", { blockerKey: "network" });
+  expect(controller.read().goal?.status).toBe("active");
+});
+
+test("completion requires an observed successful source and a requirement-specific excerpt", async () => {
+  const { controller } = await setup();
+  await controller.change(
+    { action: "set", objective: "Explain the fix" },
+    { idle: true, enabled: true, mode: "default" },
+  );
+  const run = (await controller.beginRun())!;
+  const verification = [{ requirement: "Explain the fix", sourceId: "answer", quote: "The fix preserves ownership." }];
+  await expect(controller.report(run.identity, "complete", "Verified", { verification })).rejects.toThrow("source");
+  controller.observe(run.identity, { id: "failed", kind: "tool", text: "The fix preserves ownership.", isError: true });
+  await expect(
+    controller.report(run.identity, "complete", "Verified", {
+      verification: [{ ...verification[0], sourceId: "failed" }],
+    }),
+  ).rejects.toThrow("source");
+  controller.observe(run.identity, { id: "answer", kind: "answer", text: "The fix preserves ownership." });
+  await expect(
+    controller.report(run.identity, "complete", "Verified", {
+      verification: [{ ...verification[0], quote: "Invented" }],
+    }),
+  ).rejects.toThrow("excerpt");
+  await controller.report(run.identity, "complete", "Verified", { verification });
+  expect(controller.read().goal).toMatchObject({
+    status: "complete",
+    completionEvidence: expect.stringContaining("Explain the fix"),
+  });
+});
+
+test("limit-only edits preserve the objective and charged usage", async () => {
+  const { controller } = await setup();
+  const options = { idle: true, enabled: true, mode: "default" };
+  await controller.change({ action: "set", objective: "Finish", tokenBudget: 1, maxTurns: 1 }, options);
+  const run = (await controller.beginRun())!;
+  run.recordUsage({
+    sessionId: "session",
+    coreTurnId: "a",
+    inputTokens: 1,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  });
+  await controller.settle(run, { status: "interrupted" }, true);
+  await controller.change({ action: "edit", tokenBudget: null, maxTurns: null, ...control(controller) }, options);
+  await controller.change({ action: "resume", ...control(controller) }, options);
+  expect(controller.read().goal).toMatchObject({ objective: "Finish", tokensUsed: 1, turnsUsed: 1, status: "active" });
+  expect(controller.read().goal?.tokenBudget).toBeUndefined();
+});
 test("uncapped goals continue beyond the former implicit twenty-run limit", async () => {
   const { controller } = await setup();
   await controller.change(
@@ -55,16 +161,18 @@ test("blocked reports require three goal runs and resuming starts a fresh audit"
   await controller.change({ action: "set", objective: "Finish" }, options);
   for (let i = 0; i < 2; i++) {
     const run = (await controller.beginRun())!;
-    await expect(controller.report(run.identity, "blocked", "Missing access")).rejects.toThrow("three");
+    await controller.report(run.identity, "blocked", "Missing access", { blockerKey: "access" });
+    expect(controller.read().goal?.status).toBe("active");
     await controller.settle(run, { status: "completed" }, true);
   }
   const third = (await controller.beginRun())!;
-  await controller.report(third.identity, "blocked", "Missing access");
+  await controller.report(third.identity, "blocked", "Missing access", { blockerKey: "access" });
   expect(controller.read().goal?.status).toBe("blocked");
   await controller.settle(third, { status: "completed" }, true);
   await controller.change({ action: "resume", ...control(controller) }, options);
   const resumed = (await controller.beginRun())!;
-  await expect(controller.report(resumed.identity, "blocked", "Missing access")).rejects.toThrow("three");
+  await controller.report(resumed.identity, "blocked", "Missing access", { blockerKey: "access" });
+  expect(controller.read().goal?.status).toBe("active");
 });
 test("pause invalidates in-flight completion and restart never automatically resumes", async () => {
   const { dir, controller } = await setup();
@@ -351,7 +459,10 @@ test("completed goals require guarded replacement, not edits preserving stale su
   const options = { idle: true, enabled: true, mode: "default" };
   await controller.change({ action: "set", objective: "First" }, options);
   const run = (await controller.beginRun())!;
-  await controller.report(run.identity, "complete", "Verified first");
+  controller.observe(run.identity, { id: "verified", kind: "tool", text: "Verified first" });
+  await controller.report(run.identity, "complete", "Verified first", {
+    verification: [{ requirement: "Finish", sourceId: "verified", quote: "Verified first" }],
+  });
   await controller.settle(run, { status: "completed" }, true);
   await expect(controller.change({ action: "set", objective: "Second" }, options)).rejects.toThrow("revision");
   await expect(
@@ -381,7 +492,10 @@ test("completion does not exempt the final response from its token cap", async (
     { idle: true, enabled: true, mode: "default" },
   );
   const run = (await controller.beginRun())!;
-  await controller.report(run.identity, "complete", "Verified");
+  controller.observe(run.identity, { id: "verified", kind: "tool", text: "Verified" });
+  await controller.report(run.identity, "complete", "Verified", {
+    verification: [{ requirement: "Finish", sourceId: "verified", quote: "Verified" }],
+  });
   run.recordUsage({
     sessionId: "session",
     coreTurnId: "final",
@@ -395,7 +509,7 @@ test("completion does not exempt the final response from its token cap", async (
   expect((await controller.snapshot()).goal).toMatchObject({
     status: "complete",
     tokensUsed: 6,
-    completionEvidence: "Verified",
+    completionEvidence: expect.stringContaining("Verified"),
   });
 });
 

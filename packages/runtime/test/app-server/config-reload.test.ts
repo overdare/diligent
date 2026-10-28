@@ -37,6 +37,39 @@ async function runtimeWithGoalChild(
 }
 
 describe("handleConfigReload", () => {
+  for (const scenario of [
+    "success",
+    "failure",
+    "user pause",
+    "shutdown",
+    "deleted",
+    "busy",
+    "disabled",
+    "plan",
+    "already paused",
+  ] as const) {
+    test(`reload restores only its own active goal: ${scenario}`, async () => {
+      const { runtime, scope } = await runtimeWithGoalChild({ id: "agent" });
+      scope!.childFinished("child");
+      await runtime.goal!.settle(scope!, { status: "completed" }, true);
+      runtime.mode = scenario === "plan" ? "plan" : "default";
+      if (scenario === "already paused") await runtime.goal!.pause("user");
+      const reload = handleConfigReload(
+        async () => {
+          if (scenario === "failure") throw new Error("Reload failed");
+          if (scenario === "user pause") await runtime.goal!.pause("user");
+          if (scenario === "shutdown" || scenario === "deleted") await runtime.goal!.pause(scenario);
+          if (scenario === "busy") runtime.isRunning = true;
+          return { skills: [] };
+        },
+        new Map([["thread", runtime]]),
+        () => scenario !== "disabled",
+      );
+      if (scenario === "failure") await expect(reload).rejects.toThrow("Reload failed");
+      else await reload;
+      expect(runtime.goal!.read().goal?.status).toBe(scenario === "success" ? "active" : "paused");
+    });
+  }
   test("throws when the host does not support reloadConfig", async () => {
     await expect(handleConfigReload(undefined, new Map())).rejects.toThrow(
       "Config reload is not supported by this app server.",

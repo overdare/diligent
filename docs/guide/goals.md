@@ -27,6 +27,7 @@ Web and TUI share the same commands and protocol:
 /goal pause
 /goal edit Fix the auth tests and run the complete auth suite --turns 30 --tokens 100000
 /goal edit Fix the auth tests and run the complete auth suite --turns unlimited
+/goal edit --tokens off --turns off
 /goal resume
 /goal clear
 ```
@@ -40,8 +41,9 @@ or instructions quoted in retrieved content. This is model-guided interpretation
 not a deterministic guarantee that every phrase will be classified correctly.
 Use `/goal set` when you want an explicit, deterministic start.
 
-`create_goal` returns a **pending** request. The model should call it early and
-finish its current reply. Only after that user turn and its session writes finish
+`create_goal` returns a **pending** request and ends the requesting response
+successfully after its tool batch finishes (queued steering still takes priority).
+Only after that user turn and its session writes finish
 successfully does the runtime persist the goal, publish the shared status, and
 schedule its first automatic run. The originating user turn is not goal-owned:
 its tokens, time, and children are outside the new goal's accounting. A crash,
@@ -54,8 +56,11 @@ The runtime accepts creation only in a current root user turn, outside plan mode
 and with the feature enabled. It rejects duplicate pending requests and creation
 when any goal already exists, including a completed one. Manage existing goals
 through `/goal`; automatic continuations and child agents cannot create goals.
-The model must pass `tokenBudget`/`maxTurns` only if the user specified those limits;
-otherwise only an explicitly configured default maximum applies. Default-enabled support does
+The model creation tool accepts only the objective and rejects extra limit fields.
+Only user commands (`/goal set` or `/goal edit`) and configuration may set limits;
+natural-language creation uses only an explicitly configured default maximum.
+If a natural-language request includes a budget, the model must direct the user
+to the explicit command rather than create an uncapped goal. Default-enabled support does
 not turn every normal chat message into persistent work.
 
 `/goal <objective>` is shorthand for `set`. Use explicit `set` when an objective
@@ -69,7 +74,9 @@ which can include multiple model/tool rounds, not one API request or tool call.
 Set/resume starts automatically when the root thread is idle and outside plan
 mode. Set/edit/resume rejects while execution or its cleanup is in flight.
 Pause before editing; edits retain accumulated usage. Increase an exhausted
-limit before resuming, or remove the run cap with `edit <objective> --turns unlimited`.
+limit before resuming, or remove limits with `edit --tokens off --turns off`.
+Edits may change only limits; an omitted objective is preserved. `off` and
+`unlimited` remove a limit on edit, and `--runs` aliases `--turns`.
 Existing ledgers retain their numeric limits and usage: older implicit limits cannot
 be distinguished from limits users explicitly requested. Omitted edit limits retain their previous values. Clear
 the old goal or finish it before setting a replacement. Completed goals cannot
@@ -84,6 +91,10 @@ A new ordinary user turn takes
 priority over the current run, cancels its outstanding work, and continues under
 the same active goal, including its accounting and limits. Steering also preserves
 the active goal. Plan mode, configuration reload, and host shutdown pause goal work.
+A successful in-process configuration reload resumes only the goals it paused,
+provided execution is still enabled and idle. A user stop, replacement, plan mode,
+deletion, shutdown, or reload failure prevents that automatic resume. TUI `/reload`
+restarts its server process and therefore still requires explicit goal resume.
 Losing the last client connection does not pause a goal: the current run can finish,
 but admission of another automatic run waits for a client to reconnect. Pending
 goal approvals and questions survive disconnect and are redelivered on subscription;
@@ -98,16 +109,26 @@ by the next successful reload.
 
 ## Success, failures, and recovery
 
-The working model checks results and calls `update_goal` with `complete` and
-non-empty evidence, or `blocked` and an unavoidable blocking reason. Instructions
-require a requirement-by-requirement completion audit and the same blocker across
-at least three consecutive goal runs with no safe next action. The runtime rejects
-blocked reports before three runs since creation, resume, or user replacement;
-equivalence of blockers and the availability of alternatives remain model assessments.
-The runtime
-checks ownership, current execution, and that goal-owned children have settled
-before accepting completion. Evidence is the model's assessment, not an
-independent proof or a second model's verdict. Beyond explicit-request creation,
+The working model checks results and calls `update_goal` with `complete`, non-empty
+evidence, and a `verification` list. Each item names a `requirement`, an observed
+`sourceId`, and a verbatim `quote`. `get_goal` exposes bounded source previews:
+successful tool results and already delivered assistant text from this goal's
+current audit. Failed results and goal-control calls are not sources. The runtime
+rejects missing sources or mismatched excerpts and checks that owned children have
+settled. Resume, objective edits, and user replacement require fresh verification.
+Sources are process-local and bounded to the latest 32 observations (32,000
+characters each); re-read or re-run verification if a source has expired.
+These checks establish provenance, not semantic truth: the model must still assess
+whether its checklist covers the full objective and whether the cited evidence
+proves it. A textual answer remains a valid deliverable without arbitrary tool use.
+
+For `blocked`, the model supplies a stable `blockerKey` and newly checked evidence.
+The runtime requires the same key across three distinct consecutive goal runs.
+Early claims leave the goal active and end that response so the next run can
+revalidate; duplicate calls in one run do not count. Changed keys, claim-free runs,
+resume, edits, and user replacement reset the audit. Blocker equivalence and the
+absence of meaningful safe alternatives remain model assessments.
+Beyond explicit-request creation,
 the model cannot edit goals, resume them, or change their limits.
 
 Ordinary tool errors and failed tests remain inputs to the model, so it can
@@ -144,6 +165,9 @@ never transfers an old goal's spend to a replacement. Active time measures root
 run elapsed time (including waiting inside a run), not the sum of child times
 or idle backoff. User follow-ups while a goal is active are goal-owned; ordinary
 work outside active goals and unrelated children are not charged.
+Both clients display elapsed time including the current run. Pause freezes that
+clock; process downtime is excluded. Uncapped goals show time and tokens without
+a misleading empty budget bar or run-limit counter.
 
 ## Persistence and protocol
 

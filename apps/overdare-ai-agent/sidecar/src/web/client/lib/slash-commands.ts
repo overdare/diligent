@@ -63,7 +63,8 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
 const GOAL_COMMAND: SlashCommand = {
   name: "goal",
   description: "Show or control the thread goal",
-  usage: "/goal [set] <objective> [--tokens N] [--turns N] | pause | resume | clear | edit <objective>",
+  usage:
+    "/goal [set] <objective> [--tokens N] [--turns N|unlimited] | pause | resume | clear | edit [objective] [--tokens N|off] [--turns N|off]",
 };
 
 /** Build the full command list by merging builtins with dynamic skill commands. */

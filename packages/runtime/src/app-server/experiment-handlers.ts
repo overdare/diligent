@@ -21,6 +21,7 @@ export async function handleExperimentsSet(
   reloadConfig: (() => Promise<ConfigReloadResult>) | undefined,
   threads: Map<string, ThreadRuntime>,
   params: ExperimentsSetParams,
+  goalsEnabled: () => boolean = () => true,
 ): Promise<ExperimentsListResponse> {
   const definitions = manager.getDefinitions();
   const knownIds = new Set(definitions.map((definition) => definition.id));
@@ -35,7 +36,7 @@ export async function handleExperimentsSet(
       .map((definition) => [definition.id, params.overrides[definition.id]!]),
   );
   await saveGlobalExperimentOverrides(stored);
-  await handleConfigReload(reloadConfig, threads);
+  await handleConfigReload(reloadConfig, threads, goalsEnabled);
   return buildResponse(manager.getExperiments());
 }
 

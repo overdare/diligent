@@ -76,6 +76,7 @@ export interface ConfigReloadResult {
 export async function handleConfigReload(
   reloadConfig: (() => Promise<ConfigReloadResult>) | undefined,
   threads: Map<string, ThreadRuntime>,
+  goalsEnabled: () => boolean = () => true,
 ): Promise<ConfigReloadResult> {
   for (const runtime of threads.values()) runtime.goalCreation = undefined;
   if (!reloadConfig) {
@@ -89,9 +90,47 @@ export async function handleConfigReload(
   if (goalActivity.some(({ runtime, wasActive }) => hasGoalOwnedCleanupPending(runtime, wasActive))) {
     throw new Error("Wait for goal-owned work cleanup before reloading configuration");
   }
+  const resumable = goalActivity
+    .filter(({ wasActive }) => wasActive)
+    .map(({ runtime }) => ({ runtime, goal: runtime.goal?.read().goal }));
   const result = await reloadConfig();
   for (const runtime of threads.values()) {
     runtime.agent = undefined;
+  }
+  for (const { runtime, goal } of resumable) {
+    const current = runtime.goal?.read().goal;
+    if (
+      !goal ||
+      current?.id !== goal.id ||
+      current.revision !== goal.revision ||
+      current.reason !== "config_reload" ||
+      current.status !== "paused"
+    )
+      continue;
+    if (!goalsEnabled() || runtime.mode === "plan") continue;
+    if (
+      ![...threads.values()].includes(runtime) ||
+      runtime.isRunning ||
+      runtime.abortController ||
+      runtime.currentTurnId
+    )
+      continue;
+    try {
+      await runtime.goal!.change(
+        { action: "resume", expectedGoalId: goal.id, expectedRevision: goal.revision },
+        {
+          idle: true,
+          enabled: true,
+          mode: runtime.mode ?? "default",
+        },
+      );
+    } catch (error) {
+      logger.warn("goal.reload_resume_failed", {
+        message: "Configuration reloaded but a goal could not resume",
+        threadId: runtime.id,
+        error,
+      });
+    }
   }
   return result;
 }

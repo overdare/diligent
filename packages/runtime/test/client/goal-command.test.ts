@@ -21,6 +21,18 @@ const goal: ThreadGoal = {
 };
 
 describe("parseGoalCommand", () => {
+  test("edits limits without replacing the objective, including aliases and explicit removal", () => {
+    expect(parseGoalCommand("edit --tokens off --runs unlimited", goal)).toEqual({
+      action: "edit",
+      tokenBudget: null,
+      maxTurns: null,
+      expectedGoalId: goal.id,
+      expectedRevision: goal.revision,
+    });
+    expect(() => parseGoalCommand("edit", goal)).toThrow("edit");
+    expect(() => parseGoalCommand("edit --runs 2 --turns 3", goal)).toThrow("once");
+    expect(() => parseGoalCommand("set Finish --tokens off")).toThrow("positive");
+  });
   test("allows explicitly removing a run cap without changing the objective or usage", () => {
     expect(parseGoalCommand("edit Ship goal mode --turns unlimited", goal)).toEqual({
       action: "edit",
