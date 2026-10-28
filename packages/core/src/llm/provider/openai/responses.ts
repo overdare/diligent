@@ -44,28 +44,9 @@ export async function convertMessages(
         result.push({ type: "message", role: "user", content });
       }
     } else if (msg.role === "assistant") {
-      for (const block of msg.content) {
-        if (block.type === "thinking") {
-          const providerState = block.providerState;
-          if (providerState && providerState.provider === provider) {
-            result.push({
-              type: "reasoning",
-              id: providerState.itemId,
-              encrypted_content: providerState.encryptedContent,
-              summary: block.thinking ? [{ type: "summary_text", text: block.thinking }] : [],
-            });
-          }
-        } else if (block.type === "text") {
-          result.push({ role: "assistant", content: block.text });
-        } else if (block.type === "tool_call") {
-          pendingCalls.set(block.id, result.length);
-          result.push({
-            type: "function_call",
-            call_id: block.id,
-            name: block.name,
-            arguments: JSON.stringify(block.input),
-          });
-        }
+      for (const item of assistantMessageToResponseItems(msg, provider)) {
+        if (item.type === "function_call") pendingCalls.set(item.call_id, result.length);
+        result.push(item);
       }
     } else if (msg.role === "tool_result") {
       pendingCalls.delete(msg.toolCallId);
@@ -100,6 +81,37 @@ export async function convertMessages(
   }
 
   return result;
+}
+
+/** Responses input items that replay one assistant message; `convertMessages` uses the same mapping. */
+export function assistantMessageToResponseItems(
+  message: Extract<Message, { role: "assistant" }>,
+  provider?: "openai" | "chatgpt",
+): ResponseInputItem[] {
+  const items: ResponseInputItem[] = [];
+  for (const block of message.content) {
+    if (block.type === "thinking") {
+      const providerState = block.providerState;
+      if (providerState && providerState.provider === provider) {
+        items.push({
+          type: "reasoning",
+          id: providerState.itemId,
+          encrypted_content: providerState.encryptedContent,
+          summary: block.thinking ? [{ type: "summary_text", text: block.thinking }] : [],
+        });
+      }
+    } else if (block.type === "text") {
+      items.push({ role: "assistant", content: block.text });
+    } else if (block.type === "tool_call") {
+      items.push({
+        type: "function_call",
+        call_id: block.id,
+        name: block.name,
+        arguments: JSON.stringify(block.input),
+      });
+    }
+  }
+  return items;
 }
 
 export async function toResponseInputItems(input: {

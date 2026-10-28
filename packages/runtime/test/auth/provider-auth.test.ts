@@ -85,6 +85,7 @@ describe("createChatGPTOAuthBinding", () => {
     try {
       const binding = createChatGPTOAuthBinding({
         initialTokens: { access_token: "first", refresh_token: "refresh" },
+        streamOptions: { useWebSocket: false },
       });
       const stream = binding.auth.getStream();
       expect(binding.auth.getStream()).toBe(stream);
@@ -109,7 +110,7 @@ describe("createChatGPTOAuthBinding", () => {
     }
   });
 
-  it("forwards the opt-in GPT-5.6 WebSocket transport option", async () => {
+  it("forwards ChatGPT stream options to the WebSocket transport", async () => {
     const originalFetch = globalThis.fetch;
     let fetchCalled = false;
     let socketCount = 0;
@@ -122,7 +123,6 @@ describe("createChatGPTOAuthBinding", () => {
       const binding = createChatGPTOAuthBinding({
         initialTokens: { access_token: "token", refresh_token: "refresh" },
         streamOptions: {
-          useWebSocketForGpt56: true,
           webSocketFactory: () => {
             socketCount += 1;
             return new CompletingWebSocket() as unknown as WebSocket;

@@ -1,8 +1,9 @@
-// @summary ChatGPT subscription stream — HTTP/SSE for legacy models and WebSocket Responses Lite for GPT-5.6 and later
+// @summary ChatGPT subscription stream — WebSocket Responses Lite with previous_response_id chaining, HTTP/SSE otherwise
 import { arch, platform, release } from "node:os";
 import { createLogger } from "@diligent/logging";
 import type { OpenAIOAuthTokens } from "../../../auth/types";
 import { EventStream } from "../../../event-stream";
+import type { AssistantMessage } from "../../../types";
 import { flattenSections } from "../../system-sections";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "../../types";
 import { ProviderError, ProviderErrorType } from "../../types";
@@ -10,12 +11,27 @@ import { ProviderError, ProviderErrorType } from "../../types";
 export { type ChatGPTImageGenerationOptions, createChatGPTImageGeneration } from "./image-generation";
 export { createChatGPTNativeCompaction } from "./native-compaction";
 
-import { buildResponsesRequestBody, toResponsesLiteRequestBody, usesResponsesLite } from "../openai/responses";
+import {
+  assistantMessageToResponseItems,
+  buildResponsesRequestBody,
+  toResponsesLiteRequestBody,
+  usesResponsesLite,
+} from "../openai/responses";
+import {
+  createResponsesChainBaseline,
+  planResponsesChainedInput,
+  type ResponsesChainBaseline,
+  type ResponsesChainedInput,
+} from "../openai/responses-chain";
 import { classifyOpenAIFamilyError, parseOpenAIRetryAfter } from "../openai/shared";
 import { handleResponsesAPIEvents } from "../openai/sse";
 import { CHATGPT_CODEX_CLIENT_VERSION, CHATGPT_SESSION_HEADER } from "./headers";
 import { iterateChatGPTJsonSse } from "./http-sse";
-import { type ChatGPTWebSocketSession, createChatGPTWebSocketSession } from "./websocket-session";
+import {
+  ChatGPTWebSocketFirstEventTimeoutError,
+  type ChatGPTWebSocketSession,
+  createChatGPTWebSocketSession,
+} from "./websocket-session";
 
 const webSocketLogger = createLogger({ scope: "llm:chatgpt-ws" });
 const httpSseLogger = createLogger({ scope: "llm:chatgpt-sse" });
@@ -26,14 +42,20 @@ const RESPONSES_LITE_HEADER = "x-openai-internal-codex-responses-lite";
 const CHATGPT_TURN_STATE_HEADER = "x-codex-turn-state";
 const CHATGPT_JSON_CONTENT_TYPE = "application/json";
 const CHATGPT_WEBSOCKET_IDLE_TIMEOUT_MS = 300_000;
+// A chained request carries only a few items, so its first frame arrives quickly on a live socket.
+// Silence past this bound means the reused socket is half-open; replay the full input on a new one.
+const CHATGPT_WEBSOCKET_CHAINED_FIRST_EVENT_TIMEOUT_MS = 30_000;
 const CHATGPT_HTTP_HEADER_TIMEOUT_MS = 15_000;
 const CHATGPT_HTTP_STREAM_IDLE_TIMEOUT_MS = 300_000;
 const USER_AGENT = `diligent (${platform()} ${release()}; ${arch()})`;
 
 export interface ChatGPTStreamOptions {
-  useWebSocketForGpt56?: boolean;
+  /** Responses Lite models use the Codex WebSocket transport unless false; other models always use HTTP/SSE. */
+  useWebSocket?: boolean;
   webSocketFactory?: (url: string, headers: Record<string, string>) => WebSocket;
   webSocketIdleTimeoutMs?: number;
+  /** Maximum wait for the first frame of a chained request sent on a reused socket. */
+  webSocketChainedFirstEventTimeoutMs?: number;
   /** Maximum wait for HTTP response headers. Does not limit SSE body streaming. */
   httpHeaderTimeoutMs?: number;
   /** Maximum idle wait between HTTP body chunks. Resets whenever bytes arrive. */
@@ -44,6 +66,16 @@ type ChatGPTTransportState = {
   websocketDisabled: boolean;
   consecutiveTransportFailures: number;
 };
+
+/** One physical-socket owner plus the chain baseline the server holds on that socket. */
+type ChatGPTWebSocketChannel = {
+  session: ChatGPTWebSocketSession;
+  accountId: string | undefined;
+  chain?: { baseline: ResponsesChainBaseline; connectionId: number };
+};
+
+/** Scope-held slot so an account switch can replace the channel without disposing the scope. */
+type ChatGPTWebSocketChannelSlot = { channel?: ChatGPTWebSocketChannel };
 
 function createDefaultWebSocket(url: string, headers: Record<string, string>): WebSocket {
   const BunWebSocket = WebSocket as unknown as new (
@@ -249,21 +281,164 @@ function useChatGPTWebSocketTransportFailure(
   providerOptions: ChatGPTStreamOptions,
   model: Model,
 ): boolean {
-  if (providerOptions.useWebSocketForGpt56 !== true || !usesResponsesLite(model.modelId)) return false;
+  if (providerOptions.useWebSocket === false || !usesResponsesLite(model.modelId)) return false;
   return error instanceof ProviderError && error.errorType === ProviderErrorType.Network;
+}
+
+/** The server dropped the chain or the reused socket was dead: replaying the full input is safe. */
+function isReplayableChainFailure(error: unknown): boolean {
+  if (error instanceof ChatGPTWebSocketFirstEventTimeoutError) return true;
+  return error instanceof ProviderError && /previous_response/i.test(error.message);
+}
+
+type ChatGPTWebSocketObservation = {
+  sawEvent: boolean;
+  completed: boolean;
+  responseId?: string;
+};
+
+async function* observeChatGPTWebSocketEvents(
+  events: AsyncIterable<Record<string, unknown>>,
+  observation: ChatGPTWebSocketObservation,
+  turnStateRef: { value: string | undefined } | undefined,
+): AsyncGenerator<Record<string, unknown>> {
+  for await (const payload of events) {
+    observation.sawEvent = true;
+    const response = payload.response;
+    if (response && typeof response === "object" && "id" in response && typeof response.id === "string") {
+      observation.responseId = response.id;
+    }
+    if (payload.type === "response.completed") observation.completed = true;
+    // WebSocket frames cannot carry response headers; the server mirrors them, including the sticky
+    // turn token, into a `codex.response.metadata` frame (codex-rs also reads `response.metadata`).
+    const headers = payload.headers;
+    if (
+      (payload.type === "codex.response.metadata" || payload.type === "response.metadata") &&
+      turnStateRef &&
+      turnStateRef.value === undefined &&
+      headers &&
+      typeof headers === "object"
+    ) {
+      for (const [name, value] of Object.entries(headers)) {
+        if (name.toLowerCase() === CHATGPT_TURN_STATE_HEADER && typeof value === "string" && value.length > 0) {
+          turnStateRef.value = value;
+        }
+      }
+    }
+    yield payload;
+  }
+}
+
+/**
+ * Stream one sample over the conversation's WebSocket. When the socket still holds the previous
+ * response and the full request strictly extends it, only the new input items are sent with
+ * previous_response_id; any chain rejection or silent reused socket replays the full input.
+ */
+async function streamChatGPTWebSocket(input: {
+  stream: EventStream<ProviderEvent, ProviderResult>;
+  model: Model;
+  options: StreamOptions;
+  requestBody: Record<string, unknown>;
+  slot: ChatGPTWebSocketChannelSlot | undefined;
+  accountId: string | undefined;
+  createSession: () => ChatGPTWebSocketSession;
+  chainedFirstEventTimeoutMs: number;
+}): Promise<void> {
+  const { stream, model, options, requestBody, slot } = input;
+  if (slot?.channel && slot.channel.accountId !== input.accountId) {
+    await slot.channel.session.dispose();
+    slot.channel = undefined;
+  }
+  if (slot && !slot.channel) slot.channel = { session: input.createSession(), accountId: input.accountId };
+  // A second concurrent sample in one conversation cannot share the socket; it runs unchained alone.
+  const ephemeral =
+    !slot?.channel || slot.channel.session.busy
+      ? { session: input.createSession(), accountId: input.accountId }
+      : undefined;
+  const channel: ChatGPTWebSocketChannel = ephemeral ?? (slot?.channel as ChatGPTWebSocketChannel);
+
+  let doneMessage: AssistantMessage | undefined;
+  stream.subscribe((event) => {
+    if (event.type === "done") doneMessage = event.message;
+  });
+
+  let chained: ResponsesChainedInput | undefined =
+    channel.chain && channel.chain.connectionId === channel.session.openConnectionId
+      ? planResponsesChainedInput(channel.chain.baseline, requestBody)
+      : undefined;
+  let started = false;
+  try {
+    for (;;) {
+      channel.chain = undefined;
+      const turnState = options.turnStateRef?.value;
+      const request = {
+        type: "response.create",
+        ...requestBody,
+        ...(chained && { previous_response_id: chained.previousResponseId, input: chained.input }),
+        ...(turnState !== undefined && { client_metadata: { [CHATGPT_TURN_STATE_HEADER]: turnState } }),
+      };
+      const exchange = channel.session.streamRequest(
+        request,
+        options.signal,
+        chained ? { firstEventTimeoutMs: input.chainedFirstEventTimeoutMs } : {},
+      );
+      const observation: ChatGPTWebSocketObservation = { sawEvent: false, completed: false };
+      try {
+        const connectionId = await exchange.opened;
+        if (!started) {
+          stream.push({ type: "start" });
+          started = true;
+        }
+        await handleResponsesAPIEvents(
+          observeChatGPTWebSocketEvents(exchange.events, observation, options.turnStateRef),
+          stream,
+          model,
+          options.signal,
+        );
+        if (
+          observation.completed &&
+          observation.responseId &&
+          doneMessage &&
+          channel.session.openConnectionId === connectionId
+        ) {
+          channel.chain = {
+            connectionId,
+            baseline: createResponsesChainBaseline(
+              requestBody,
+              observation.responseId,
+              assistantMessageToResponseItems(doneMessage, "chatgpt"),
+            ),
+          };
+        }
+        return;
+      } catch (error) {
+        if (chained && !observation.sawEvent && isReplayableChainFailure(error)) {
+          chained = undefined;
+          continue;
+        }
+        throw error;
+      }
+    }
+  } finally {
+    await ephemeral?.session.dispose();
+  }
 }
 
 /**
  * Create a StreamFunction for ChatGPT subscription (OAuth).
  *
- * Bypasses the OpenAI Node SDK entirely. Models use raw HTTP/SSE by default,
- * while Responses Lite models can opt into the ChatGPT Codex WebSocket transport.
+ * Bypasses the OpenAI Node SDK entirely. Responses Lite models use the ChatGPT Codex WebSocket
+ * transport; other models, and the fallback after repeated WebSocket transport failures, use HTTP/SSE.
  *
  * ChatGPT subscriber endpoint limitations (store: false enforced):
  * - store: true → 400 "Store must be set to false"
- * - previous_response_id → 400 (WebSocket-only, per codex-rs)
+ * - previous_response_id → HTTP 400 "Unsupported parameter"; on WebSocket it chains against the
+ *   connection-local response cache only, so a new socket must resend the full input
  * - item_reference → requires store: true → impossible
- * Only prompt_cache_key is accepted for server-side prefix caching.
+ * prompt_cache_key is the only cross-connection server-side reuse.
+ *
+ * The socket and its chain baseline live in `turnScope.session` when the caller provides a
+ * conversation scope, otherwise in the turn scope, otherwise for one request.
  *
  * @param getTokens - Called per-request to get the current (possibly refreshed) tokens
  */
@@ -275,7 +450,7 @@ export function createChatGPTStream(
     websocketDisabled: false,
     consecutiveTransportFailures: 0,
   };
-  const turnSessionKey = Symbol("chatgpt-websocket-turn-session");
+  const channelKey = Symbol("chatgpt-websocket-channel");
   return (model: Model, context: StreamContext, options: StreamOptions): EventStream<ProviderEvent, ProviderResult> => {
     const stream = new EventStream<ProviderEvent, ProviderResult>(
       (event) => event.type === "done" || event.type === "error",
@@ -291,7 +466,7 @@ export function createChatGPTStream(
         if (options.signal?.aborted) return;
         const upstreamModelId = model.modelId;
         const useResponsesLite = usesResponsesLite(upstreamModelId);
-        const resolveHeaders = async (): Promise<Record<string, string>> => {
+        const resolveHeaders = async (includeTurnState: boolean): Promise<Record<string, string>> => {
           const tokens = getTokens();
           const headers: Record<string, string> = {
             Authorization: `Bearer ${tokens.access_token}`,
@@ -301,7 +476,7 @@ export function createChatGPTStream(
           };
           if (tokens.account_id) headers["ChatGPT-Account-ID"] = tokens.account_id;
           if (options.sessionId) headers[CHATGPT_SESSION_HEADER] = options.sessionId;
-          if (options.turnStateRef?.value !== undefined)
+          if (includeTurnState && options.turnStateRef?.value !== undefined)
             headers[CHATGPT_TURN_STATE_HEADER] = options.turnStateRef.value;
           if (useResponsesLite) headers[RESPONSES_LITE_HEADER] = "true";
           return headers;
@@ -310,7 +485,7 @@ export function createChatGPTStream(
         const effort = options.effort;
         const useReasoning = model.supportsThinking;
         const useWebSocket =
-          useResponsesLite && providerOptions.useWebSocketForGpt56 === true && !transportState.websocketDisabled;
+          useResponsesLite && providerOptions.useWebSocket !== false && !transportState.websocketDisabled;
 
         const standardBody = await buildResponsesRequestBody({
           model: upstreamModelId,
@@ -330,33 +505,32 @@ export function createChatGPTStream(
         const requestBody = useResponsesLite ? toResponsesLiteRequestBody(standardBody) : standardBody;
 
         if (useWebSocket) {
-          const request = { type: "response.create", ...requestBody };
-          const createSession = () =>
-            createChatGPTWebSocketSessionForProvider({
-              resolveHeaders,
-              webSocketFactory: providerOptions.webSocketFactory ?? createDefaultWebSocket,
-              idleTimeoutMs: providerOptions.webSocketIdleTimeoutMs ?? CHATGPT_WEBSOCKET_IDLE_TIMEOUT_MS,
-            });
-          let ephemeralSession: ChatGPTWebSocketSession | undefined;
-          const session = options.turnScope
-            ? options.turnScope.getOrCreate(turnSessionKey, () => {
-                const value = createSession();
-                return { value, dispose: () => value.dispose() };
-              })
-            : (ephemeralSession = createSession());
-          try {
-            const connection = session.streamRequest(request, options.signal);
-            await connection.opened;
-            stream.push({ type: "start" });
-            await handleResponsesAPIEvents(connection.events, stream, model, options.signal);
-            transportState.consecutiveTransportFailures = 0;
-          } finally {
-            await ephemeralSession?.dispose();
-          }
+          const scope = options.turnScope?.session ?? options.turnScope;
+          await streamChatGPTWebSocket({
+            stream,
+            model,
+            options,
+            requestBody,
+            slot: scope?.getOrCreate(channelKey, () => {
+              const value: ChatGPTWebSocketChannelSlot = {};
+              return { value, dispose: () => value.channel?.session.dispose() };
+            }),
+            accountId: getTokens().account_id,
+            // Sockets outlive turns, so the turn token travels per request in client_metadata.
+            createSession: () =>
+              createChatGPTWebSocketSessionForProvider({
+                resolveHeaders: () => resolveHeaders(false),
+                webSocketFactory: providerOptions.webSocketFactory ?? createDefaultWebSocket,
+                idleTimeoutMs: providerOptions.webSocketIdleTimeoutMs ?? CHATGPT_WEBSOCKET_IDLE_TIMEOUT_MS,
+              }),
+            chainedFirstEventTimeoutMs:
+              providerOptions.webSocketChainedFirstEventTimeoutMs ?? CHATGPT_WEBSOCKET_CHAINED_FIRST_EVENT_TIMEOUT_MS,
+          });
+          transportState.consecutiveTransportFailures = 0;
           return;
         }
 
-        const headers = await resolveHeaders();
+        const headers = await resolveHeaders(true);
         const requestText = JSON.stringify(requestBody);
         const debugHttpSse = process.env.DILIGENT_DEBUG_CHATGPT_HTTP_SSE === "1";
         const requestByteLength = debugHttpSse ? new TextEncoder().encode(requestText).byteLength : 0;

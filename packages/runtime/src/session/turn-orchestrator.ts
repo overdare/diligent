@@ -9,7 +9,12 @@ import {
   updateUserMessageContent,
 } from "@diligent/core/agent";
 import type { Message } from "@diligent/core/message-contract";
-import { createStreamTurnScope, type StreamTurnScope } from "@diligent/core/provider-contract";
+import {
+  createStreamSessionScope,
+  createStreamTurnScope,
+  type StreamSessionScope,
+  type StreamTurnScope,
+} from "@diligent/core/provider-contract";
 import { createLogger } from "@diligent/logging";
 import type { PendingSteer } from "@diligent/protocol";
 import { readContextPresentation } from "../agent/context-presentation";
@@ -54,6 +59,8 @@ export class TurnOrchestrator {
   private _initializedAgent: Agent | null = null;
   /** Pre-agent steering queue — drained into agent at start of run() */
   private pendingMessages: QueuedSteeringMessage[] = [];
+  /** Provider resources that outlive one turn, such as a chained ChatGPT WebSocket. */
+  private streamSessionScope: StreamSessionScope = createStreamSessionScope();
 
   constructor(private ctx: TurnOrchestratorContext) {}
 
@@ -66,6 +73,24 @@ export class TurnOrchestrator {
     this._agent = null;
     this._initializedAgent = null;
     this.pendingMessages = [];
+    this.disposeStreamSessionScope();
+    this.streamSessionScope = createStreamSessionScope();
+  }
+
+  /** Release conversation-lifetime provider resources when the session is unloaded. */
+  dispose(): void {
+    this.disposeStreamSessionScope();
+  }
+
+  private disposeStreamSessionScope(): void {
+    void this.streamSessionScope.dispose().catch((error) => {
+      logger.warn("stream_session_scope_dispose_failed", {
+        message: `[TurnOrchestrator] Failed to release provider session resources: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error,
+      });
+    });
   }
 
   /**
@@ -73,7 +98,7 @@ export class TurnOrchestrator {
    * Persists user message and agent response to session.
    */
   async runWithOutcome(userMessage: Message, options?: SessionRunOptions): Promise<SessionRunOutcome> {
-    const turnScope = createStreamTurnScope();
+    const turnScope = createStreamTurnScope({ session: this.streamSessionScope });
     try {
       return await this.runInternal(userMessage, { ...options, turnScope });
     } finally {

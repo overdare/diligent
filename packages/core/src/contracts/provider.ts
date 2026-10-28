@@ -27,8 +27,8 @@ export {
 export { getDefaultModelRef, PROVIDER_MODEL_POLICIES } from "../llm/provider-model-policy";
 export type { RetryConfig } from "../llm/retry";
 export { withRetry } from "../llm/retry";
-export type { StreamTurnResource, StreamTurnScope } from "../llm/turn-scope";
-export { createStreamTurnScope } from "../llm/turn-scope";
+export type { StreamSessionScope, StreamTurnResource, StreamTurnScope } from "../llm/turn-scope";
+export { createStreamSessionScope, createStreamTurnScope } from "../llm/turn-scope";
 export type {
   FunctionToolDefinition,
   Model,

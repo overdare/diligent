@@ -38,7 +38,7 @@ describe("ChatGPT HTTP transport", () => {
     ).toBe("error status=429 code=rate_limit message=try again");
   });
 
-  test("uses HTTP/SSE + Lite by default for a compatible ChatGPT model", async () => {
+  test("uses HTTP/SSE + Lite for a compatible ChatGPT model when WebSocket is disabled", async () => {
     const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({
@@ -49,9 +49,10 @@ describe("ChatGPT HTTP transport", () => {
     }) as unknown as typeof fetch;
     let webSocketCalled = false;
     const chatgptStream = createChatGPTStream(() => testTokens("acct_1"), {
+      useWebSocket: false,
       webSocketFactory() {
         webSocketCalled = true;
-        throw new Error("GPT-5.6 must use HTTP by default");
+        throw new Error("Disabled WebSocket transport must not open a socket");
       },
     });
 
@@ -99,7 +100,7 @@ describe("ChatGPT HTTP transport", () => {
     }) as unknown as typeof fetch;
 
     await collectEvents(
-      createChatGPTStream(() => testTokens())(
+      createChatGPTStream(() => testTokens(), { useWebSocket: false })(
         resolveModel({ provider: "chatgpt", modelId: "gpt-6-astra" }),
         TEST_CONTEXT,
         { effort: "xhigh", sessionId: "session_astra" },
@@ -130,7 +131,9 @@ describe("ChatGPT HTTP transport", () => {
         return chatGPTSuccessResponse();
       }) as unknown as typeof fetch;
 
-      await collectEvents(createChatGPTStream(() => testTokens())(model, TEST_CONTEXT, { effort: "medium" }));
+      await collectEvents(
+        createChatGPTStream(() => testTokens(), { useWebSocket: false })(model, TEST_CONTEXT, { effort: "medium" }),
+      );
 
       const request = requests[0];
       if (!request) throw new Error(`Expected one ChatGPT HTTP request for ${model.modelId}`);
@@ -153,7 +156,7 @@ describe("ChatGPT HTTP transport", () => {
       )) as unknown as typeof fetch;
 
     const events = await collectEvents(
-      createChatGPTStream(() => testTokens())(
+      createChatGPTStream(() => testTokens(), { useWebSocket: false })(
         resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }),
         TEST_CONTEXT,
         {
@@ -174,7 +177,7 @@ describe("ChatGPT HTTP transport", () => {
       )) as unknown as typeof fetch;
 
     const events = await collectEvents(
-      createChatGPTStream(() => testTokens())(
+      createChatGPTStream(() => testTokens(), { useWebSocket: false })(
         resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }),
         TEST_CONTEXT,
         {
@@ -209,7 +212,7 @@ describe("ChatGPT HTTP transport", () => {
         { status: 200, headers: { "content-type": "text/event-stream" } },
       );
     }) as unknown as typeof fetch;
-    const chatgptStream = createChatGPTStream(() => testTokens());
+    const chatgptStream = createChatGPTStream(() => testTokens(), { useWebSocket: false });
 
     const events = await collectEvents(
       chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }), TEST_CONTEXT, {
@@ -259,6 +262,7 @@ describe("ChatGPT HTTP transport", () => {
         );
       })) as unknown as typeof fetch;
     const chatgptStream = createChatGPTStream(() => testTokens(), {
+      useWebSocket: false,
       httpHeaderTimeoutMs: 5,
     });
 
@@ -294,6 +298,7 @@ describe("ChatGPT HTTP transport", () => {
       });
     }) as unknown as typeof fetch;
     const chatgptStream = createChatGPTStream(() => testTokens(), {
+      useWebSocket: false,
       httpHeaderTimeoutMs: 5,
     });
 
@@ -319,6 +324,7 @@ describe("ChatGPT HTTP transport", () => {
         { status: 200, headers: { "content-type": "text/event-stream" } },
       )) as unknown as typeof fetch;
     const chatgptStream = createChatGPTStream(() => testTokens(), {
+      useWebSocket: false,
       httpHeaderTimeoutMs: 50,
       httpStreamIdleTimeoutMs: 5,
     });
