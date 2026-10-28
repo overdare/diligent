@@ -3,6 +3,7 @@
 import { type MouseEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { cn } from "../lib/cn";
+import { loadFilePreview } from "../lib/file-preview";
 import { type MarkdownOptions, renderMarkdown } from "../lib/markdown";
 import { ImageLightbox, type PreviewImage } from "./ImageLightbox";
 
@@ -10,6 +11,7 @@ interface MarkdownContentProps {
   text: string;
   className?: string;
   options?: MarkdownOptions;
+  loadFile?: typeof loadFilePreview;
 }
 
 // Preserve the rendered DOM and its focus/collapse state when only the viewer opens or closes.
@@ -17,13 +19,48 @@ const MarkdownBody = memo(function MarkdownBody({
   html,
   className,
   onClick,
+  loadFile,
 }: {
   html: string;
   className?: string;
   onClick: (event: MouseEvent<HTMLDivElement>) => void;
+  loadFile: typeof loadFilePreview;
 }) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: HTML changes replace the image nodes and require loading their files again.
+  useEffect(() => {
+    let cancelled = false;
+    for (const image of bodyRef.current?.querySelectorAll<HTMLImageElement>("img[data-local-image-url]") ?? []) {
+      const url = new URL(image.dataset.localImageUrl!, window.location.origin);
+      const button = image.closest<HTMLButtonElement>("[data-image-open]");
+      void loadFile(url.searchParams.get("path")!, url.searchParams.get("threadId") ?? undefined).then(
+        (file) => {
+          if (cancelled) return;
+          if (file.kind !== "image") {
+            showUnavailable();
+            return;
+          }
+          image.src = `data:${file.mediaType};base64,${file.dataBase64}`;
+          if (button) button.disabled = false;
+        },
+        () => {
+          if (!cancelled) showUnavailable();
+        },
+      );
+      function showUnavailable() {
+        const message = document.createElement("span");
+        message.textContent = "Image unavailable";
+        image.replaceWith(message);
+      }
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [html, loadFile]);
+
   return (
     <div
+      ref={bodyRef}
       className={cn("prose-content", className)}
       onClick={onClick}
       // biome-ignore lint/security/noDangerouslySetInnerHtml: agent output only — external input echoing requires DOMPurify
@@ -32,7 +69,12 @@ const MarkdownBody = memo(function MarkdownBody({
   );
 });
 
-export const MarkdownContent = memo(function MarkdownContent({ text, className, options }: MarkdownContentProps) {
+export const MarkdownContent = memo(function MarkdownContent({
+  text,
+  className,
+  options,
+  loadFile = loadFilePreview,
+}: MarkdownContentProps) {
   const resetTimers = useRef(new Map<HTMLButtonElement, number>());
   const [preview, setPreview] = useState<PreviewImage | null>(null);
   const pagePath = typeof window === "undefined" ? "" : window.location.pathname.slice(1);
@@ -103,7 +145,7 @@ export const MarkdownContent = memo(function MarkdownContent({ text, className, 
 
   return (
     <>
-      <MarkdownBody html={html} className={className} onClick={handleClick} />
+      <MarkdownBody html={html} className={className} onClick={handleClick} loadFile={loadFile} />
       {preview ? <ImageLightbox image={preview} onClose={() => setPreview(null)} /> : null}
     </>
   );

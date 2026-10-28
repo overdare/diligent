@@ -30,8 +30,8 @@ export function createPrepareWorldThumbnailTool(cwd: string, host?: RuntimeToolH
       "Center-crops non-square images, resizes to exactly 1080x1080, encodes real PNG under 10 MB, " +
       "and saves a new unique file in the current project's thumbnails folder. Preserves the source. " +
       "Returns file, directory, actual dimensions, bytes, source/crop dimensions, and the final image. " +
-      "Inspect the final image for cropped subjects/text and mobile readability. Show this image with file and folder links; " +
-      "do not create a separate small preview or upload it. If local preparation fails, correct the local problem and reuse the source instead of regenerating art.",
+      "Inspect the final image for cropped subjects/text and mobile readability. Embed the final image using its returned file path; " +
+      "omit separate file/folder links unless requested, and do not create a separate small preview or upload it. If local preparation fails, correct the local problem and reuse the source instead of regenerating art.",
     parameters,
     supportParallel: true,
     async execute(args, ctx) {

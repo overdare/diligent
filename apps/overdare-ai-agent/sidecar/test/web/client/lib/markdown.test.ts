@@ -63,3 +63,13 @@ test("fenced code renders a language header and accessible copy control", () => 
   expect(html).toContain('class="language-ts"');
   expect(html).toContain("hljs-keyword");
 });
+
+for (const path of ["thumbnails/shot.png", "/repo/thumbnails/shot.png", "C:/repo/thumbnails/shot.png"]) {
+  test(`local Markdown image ${path} defers browser loading until file/read resolves`, () => {
+    const html = renderMarkdown(`![Thumbnail](<${path}>)`, { threadId: "origin-thread" });
+    expect(html).toContain('data-local-image-url="/_diligent/file?');
+    expect(html).toContain("threadId=origin-thread");
+    expect(html).not.toContain("src=");
+    expect(html).toContain("disabled");
+  });
+}
