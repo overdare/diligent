@@ -25,6 +25,7 @@ import {
 } from "../openai/responses-chain";
 import { classifyOpenAIFamilyError, parseOpenAIRetryAfter } from "../openai/shared";
 import { handleResponsesAPIEvents } from "../openai/sse";
+import { PROVIDER_RESPONSE_HEADER_TIMEOUT_MS } from "../timeouts";
 import { CHATGPT_CODEX_CLIENT_VERSION, CHATGPT_SESSION_HEADER } from "./headers";
 import { iterateChatGPTJsonSse } from "./http-sse";
 import {
@@ -45,7 +46,6 @@ const CHATGPT_WEBSOCKET_IDLE_TIMEOUT_MS = 300_000;
 // A chained request carries only a few items, so its first frame arrives quickly on a live socket.
 // Silence past this bound means the reused socket is half-open; replay the full input on a new one.
 const CHATGPT_WEBSOCKET_CHAINED_FIRST_EVENT_TIMEOUT_MS = 30_000;
-const CHATGPT_HTTP_HEADER_TIMEOUT_MS = 15_000;
 const CHATGPT_HTTP_STREAM_IDLE_TIMEOUT_MS = 300_000;
 const USER_AGENT = `diligent (${platform()} ${release()}; ${arch()})`;
 
@@ -520,7 +520,7 @@ export function createChatGPTStream(
         if (debugHttpSse) {
           debugChatGPTHttpRequest("sending", requestByteLength, requestSummary, { sessionId: options.sessionId });
         }
-        const headerTimeoutMs = Math.max(1, providerOptions.httpHeaderTimeoutMs ?? CHATGPT_HTTP_HEADER_TIMEOUT_MS);
+        const headerTimeoutMs = Math.max(1, providerOptions.httpHeaderTimeoutMs ?? PROVIDER_RESPONSE_HEADER_TIMEOUT_MS);
         const headerTimeoutController = new AbortController();
         const fetchSignal = options.signal
           ? AbortSignal.any([options.signal, headerTimeoutController.signal])

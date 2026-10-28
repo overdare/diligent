@@ -222,7 +222,12 @@ HTTP. Responses Lite models therefore use the Codex WebSocket transport by defau
 - The socket is not tied to one turn, so it carries no `x-codex-turn-state`; that sticky-routing
   token is used only by HTTP/SSE requests within a turn.
 - Two consecutive WebSocket transport failures switch that ChatGPT stream instance to HTTP/SSE, which
-  resends the full input each request under a 15-second response-header timeout.
+  resends the full input each request.
+
+Every HTTP provider path (ChatGPT HTTP/SSE, the OpenAI and Anthropic SDK clients) waits up to
+`PROVIDER_RESPONSE_HEADER_TIMEOUT_MS` (300 seconds) for response headers. Headers arrive only after
+the request body is uploaded and the server accepts the request, so long transcripts need the same
+bound as the stream idle timeout.
 
 Set `DILIGENT_DEBUG_CHATGPT_WEBSOCKET=1` to log content-safe frame summaries, including
 `inputItems=` counts that show whether a request was chained.
