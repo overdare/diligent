@@ -1,6 +1,6 @@
 ---
 name: world-thumbnail
-description: Create or revise an upload-ready OVERDARE world/game thumbnail from the current Studio game's code, assets, and scene using Nutty character references. Delivers a 1080x1080 PNG under 10 MB in the project with an image and folder link; does not publish or upload the world.
+description: Create or revise an upload-ready OVERDARE world/game thumbnail from the current Studio game's code, assets, and scene using Nutty character references. Delivers a 1080x1080 PNG under 10 MB in the project with an inline image preview; does not publish or upload the world.
 ---
 
 # World Thumbnail
@@ -13,11 +13,13 @@ Use existing conversation context together with the current Studio state. Browse
 
 Summarize the game in a sentence and choose a visible action that represents it: what the player does, what makes that action recognizable, and one distinguishing setting or prop. Do not invent mechanics or promise rewards that the implemented game does not support. If live Studio inspection is unavailable, use available project files and explain the limitation; ask for missing game information instead of guessing from the style references.
 
-Before generation, ask only for consequential information not already provided. Use `request_user_input` when available, otherwise ordinary chat. Bundle up to three concise questions:
+Before generation, ask only for consequential information not already provided. Resolve the title in one question with three answer paths: no title, a concrete recommended title, or custom text entered in the same response. Write the recommendation from the inspected game and conversation in the user's language, and show its exact wording in the question or option description so selecting it approves that text. Do not infer the public title solely from the project folder name.
 
-- Whether to include the game title. Do not silently default this choice.
-- If included, the exact title text, spelling, and language when unknown. Do not infer the public title solely from the project folder name.
-- Any unresolved focal action, mood, or requested emphasis that materially changes the image.
+With `request_user_input`, list two options: `No title` and `Use recommended title`, with the exact proposed title in the latter's description. The clients already provide a custom free-form input row as the third path; tell the user in the question to enter their own exact title there. Do not add a selectable `Include title` or `Enter title` option that requires a second question. In ordinary chat, present the same three paths and ask for either a choice or the custom title directly in the reply. Use the user's language for the question and labels.
+
+Proceed without another title confirmation: no title means no added text; selecting the recommendation uses the displayed wording; custom input supplies the exact title, spelling, and language. If the user already specified no title or an exact title, honor it without asking. If they requested a title but have not supplied its wording, offer the concrete recommendation and custom input together in one question, without asking again whether to include a title.
+
+Bundle any unresolved focal action, mood, or requested emphasis that materially changes the image with this question, up to three concise questions total.
 
 Honor answers and additional user prompts on later revisions without asking again. If a requested element conflicts with the implemented game, clarify the intended depiction.
 
@@ -60,8 +62,8 @@ Inspect the returned final image, especially if `source` and `crop` show that co
 
 Use targeted reference-guided repairs for material visual defects within `generate_image`'s retry rules. For dimension, encoding, or other local finalization failures, fix the local cause and reuse the generated source. Report an unfinished deliverable if the required result cannot be produced within these bounds.
 
-## Deliver the file and folder
+## Deliver the thumbnail
 
-The final file is saved under the current project's `thumbnails/` directory. Use the returned `file` and `directory` to present the final image, an image link, and a folder link. Use absolute Markdown paths, angle-bracket destinations for spaces, and a trailing slash for the directory; folder links use existing project-file navigation.
+The final file is saved under the current project's `thumbnails/` directory. Embed the final image with Markdown image syntax using the returned absolute `file` path, with an angle-bracket destination for spaces. The inline preview supports opening the enlarged image; omit separate image and folder links unless the user asks for them.
 
 Keep the message brief and state the verified dimensions, PNG format, and byte size. Do not import into Studio, change publish metadata, publish the world, or upload the image as part of this skill.

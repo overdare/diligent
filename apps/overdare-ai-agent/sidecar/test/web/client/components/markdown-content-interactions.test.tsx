@@ -6,6 +6,7 @@ GlobalRegistrator.register({ url: "http://localhost:5174/" });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 import { afterAll, expect, test } from "bun:test";
+import type { FileReadResponse } from "@diligent/protocol";
 import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MarkdownContent } from "../../../../src/web/client/components/MarkdownContent";
@@ -33,7 +34,7 @@ test("generated Markdown images have collapsible thumbnails and use the shared i
     await act(async () => thumbnail?.click());
     const dialog = document.querySelector('[role="dialog"][aria-label="Image preview"]');
     expect(dialog?.querySelector("img")?.getAttribute("src")).toBe("/_diligent/image/generated/photo.png");
-    expect(dialog?.querySelector("a[download]")?.getAttribute("download")).toBe("photo.png");
+    expect(Boolean(dialog?.querySelector("a[download]"))).toBe(false);
     await act(async () => dialog?.querySelector<HTMLButtonElement>('[aria-label="Close image preview"]')?.click());
     expect(document.querySelector('[role="dialog"][aria-label="Image preview"]')).toBeNull();
     const toggle = container.querySelector<HTMLButtonElement>("[data-image-toggle]");
@@ -140,3 +141,118 @@ test("does not re-highlight unchanged markdown when a parent re-renders", async 
     rootElement.remove();
   }
 });
+
+for (const path of ["thumbnails/shot.png", "/repo/thumbnails/shot.png", "C:/repo/thumbnails/shot.png"]) {
+  test(`project image ${path} loads server bytes and enlarges without navigating to a disk path`, async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const requests: unknown[] = [];
+    const loadFile = async (...args: unknown[]): Promise<FileReadResponse> => {
+      requests.push(args);
+      return {
+        kind: "image",
+        path: "/repo/thumbnails/shot.png",
+        name: "shot.png",
+        mediaType: "image/png",
+        dataBase64: "cGl4ZWxz",
+      };
+    };
+    try {
+      await act(async () =>
+        root.render(
+          createElement(MarkdownContent, {
+            text: `![Thumbnail](<${path}>)`,
+            options: { threadId: "origin-thread" },
+            loadFile,
+          }),
+        ),
+      );
+      expect(requests).toEqual([[path, "origin-thread"]]);
+      expect(container.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,cGl4ZWxz");
+      const button = container.querySelector<HTMLButtonElement>("[data-image-open]")!;
+      button.focus();
+      await act(async () => button.click());
+      const dialog = document.querySelector('[aria-label="Image preview"]')!;
+      expect(dialog.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,cGl4ZWxz");
+      expect(Boolean(dialog.querySelector("a[download]"))).toBe(false);
+      const close = dialog.querySelector<HTMLButtonElement>('button[aria-label="Close image preview"]')!;
+      expect(document.activeElement).toBe(close);
+      const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+      await act(async () => close.dispatchEvent(tab));
+      expect(tab.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(close);
+      await act(async () => close.click());
+      expect(document.activeElement).toBe(button);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+}
+
+test("project image reads preserve document-relative paths and ignore stale results", async () => {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  const requests: unknown[] = [];
+  let finishFirst: ((file: FileReadResponse) => void) | undefined;
+  const loadFile = (path: string, threadId?: string): Promise<FileReadResponse> => {
+    requests.push([path, threadId]);
+    if (path.endsWith("first.png"))
+      return new Promise((resolve) => {
+        finishFirst = resolve;
+      });
+    return Promise.resolve({ kind: "image", path, name: "second.png", mediaType: "image/png", dataBase64: "bmV3" });
+  };
+  const options = { basePath: "/repo/docs/brief.md", threadId: "origin-thread" };
+  try {
+    await act(async () =>
+      root.render(createElement(MarkdownContent, { text: "![First](first.png)", options, loadFile })),
+    );
+    expect(container.querySelector("img")?.hasAttribute("src")).toBe(false);
+    expect(container.querySelector<HTMLButtonElement>("[data-image-open]")?.disabled).toBe(true);
+    await act(async () =>
+      root.render(createElement(MarkdownContent, { text: "![Second](second.png)", options, loadFile })),
+    );
+    await act(async () =>
+      finishFirst?.({
+        kind: "image",
+        path: "/repo/docs/first.png",
+        name: "first.png",
+        mediaType: "image/png",
+        dataBase64: "b2xk",
+      }),
+    );
+    expect(requests).toEqual([
+      ["/repo/docs/first.png", "origin-thread"],
+      ["/repo/docs/second.png", "origin-thread"],
+    ]);
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,bmV3");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+for (const failure of ["missing", "non-image"]) {
+  test(`project image ${failure} cannot open a broken viewer`, async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const loadFile = async (): Promise<FileReadResponse> => {
+      if (failure === "missing") throw new Error("File not found");
+      return { kind: "text", path: "/repo/image.png", name: "image.png", content: "not an image" };
+    };
+    try {
+      await act(async () => root.render(createElement(MarkdownContent, { text: "![Thumbnail](image.png)", loadFile })));
+      expect(container.textContent).toContain("Image unavailable");
+      expect(container.querySelector<HTMLButtonElement>("[data-image-open]")?.disabled).toBe(true);
+      expect(container.querySelector("img")).toBeNull();
+      expect(document.querySelector('[aria-label="Image preview"]')).toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+}

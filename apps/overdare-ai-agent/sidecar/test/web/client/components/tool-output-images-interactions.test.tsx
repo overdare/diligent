@@ -16,7 +16,7 @@ afterAll(async () => {
   void GlobalRegistrator.unregister();
 });
 
-test("image thumbnails show the actual count and open a downloadable viewer", async () => {
+test("image thumbnails show the actual count and open a viewer without a download action", async () => {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -39,7 +39,7 @@ test("image thumbnails show the actual count and open a downloadable viewer", as
     await act(async () => thumbnail?.click());
     const dialog = document.querySelector('[role="dialog"][aria-label="Image preview"]');
     expect(dialog?.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,second");
-    expect(dialog?.querySelector("a[download]")?.getAttribute("href")).toBe("data:image/png;base64,second");
+    expect(Boolean(dialog?.querySelector('a[download], [aria-label="Download image"]'))).toBe(false);
     expect(dialog?.querySelector('[aria-label="Zoom in"]')).toBeNull();
     await act(async () => dialog?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(document.querySelector('[role="dialog"][aria-label="Image preview"]')).toBeNull();

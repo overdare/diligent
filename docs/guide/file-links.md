@@ -16,6 +16,8 @@ Windows backslash paths, repeated drive separators such as `C://Users/...`, and 
 
 HTTP(S), protocol-relative web addresses, email links, and anchor-only links retain their existing navigation. Existing persisted-image URLs remain unchanged.
 
+Images embedded in conversation Markdown also support project-relative and absolute file paths, including generated files in `thumbnails/`. The Web client reads these through `file/read` with the originating thread context and displays the returned image bytes inline. Clicking the image opens an enlarged preview with a close control. These previews do not offer a download action.
+
 ## Where paths are resolved
 
 Paths belong to the **agent server computer**, not necessarily the computer running the browser. Relative references resolve against the originating conversation's project directory; links inside a previewed Markdown document resolve against that document's directory. Preview URLs carry the originating thread ID, so opening a file does not switch the conversation or create a new one.

@@ -15,16 +15,21 @@ const IMAGE_GALLERY_ICON = `<svg class="image-gallery-icon" viewBox="0 0 24 24" 
   <circle cx="11.5" cy="11.5" r="1.25" fill="currentColor"/>
 </svg>`;
 const renderImage = renderer.image;
-renderer.image = function (token) {
-  const image = renderImage.call(this, {
-    ...token,
-    href: /^(?:[a-z][a-z0-9+.-]*:\/\/|\/\/)/i.test(token.href) ? token.href : toWebImageUrl(token.href),
-  });
+function renderImagePreview(this: Renderer, token: Parameters<Renderer["image"]>[0], options: MarkdownOptions) {
+  const href =
+    /^(?:[a-z][a-z0-9+.-]*:\/\/|\/\/)/i.test(token.href) && !/^file:/i.test(token.href)
+      ? token.href
+      : toWebImageUrl(token.href);
+  const fileUrl = toFilePreviewUrl(href, options);
+  const local = fileUrl !== href;
+  const image = local
+    ? `<img data-local-image-url="${escapeHtml(fileUrl)}" alt="${escapeHtml(token.text)}"${token.title ? ` title="${escapeHtml(token.title)}"` : ""}>`
+    : renderImage.call(this, { ...token, href });
   return `<span class="image-gallery markdown-image-preview" data-image-preview="true">
     <button type="button" class="image-gallery-toggle" data-image-toggle="true" aria-expanded="true">${IMAGE_GALLERY_ICON} 1 image <span aria-hidden="true" data-image-chevron="true">⌄</span></button>
-    <button type="button" class="image-thumbnail" data-image-open="true" aria-label="${escapeHtml(`View ${token.text || "image"}`)}">${image}</button>
+    <button type="button" class="image-thumbnail" data-image-open="true"${local ? " disabled" : ""} aria-label="${escapeHtml(`View ${token.text || "image"}`)}">${image}</button>
   </span>`;
-};
+}
 
 function escapeHtml(value: string): string {
   return value.replace(
@@ -64,6 +69,9 @@ export interface MarkdownOptions extends FileLinkOptions {
 
 function createRenderer(options: MarkdownOptions): Renderer {
   const configured = Object.assign(new marked.Renderer(), renderer);
+  configured.image = function (token) {
+    return renderImagePreview.call(this, token, options);
+  };
   configured.link = function ({ href, title, tokens, text }) {
     const label = tokens?.length ? this.parser.parseInline(tokens) : escapeHtml(text);
     const normalizedHref = href.trim().replace(/[\u0000-\u0020]/g, "");
