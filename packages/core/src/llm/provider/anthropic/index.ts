@@ -8,6 +8,7 @@ import { classifyProviderHttpError } from "../../provider-errors";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "../../types";
 import { CONTEXT_OVERFLOW_ERROR_MESSAGE, ProviderError, ProviderErrorReason, ProviderErrorType } from "../../types";
 import { PROVIDER_RESPONSE_HEADER_TIMEOUT_MS } from "../timeouts";
+import { ANTHROPIC_FILES_BETA, getAnthropicImageFiles } from "./image-files";
 import { convertMessages } from "./messages";
 import { toAnthropicBlocks } from "./request";
 import {
@@ -48,6 +49,7 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
     timeout: PROVIDER_RESPONSE_HEADER_TIMEOUT_MS,
     maxRetries: 0,
   });
+  const imageFiles = getAnthropicImageFiles(resolvedApiKey, resolvedSdkBaseUrl);
 
   return (model: Model, context: StreamContext, options: StreamOptions): EventStream<ProviderEvent, ProviderResult> => {
     const stream = new EventStream<ProviderEvent, ProviderResult>(
@@ -103,11 +105,23 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
         }
 
         const systemBlocks = toAnthropicBlocks(context.systemPrompt);
+        const convertedMessages = await convertMessages(
+          context.messages,
+          context.compactionSummary,
+          context.localImageLoader,
+        );
+        const { messages, usesFiles } = imageFiles
+          ? await imageFiles.reference(convertedMessages)
+          : { messages: convertedMessages, usesFiles: false };
+        const betas = [
+          ...(usesThinkingBindingControls ? ["thinking-binding-controls-2026-08-01"] : []),
+          ...(usesFiles ? [ANTHROPIC_FILES_BETA] : []),
+        ];
         const requestParams = {
           model: model.modelId,
           max_tokens: maxTokens,
           system: systemBlocks,
-          messages: await convertMessages(context.messages, context.compactionSummary, context.localImageLoader),
+          messages,
           ...(context.tools.length > 0 && {
             tools: convertTools(context.tools),
           }),
@@ -126,9 +140,7 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
 
         const sdkStream = client.messages.stream(requestParams, {
           ...(options.signal && { signal: options.signal }),
-          ...(usesThinkingBindingControls && {
-            headers: { "anthropic-beta": "thinking-binding-controls-2026-08-01" },
-          }),
+          ...(betas.length > 0 && { headers: { "anthropic-beta": betas.join(",") } }),
         });
 
         stream.push({ type: "start" });

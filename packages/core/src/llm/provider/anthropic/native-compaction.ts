@@ -1,5 +1,6 @@
 // @summary Anthropic native compaction request and response handling
 import type { NativeCompactFn } from "../native-compaction";
+import { ANTHROPIC_FILES_BETA, getAnthropicImageFiles } from "./image-files";
 import { convertMessages, ensureAnthropicCompactionConversationEndsWithUser } from "./messages";
 import { toAnthropicBlocks } from "./request";
 
@@ -25,14 +26,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function createAnthropicNativeCompaction(apiKey: string, baseUrl?: string): NativeCompactFn {
-  const endpoint = `${resolveAnthropicBaseUrl(baseUrl)}/messages`;
+  const baseUrlWithVersion = resolveAnthropicBaseUrl(baseUrl);
+  const endpoint = `${baseUrlWithVersion}/messages`;
+  const imageFiles = getAnthropicImageFiles(apiKey, baseUrlWithVersion);
   return async (input) => {
     const rawMessages = await convertMessages(input.messages, input.compactionSummary, input.localImageLoader);
     const normalizedMessages = ensureAnthropicCompactionConversationEndsWithUser(rawMessages);
+    const { messages, usesFiles } = imageFiles
+      ? await imageFiles.reference(normalizedMessages)
+      : { messages: normalizedMessages, usesFiles: false };
     const body: Record<string, unknown> = {
       model: input.model.modelId,
       max_tokens: Math.max(256, Math.min(input.model.maxOutputTokens, 4_096)),
-      messages: normalizedMessages,
+      messages,
       context_management: {
         edits: [
           {
@@ -51,7 +57,7 @@ export function createAnthropicNativeCompaction(apiKey: string, baseUrl?: string
         "Content-Type": "application/json",
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
-        "anthropic-beta": "compact-2026-01-12",
+        "anthropic-beta": usesFiles ? `compact-2026-01-12,${ANTHROPIC_FILES_BETA}` : "compact-2026-01-12",
       },
       body: JSON.stringify(body),
       signal: input.signal,

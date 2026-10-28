@@ -10,6 +10,7 @@ const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
 const anthropicCalls: unknown[] = [];
 const anthropicConstructorOptions: unknown[] = [];
 const anthropicRequestOptions: unknown[] = [];
+const anthropicFileUploads: unknown[] = [];
 
 class MockAnthropicStream {
   on() {
@@ -42,6 +43,15 @@ class MockAnthropicClient {
       anthropicCalls.push(params);
       anthropicRequestOptions.push(options);
       return new MockAnthropicStream();
+    },
+  };
+
+  beta = {
+    files: {
+      upload: async (params: unknown) => {
+        anthropicFileUploads.push(params);
+        return { id: `file_${anthropicFileUploads.length}` };
+      },
     },
   };
 }
@@ -111,6 +121,56 @@ describe("createAnthropicStream", () => {
       baseURL: "https://example.anthropic.local",
       timeout: PROVIDER_RESPONSE_HEADER_TIMEOUT_MS,
       maxRetries: 0,
+    });
+  });
+
+  test("sends images by file_id with the Files beta on the official endpoint", async () => {
+    anthropicCalls.length = 0;
+    anthropicRequestOptions.length = 0;
+    anthropicFileUploads.length = 0;
+    const imageContext: StreamContext = {
+      ...EMPTY_CONTEXT,
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "b2ZmaWNpYWw=" } }],
+          timestamp: 1,
+        },
+      ],
+    };
+
+    await createAnthropicStream("files-key")(baseModel({}), imageContext, { effort: "medium" }).result();
+
+    const request = anthropicCalls[0] as { messages: Array<{ content: Array<{ source: unknown }> }> };
+    expect(anthropicFileUploads).toHaveLength(1);
+    expect(request.messages[0]?.content[0]?.source).toEqual({ type: "file", file_id: "file_1" });
+    expect(anthropicRequestOptions[0]).toMatchObject({ headers: { "anthropic-beta": "files-api-2025-04-14" } });
+  });
+
+  test("keeps images inline behind a custom base URL", async () => {
+    anthropicCalls.length = 0;
+    anthropicFileUploads.length = 0;
+    const imageContext: StreamContext = {
+      ...EMPTY_CONTEXT,
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "cHJveHk=" } }],
+          timestamp: 1,
+        },
+      ],
+    };
+
+    await createAnthropicStream("proxy-key", "https://gateway.example.com")(baseModel({}), imageContext, {
+      effort: "medium",
+    }).result();
+
+    const request = anthropicCalls[0] as { messages: Array<{ content: Array<{ source: unknown }> }> };
+    expect(anthropicFileUploads).toHaveLength(0);
+    expect(request.messages[0]?.content[0]?.source).toEqual({
+      type: "base64",
+      media_type: "image/png",
+      data: "cHJveHk=",
     });
   });
 
