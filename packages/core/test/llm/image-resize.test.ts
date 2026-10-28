@@ -4,6 +4,9 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import type { ImageBlock } from "@diligent/core/message-contract";
 import type { Tool, ToolContext } from "@diligent/core/tool-contract";
 // @ts-expect-error -- file import yields a path string at runtime
+import jpegEncWasm from "@jsquash/jpeg/codec/enc/mozjpeg_enc.wasm" with { type: "file" };
+import encodeJpeg, { init as initJpegEncode } from "@jsquash/jpeg/encode";
+// @ts-expect-error -- file import yields a path string at runtime
 import pngWasm from "@jsquash/png/codec/pkg/squoosh_png_bg.wasm" with { type: "file" };
 import decodePng, { init as initPngDecode } from "@jsquash/png/decode";
 import encodePng, { init as initPngEncode } from "@jsquash/png/encode";
@@ -13,6 +16,7 @@ import {
   downscaleImageIfNeeded,
   imageDimensionsFromHeader,
   inspectImageAlpha,
+  resizeImageToSquarePng,
   splitImageGrid,
   withImageDownscaling,
 } from "../../src/llm/image-resize";
@@ -44,6 +48,69 @@ beforeAll(async () => {
   await initPngEncode(mod);
   smallPng = await encodePng(solidImage(100, 80));
   largePng = await encodePng(solidImage(3000, 2000));
+});
+
+describe("resizeImageToSquarePng", () => {
+  test.each([
+    [7, 3],
+    [3, 7],
+  ])("center crops %ix%i without stretching or changing retained pixels", async (width, height) => {
+    const source = solidImage(width, height);
+    for (let i = 0; i < width * height; i++) source.data.set([i, i * 2, i * 3, 255], i * 4);
+    const result = await resizeImageToSquarePng(await encodePng(source), "image/png", 3);
+    const x = Math.floor((width - 3) / 2);
+    const y = Math.floor((height - 3) / 2);
+    expect(result.crop).toEqual({ x, y, width: 3, height: 3 });
+    expect(result.source).toEqual({ width, height });
+    const decoded = await decodePng(result.bytes);
+    expect([decoded.width, decoded.height]).toEqual([3, 3]);
+    for (let row = 0; row < 3; row++) {
+      const start = ((y + row) * width + x) * 4;
+      expect(decoded.data.slice(row * 12, row * 12 + 12)).toEqual(source.data.slice(start, start + 12));
+    }
+  });
+
+  test.each([8, 1254])("resizes a %ipx source to exactly 1080px PNG in both directions", async (size) => {
+    const result = await resizeImageToSquarePng(await encodePng(solidImage(size, size)), "image/png", 1080);
+    const decoded = await decodePng(result.bytes);
+    expect([decoded.width, decoded.height]).toEqual([1080, 1080]);
+    // Resampling can round a white channel down by one; it must retain the image content.
+    expect(decoded.data.every((value) => value >= 254)).toBe(true);
+    expect([...new Uint8Array(result.bytes).slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  });
+
+  test("reencodes WebP as real PNG rather than just changing a filename", async () => {
+    const webp = Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEAAUAmJaQAA3AA/v89WAAAAA==", "base64");
+    const result = await resizeImageToSquarePng(Uint8Array.from(webp).buffer, "image/webp", 16);
+    const decoded = await decodePng(result.bytes);
+    expect([decoded.width, decoded.height]).toEqual([16, 16]);
+    expect(result.source).toEqual({ width: 1, height: 1 });
+  });
+
+  test("crops JPEG input and returns decoded PNG pixels", async () => {
+    await initJpegEncode({ wasmBinary: await Bun.file(jpegEncWasm).arrayBuffer() });
+    const jpeg = await encodeJpeg(solidImage(6, 4));
+    const result = await resizeImageToSquarePng(jpeg, "image/jpeg", 4);
+    const decoded = await decodePng(result.bytes);
+    expect(result.source).toEqual({ width: 6, height: 4 });
+    expect(result.crop).toEqual({ x: 1, y: 0, width: 4, height: 4 });
+    expect([decoded.width, decoded.height]).toEqual([4, 4]);
+    expect(decoded.data.every((value) => value >= 254)).toBe(true);
+  });
+
+  test("rejects invalid input, excessive allocation, and cancellation", async () => {
+    for (const size of [0, -1, 1.5, NaN, 100000]) {
+      await expect(resizeImageToSquarePng(smallPng, "image/png", size)).rejects.toThrow();
+    }
+    await expect(resizeImageToSquarePng(new ArrayBuffer(0), "image/png", 1080)).rejects.toThrow();
+    await expect(resizeImageToSquarePng(pngHeaderOnly(20000, 20000), "image/png", 1080)).rejects.toThrow();
+    await expect(resizeImageToSquarePng(pngHeaderOnly(10, 10), "image/png", 1080)).rejects.toThrow();
+    await expect(
+      resizeImageToSquarePng(smallPng, "image/png", 1080, {
+        signal: AbortSignal.abort(new Error("cancel thumbnail")),
+      }),
+    ).rejects.toThrow("cancel thumbnail");
+  });
 });
 
 describe("downscaleImageIfNeeded", () => {

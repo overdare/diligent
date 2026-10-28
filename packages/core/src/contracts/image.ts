@@ -6,6 +6,7 @@ export {
   type ImageAlphaStats,
   type ImageGridCell,
   inspectImageAlpha,
+  resizeImageToSquarePng,
   splitImageGrid,
   validateImage,
   withImageDownscaling,
