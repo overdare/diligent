@@ -41,9 +41,9 @@ const IMAGE_TOOL_DESCRIPTION =
   "Transparent requests include actual pixel inspection. Repair opaque output using its preserved file; " +
   "regenerate empty output from the guide or last non-empty source within the same retry budget. " +
   "To use it in Studio, pass the file to studiorpc_asset_manager_import and bind asset.assetid to ImageLabel or ImageButton. " +
-  "For Part or ProceduralModel decoration, first use studiorpc_texture_prepare, generate only its required source artwork, " +
-  "then pass files to studiorpc_texture_apply. Studio paints simple shapes and text and composes and publishes the final atlas. " +
-  "Do not generate a final UV atlas or use GUI objects for flat surface decoration. " +
+  "For surface artwork, load the texture-authoring skill and use existing MaterialVariant.ColorMap for repeated Part materials " +
+  "or MeshPart.TextureId with the mesh UVs. Import source images through the same asset manager and use its published asset ID. " +
+  "Basic Part has no independent per-face image path; report unsupported decoration rather than adding meshes or GUI objects. " +
   IMAGE_FAILURE_GUIDANCE;
 
 const parameters = z
