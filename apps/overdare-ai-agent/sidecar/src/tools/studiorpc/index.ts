@@ -184,7 +184,6 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
   return {
     id: "@overdare/studiorpc-tools",
     displayName: "OVERDARE Studio RPC Tools",
-    supersedesPluginPackages: ["@overdare/plugin-studiorpc"],
     createTools: async ({ cwd, host, sessionId, generateText }) => {
       let writeLock = writeLocks.get(cwd);
       if (!writeLock) {

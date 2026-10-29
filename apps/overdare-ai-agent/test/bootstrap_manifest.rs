@@ -2,7 +2,7 @@
 #[path = "../src/bootstrap_manifest.rs"]
 mod bootstrap_manifest;
 
-use bootstrap_manifest::{deploy_skills, remove_revoked_plugins, DeploymentLock};
+use bootstrap_manifest::{deploy_skills, DeploymentLock};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -303,17 +303,11 @@ fn cli_skip_update_deploys_policy_and_skills_to_the_selected_global_root() {
         r#"{"version":"1.0.0","applied_at":"fixture","sha256":"fixture"}"#,
     );
     fs::rename(f.source(), runtime.join("bootstrap")).unwrap();
-    write(
-        &runtime.join("bootstrap/plugins-manifest.json"),
-        r#"{"schemaVersion":1,"revoked":["@overdare/plugin-validator"]}"#,
-    );
     write(&global.join("skills/bad/SKILL.md"), &skill("bad", "edited"));
     write(
         &global.join("skills/custom/SKILL.md"),
         &skill("custom", "user"),
     );
-    write(&global.join("plugins/@overdare/plugin-validator/index.js"), "stale");
-    write(&global.join("plugins/user-plugin/index.js"), "user");
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_overdare-ai-agent"))
         .args(["--agent-env=dev", "init", "--skip-update"])
         .env("HOME", &f.0)
@@ -332,9 +326,6 @@ fn cli_skip_update_deploys_policy_and_skills_to_the_selected_global_root() {
     assert!(!global.join("skills/bad").exists());
     assert!(global.join(".bootstrap-skills-state.json").exists());
     assert!(!global.join("skills-manifest.json").exists());
-    assert!(!global.join("plugins/@overdare/plugin-validator").exists());
-    assert!(global.join("plugins/user-plugin/index.js").exists());
-    assert!(!global.join("plugins-manifest.json").exists());
     assert!(!f.0.join(".overdare").exists());
 }
 
@@ -385,65 +376,4 @@ fn revoked_symlink_is_unlinked_without_deleting_its_target() {
     f.run("v1", true).unwrap();
     assert!(external.join("SKILL.md").exists());
     assert!(fs::symlink_metadata(f.global().join("skills/bad")).is_err());
-}
-
-fn plugin_bundle(f: &Fixture, revoked: &[&str]) {
-    write(
-        &f.source().join("plugins-manifest.json"),
-        &serde_json::json!({"schemaVersion":1,"revoked":revoked}).to_string(),
-    );
-}
-
-#[test]
-fn revoked_plugins_are_removed_and_unlisted_plugins_stay() {
-    let f = Fixture::new();
-    plugin_bundle(&f, &["@overdare/plugin-validator", "legacy-tool"]);
-    let plugins = f.global().join("plugins");
-    write(&plugins.join("@overdare/plugin-validator/index.js"), "stale");
-    write(&plugins.join("legacy-tool/index.js"), "stale");
-    write(&plugins.join("@overdare/plugin-other/index.js"), "kept");
-    write(&plugins.join("user-plugin/index.js"), "user");
-    remove_revoked_plugins(&f.source(), &f.global()).unwrap();
-    assert!(!plugins.join("@overdare/plugin-validator").exists());
-    assert!(!plugins.join("legacy-tool").exists());
-    assert!(plugins.join("@overdare/plugin-other/index.js").exists());
-    assert!(plugins.join("user-plugin/index.js").exists());
-}
-
-#[test]
-fn plugin_revocations_never_address_paths_outside_the_plugin_root() {
-    let f = Fixture::new();
-    write(&f.global().join("skills/keep/SKILL.md"), &skill("keep", "user"));
-    for package in ["../skills", "@overdare/../../skills", "@overdare/a/b", "@/x", "/abs"] {
-        plugin_bundle(&f, &[package]);
-        assert!(
-            remove_revoked_plugins(&f.source(), &f.global()).is_err(),
-            "{package} must be rejected"
-        );
-    }
-    assert!(f.global().join("skills/keep/SKILL.md").exists());
-}
-
-#[test]
-fn packaged_plugin_manifest_removes_the_legacy_validator_plugin() {
-    // Regression: #418 dropped the provider that superseded this package, and
-    // the stale copy came back as a `validatelua` tool.
-    let f = Fixture::new();
-    let plugin = f.global().join("plugins/@overdare/plugin-validator");
-    write(&plugin.join("overdare-types.d.lua"), "stale");
-    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("bootstrap");
-    remove_revoked_plugins(&source, &f.global()).unwrap();
-    assert!(!plugin.exists());
-}
-
-#[cfg(unix)]
-#[test]
-fn linked_plugin_root_is_never_followed() {
-    let f = Fixture::new();
-    plugin_bundle(&f, &["@overdare/plugin-validator"]);
-    let outside = f.0.join("outside");
-    write(&outside.join("@overdare/plugin-validator/index.js"), "external");
-    std::os::unix::fs::symlink(&outside, f.global().join("plugins")).unwrap();
-    remove_revoked_plugins(&f.source(), &f.global()).unwrap();
-    assert!(outside.join("@overdare/plugin-validator/index.js").exists());
 }

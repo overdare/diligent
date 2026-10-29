@@ -11,7 +11,6 @@ const STATE: &str = ".bootstrap-skills-state.json";
 const MANIFEST: &str = "skills-manifest.json";
 const AGENT_MANIFEST: &str = "agents-manifest.json";
 const AGENT_STATE: &str = ".bootstrap-agents-state.json";
-const PLUGIN_MANIFEST: &str = "plugins-manifest.json";
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -33,13 +32,6 @@ struct Manifest {
 struct AgentRevocations {
     schema_version: u32,
     revoked: BTreeSet<Entry>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct PluginRevocations {
-    schema_version: u32,
-    revoked: BTreeSet<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -392,66 +384,6 @@ fn remove_revoked_agents(global: &Path, revoked: &BTreeSet<Entry>) -> Result<(),
                     );
                 }
             }
-        }
-    }
-    Ok(())
-}
-
-/// `@scope/name` or `name`, each component a portable directory name, so a
-/// revocation can never address anything outside `<global>/plugins`.
-fn valid_plugin_package(package: &str) -> bool {
-    match package.strip_prefix('@') {
-        Some(scoped) => scoped
-            .split_once('/')
-            .is_some_and(|(scope, name)| valid_name(scope) && valid_name(name)),
-        None => valid_name(package),
-    }
-}
-
-fn read_plugin_revocations(source: &Path) -> Result<BTreeSet<String>, String> {
-    let path = source.join(PLUGIN_MANIFEST);
-    reject_symlink(&path)?;
-    let policy: PluginRevocations = match fs::read_to_string(path) {
-        Ok(json) => serde_json::from_str(&json)
-            .map_err(|error| format!("invalid plugin revocations: {error}"))?,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(BTreeSet::new()),
-        Err(error) => return Err(error.to_string()),
-    };
-    if policy.schema_version != 1 {
-        return Err("unsupported plugin revocations schemaVersion".into());
-    }
-    if let Some(package) = policy.revoked.iter().find(|p| !valid_plugin_package(p)) {
-        return Err(format!("invalid revoked plugin package: {package}"));
-    }
-    Ok(policy.revoked)
-}
-
-/// Delete the bundle's revoked plugin packages from the global plugin root, where
-/// the runtime would otherwise auto-discover and load them. Only listed packages
-/// are touched; every other plugin directory is user-owned.
-///
-/// Not journaled like agent revocations: only bundles that predate bundled tool
-/// providers ship plugins, and their sidecars still load them, so a revocation
-/// must not outlive the bundle that declares it.
-pub(crate) fn remove_revoked_plugins(source: &Path, global: &Path) -> Result<(), String> {
-    let revoked = read_plugin_revocations(source)?;
-    let root = global.join("plugins");
-    'packages: for package in &revoked {
-        let mut path = root.clone();
-        for part in package.split('/') {
-            // Never follow a linked plugin root or scope out of global storage.
-            if let Err(error) = reject_symlink(&path) {
-                eprintln!("[init] Skipped revoked plugin {package}: {error}");
-                continue 'packages;
-            }
-            path.push(part);
-        }
-        if fs::symlink_metadata(&path).is_err() {
-            continue;
-        }
-        match remove_entry(&path) {
-            Ok(()) => eprintln!("[init] Removed revoked plugin {package}"),
-            Err(error) => eprintln!("[init] Failed to remove revoked plugin {package}: {error}"),
         }
     }
     Ok(())

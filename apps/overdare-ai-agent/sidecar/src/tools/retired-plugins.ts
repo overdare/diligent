@@ -1,39 +1,24 @@
-// @summary Suppresses retired first-party plugin copies listed in bootstrap/plugins-manifest.json at runtime.
+// @summary Keeps retired first-party plugin copies in the global plugin root from loading at runtime.
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { BundledToolProvider } from "@diligent/runtime";
 
-const PLUGIN_MANIFEST = "plugins-manifest.json";
-
 /**
- * Older launchers copied first-party plugins into the global plugin root. The launcher's `init` deletes the packages
- * revoked in `plugins-manifest.json`, but the launcher is not updated with the runtime bundle, so an old launcher never
- * runs that cleanup. This provider makes the auto-updated runtime skip the same packages during plugin discovery.
+ * First-party plugins that launchers up to v0.4.21 copied into `~/.overdare/plugins/`. Nothing deletes those copies, so
+ * the runtime must never load them: their tools and hooks are stale (for example, the validator's `validatelua` uses
+ * outdated Luau definitions). Entries are permanent; retire a package by adding it here.
  */
-export function createRetiredPluginProvider(bootstrapDir: string | undefined): BundledToolProvider {
+export const RETIRED_PLUGIN_PACKAGES = [
+  "@overdare/plugin-analytics",
+  "@overdare/plugin-rag",
+  "@overdare/plugin-studiorpc",
+  "@overdare/plugin-validator",
+] as const;
+
+export function createRetiredPluginProvider(): BundledToolProvider {
   return {
     id: "@overdare/retired-plugins",
     displayName: "OVERDARE retired plugins",
-    supersedesPluginPackages: bootstrapDir ? readRevokedPluginPackages(bootstrapDir) : [],
+    supersedesPluginPackages: [...RETIRED_PLUGIN_PACKAGES],
     createTools: () => [],
   };
-}
-
-function readRevokedPluginPackages(bootstrapDir: string): string[] {
-  let raw: string;
-  try {
-    raw = readFileSync(join(bootstrapDir, PLUGIN_MANIFEST), "utf8");
-  } catch {
-    return [];
-  }
-  try {
-    const manifest: unknown = JSON.parse(raw);
-    if (manifest === null || typeof manifest !== "object" || !("revoked" in manifest)) return [];
-    const { revoked } = manifest;
-    return Array.isArray(revoked) ? revoked.filter((name): name is string => typeof name === "string") : [];
-  } catch (error) {
-    console.warn(`[retired-plugins] Ignoring unreadable ${PLUGIN_MANIFEST}: ${String(error)}`);
-    return [];
-  }
 }

@@ -15,8 +15,6 @@ export interface StudioBundledToolProviderOptions extends StudioToolProviderOpti
   studioDisabled?: boolean;
   canTransmitRecords?: () => boolean;
   studioRpc?: StudioRpcToolProviderOptions;
-  /** Runtime bootstrap directory whose `plugins-manifest.json` lists retired plugin packages to skip. */
-  bootstrapDir?: string;
 }
 
 export function createStudioBundledToolProviders(options: StudioBundledToolProviderOptions): BundledToolProvider[] {
@@ -30,6 +28,6 @@ export function createStudioBundledToolProviders(options: StudioBundledToolProvi
     ...(options.studioDisabled ? [] : [createStudioRpcToolProvider(options.studioRpc)]),
     createAnalyticsToolProvider(),
     createGatewayToolProvider(options),
-    createRetiredPluginProvider(options.bootstrapDir),
+    createRetiredPluginProvider(),
   ];
 }
