@@ -7,7 +7,7 @@ import type { StreamTurnScope } from "../llm/turn-scope";
 import type { Model, StreamFunction, SystemSection, ThinkingEffort } from "../llm/types";
 import { ProviderError, ProviderErrorType } from "../llm/types";
 import type { ToolOutputFileStore } from "../tool/executor";
-import type { Tool } from "../tool/types";
+import type { Tool, ToolRunScope } from "../tool/types";
 import type { AssistantMessage, Message, ToolCallBlock } from "../types";
 import { streamAssistantMessage } from "./assistant";
 import { getCompactionDecision, runCompaction } from "./compaction";
@@ -73,6 +73,7 @@ export async function runAgentLoop(
   const { config, streamFunction, stream, hooks } = runtime;
   const toolAbortController = new AbortController();
   const signal = AbortSignal.any([toolAbortController.signal, userSignal].filter((s): s is AbortSignal => s != null));
+  const run = createRunScope(signal);
 
   const loopRequest = {
     config,
@@ -196,6 +197,7 @@ export async function runAgentLoop(
         () => toolAbortController.abort(),
         runtime.toolOutputStore,
         runtime.sessionId,
+        run.scope,
       ).finally(() => hooks.endToolBatch?.());
 
       // Always record tool results — including when the turn was aborted. Every
@@ -245,6 +247,9 @@ export async function runAgentLoop(
     }
     stopReason = "interrupted";
   } finally {
+    // Tools may keep working after they return (yielded code mode cells). Stop new work and let in-flight
+    // work settle, so none of this run's events follow agent_end.
+    await run.close();
     if (stopReason !== "failed" && signal.aborted) {
       stopReason = "interrupted";
     }
@@ -254,6 +259,29 @@ export async function runAgentLoop(
   return {
     messages: conversation,
     compactionSummary: loopRequest.compactionSummary,
+  };
+}
+
+function createRunScope(signal: AbortSignal): { scope: ToolRunScope; close: () => Promise<void> } {
+  const closing = new AbortController();
+  const tracked = new Set<Promise<void>>();
+  return {
+    scope: {
+      signal,
+      closing: closing.signal,
+      track(work) {
+        const settled: Promise<void> = work.then(
+          () => {},
+          () => {},
+        );
+        tracked.add(settled);
+        void settled.then(() => tracked.delete(settled));
+      },
+    },
+    async close() {
+      closing.abort();
+      while (tracked.size > 0) await Promise.all(tracked);
+    },
   };
 }
 

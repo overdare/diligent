@@ -8,6 +8,7 @@ import {
   type ToolOutputFileStore,
   type ToolRegistry,
   type ToolResult,
+  type ToolRunScope,
 } from "@diligent/core/tool-contract";
 import { applyCodeMode, type CodeModeResultMetadata, CodeModeSession } from "@diligent/runtime/tools";
 import { z } from "zod";
@@ -234,27 +235,10 @@ describe("exec", () => {
     );
     expect(maxActive).toBe(1);
   });
-
-  test("completes instead of yielding when the deadline passes during the script's last nested call", async () => {
-    // Real delay: the script runs in a real Worker thread and the cell measures yield_time_ms on the wall clock, so fake
-    // timers cannot order "call in flight" before "deadline passed". The call must start before the deadline (worker
-    // startup on a slow CI host takes tens of milliseconds) and still be running when it passes.
-    const yieldTimeMs = 300;
-    const slow = makeTool("slow", async () => {
-      await Bun.sleep(yieldTimeMs + 100);
-      return { output: "slow-done" };
-    });
-    const { exec } = setup([slow]);
-    const result = await exec.execute(
-      { code: `text(await tools.slow({}));`, yield_time_ms: yieldTimeMs },
-      makeCtx("call-1"),
-    );
-    expect(result.output).toBe("Script completed\nslow-done");
-  });
 });
 
 describe("exec_wait", () => {
-  test("resumes a yielded cell and runs calls requested while detached under the waiting call", async () => {
+  test("without a run scope, holds calls requested while detached and runs them under the next wait", async () => {
     const echo = makeTool("echo", async (args) => ({ output: `echo:${args.value}` }), { supportParallel: true });
     const { exec, execWait } = setup([echo]);
 
@@ -297,5 +281,188 @@ describe("exec_wait", () => {
     const pending = exec.execute({ code: "await new Promise(() => {});" }, makeCtx("call-1", [], controller.signal));
     controller.abort();
     expect((await pending).output).toBe("Script terminated");
+  });
+});
+
+/** A fake agent run: what the core loop hands each tool call as `ctx.runScope`. */
+interface FakeRun {
+  scope: ToolRunScope;
+  abort: () => void;
+  close: () => Promise<void>;
+}
+
+function makeRun(): FakeRun {
+  const abort = new AbortController();
+  const closing = new AbortController();
+  const tracked: Promise<unknown>[] = [];
+  return {
+    scope: {
+      signal: abort.signal,
+      closing: closing.signal,
+      track: (work) => {
+        tracked.push(work);
+      },
+    },
+    abort: () => abort.abort(),
+    close: async () => {
+      closing.abort();
+      await Promise.allSettled(tracked);
+    },
+  };
+}
+
+function makeRunCtx(toolCallId: string, run: FakeRun, events: NestedToolEvent[] = []): ToolContext {
+  return { ...makeCtx(toolCallId, events, run.scope.signal), runScope: run.scope };
+}
+
+describe("background dispatch", () => {
+  test("a yielded cell keeps making nested calls without a wait, attributed to its last driver", async () => {
+    const called = Promise.withResolvers<void>();
+    const echo = makeTool("echo", async (args) => {
+      called.resolve();
+      return { output: `echo:${args.value}` };
+    });
+    const { exec, execWait } = setup([echo]);
+    const run = makeRun();
+    const events: NestedToolEvent[] = [];
+
+    const first = await exec.execute(
+      { code: `yield_control();\ntext(await tools.echo({ value: "bg" }));` },
+      makeRunCtx("call-1", run, events),
+    );
+    expect(first.output).toBe("Script running with cell ID 1");
+    await called.promise;
+    await run.close();
+    expect(events.map((event) => `${event.type}:${event.toolCallId}`)).toEqual([
+      "tool_start:call-1#1",
+      "tool_end:call-1#1",
+    ]);
+
+    const second = await execWait.execute({ cell_id: "1" }, makeRunCtx("call-2", makeRun()));
+    expect(second.output).toBe("Script completed\necho:bg");
+    expect((second.metadata?.codeMode as CodeModeResultMetadata).nestedCalls).toMatchObject([
+      { toolCallId: "call-1#1", parentToolCallId: "call-1", output: "echo:bg" },
+    ]);
+  });
+
+  test("yield_time_ms returns on time while a nested call is still running", async () => {
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const slow = makeTool("slow", async () => {
+      started.resolve();
+      await release.promise;
+      return { output: "slow-done" };
+    });
+    const { exec, execWait } = setup([slow]);
+    const run = makeRun();
+
+    const pending = exec.execute({ code: `text(await tools.slow({}));`, yield_time_ms: 50 }, makeRunCtx("call-1", run));
+    await started.promise;
+    expect((await pending).output).toBe("Script running with cell ID 1");
+
+    release.resolve();
+    await run.close();
+    const waited = await execWait.execute({ cell_id: "1" }, makeRunCtx("call-2", makeRun()));
+    expect(waited.output).toBe("Script completed\nslow-done");
+  });
+
+  test("calls requested after the run closes wait for the next driver", async () => {
+    const calls: unknown[] = [];
+    const echo = makeTool("echo", async (args) => {
+      calls.push(args.value);
+      return { output: `echo:${args.value}` };
+    });
+    const { exec, execWait } = setup([echo]);
+    const run = makeRun();
+    await exec.execute(
+      {
+        code: `yield_control();\nawait new Promise((resolve) => setTimeout(resolve, 20));\ntext(await tools.echo({ value: "late" }));`,
+      },
+      makeRunCtx("call-1", run),
+    );
+    await run.close();
+    // Real delay: the guest's own timer (in the Worker) must fire so the call is requested after the run closed.
+    await Bun.sleep(60);
+    expect(calls).toEqual([]);
+
+    const events: NestedToolEvent[] = [];
+    const waited = await execWait.execute({ cell_id: "1" }, makeRunCtx("call-2", makeRun(), events));
+    expect(waited.output).toBe("Script completed\necho:late");
+    expect(events[0]).toMatchObject({ type: "tool_start", toolCallId: "call-2#1" });
+  });
+
+  test("aborting the run terminates a yielded cell", async () => {
+    const { exec, execWait } = setup([]);
+    const run = makeRun();
+    await exec.execute({ code: "yield_control();\nawait new Promise(() => {});" }, makeRunCtx("call-1", run));
+    run.abort();
+    const waited = await execWait.execute({ cell_id: "1" }, makeCtx("call-2"));
+    expect(waited.output).toBe("Script terminated");
+  });
+
+  test("direct calls of a non-parallel tool wait for the script's background call", async () => {
+    const order: string[] = [];
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const edit = makeTool("edit", async (args) => {
+      order.push(`start:${args.value}`);
+      if (args.value === "script") {
+        started.resolve();
+        await release.promise;
+      }
+      order.push(`end:${args.value}`);
+      return { output: "ok" };
+    });
+    const { exposed, exec } = setup([edit], "on");
+    const directEdit = exposed.find((tool) => tool.name === "edit")!;
+    const run = makeRun();
+
+    await exec.execute({ code: `yield_control();\nawait tools.edit({ value: "script" });` }, makeRunCtx("call-1", run));
+    await started.promise;
+    const direct = directEdit.execute({ value: "direct" }, makeCtx("call-2"));
+    // A direct call that bypassed the gate would have started by its first await.
+    await Promise.resolve();
+    expect(order).toEqual(["start:script"]);
+
+    release.resolve();
+    await direct;
+    await run.close();
+    expect(order).toEqual(["start:script", "end:script", "start:direct", "end:direct"]);
+  });
+
+  test("an aborted direct call stops waiting without blocking later calls", async () => {
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const edit = makeTool("edit", async (args) => {
+      if (args.value === "script") {
+        started.resolve();
+        await release.promise;
+      }
+      return { output: `edited:${args.value}` };
+    });
+    const { exposed, exec } = setup([edit], "on");
+    const directEdit = exposed.find((tool) => tool.name === "edit")!;
+    const registry: ToolRegistry = new Map([[directEdit.name, directEdit]]);
+    const run = makeRun();
+    await exec.execute({ code: `yield_control();\nawait tools.edit({ value: "script" });` }, makeRunCtx("call-1", run));
+    await started.promise;
+
+    const controller = new AbortController();
+    const abandoned = executeTool(
+      registry,
+      { type: "tool_call", id: "call-2", name: "edit", input: { value: "abandoned" } },
+      makeCtx("call-2", [], controller.signal),
+    );
+    const next = executeTool(
+      registry,
+      { type: "tool_call", id: "call-3", name: "edit", input: { value: "next" } },
+      makeCtx("call-3"),
+    );
+    controller.abort();
+    expect((await abandoned).metadata?.error).toBe(true);
+
+    release.resolve();
+    expect((await next).output).toBe("edited:next");
+    await run.close();
   });
 });

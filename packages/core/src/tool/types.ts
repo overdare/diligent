@@ -36,6 +36,22 @@ export interface ToolContext {
    * (e.g. code mode `exec`). The runner tags each event with this call's id as `parentToolCallId`.
    */
   emitNestedToolEvent?: (event: NestedToolEvent) => void;
+  /** The agent run executing this call; set by the agent loop. */
+  runScope?: ToolRunScope;
+}
+
+/**
+ * Run-scoped handle for work a tool continues after it returns (e.g. a yielded code mode cell that keeps
+ * dispatching nested calls). It lets that work stay inside the run's lifecycle: the run waits for tracked
+ * work before `agent_end`, so no event of the run is emitted after it.
+ */
+export interface ToolRunScope {
+  /** Aborted when the run is aborted. Unlike `ToolContext.signal`, interrupting one tool batch does not abort it. */
+  signal: AbortSignal;
+  /** Aborted when the run stops accepting new work, right before it waits for tracked work to settle. */
+  closing: AbortSignal;
+  /** Keeps the run open (before `agent_end`) until `work` settles. Rejections are ignored. */
+  track(work: Promise<unknown>): void;
 }
 
 /** Lifecycle event of a tool call executed inside another tool call. Never persisted as a tool_result. */

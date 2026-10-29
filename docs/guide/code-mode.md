@@ -33,7 +33,7 @@ Input (JSON function tool on every provider):
 | Field | Meaning |
 |---|---|
 | `code` | Raw JavaScript, run as the body of an async function (top-level `await` works). |
-| `yield_time_ms` | Return early while the script keeps running. Default 10000. |
+| `yield_time_ms` | Return after this long while the script keeps running in the background. Default 10000. |
 | `max_output_tokens` | Output budget (≈4 bytes/token, head+tail truncation). Default 10000. |
 
 Guest globals:
@@ -64,32 +64,38 @@ Guest syntax errors report `exec.js:<line>:<column>`, the failing line with the 
 
 Named `exec_wait` because `wait` is the collab tool. Input: `cell_id`, `yield_time_ms`, `max_tokens`, `terminate`. It returns output produced since the previous yield, or the final result, and closes finished cells.
 
-While no `exec`/`exec_wait` call is waiting on a cell, the script keeps running but nested tool calls it requests are held; they run under the next `exec_wait`. A yield waits for in-flight nested calls to finish so every nested call belongs to exactly one parent call; if the deadline passed during such a call, the cell then waits up to 500 ms for the script to finish, so a script whose last call outlasts `yield_time_ms` returns `Script completed` instead of a running result plus an `exec_wait` round trip. When a script finishes, unawaited nested calls are aborted.
+A yield detaches only the waiting call. The script keeps running, and its nested tool calls keep running in the background under the call that last waited on the cell, until the agent run (one user turn, `agent_start` to `agent_end`) ends. A yield does not wait for in-flight nested calls, so `yield_time_ms` is honored; their records reach the next `exec_wait` result. When a script finishes, unawaited nested calls are aborted.
+
+The run owns this background work through `ToolContext.runScope` (core `ToolRunScope`): each nested call is tracked, and when the run ends it first stops accepting new calls (`runScope.closing`), then waits for in-flight ones, so no nested event follows `agent_end`. Calls the script requests after that are held until the next `exec_wait`, possibly in a later run. A sequence whose later steps must happen on time (stop, cleanup, capture) needs an `exec_wait` before the model ends its turn. Hosts that pass no `runScope` keep the earlier behavior: a yield waits for in-flight calls and holds later ones until the next wait.
 
 ## Execution model
 
 - Each `exec` call starts a cell: a Bun `Worker` whose source is `codeModeWorkerMain` (`packages/runtime/src/tools/code-mode/worker.ts`) serialized into a Blob URL, so single-file `bun build --compile` binaries need no extra entrypoint. The script runs in a `node:vm` context inside that worker.
 - `node:vm` hides host globals but is **not a security boundary**; nested tool calls go through the normal approval and permission engine.
 - Nested calls follow the agent loop's batching rule: tools with `supportParallel` may overlap under `Promise.all`; other tools run one at a time.
-- A rejected approval aborts the turn exactly as a direct call does. Aborting the turn terminates the cell.
-- `CodeModeSession` (one per `RuntimeAgent`) owns cells and the store; it survives tool refreshes between turns. At most 8 live cells are kept; starting another terminates the least recently driven idle cell.
+- Background nested calls can overlap the model's direct calls, so both share one reader/writer gate per `CodeModeSession` (`ToolGate`, `packages/runtime/src/tools/code-mode/gate.ts`). In `on` mode, `applyCodeMode` wraps each direct tool that is also nestable so it acquires the gate; `exec`, `exec_wait`, and direct-only tools never take it, so a wait cannot deadlock against its own cell. Waiters are admitted in arrival order, and an aborted waiter leaves the queue. Child agents have their own sessions and gates.
+- A rejected approval aborts the run exactly as a direct call does. Aborting the run, or the call waiting on the cell, terminates the cell.
+- `CodeModeSession` (one per `RuntimeAgent`) owns cells, the store, and the gate; it survives tool refreshes between turns. At most 8 live cells are kept; starting another terminates the least recently driven cell that no call is waiting on.
 - The guest body starts after an `await` because Bun 1.3 crashes when a worker blocked inside `vm.runInContext` is terminated.
 
 ## Events, persistence, and rendering
 
 - `ToolContext.emitNestedToolEvent` lets a tool emit `tool_start`/`tool_update`/`tool_end` for calls it runs. The core runner tags them with `parentToolCallId`, which `@diligent/protocol` carries on `AgentEvent` tool events and on `toolCall` thread items.
-- Nested `tool_end` events are not persisted as `tool_result` messages and are never sent to the provider. The parent result's `metadata.codeMode.nestedCalls` records them (outputs capped at 8000 characters, with `fullOutputPath` when longer), and `thread/read` rebuilds them as `toolCall` items with `parentToolCallId` after the parent item.
-- Web renders nested items indented under a left rule; TUI prefixes them with a `│` gutter. In TUI they appear above the `exec` result because items commit at `tool_end`.
+- Nested `tool_end` events are not persisted as `tool_result` messages and are never sent to the provider. The next `exec`/`exec_wait` result's `metadata.codeMode.nestedCalls` records them (outputs capped at 8000 characters, with `fullOutputPath` when longer). Each record names its `parentToolCallId`: the call it ran under, which for a background call is an earlier call than the carrying result. `thread/read` rebuilds them as `toolCall` items placed after their parent's item and earlier nested items; records without a parent (older sessions) stay with the carrying result.
+- Web renders nested items indented under a left rule while their parent's group is the latest row; a background call that arrives after other rows is labelled `Script ·` instead. TUI prefixes nested results with a `│` gutter while the parent call is still running (they commit above its result); a background result that commits after the parent's result gets a `↳ script ·` marker instead.
 
 ## Known limits
 
 - Polling the same cell with identical `exec_wait` arguments three times in a row trips the agent loop's doom-loop warning.
 - `exec` is a JSON function tool on every provider; the Codex freeform (Lark grammar) wire format and its `// @exec:` pragma are not implemented.
+- Background nested calls reach history only through a later `exec`/`exec_wait` result on that cell. If the model never waits on the cell again, they were shown live but are missing from `thread/read`.
+- Holding a run open for in-flight background calls keeps the thread busy until they finish; a cell can still hold calls across runs when the model ends its turn without waiting.
 
 ## Key code paths
 
 - `packages/runtime/src/tools/code-mode/` — worker, session, descriptions, tools
 - `packages/runtime/src/app-server/factory.ts` — `applyCodeMode` in agent tool assembly
-- `packages/core/src/tool/types.ts`, `packages/core/src/agent/tool.ts` — nested event contract
+- `packages/core/src/tool/types.ts`, `packages/core/src/agent/tool.ts` — nested event and run scope contract
+- `packages/core/src/agent/loop.ts` — run scope creation and settling before `agent_end`
 - `packages/runtime/src/session/turn-stager.ts`, `packages/runtime/src/app-server/thread-read-builder.ts` — persistence and history
 - `packages/e2e/app-server/code-mode.test.ts` — protocol-level behavior
