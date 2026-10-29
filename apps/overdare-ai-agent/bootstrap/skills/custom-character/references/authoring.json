@@ -1,0 +1,156 @@
+{
+  "purpose": "The agent writes anatomy, rig weights and motion. Studio builds, measures, renders and persists the supplied data. No species or walking algorithm is selected by authored_v1.",
+  "methods": {
+    "character.api": {
+      "params": {},
+      "result": "Live Studio capability facts with this Diligent-owned authoring guide"
+    },
+    "character.build": {
+      "params": {
+        "requestId": "Unique id; identical input is idempotent, changed input conflicts",
+        "source": {
+          "kind": "procedural_recipe",
+          "recipeId": "An author-selected label",
+          "recipeSource": "UTF-8 Python defining on_generate(model, size, attributes); maximum 256 KiB",
+          "recipeRevision": "SHA1 of the exact UTF-8 recipeSource bytes"
+        },
+        "sourceAlternative": {
+          "kind": "procedural_model",
+          "guid": "Existing ProceduralModel GUID in the editing map. Studio captures Source, Size, declared typed attributes and the supported Lua hierarchy/root placement once for a new requestId. The recipe produces geometry only; supply rig and motion.document as independent structured data. Generated regions use emitted part names. This private capture does not rebake the Workspace model. Retries and authoring commit use the saved snapshot even if the source model changes or is removed. A new requestId captures new inputs. Nested ProceduralModels and lossy/non-Archivable descendants are rejected when capturing the complete hierarchy."
+        },
+        "sourceStatic": {
+          "kind": "static_model",
+          "guid": "Existing normally imported static Model GUID in the editing map",
+          "geometryRevision": "Exact geometryRevision returned by inspect(mode=source). The first build captures the displayed LOD0 and rejects a changed revision before binding vertex weights. No Python geometry recipe is executed. Retries and commit use the saved draft without reading the live model."
+        },
+        "rig": "Required structured rig document for every new geometry input. Inspected static/baked ProceduralModel regions use part GUIDs and final inspected vertex IDs; private geometry recipes use emitted part names and generated vertex IDs. Omit rig for existing_rig: the original native rig is preserved internally. No executable rig recipe or external rig file is required. Exactly one region may be skinned; additional captured static parts must be Bone attachments",
+        "target": {
+          "kind": "new_custom_character",
+          "name": "Separate character name"
+        },
+        "rigProfile": "authored_v1",
+        "motion": {
+          "preset": "authored_v1",
+          "speedCmPerSec": "Number in [0,1000]; zero is stationary playback. Must agree with authored motion",
+          "document": "Required structured motion document for all inputs. FPS, length and parent-local bone keys are stored independently of the geometry recipe. For existing_rig, include the original root bind transform on every frame. Bounded authoring inputs are limited to 2 MiB UTF-8."
+        },
+        "overrides": "Optional numeric geometry attributes merged over captured model attributes for private procedural generation. Geometry receives only size/attributes; rig and animation documents are separate inputs. Overrides do not apply to inspected baked/static geometry or existing rigs.",
+        "commit": "False creates a saved draft. True commits an existing draft after observations and independent fresh-process source playback proof. This completes authoring only; final assets require normal import/upload and saved-map Lua playback verification.",
+        "expectedRevision": "Required for commit: sourceRevision, geometryHash, rigRevision, animationRevision from the inspected draft",
+        "sourceBaked": {
+          "kind": "procedural_model",
+          "guid": "Existing baked ProceduralModel GUID",
+          "geometryRevision": "Exact revision from source inspection. Reads current baked static MeshParts without executing Bake. Their saved generating inputs and owner must match the source. Provide direct rig and motion.document, using inspected region GUIDs and vertex IDs. This path supports native publication and explicit Workspace apply."
+        },
+        "sourceExistingRig": {
+          "kind": "existing_rig",
+          "guid": "Original resolved Workspace Model GUID. Exactly one skeletal MeshPart must be a direct child of the original Model.",
+          "rigRevision": "Exact source.rigRevision from inspect(mode=source). Preserves the original numeric Skeleton and all skeletal MeshIds, bone names, parents, bind poses, weights, materials, hierarchy and Bone customization. Requires one Humanoid and one resolved numeric Skeleton with its ready Lua Bone tree. Retained editable CPU LOD0 is required; no CPU retention flags or original assets are changed."
+        },
+        "targetExistingRig": {
+          "kind": "animation_only",
+          "name": "New Animation child name under the original Model"
+        }
+      },
+      "result": "buildId, state, inputHash, frozen recipeInput/sourceSnapshot or staticInput/sourceGeometryDigest, sourceGraphRevision, exact source/geometry/rig/animation revisions, authoring-only asset references, preview paths and measured diagnostics. Static drafts persist owned geometry with original vertex layout, part provenance and appearance snapshots in the existing Bundle. Full supported Lua hierarchy and typed links remain in local draft storage. Authoring references are not published IDs; mode=publish on export returns normal numeric ovdrassetid:// IDs.",
+      "applyParams": {
+        "mode": "apply",
+        "buildId": "Completed reviewed inspected static_model, baked procedural_model or existing_rig draft GUID",
+        "publicationId": "Exact successful native publication attempt GUID returned by export(mode=publish)",
+        "expectedRevision": "Exact reviewed sourceRevision, geometryHash, rigRevision and animationRevision",
+        "expectedSourceGraphRevision": "Exact reviewed frozen Lua hierarchy revision"
+      },
+      "applyBehavior": "Missing published assets are resolved through the ordinary Studio raw downloader; each completion rechecks the current document, cancellation and reviewed source. Explicit inspected static_model or baked procedural_model placement uses the frozen hierarchy and existing Model, MeshPart, Skeleton, Humanoid, Animator and Animation classes. Published numeric assets, native bind/geometry/weights/appearance and authored animation keys must match the reviewed draft. A changed live source or target-name conflict is rejected before mutation. Failed placement removes only newly created actors and owned Script files. APPLY_ALREADY_EXISTS returns the existing modelGuid for inspection; it does not replace or repair that result. Recipe-only drafts without inspected part identities do not use this apply path. The source Model root must have unit scale. Its original static model is preserved; the result body uses existing character size/frame conventions. A direct LocalScript named Animate is reserved by the existing character system and is rejected to preserve its source. A bone named Root must be bone zero, matching existing Lua Skeleton root selection. existing_rig adds only one Animation under its original Workspace Model after checking the original source and published clip keys. It never clones or replaces the original rig, meshes, props or scripts, and never starts/stops existing tracks. A matching repeated apply returns reused=true; changed original inputs or a different child with the same name fail before modification. One skin MeshPart is supported. Its original static parent/local frame/size is not promised in the result; the existing character system controls presentation. No RigMeshSpace/RigSourceSize attributes or new coordinate mode are used"
+    },
+    "character.export": {
+      "params": {
+        "buildId": "Saved completed build GUID",
+        "expectedRevision": "Exact reviewed sourceRevision, geometryHash, rigRevision and animationRevision",
+        "mode": "Optional fbx (default) or publish. publish uses the current standalone Studio document and its ordinary native asset publisher. Stop PIE and finish other imports first."
+      },
+      "result": "fbx returns a committed revision-bound external file, assetName, uploaded=false and nextMethod=asset_manager.import; external interchange may combine meshes sharing one Skeleton. publish persists reviewed native assets through the existing /User/Generated bake path and uploads the common Skeleton before one skeletal mesh and the animation. Returns publicationId, reportPath, inputHash, revision, uploaded and assets with role, region, state, nativeAssetPath, worldAssetId and numeric assetId. Failed publication retains issued IDs in its report and the build manifest's nativePublication; a later publication is a new attempt with its own report. Neither mode changes the Workspace hierarchy. Existing-rig publication uploads exactly one new animation referencing the original numeric Skeleton; preview Skeleton/meshes are excluded from native result assets."
+    },
+    "character.inspect": {
+      "params": {
+        "mode": "source|build|observation|runtime",
+        "source": "mode=source requires an existing static Model or current baked ProceduralModel guid. Returns an owned source geometry revision and all MeshPart identities, parent identities, local frames, material slots and model-space bounds. Optional region (part GUID), vertexOffset>=0 and vertexCount=1..1024 return final vertex IDs, provenance IDs and model-space positions. Built meshes use exact rendered LOD0, including importer-generated normals; editable MeshDescription is the fallback for unbuilt sources. vertexDomain identifies the selected source ID domain. This read-only inspection does not rig, upload or change the model. A resolved rigged Model returns source.kind=existing_rig and a read-only rigRevision, original numeric skeletonId and parent-local native bind poses. Skin weights are preserved internally; vertex paging options do not apply to this path.",
+        "build": "mode=build requires buildId",
+        "observation": "mode=observation requires buildId, scenario and exact expectedRevision; scenarios: rest_views, single_bone_pose, knee_bend_45, knee_bend_90, walk_contact_sheet, walk_side, world_travel",
+        "runtime": "mode=runtime requires modelName and optional world=client|authority; requires PIE. Optional skin={contacts:[1..8 distinct bone names],groundHeightCm:finite native Z-up height in cm (default 0)} samples current evaluated render skin. Does not advance playback or force bone refresh."
+      },
+      "result": "One inspection entry point: static source geometry and paged vertices in model_ue_z_up_cm, saved manifest, reviewed observation images/metrics, or actual Lua runtime mesh/skeleton/materials/bone poses and AnimationTrack IDs/time/play state. Bone translation/rotation are parent-local animation poses; componentTranslation/componentRotation and worldTranslation/worldRotation include existing bone customization. Ambiguous runtime model names fail. Skin probes report both edge ratios and absolute edge length change in cm. world_travel skinValidation.worstStretch identifies the measured render_lod0 edge, its reference/posed lengths and component-space endpoint positions, original bone influences, frame and animation time. Render vertex IDs are not source static vertex IDs. Use the matching capture and weights to investigate deformation; a short-edge ratio spike alone does not establish a visible bulge. Preview-ready and world_travel.passed are not motion-quality approval: inspect motionQuality, stance heights, turn slide and actual images."
+    }
+  },
+  "workflow": [
+    "Generate geometry with the existing ProceduralModel tool, then inspect its baked source and provide structured rig and motion.document. Private procedural inputs may also capture a geometry-only Source with separate authoring data; existing-rig inputs accept animation data only.",
+    "Author rig bones/weights/attachments and motion keyframes as structured data independently of geometry. They are persisted in the native draft bundle, never required as Python-emitted files.",
+    "Call character.build with commit=false",
+    "Read character.inspect(mode=observation) and inspect actual images/metrics",
+    "Revise geometry inputs, rig data or animation data using a new requestId; retries keep the previously frozen inputs.",
+    "Run fresh-process verify-source --build-id BUILD_ID with character-source-proof.py --studio-root <Studio checkout>. This verifies saved authoring data; final cooked assets use the existing import/upload pipeline.",
+    "Commit the reviewed four revisions. Commit completes only the local authoring draft.",
+    "Call character.export(mode=publish) with the reviewed revisions to upload a common Skeleton, one skeletal mesh and animation through the normal native asset path. Existing-rig inputs upload only a new animation.",
+    "For inspected static_model or baked procedural_model, explicitly apply the reviewed publication and sourceGraphRevision into Workspace using one skeletal MeshPart and existing Model, Skeleton, Humanoid, Animator, Animation and Bone instances. The body follows existing RigBuilder frame/size conventions. Static props use existing Bone attachments. For existing_rig, apply adds only one Animation to its original Model. Stale/source conflicts fail before mutation.",
+    "For existing_rig, explicit apply adds only a new Animation under the original Model, preserving its original rig and mesh assets. Geometry-recipe drafts can publish native assets; their generated part names alone do not identify a Workspace hierarchy for apply.",
+    "Use a server Script to find the saved Workspace model and call its existing Animator.LoadAnimation with an Animation instance and AnimationId, then Play. Save the map.",
+    "Add gameplay movement with existing Humanoid:MoveTo and MoveToFinished, set WalkSpeed to the authored motion speed, and play/stop the existing animation with movement. Do not repeatedly set HumanoidRootPart CFrame to move an NPC. Save, reopen and play the ordinary map. Verify numeric IDs, actual skeleton, advancing tracks and changing component/world bone poses with character.inspect(mode=runtime), and observe real NPC displacement and goal arrivals on both client and authority. Check rendered heading against movement."
+  ],
+  "scope": "Agent access to existing non-ODA single-skeletal-mesh authoring, native publication and Lua playback. Exactly one skinned region/output MeshPart is supported; static Bone props can use existing attachment behavior. Existing-rig animation authoring requires one resolved skeletal MeshPart directly under its Model. Separate shared-skeleton skin parts and their original hierarchy/frame preservation are outside this scope. Generated results adopt normal RigBuilder character frame and size behavior. Original sources are unchanged. External FBX nodes sharing a rig may be combined by the existing importer before using these tools.",
+  "compatibility": "Exactly four native and public agent methods: character.api, build, inspect and export. Inspection modes share one method. Retired local install/cook tools, the former proceduralcharacter.* method names and custom shared-runtime asset classes are not registered. Existing native draft package paths and storage directories retain their serialized identity; the renamed bundle, skeleton, material and material instance classes have CoreRedirects. Native preview fixtures remain verification data, not a separate gameplay runtime. Multipart model-space runtime extensions are removed; ordinary LuaMeshPart and appearance manifest behavior follow master",
+  "authoringData": {
+    "geometry": "Use unreal.OvdrGeometry primitives and model.part(name, mesh, preset, tint=RGB) to emit semantic regions. Geometry is captured into an owned final mesh; never edited in place after binding.",
+    "rig": {
+      "space": "mesh_component_ue_z_up_cm",
+      "rigFamily": "authored_v1",
+      "bones": "Parent-first array (2..256): {name, parent, localBind}. Root parent is the empty string; all other parents name an earlier bone.",
+      "localBind": {
+        "translation": "[x,y,z] centimetres",
+        "rotation": "Normalized [x,y,z,w] quaternion",
+        "scale": "Three positive finite scale values"
+      },
+      "mirrorBones": "Optional map between declared bone names",
+      "regions": "Object indexed by skinned geometry part identities. Each entry declares allowedBones and one weight representation. Every captured part belongs to exactly one of regions or boneAttachments; at least one skinned region is required. Exactly one skinned region is supported",
+      "weightRepresentations": {
+        "rigid": {
+          "bindMode": "rigid",
+          "bone": "Declared bone",
+          "allowedBones": ["Declared bone"]
+        },
+        "axis_bands": {
+          "bindMode": "axis_bands",
+          "axis": "Normalized mesh-space vector",
+          "knots": "Strictly ordered [{at: projected coordinate, bone: declared bone}]. Adjacent knots blend using smoothstep; repeated bone knots make rigid spans.",
+          "allowedBones": "All permitted influences"
+        },
+        "vertex_weights": {
+          "bindMode": "vertex_weights",
+          "vertices": "Map of final region vertex IDs to [{bone,weight}]; 1..4 positive unique permitted influences, sum=1. Keep all meaningful body/limb junction weights rather than truncating them to two. This applies to newly authored skins; existing_rig retains its original native influences unchanged.",
+          "allowedBones": "All permitted influences"
+        }
+      },
+      "observationBones": "Optional <=22 declared names for isolated 30-degree probes",
+      "bendTestRegions": "Optional bone -> region map for 45/90-degree bend probes; measured blend deflection must exceed 0.1cm",
+      "boneAttachments": "Optional map of captured MeshPart region GUID -> declared bone name for inspected static_model or baked procedural_model sources. Keeps the source static MeshPart, asset, material, size and its non-geometry descendants, changing its parent to the existing Lua Bone while preserving its bind world pose. A prop subtree cannot contain another captured MeshPart. Private previews include prop surfaces with rigid observation weights; those preview meshes are never published as skin meshes. Recipe-only and existing_rig inputs cannot change prop relationships."
+    },
+    "motion.document": {
+      "fps": "Integer 1..120",
+      "durationSeconds": "Positive <=30; duration*fps must be integral",
+      "speedCmPerSec": "Agrees with request.motion.speedCmPerSec",
+      "forwardDirection": "Optional horizontal unit vector [x,y,0] in mesh-component UE space, default [1,0,0]. Declares the native rig's locomotion direction for world_travel; no anatomical facing is inferred. Does not change the rig, root bind or animation keys.",
+      "poses": "Inclusive uniform frames (duration*fps +1). Each object contains EVERY declared bone -> {translation, rotation, scale} in parent-local space. The tool imports these authored keys without inventing a gait.",
+      "contactIntervalsSeconds": "Optional map of declared contact bones to [[start,end],...], within the clip. Contacts may use blended weights. world_travel measures fixed bottom 1% sole patches with at least 25% influence from that bone in rendered LOD0. Missing contacts or fewer than two stance samples produce unmeasured/null slide, never evidence of zero slide. Contact count can be 0,2,4 or another count.",
+      "loop": "v1 requires matching endpoint pose and runtime segment velocities; root transform remains identity (in-place)."
+    },
+    "storage": "Memory preview and the existing native .uasset bake path. Rig and motion documents are stored in the native draft bundle; no Python rig/motion recipe or custom interchange file is required."
+  },
+  "observationMeasurements": {
+    "rigProbes": "Region minimum/maximum edge and triangle-area ratios compare the same authored skin surface to its bind pose at each pictured probe. A moving bone alone does not prove a valid skin deformation. Ratios identify stretched or collapsed surface for visual review; no universal anatomy threshold is assumed.",
+    "worldTravel": "Every sampled pose uses actual rendered LOD0 positions and weights through the existing CPU skinning path. Reports whole-surface floor penetration and edge/triangle-area ratios, plus the worst frame and vertex. Ground is the fixture floor at world z=0 cm. Morph targets, cloth and material world-position offsets are not measured.",
+    "contacts": "Fixed sole vertices preserve identity through stance. Horizontal RMS displacement detects slide and twisting even when the bone or sole centroid remains still. Each contact reports stance comparisons, maximum stance/swing height and straight/turn slide. Contact validation is measured only when every declared contact has compared stance samples. Contact-free or undersampled clips return null for unmeasured aggregate values.",
+    "runtimeSkin": "character.inspect(mode=runtime, skin=...) uses the live predicted render LOD, current bone matrices and the component's actual skin weights. Selects the fixed bottom 1% of reference contact-bone skin with at least 25% actual influence. Returns meshPath, lod, vertexDomain, boneTransformRevision, contact vertex IDs/reference positions/current world positions/height/penetration and whole-surface distortion. Compare identical mesh/LOD/reference points/IDs and declared stance intervals across live samples; a snapshot alone does not prove zero slide. Missing readable CPU data, missing contact bones or active morphs return skin.status=unavailable with a reason. Existing assets are not modified to retain CPU data. Linear skin only: morph, cloth and material WPO are outside the scope, and the supplied flat plane is not a collision trace. poseEvaluation reports the existing visibility-based tick policy, update-rate optimization and recent render timestamps. A repeated boneTransformRevision across observations is an unrefreshed pose pair: discard it from motion-quality measurements and obtain fresh on-screen samples. Advancing AnimationTrack time or actor position does not establish fresh evaluated skin; measured means available skin buffers, not current-time validation.",
+    "quality": "passed certifies asset graph, playback, loop continuity and available straight-contact limits. motionQuality separately reports contact and surface-floor limits and always requires rendered visual review; missing contact evidence is incomplete. Do not infer natural movement from passed=true or an unmeasured zero.",
+    "refresh": "Stop PIE before character.inspect(mode=observation, scenario=world_travel, refresh=true). It remeasures and recaptures the reviewed native source assets in a disposable game world after checking revisions and actual keys. Writes RefreshedObservations, preserving the original reviewed captures, Workspace and authored animation keys. Other scenarios read saved captures. Without refresh, previously saved evidence keeps its original measurement version; missing quality fields are not a passing quality result.",
+    "agentImages": "The existing agent character.inspect observation mode attaches RGB by default. Agent-only images selects rgb, bones, regions and weights in order, or false for measurements only; this option is consumed by the agent adapter, not forwarded as a native RPC parameter."
+  },
+  "studioContract": "character-authoring/v15"
+}

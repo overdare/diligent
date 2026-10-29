@@ -1,77 +1,73 @@
 ---
 name: custom-character
-description: Create arbitrary non-ODA creatures with agent-authored geometry, skeletons, weights and motion, then play their asset IDs in an ordinary Lua game. Use for animals or custom skeletal characters; ODA costumes and ODA clip edits use their separate workflows.
+description: Author non-ODA character geometry, skeletons, skin weights and motion, then publish and connect ordinary Lua character assets. Use for animals or custom skeletal characters; ODA costumes and ODA clip edits use their separate workflows.
 ---
 
-Read `studiorpc_character_api` before authoring. Read `studiorpc_proceduralmodel_api`
-for geometry functions rather than guessing signatures. The agent writes anatomy, bone
-hierarchy, skin weights and parent-local motion keys. The tool imports and evaluates
-those data; it does not choose a species or invent a gait.
+Read `studiorpc_character_api` for the connected Studio's capabilities and native
+limits. It combines those facts with the Diligent-owned
+[authoring reference](references/authoring.json). An unavailable guide means the
+Studio contract version needs a matching authoring reference; do not infer support
+from a guide written for another version.
 
-Create a Python `on_generate(model, size, attributes)` recipe. Emit named geometry
-parts, `rig.json` and `motion.json` using the live contract. Respect the declared
-coordinate spaces: authoring uses Unreal Z-up centimetres; Lua uses Y-up centimetres.
-Use `authored_v1` for both rig and motion and hash the exact UTF-8 source bytes.
+## Select the source and author data
 
-An existing ProceduralModel can supply the recipe: use
-`source: {kind: "procedural_model", guid: "MODEL_GUID"}` in the same build tool.
-Studio captures its Source, Size and declared typed attributes on the first request.
-The recipe still needs explicit rig weights and motion; a geometry-only recipe is
-not automatically rigged. Record `OVDR_PARAMS["attributes"]` in `rig.json.parameters`
-and `OVDR_PARAMS["size"]` in `rig.json.size` to preserve the exact serialized types
-and recipe-axis dimensions. Numeric overrides are merged over the captured attributes.
-Retries and commit reuse the saved snapshot without reading or changing the model.
-Use a new request ID to capture changed source, dimensions or attributes.
+Inspect an existing Model with `studiorpc_character_inspect(mode=source)`. Use the
+returned source kind and revision. Inspected static or baked ProceduralModel input
+uses part GUIDs and the returned final vertex IDs. Exactly one region is skinned;
+other captured parts may be static Bone attachments. Existing-rig input preserves
+the original Skeleton, mesh, bind poses, weights, materials and props, and accepts
+only new motion with `target.kind=animation_only`.
 
-For a normally imported static Model, inspect it with `mode=source` first. Use the
-returned `source: {kind: "static_model", guid, geometryRevision}` in the same build
-tool, supply the authored rig as `rig` and authored motion as `motion.document`.
-Use part GUIDs as rig region keys and the inspection's final vertex IDs for explicit
-weights; positions use the common Model frame in Unreal Z-up centimetres. Built
-sources use exact rendered LOD0, including importer-generated normals. Static
-geometry executes no recipe and accepts no recipe overrides. A changed inspected
-revision is rejected before binding. The saved Bundle preserves the geometry's
-vertex layout, part provenance and generated material references. Inspect the
-live API for schema details and input limits. ODA FBX animation import is unchanged.
+For privately generated geometry, read `studiorpc_proceduralmodel_api` and write
+only the geometry recipe. Supply `rig` and `motion.document` as separate structured
+data, using generated part names as regions. Do not emit executable rig or motion
+recipes. Author anatomy, hierarchy, weights and motion for the requested character;
+Studio builds and measures the supplied data without selecting a species or gait.
 
-Call `studiorpc_character_build` with `commit=false`. Inspect actual rendered
-images from `studiorpc_character_inspect` with `mode=observation`, weights and measured motion.
-Check silhouette, joint deformation, contact, loop continuity and the requested action.
-A saved draft is not a quality verdict. Revise using a new request ID as needed.
-Run the public runner's `verify-source` command in a fresh process,
-then commit the exact source, geometry, rig and animation revisions that were reviewed.
-This verifies authoring source only. Final assets use the existing normal import/upload
-pipeline and require the saved-map Lua runtime checks below; do not add a private cooker.
-Preserve existing characters by creating a separate target unless replacement was requested.
+Authoring data uses Unreal Z-up centimetres and quaternion parent-local poses.
+Lua uses Y-up coordinates. `animation.read/write` uses a different Euler delta-key
+format; read that tool's contract before editing a clip through it.
 
-Open an ordinary map and stop PIE. Export the exact reviewed revisions with
-`studiorpc_character_export`. It uses the existing FBX exporter; external
-interchange may combine meshes sharing one Skeleton. Internal part assets remain
-in memory and do not require an intermediate import file. Pass the returned FBX
-to the existing `studiorpc_asset_manager_import`. It normally places the imported model under Workspace.
-Inspect that hierarchy first; use `studiorpc_asset_drawer_import` with the real numeric
-`ovdrassetid://` MODEL ID only if it is absent. Avoid placing a duplicate. Inspect the
-existing Model, MeshPart, Skeleton, Humanoid, Animator and Animation instances.
-Do not use local ID tables as the final asset or create another runtime system.
+## Review and verify a draft
 
-Add a server Script that finds the saved Workspace model and uses the existing
-Animator.LoadAnimation, Animation.AnimationId and AnimationTrack.Play APIs.
-Save and play. Read `studiorpc_character_inspect` with `mode=runtime` on client and authority.
-The imported custom mesh/skeleton must be present, time must advance and bone poses
-must change. Parent-local poses show animation keys; component/world poses include
-existing Bone customization and are the evidence for rendered root alignment. Verify pause/speed/stop/restart when relevant. Reopen the saved map and
-repeat. Inspect a screenshot as well as runtime measurements.
-For a moving NPC, drive the existing Humanoid from a server Script with MoveTo and
-MoveToFinished. Wait for its RootPart binding, set WalkSpeed to the authored motion
-speed, and start/stop the existing AnimationTrack with movement and arrival. Observe
-HumanoidRootPart displacement and target arrival on client and authority with
-studiorpc_game_observe; changing poses alone do not prove movement. Do not repeatedly
-assign HumanoidRootPart Position/CFrame as a movement loop.
+Build with `commit=false`, then inspect observation images and actual skin metrics.
+Review silhouette, joint deformation, contacts, loop boundaries and the requested
+action. Revise with a new requestId; retries reuse the frozen source and documents.
+The reference describes source selection, weight representations, observation
+scenarios and the meaning of measured versus unavailable contact evidence.
 
-Check heading as well as displacement. The v1 authoring travel/contact verification
-uses mesh-space +X forward and Unreal +Z up; keep authored geometry, rig and motion
-in that basis. The existing gameplay character mesh has a -90-degree Unreal Z
-rotation and expects mesh-space +Y forward. Align the imported +X rig through its
-existing root Bone.CFrame. Save and reopen to prove root alignment persists. Inspect
-component/world bone transforms, rather than parent-local animation poses, for this.
-Remote world publishing and a deployed client require their own evidence.
+For a local Studio checkout, use the Diligent-owned
+[source proof runner](scripts/character-source-proof.py):
+
+```sh
+python character-source-proof.py --studio-root STUDIO_CHECKOUT verify-source --build-id BUILD_ID
+```
+
+The runner copies the saved draft into an isolated user directory, starts the
+Studio binary and installs proof only if the original draft is unchanged. Pass
+`--source-user-dir` when the source Studio uses a custom user directory. Commit
+the exact four reviewed revisions after the native proof and observations pass.
+
+## Publish and connect existing gameplay
+
+Use `studiorpc_character_export(mode=publish)` for ordinary numeric asset IDs, then
+explicit `studiorpc_character_build(mode=apply)` with the reviewed publication and
+source graph revision. Recipe-only drafts lack inspected Workspace part identities
+for apply. Use FBX export when external interchange is needed. Inspect partial
+publication reports before retrying; an error may still contain issued IDs.
+
+Use the existing Model, Skeleton/Bone, MeshPart, Humanoid, Animator and Animation
+instances. A server Script loads the saved Animation and starts its AnimationTrack.
+For NPC travel, use Humanoid.MoveTo/MoveToFinished and coordinate WalkSpeed and
+track playback with the authored motion. Save, reopen and test the ordinary map.
+
+Inspect client and authority runtime samples plus actual images. Track time,
+evaluated bone/skin updates, visible heading and actor displacement establish
+different facts. Compare matching mesh/LOD/vertex IDs during declared stance;
+discard repeated bone-transform revisions. Missing contact samples are unmeasured.
+Review `motionQuality` separately from playback `passed`. Deployed client and
+remote-world publishing require their own evidence when part of the request.
+
+The optional [native RPC client](scripts/character-tools.py) is for local transport
+diagnostics with an explicitly selected Studio port; normal agent work uses the
+bundled `studiorpc_character_*` tools.

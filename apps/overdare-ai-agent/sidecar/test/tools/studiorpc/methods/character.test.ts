@@ -9,6 +9,62 @@ import { StudioRpcError } from "../../../../src/tools/studiorpc/rpc";
 import { methodModules, mutatingMethods, savingMethods } from "../../../../src/tools/studiorpc/tool-registry";
 
 describe("non-ODA character authoring", () => {
+  test("combines live Studio capabilities with Diligent-owned authoring guidance", async () => {
+    const native = {
+      version: "character-authoring/v15",
+      apiVersion: 2,
+      limits: { maxBones: 73 },
+      workspaceApplyAvailable: false,
+      futureCapability: { enabled: true },
+    };
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return native;
+      },
+    });
+    const out = await tools
+      .find((tool) => tool.name === "studiorpc_character_api")!
+      .execute({}, { toolCallId: "character-capabilities", signal: new AbortController().signal, abort: () => {} });
+    const result = JSON.parse(out.output);
+    const { authoringGuide, ...capabilities } = result;
+    expect(calls).toEqual([{ method: "character.api", params: {} }]);
+    expect(capabilities).toEqual(native);
+    expect(authoringGuide.methods["character.build"].params.rig).toBeString();
+    expect(authoringGuide.workflow.length).toBeGreaterThan(0);
+    expect(native).not.toHaveProperty("authoringGuide");
+  });
+
+  test("preserves unknown Studio versions without presenting a guide for another contract", async () => {
+    const native = { version: "future-character-contract", apiVersion: 3, limits: { maxBones: 11 } };
+    const tools = await createStudioRpcTools({ cwd: tmpdir(), callRpc: async () => native });
+    const out = await tools
+      .find((tool) => tool.name === "studiorpc_character_api")!
+      .execute({}, { toolCallId: "future-character", signal: new AbortController().signal, abort: () => {} });
+    const result = JSON.parse(out.output);
+    expect(result.version).toBe(native.version);
+    expect(result.limits).toEqual(native.limits);
+    expect(result.authoringGuide.status).toBe("unavailable");
+    expect(result.authoringGuide).not.toHaveProperty("workflow");
+  });
+
+  test("does not replace a failed capability read with local authoring documentation", async () => {
+    const failure = new StudioRpcError("Studio disconnected", -32000);
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async () => {
+        throw failure;
+      },
+    });
+    await expect(
+      tools
+        .find((tool) => tool.name === "studiorpc_character_api")!
+        .execute({}, { toolCallId: "missing-studio", signal: new AbortController().signal, abort: () => {} }),
+    ).rejects.toBe(failure);
+  });
+
   test("keeps the measured contact failure and saved draft identity when a build fails", async () => {
     const data = {
       buildId: "A".repeat(32),
