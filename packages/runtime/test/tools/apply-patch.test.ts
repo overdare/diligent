@@ -182,6 +182,8 @@ describe("apply_patch tool", () => {
     const result = await tool.execute({ patch }, makeCtx());
     expect(result.metadata?.error).toBe(true);
     expect(result.output).toContain("Failed to find expected lines");
+    expect(result.output).not.toContain("Completed operations before failure:");
+    expect(result.output).toContain("failed operation may also have changed files");
     expect(await readFile(target, "utf-8")).toBe("a\nb\nc\n");
   });
 
@@ -203,7 +205,74 @@ describe("apply_patch tool", () => {
 
     expect(result.metadata?.error).toBe(true);
     expect(result.output).toContain("Failed to read file to update");
+    expect(result.output).toContain('A "created.txt"');
+    expect(result.output).toContain("failed operation may also have changed files");
     expect(await readFile(created, "utf-8")).toBe("hello\n");
+  });
+
+  test("reports completed filenames losslessly and escapes terminal control characters", async () => {
+    if (process.platform === "win32") return;
+    const names = ["literal\\\\name.txt", "escape\u001b[2J.txt"];
+    const patch = [
+      "*** Begin Patch",
+      ...names.flatMap((name) => [`*** Add File: ${name}`, "+created"]),
+      "*** Delete File: missing.txt",
+      "*** End Patch",
+    ].join("\n");
+
+    const result = await tool.execute({ patch }, makeCtx());
+    expect(result.metadata?.error).toBe(true);
+    for (const name of names) {
+      expect(await readFile(join(tmpDir, name), "utf-8")).toBe("created\n");
+      expect(result.output).toContain(`A ${JSON.stringify(name)}`);
+    }
+    expect(result.output).not.toContain("\u001b");
+    expect(result.output).not.toContain("literal/name.txt");
+  });
+
+  test("reports completed deletes and moves when a later operation fails", async () => {
+    await writeFile(join(tmpDir, "remove.txt"), "remove\n", "utf-8");
+    await writeFile(join(tmpDir, "old.txt"), "before\n", "utf-8");
+    const patch = [
+      "*** Begin Patch",
+      "*** Delete File: remove.txt",
+      "*** Update File: old.txt",
+      "*** Move to: new.txt",
+      "@@",
+      "-before",
+      "+after",
+      "*** Delete File: missing.txt",
+      "*** End Patch",
+    ].join("\n");
+
+    const result = await tool.execute({ patch }, makeCtx());
+    expect(result.metadata?.error).toBe(true);
+    expect(result.output).toContain('D "remove.txt"');
+    expect(result.output).toContain('M "new.txt"');
+    expect(result.output).toContain("failed operation may also have changed files");
+    expect(await readFile(join(tmpDir, "new.txt"), "utf-8")).toBe("after\n");
+    await expect(readFile(join(tmpDir, "remove.txt"), "utf-8")).rejects.toThrow();
+    await expect(readFile(join(tmpDir, "old.txt"), "utf-8")).rejects.toThrow();
+  });
+
+  test("reports completed updates when a later add fails", async () => {
+    await writeFile(join(tmpDir, "existing.txt"), "before\n", "utf-8");
+    await writeFile(join(tmpDir, "blocked"), "not a directory\n", "utf-8");
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: existing.txt",
+      "@@",
+      "-before",
+      "+after",
+      "*** Add File: blocked/new.txt",
+      "+created",
+      "*** End Patch",
+    ].join("\n");
+
+    const result = await tool.execute({ patch }, makeCtx());
+    expect(result.metadata?.error).toBe(true);
+    expect(await readFile(join(tmpDir, "existing.txt"), "utf-8")).toBe("after\n");
+    expect(result.output).toContain('M "existing.txt"');
   });
 
   test("rejects absolute paths in patch headers", async () => {

@@ -173,11 +173,14 @@ It is important to remember:
         };
       }
 
-      let changes: FileChange[];
+      const changes: FileChange[] = [];
       try {
-        changes = await applyHunks(hunks, cwd);
+        await applyHunks(hunks, cwd, changes);
       } catch (error) {
-        const output = `Error applying patch: ${error instanceof Error ? error.message : String(error)}`;
+        const completed = changes.map((change) => summarizeFailedChange(change, cwd));
+        const output = `Error applying patch: ${error instanceof Error ? error.message : String(error)}${
+          completed.length ? `\nCompleted operations before failure:\n${completed.join("\n")}` : ""
+        }\nThe failed operation may also have changed files; inspect the affected paths before retrying.`;
         return {
           output,
           render: createTextRenderPayload(args.patch, output, true),
@@ -185,14 +188,7 @@ It is important to remember:
         };
       }
 
-      const summaryLines = changes.map((change) => {
-        const relSource = normalizeRelPath(relativeCrossPlatform(cwd, change.sourcePath));
-        const relTarget = normalizeRelPath(relativeCrossPlatform(cwd, change.targetPath));
-        if (change.type === "add") return `A ${relTarget}`;
-        if (change.type === "delete") return `D ${relSource}`;
-        if (change.type === "move") return `M ${relTarget}`;
-        return `M ${relTarget}`;
-      });
+      const summaryLines = changes.map((change) => summarizeChange(change, cwd));
 
       const output = `Success. Updated the following files:\n${summaryLines.join("\n")}`;
       return {
@@ -205,6 +201,20 @@ It is important to remember:
       };
     },
   };
+}
+
+function summarizeChange(change: FileChange, cwd: string): string {
+  const source = normalizeRelPath(relativeCrossPlatform(cwd, change.sourcePath));
+  const target = normalizeRelPath(relativeCrossPlatform(cwd, change.targetPath));
+  if (change.type === "add") return `A ${target}`;
+  if (change.type === "delete") return `D ${source}`;
+  return `M ${target}`;
+}
+
+function summarizeFailedChange(change: FileChange, cwd: string): string {
+  const path = change.type === "delete" ? change.sourcePath : change.targetPath;
+  const kind = change.type === "add" ? "A" : change.type === "delete" ? "D" : "M";
+  return `${kind} ${JSON.stringify(relativeCrossPlatform(cwd, path))}`;
 }
 
 function normalizeRelPath(value: string): string {
@@ -374,9 +384,7 @@ function listTouchedPaths(hunks: PatchHunk[], cwd: string): PatchTouchedPath[] {
   });
 }
 
-async function applyHunks(hunks: PatchHunk[], cwd: string): Promise<FileChange[]> {
-  const changes: FileChange[] = [];
-
+async function applyHunks(hunks: PatchHunk[], cwd: string, changes: FileChange[]): Promise<void> {
   for (const hunk of hunks) {
     if (hunk.type === "add") {
       const targetPath = resolvePatchPath(cwd, hunk.path);
@@ -458,8 +466,6 @@ async function applyHunks(hunks: PatchHunk[], cwd: string): Promise<FileChange[]
       after,
     });
   }
-
-  return changes;
 }
 
 function splitLines(content: string): string[] {
