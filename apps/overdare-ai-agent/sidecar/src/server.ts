@@ -23,6 +23,7 @@ import { createSidecarToken, type StudioRegistration, startStudioRegistration } 
 import { createStudioBundledToolProviders } from "./tools";
 import { type ConsentService, createGatewayConsentService } from "./tools/gateway/consent";
 import { postUserFeedback } from "./tools/gateway/feedback";
+import { removeRetiredPluginCopies } from "./tools/retired-plugins";
 import { resolveStudioHost, resolveStudioPort } from "./tools/studiorpc/config";
 import { createWebServer, enableProcessLogFile, parseArgs } from "./web/server";
 
@@ -160,6 +161,9 @@ export async function startStudioServer(argv: string[] = process.argv.slice(2)):
     })();
     return registriesPromise;
   };
+  // Delete retired first-party plugin copies before the first tool catalog loads; the launcher is not updated with
+  // the runtime, so this is the only cleanup that reaches every install.
+  await removeRetiredPluginCopies();
   const sidecarToken = createSidecarToken();
   let registration: StudioRegistration | null = null;
 
