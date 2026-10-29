@@ -2,8 +2,9 @@
 
 import type { BundledToolProvider } from "@diligent/runtime";
 import { z } from "zod";
-import type { RuntimeEvalExecution, RuntimeEvalTask, RuntimeWorldSnapshot } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import { isRecord } from "../core/helpers";
+import { finalAssistantText, RuntimeGrade, unwrapReply } from "./grading";
 import {
   createIsolatedFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -108,12 +109,39 @@ export const bundledToolRoutingTask: RuntimeEvalTask<BundledToolRoutingWorld> = 
     protectedPaths: world.protectedPaths,
   }),
   evaluate(input) {
-    return (
-      validateManifest(input) ??
-      validateAssemblyAndTrace(input) ??
-      validateIsolation(input) ??
-      validateFinal(input) ?? { passed: true }
+    const grade = new RuntimeGrade("bundled_tool_routing");
+    const world = input.world;
+    if (
+      input.toolCalls.some((call) => call.name === DECOY_TOOL && call.outcome === "success") ||
+      world.executions.some((execution) => execution.toolName === DECOY_TOOL)
+    )
+      return grade.fail("decoy", "The unrelated archive-collection tool was executed.", "runtime_policy");
+    const intended = input.toolCalls.filter((call) => call.name === INTENDED_TOOL);
+    const accepted = intended.filter(
+      (call) => call.outcome === "success" && JSON.stringify(call.output ?? "").includes(world.receipt),
     );
+    if (accepted.length === 0)
+      return grade.fail(
+        "trace",
+        "The intended bundled tool never accepted the requested journey and produced its receipt.",
+        "behavior",
+      );
+    const answer = finalAssistantText(input);
+    if (!answer.includes(world.receipt))
+      return grade.fail("final", "The final response did not report the intended tool receipt.", "semantic_goal");
+    const unwrapped = unwrapReply(answer);
+    if (unwrapped !== world.receipt && unwrapped !== `Confirmed: ${world.receipt}`)
+      return grade.fail(
+        "final_format",
+        "The final response was not the tool output verbatim as the prompt required.",
+        "format_contract",
+      );
+    if (input.toolCalls.some((call) => call.name === DECOY_TOOL))
+      grade.note("decoy_attempt", "The decoy tool was attempted but did not execute.");
+    if (intended.length > accepted.length)
+      grade.note("rejected_input_recovered", "The intended tool was called with wrong or failing input first.");
+    if (accepted.length > 1) grade.note("repeated_routing", "The intended tool was executed more than once.");
+    return grade.pass();
   },
 };
 
@@ -225,97 +253,6 @@ function fixtureFor(seed: string) {
   };
 }
 
-function validateManifest(input: RuntimeEvalExecution<BundledToolRoutingWorld>) {
-  const expected = [
-    { path: ".git", kind: "directory", size: 0 },
-    { path: KEEP_PATH, kind: "file", size: 17, sha256: sha256Text("fixture boundary\n"), executable: false },
-    {
-      path: MANIFEST_PATH,
-      kind: "file",
-      size: Buffer.byteLength(input.world.manifestContent),
-      sha256: input.world.manifestHash,
-      executable: false,
-    },
-  ];
-  if (
-    JSON.stringify(input.workspace.initial.entries) !== JSON.stringify(expected) ||
-    !sameProjectManifest(input.workspace.initial, input.workspace.final)
-  )
-    return fail("manifest", "The protected fixture manifest changed in kind, size, hash, membership, or final state.");
-}
-
-function validateAssemblyAndTrace(input: RuntimeEvalExecution<BundledToolRoutingWorld>) {
-  const trace = input.toolCalls[0];
-  if (
-    input.toolCalls.length !== 1 ||
-    !trace ||
-    trace.sequence !== 1 ||
-    trace.toolCallId.length === 0 ||
-    trace.name !== INTENDED_TOOL ||
-    trace.capability !== "execute" ||
-    trace.outcome !== "success" ||
-    trace.error !== undefined ||
-    trace.childThreadId !== undefined ||
-    trace.threadId !== input.session.threadId ||
-    canonicalJson(trace.input) !== canonicalJson(input.world.request)
-  )
-    return fail("trace", "The intended bundled tool was not selected once with exact nested input and root actor.");
-}
-
-function validateIsolation(input: RuntimeEvalExecution<BundledToolRoutingWorld>) {
-  const report = JSON.stringify([
-    input.turns,
-    input.providerCalls,
-    input.toolCalls,
-    input.logs,
-    input.session,
-    input.threadReads,
-    input.workspace,
-    input.runtimeState,
-    input.advertisedTools,
-  ]);
-  if (
-    input.toolOutputFiles.length !== 0 ||
-    input.childSessions.length !== 0 ||
-    input.compactions.length !== 0 ||
-    input.protocolActions.length !== 0 ||
-    input.approvals.length !== 0 ||
-    input.userInputRequests.length !== 0 ||
-    input.verifier !== undefined ||
-    input.runtimeState.diff.some((change) => change.category !== "infrastructure" && change.category !== "sessions") ||
-    JSON.stringify(input.logs).includes(input.world.receipt) ||
-    report.includes(input.world.decoyReceipt)
-  )
-    return fail(
-      "isolation",
-      "Forbidden state, action, collaboration, input, verifier, output, or decoy leakage appeared.",
-    );
-}
-
-function validateFinal(input: RuntimeEvalExecution<BundledToolRoutingWorld>) {
-  const final = input.turns[0]!.messages[3];
-  if (!hasExactFinalAssistant(final, input.world.receipt))
-    return fail("final", "The final response was not the exact exclusive intended receipt.");
-}
-
-function hasExactFinalAssistant(value: unknown, receipt: string): boolean {
-  if (!isRecord(value) || value.role !== "assistant" || !Array.isArray(value.content) || value.content.length !== 1)
-    return false;
-  const block = value.content[0];
-  return (
-    isRecord(block) &&
-    Object.keys(block).sort().join(",") === "text,type" &&
-    block.type === "text" &&
-    (block.text === receipt || block.text === `Confirmed: ${receipt}`)
-  );
-}
-
-function sameProjectManifest(initial: RuntimeWorldSnapshot, final: RuntimeWorldSnapshot): boolean {
-  const project = (snapshot: RuntimeWorldSnapshot) =>
-    snapshot.entries.filter((entry) => entry.path !== ".diligent" && !entry.path.startsWith(".diligent/"));
-  return JSON.stringify(project(initial)) === JSON.stringify(project(final));
-}
-
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (!isRecord(value)) return JSON.stringify(value);
@@ -323,24 +260,4 @@ function canonicalJson(value: unknown): string {
     .sort()
     .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
     .join(",")}}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-const BUNDLED_FAILURE_DIMENSIONS = {
-  manifest: "runtime_policy",
-  trace: "behavior",
-  isolation: "runtime_policy",
-  final: "semantic_goal",
-} as const satisfies Record<string, EvalDimension>;
-
-function fail(code: keyof typeof BUNDLED_FAILURE_DIMENSIONS, message: string) {
-  return {
-    passed: false as const,
-    code: `bundled_tool_routing.${code}`,
-    message,
-    dimension: BUNDLED_FAILURE_DIMENSIONS[code],
-  };
 }

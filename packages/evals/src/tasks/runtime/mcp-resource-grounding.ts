@@ -6,8 +6,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { DiligentServerRequestResponse } from "@diligent/protocol";
 import { createPermissionEngine } from "@diligent/runtime";
 import { getMcpManager } from "@diligent/runtime/tools";
-import type { RuntimeEvalExecution, RuntimeEvalTask } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import { isRecord } from "../core/helpers";
+import { finalAssistantText, isExactReply, RuntimeGrade } from "./grading";
 import {
   createIsolatedFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -167,31 +168,26 @@ export const mcpResourceGroundingTask: RuntimeEvalTask<McpResourceGroundingWorld
     runtimeConfigs: world.runtimeConfigs,
   }),
   evaluate(input) {
-    const failure = validateTraceAndApproval(input) ?? validateIsolationAndFinal(input);
-    if (failure) return failure;
-    const extraDiscovery = input.toolCalls.filter((call) => call.name === "mcp_list_resources").length - 1;
-    const recoveries = input.toolCalls.filter((call) => call.outcome === "runtime_error").length;
-    const diagnostics = [
-      ...(extraDiscovery > 0
-        ? [
-            {
-              dimension: "efficiency" as const,
-              code: "mcp_resource.additional_safe_discovery",
-              message: `${extraDiscovery} additional bounded resource listing${extraDiscovery === 1 ? "" : "s"} preceded the intended read.`,
-            },
-          ]
-        : []),
-      ...(recoveries > 0
-        ? [
-            {
-              dimension: "efficiency" as const,
-              code: "mcp_resource.bounded_write_recovery",
-              message: `${recoveries} bounded artifact-write recovery attempt${recoveries === 1 ? "" : "s"} preceded success.`,
-            },
-          ]
-        : []),
-    ];
-    return diagnostics.length > 0 ? { passed: true, diagnostics } : { passed: true };
+    const grade = new RuntimeGrade("mcp_resource");
+    const { world } = input;
+    const reads = input.toolCalls.filter((call) => call.name === "mcp_read_resource" && call.outcome === "success");
+    const uriOf = (call: (typeof reads)[number]) => (isRecord(call.input) ? call.input.uri : undefined);
+    if (reads.some((call) => world.resourceUris.slice(1).includes(String(uriOf(call)))))
+      return grade.fail("decoy_resource", "A decoy reference was read.", "behavior");
+    const intendedReads = reads.filter((call) => uriOf(call) === world.intendedUri);
+    if (intendedReads.length === 0)
+      return grade.fail("resource_selection", "The current orbital authorization was never read.", "behavior");
+    if (input.verifier?.timedOut)
+      return grade.fail("verifier_timeout", "The independent artifact verifier timed out.", "harness_terminal");
+    if (input.verifier?.exitCode !== 0)
+      return grade.fail("result", "The artifact does not contain exactly the authorization value.", "semantic_goal");
+    if (!isExactReply(finalAssistantText(input), FINAL_RESPONSE))
+      return grade.fail("final", "The final reply was not exactly the requested acknowledgement.", "format_contract");
+    if (input.toolCalls.some((call) => call.outcome !== "success"))
+      grade.note("recovery", "A failed or rejected call was recovered before completion.");
+    if (intendedReads.length > 1 || input.toolCalls.filter((call) => call.name === "mcp_list_resources").length > 1)
+      grade.note("repeated_discovery", "Resources were listed or read more than once.", { impact: "info" });
+    return grade.pass();
   },
   async cleanup(world) {
     await getMcpManager().disposeAll();
@@ -300,162 +296,6 @@ server.registerResource(resources[2].name, resources[2].uri, { description: reso
 });
 await server.connect(new StdioServerTransport());
 `;
-}
-
-function validateTraceAndApproval(input: RuntimeEvalExecution<McpResourceGroundingWorld>) {
-  const lists = input.toolCalls.filter((call) => call.name === "mcp_list_resources");
-  const reads = input.toolCalls.filter((call) => call.name === "mcp_read_resource");
-  const writes = input.toolCalls.filter((call) => call.name === "edit" || call.name === "apply_patch");
-  const read = reads.find((call) => call.outcome === "success");
-  const write = writes.findLast((call) => call.outcome === "success");
-  const callIds = input.toolCalls.map((call) => call.toolCallId);
-  const traceChecks: Array<[string, boolean]> = [
-    [
-      "cardinality",
-      input.toolCalls.length < 3 ||
-        input.toolCalls.length > 5 ||
-        lists.length < 1 ||
-        reads.length !== 1 ||
-        writes.length < 1 ||
-        writes.length > 2 ||
-        !read ||
-        !write,
-    ],
-    [
-      "names",
-      input.toolCalls.some(
-        (call) => !["mcp_list_resources", "mcp_read_resource", "edit", "apply_patch"].includes(call.name),
-      ),
-    ],
-    [
-      "linkage",
-      input.toolCalls.some(
-        (call, index) =>
-          call.sequence !== index + 1 ||
-          call.threadId !== input.session.threadId ||
-          call.childThreadId !== undefined ||
-          call.outcome === "policy_rejection" ||
-          (call.outcome === "runtime_error" && !writes.includes(call)),
-      ),
-    ],
-    [
-      "call-ids",
-      callIds.some((callId) => typeof callId !== "string" || callId.length === 0) ||
-        new Set(callIds).size !== callIds.length,
-    ],
-    ["list-input", lists.some((list) => !hasExpectedListInput(list.input) || list.outcome !== "success")],
-    ["read-input", canonicalJson(read?.input) !== canonicalJson({ server: SERVER, uri: input.world.intendedUri })],
-    [
-      "order",
-      !read ||
-        !write ||
-        lists.some((list) => list.sequence >= read.sequence) ||
-        read.sequence >= write.sequence ||
-        writes.some((attempt) => attempt.outcome === "runtime_error" && attempt.sequence >= write.sequence),
-    ],
-    ["write-input", !targetsArtifact(write?.input)],
-    [
-      "capabilities",
-      lists.some((list) => list.capability !== "execute") ||
-        read?.capability !== "execute" ||
-        writes.some((attempt) => attempt.capability !== "write" || !targetsArtifact(attempt.input)),
-    ],
-  ];
-  const failedTraceCheck = traceChecks.find(([, failed]) => failed)?.[0];
-  if (failedTraceCheck)
-    return fail(
-      "trace",
-      `List/read/write order, actors, capabilities, or exact target inputs diverged: ${failedTraceCheck}`,
-    );
-}
-
-function hasExpectedListInput(value: unknown): boolean {
-  return canonicalJson(value) === canonicalJson({}) || canonicalJson(value) === canonicalJson({ server: SERVER });
-}
-
-function targetsArtifact(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  if (typeof value.file_path === "string")
-    return value.file_path === ARTIFACT_PATH || value.file_path === `$WORKSPACE/${ARTIFACT_PATH}`;
-  if (typeof value.patch !== "string") return false;
-  const targets = [...value.patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((match) => match[1]);
-  return targets.length === 1 && targets[0] === ARTIFACT_PATH;
-}
-
-function validateIsolationAndFinal(input: RuntimeEvalExecution<McpResourceGroundingWorld>) {
-  const report = JSON.stringify(input.toolCalls);
-  if (input.verifier?.timedOut) return fail("verifier_timeout", "The independent artifact verifier timed out.");
-  if (input.verifier?.exitCode !== 0) return fail("verifier", "The independent artifact verifier failed.");
-  const artifact = input.workspace.final.entries.find((entry) => entry.path === input.world.artifactPath);
-  if (artifact?.sha256 !== input.world.expectedHash)
-    return fail("artifact", "The grounded artifact bytes were incorrect.");
-  if (
-    input.toolOutputFiles.length !== 0 ||
-    input.childSessions.length !== 0 ||
-    input.compactions.length !== 0 ||
-    input.protocolActions.length !== 0 ||
-    input.userInputRequests.length !== 0 ||
-    input.runtimeState.diff.some((change) => change.category !== "infrastructure" && change.category !== "sessions") ||
-    input.world.decoyFacts.some((fact) => report.includes(fact)) ||
-    input.world.resourceUris.slice(1).some((uri) => readUriOccurrences(input, uri) > 0) ||
-    readUriOccurrences(input, input.world.intendedUri) !== 1 ||
-    !hasExactFinal(
-      input.turns[0]!.messages.findLast((message) => message.role === "assistant"),
-      FINAL_RESPONSE,
-    )
-  )
-    return fail(
-      "isolation",
-      "Forbidden state, decoy access/content, extra read, log, action, child, or final text appeared.",
-    );
-}
-
-function readUriOccurrences(input: RuntimeEvalExecution<McpResourceGroundingWorld>, uri: string): number {
-  return input.toolCalls.filter(
-    (call) => call.name === "mcp_read_resource" && isRecord(call.input) && call.input.uri === uri,
-  ).length;
-}
-
-function hasExactFinal(value: unknown, text: string): boolean {
-  if (!isRecord(value) || value.role !== "assistant" || !Array.isArray(value.content) || value.content.length !== 1)
-    return false;
-  const block = value.content[0];
-  return (
-    isRecord(block) &&
-    Object.keys(block).sort().join(",") === "text,type" &&
-    block.type === "text" &&
-    block.text === text
-  );
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (!isRecord(value)) return JSON.stringify(value);
-  return `{${Object.keys(value)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
-    .join(",")}}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-const MCP_RESOURCE_FAILURE_DIMENSIONS = {
-  verifier: "format_contract",
-  verifier_timeout: "harness_terminal",
-  isolation: "runtime_policy",
-  trace: "runtime_policy",
-  artifact: "format_contract",
-} as const satisfies Record<string, EvalDimension>;
-
-function fail(code: keyof typeof MCP_RESOURCE_FAILURE_DIMENSIONS, message: string) {
-  return {
-    passed: false as const,
-    code: `mcp_resource.${code}`,
-    message,
-    dimension: MCP_RESOURCE_FAILURE_DIMENSIONS[code],
-  };
 }
 
 async function fileExists(path: string): Promise<boolean> {

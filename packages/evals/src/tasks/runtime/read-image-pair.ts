@@ -2,9 +2,9 @@
 
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Message } from "@diligent/core/message-contract";
 import type { RuntimeEvalTask } from "../../runtime-task";
 import { type EvalImageColor, seededImagePair, solidColorPng } from "../image-fixture";
+import { finalAssistantText, RuntimeGrade, successfulReadsOf, unwrapReply } from "./grading";
 import { createFixtureRuntimeConfig, DEFAULT_RUNTIME_LIMITS, type RuntimeFixtureWorld } from "./helpers";
 
 export interface ReadImagePairWorld extends RuntimeFixtureWorld {
@@ -47,58 +47,24 @@ export const readImagePairTask: RuntimeEvalTask<ReadImagePairWorld> = {
   ],
   snapshotWorld: async (world) => ({ colors: world.colors }),
   evaluate(input) {
-    const reads = input.toolCalls.filter((call) => call.name === "read_image" && !call.error);
-    if (reads.length !== 2)
-      return {
-        passed: false,
-        code: "read_image_pair.count",
-        message: "Expected exactly two successful image reads.",
-        dimension: "behavior",
-      };
-    const paths = reads.map((call) => (isRecord(call.input) ? call.input.file_path : undefined));
-    if (!paths.includes("$WORKSPACE/a.png") || !paths.includes("$WORKSPACE/b.png"))
-      return {
-        passed: false,
-        code: "read_image_pair.paths",
-        message: "Both seeded image paths must be read.",
-        dimension: "runtime_policy",
-      };
+    const grade = new RuntimeGrade("read_image_pair");
     if (JSON.stringify(input).includes("iVBOR"))
-      return {
-        passed: false,
-        code: "read_image_pair.base64",
-        message: "Raw image base64 leaked into eval evidence.",
-        dimension: "runtime_policy",
-      };
-    const answer = lastAssistantText(input.turns.at(-1)?.messages ?? []);
+      return grade.fail("base64", "Raw image base64 leaked into eval evidence.", "runtime_policy");
+    const readsA = successfulReadsOf(input, "a.png");
+    const readsB = successfulReadsOf(input, "b.png");
+    if (readsA.length === 0 || readsB.length === 0)
+      return grade.fail("paths", "Both seeded image paths must be read successfully.", "behavior");
+    const answer = finalAssistantText(input);
     const semantic = /A=(RED|BLUE);\s*B=(RED|BLUE)/i.exec(answer);
     if (semantic?.[1]?.toUpperCase() !== input.world.colors.a || semantic?.[2]?.toUpperCase() !== input.world.colors.b)
-      return {
-        passed: false,
-        code: "read_image_pair.answer",
-        message: "The response classified one or both images incorrectly.",
-        dimension: "semantic_goal",
-      };
-    return answer === input.world.expected
-      ? { passed: true }
-      : {
-          passed: false,
-          code: "read_image_pair.answer",
-          message: `Expected exact response ${input.world.expected}.`,
-          dimension: "format_contract",
-        };
+      return grade.fail("answer", "The response classified one or both images incorrectly.", "semantic_goal");
+    if (unwrapReply(answer) !== input.world.expected)
+      return grade.fail("answer", `Expected exact response ${input.world.expected}.`, "format_contract");
+    if (readsA.length > 1 || readsB.length > 1)
+      grade.note("repeated_read", "At least one image was read successfully more than once.");
+    const failed = input.toolCalls.filter((call) => call.outcome !== "success");
+    if (failed.length > 0)
+      grade.note("failed_call", `Observed ${failed.length} failed or rejected tool call(s) before completion.`);
+    return grade.pass();
   },
 };
-
-function lastAssistantText(messages: Message[]): string {
-  const last = messages.filter((message) => message.role === "assistant").at(-1);
-  if (!last || last.role !== "assistant") return "";
-  return last.content
-    .filter((block): block is { type: "text"; text: string } => block.type === "text")
-    .map((block) => block.text)
-    .join("");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
-}

@@ -1,7 +1,8 @@
 // @summary Runtime eval for visible plan creation, ordered progress updates, implementation, and verification
 
 import type { RuntimeEvalTask, RuntimeToolTrace } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import { isRecord } from "../core/helpers";
+import { passingCommandRuns, RuntimeGrade, successfulReadsOf, successfulWritesTo } from "./grading";
 import {
   createIsolatedFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -108,70 +109,57 @@ export const planProgressTask: RuntimeEvalTask<PlanProgressWorld> = {
     ),
   }),
   evaluate(input) {
+    const grade = new RuntimeGrade("plan_progress");
+    if (input.verifier?.timedOut)
+      return grade.fail("verifier_timeout", "Independent pipeline verification timed out.", "harness_terminal");
+    if (input.verifier?.exitCode !== 0)
+      return grade.fail("verifier", "Independent pipeline verification failed.", "semantic_goal");
+    for (const path of OUTPUT_PATHS) {
+      if (input.workspace.final.entries.find((entry) => entry.path === path)?.sha256 !== input.world.outputHashes[path])
+        return grade.fail("output", `The exact output content was wrong for ${path}.`, "semantic_goal");
+    }
     const planCalls = input.toolCalls
       .filter((call) => call.name === "plan" && call.outcome === "success")
       .sort((left, right) => left.sequence - right.sequence);
     if (planCalls.length < 2)
-      return fail("plan_updates", "Expected a plan before work and a final completed plan.", "behavior");
+      return grade.fail("plan_updates", "Expected a plan before work and a final completed plan.", "behavior");
     const payloads = planCalls.map(planPayload);
     if (payloads.some((payload) => !payload || !validInProgressState(payload)))
-      return fail("in_progress", "Every unresolved plan payload must have exactly one in-progress step.", "behavior");
-    const firstMutation = input.toolCalls
-      .filter((call) => isMutation(call))
-      .sort((left, right) => left.sequence - right.sequence)[0];
-    if (!firstMutation || planCalls[0]!.sequence >= firstMutation.sequence)
-      return fail("plan_before_mutation", "A successful plan must precede the first mutating call.", "behavior");
-    for (const path of ["inputs/base.txt", "inputs/suffixes.txt"]) {
-      const read = input.toolCalls.find(
-        (call) => call.name === "read" && call.outcome === "success" && toolPath(call.input).endsWith(path),
+      return grade.fail(
+        "in_progress",
+        "Every unresolved plan payload must have exactly one in-progress step.",
+        "behavior",
       );
-      if (!read || read.sequence >= firstMutation.sequence)
-        return fail("input_discovery", `The hidden fixture input ${path} was not read before mutation.`, "behavior");
-    }
-    const finalPlan = payloads.at(-1)!;
-    if (finalPlan.steps.length === 0 || finalPlan.steps.some((step) => !["done", "cancelled"].includes(step.status)))
-      return fail("incomplete", "Every final plan step must be resolved.", "behavior");
     const writes = input.toolCalls
       .filter((call) => call.capability === "write" && call.outcome === "success")
       .sort((left, right) => left.sequence - right.sequence);
-    const orderedWrites: RuntimeToolTrace[] = [];
-    for (const path of OUTPUT_PATHS) {
-      const matches = writes.filter((call) => toolPath(call.input).endsWith(path));
-      if (matches.length === 0) return fail("write_count", `Expected a successful write for ${path}.`, "semantic_goal");
-      orderedWrites.push(matches[0]!);
+    const firstWrite = writes[0];
+    if (!firstWrite || planCalls[0]!.sequence >= firstWrite.sequence)
+      return grade.fail("plan_before_mutation", "A successful plan must precede the first mutating call.", "behavior");
+    for (const path of ["inputs/base.txt", "inputs/suffixes.txt"]) {
+      const reads = successfulReadsOf(input, path);
+      if (reads.length === 0) grade.note("input_discovery", `${path} was never read successfully.`, { impact: "info" });
+      else if (reads[0]!.sequence > firstWrite.sequence)
+        grade.note("input_discovery", `${path} was first read after the first write.`, { impact: "info" });
     }
-    if (orderedWrites.some((call, index) => index > 0 && call.sequence <= orderedWrites[index - 1]!.sequence))
-      return fail("write_order", "The three generated files were not written in dependency order.", "behavior");
-    const testCall = input.toolCalls.findLast(
-      (call) =>
-        call.name === "bash" &&
-        command(call.input) === "bun test" &&
-        call.outcome === "success" &&
-        commandExitCode(call.output) === 0,
-    );
-    const lastWriteSequence = Math.max(...orderedWrites.map((call) => call.sequence));
-    if (!testCall || testCall.sequence <= lastWriteSequence || planCalls.at(-1)!.sequence <= testCall.sequence)
-      return fail(
-        "verify_progress",
-        "Passing verification and the final resolved plan must follow all writes.",
-        "behavior",
-      );
-    if (
-      planCalls.slice(0, -1).some((call) => {
-        const payload = planPayload(call);
-        return payload?.steps.every((step) => ["done", "cancelled"].includes(step.status));
-      })
-    )
-      return fail("premature_completion", "The plan was marked complete before final verification.", "behavior");
-    if (input.verifier?.timedOut)
-      return fail("verifier_timeout", "Independent pipeline verification timed out.", "harness_terminal");
-    if (input.verifier?.exitCode !== 0)
-      return fail("verifier", "Independent pipeline verification failed.", "semantic_goal");
-    for (const path of OUTPUT_PATHS) {
-      if (input.workspace.final.entries.find((entry) => entry.path === path)?.sha256 !== input.world.outputHashes[path])
-        return fail("output", `The exact output hash was wrong for ${path}.`, "format_contract");
+    const firstWrites = OUTPUT_PATHS.map((path) => successfulWritesTo(input, path)[0]);
+    for (let index = 1; index < firstWrites.length; index++) {
+      const previous = firstWrites[index - 1];
+      const current = firstWrites[index];
+      if (!previous || !current) continue;
+      if (current.sequence < previous.sequence)
+        return grade.fail("write_order", "The generated files were not created in dependency order.", "behavior");
+      if (current.sequence === previous.sequence)
+        grade.note("write_order", "Several generated stages were created by one write call.", { impact: "info" });
     }
-    return { passed: true };
+    const lastWriteSequence = writes.at(-1)!.sequence;
+    const testCall = passingCommandRuns(input, "bun test").findLast((call) => call.sequence > lastWriteSequence);
+    if (!testCall) return grade.fail("verify_progress", "No passing `bun test` followed the final write.", "behavior");
+    if (planCalls.at(-1)!.sequence <= testCall.sequence || !isResolved(payloads.at(-1)!))
+      return grade.fail("incomplete", "A fully resolved plan must follow the passing verification.", "behavior");
+    if (planCalls.some((call, index) => call.sequence < testCall.sequence && isResolved(payloads[index]!)))
+      return grade.fail("premature_completion", "The plan was marked complete before final verification.", "behavior");
+    return grade.pass();
   },
 };
 
@@ -200,33 +188,6 @@ function validInProgressState(payload: ParsedPlan): boolean {
   return inProgress.length <= 1 && (unresolved.length === 0 || inProgress.length === 1);
 }
 
-function isMutation(call: RuntimeToolTrace): boolean {
-  return call.outcome === "success" && call.capability === "write";
-}
-
-function toolPath(value: unknown): string {
-  if (!isRecord(value)) return "";
-  if (typeof value.file_path === "string") return value.file_path;
-  const patch = value.patch;
-  if (typeof patch === "string") {
-    return OUTPUT_PATHS.find((path) => patch.includes(path)) ?? "";
-  }
-  return "";
-}
-
-function command(value: unknown): string | undefined {
-  return isRecord(value) && typeof value.command === "string" ? value.command.trim() : undefined;
-}
-
-function commandExitCode(value: unknown): number | undefined {
-  if (!isRecord(value) || !isRecord(value.metadata)) return undefined;
-  return typeof value.metadata.exitCode === "number" ? value.metadata.exitCode : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
-}
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `plan_progress.${code}`, message, dimension };
+function isResolved(payload: ParsedPlan): boolean {
+  return payload.steps.length > 0 && payload.steps.every((step) => ["done", "cancelled"].includes(step.status));
 }

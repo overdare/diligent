@@ -9,121 +9,64 @@ const UI_PATH = "facts/ui.txt";
 const THREAD_ID = "thread-1";
 
 describe("plan-converge runtime eval", () => {
-  test("budgets bounded provider-neutral read recovery", () => {
-    expect(planConvergeTask.fixtureVersion).toBe("plan-converge-v3");
-    expect(planConvergeTask.limits).toMatchObject({
-      maxTurns: 6,
-      maxToolCalls: 5,
-      maxUserInputRequests: 1,
-    });
-  });
-
-  test("accepts direct discovery and reports bounded recovery diagnostically", () => {
+  test("passes direct discovery, one clarification, and a complete plan", () => {
     expect(planConvergeTask.evaluate(directExecution())).toEqual({ passed: true });
-    expect(planConvergeTask.evaluate(recoveryExecution())).toMatchObject({
+  });
+
+  test("accepts failed path probes, relative reads, and extra safe reads with informational notes", () => {
+    const recovered = recoveryExecution();
+    recovered.toolCalls[2]!.input = { file_path: API_PATH };
+    recovered.toolCalls.splice(3, 0, successfulRead(4, "README.md", "context"));
+    recovered.toolCalls.slice(4).forEach((call, index) => (call.sequence = 5 + index));
+    const result = planConvergeTask.evaluate(recovered);
+    expect(result.passed).toBe(true);
+    expect(result.diagnostics?.map((diagnostic) => [diagnostic.code, diagnostic.impact])).toEqual([
+      ["plan_converge.read_probe", "info"],
+      ["plan_converge.additional_read", "info"],
+    ]);
+  });
+
+  test("degrades but passes when the question precedes discovery", () => {
+    const execution = directExecution();
+    execution.toolCalls.at(-1)!.sequence = 0;
+    expect(planConvergeTask.evaluate(execution)).toMatchObject({
       passed: true,
-      diagnostics: [{ dimension: "efficiency", code: "plan_converge.read_recovery" }],
+      diagnostics: [{ code: "plan_converge.asked_before_discovery" }],
     });
   });
 
-  test("allows provider-neutral recovery details but rejects wrong scope or actor", () => {
-    const cases: Array<[string, (execution: RuntimeEvalExecution<PlanConvergeWorld>) => void]> = [
-      ["wrong recovery name", (execution) => (execution.toolCalls[0]!.name = "request_user_input")],
-      ["wrong recovery capability", (execution) => (execution.toolCalls[0]!.capability = "user_input")],
-      ["wrong failed path", (execution) => (execution.toolCalls[0]!.input = { file_path: "facts/other.txt" })],
-      ["missing recovery actor", (execution) => delete execution.toolCalls[0]!.threadId],
-      ["wrong recovery actor", (execution) => (execution.toolCalls[1]!.threadId = "other-thread")],
-      ["child recovery actor", (execution) => (execution.toolCalls[0]!.childThreadId = "child-thread")],
-      ["relative successful read", (execution) => (execution.toolCalls[2]!.input = { file_path: API_PATH })],
-      ["failed absolute read", (execution) => (execution.toolCalls[2]!.outcome = "runtime_error")],
-      ["wrong absolute read output", (execution) => (execution.toolCalls[2]!.output = "different")],
-    ];
-
-    for (const [name, mutate] of cases) {
-      const execution = recoveryExecution();
-      mutate(execution);
-      expect(planConvergeTask.evaluate(execution).passed, name).toBe(false);
-    }
-
-    const providerNeutral = recoveryExecution();
-    providerNeutral.profile.provider = "openai";
-    providerNeutral.toolCalls[0]!.error = "different runtime wording";
-    expect(planConvergeTask.evaluate(providerNeutral).passed).toBe(true);
-  });
-
-  test("requires a successful exact bounded question and its scripted answer before planning", () => {
-    const cases: Array<[string, (execution: RuntimeEvalExecution<PlanConvergeWorld>) => void]> = [
-      ["failed question", (execution) => (execution.toolCalls.at(-1)!.outcome = "policy_rejection")],
-      ["question before reads", (execution) => (execution.toolCalls.at(-1)!.sequence = 2)],
-      ["wrong question actor", (execution) => (execution.toolCalls.at(-1)!.threadId = "other-thread")],
-      ["child question actor", (execution) => (execution.toolCalls.at(-1)!.childThreadId = "child-thread")],
+  test("fails missing discovery, a missing clarification, or an incomplete or malformed plan", () => {
+    const cases: Array<[string, string, (execution: RuntimeEvalExecution<PlanConvergeWorld>) => void]> = [
+      ["facts never read", "plan_converge.discovery", (execution) => execution.toolCalls.splice(0, 1)],
       [
-        "wrong stable id",
+        "question rejected",
+        "plan_converge.question",
+        (execution) => (execution.toolCalls.at(-1)!.outcome = "policy_rejection"),
+      ],
+      [
+        "question about something else",
+        "plan_converge.question",
         (execution) =>
-          (((execution.toolCalls.at(-1)!.input as { questions: Array<{ id: string }> }).questions[0]!.id as string) =
-            "other_preference"),
-      ],
-      [
-        "multiple questions",
-        (execution) => (execution.toolCalls.at(-1)!.input as { questions: unknown[] }).questions.push(question()),
-      ],
-      [
-        "unbounded options",
-        (execution) =>
-          ((execution.toolCalls.at(-1)!.input as { questions: Array<{ options: unknown[] }> }).questions[0]!.options =
-            []),
-      ],
-      [
-        "guessed preference after failed question",
-        (execution) => {
-          execution.toolCalls.at(-1)!.outcome = "policy_rejection";
-          execution.userInputRequests = [];
-        },
+          ((execution.toolCalls.at(-1)!.input as { questions: Array<{ id: string }> }).questions[0]!.id = "other"),
       ],
       [
         "preference omitted from plan",
+        "plan_converge.plan_facts",
         (execution) =>
           replaceFinalText(execution, finalText(execution.world).replaceAll(execution.world.preference, "")),
       ],
+      [
+        "two plan blocks",
+        "plan_converge.plan_block",
+        (execution) => replaceFinalText(execution, `${finalText(execution.world)}\n${finalText(execution.world)}`),
+      ],
+      ["fixture changed", "plan_converge.verifier", (execution) => (execution.verifier!.exitCode = 1)],
     ];
-
-    for (const [name, mutate] of cases) {
-      const execution = recoveryExecution();
+    for (const [name, code, mutate] of cases) {
+      const execution = directExecution();
       mutate(execution);
-      expect(planConvergeTask.evaluate(execution).passed, name).toBe(false);
+      expect(planConvergeTask.evaluate(execution), name).toMatchObject({ passed: false, code });
     }
-  });
-
-  test("accepts the request-user-input contract maximum of four bounded options", () => {
-    const execution = directExecution();
-    const asked = (execution.toolCalls.at(-1)!.input as { questions: Array<{ options: unknown[] }> }).questions[0]!;
-    asked.options = [
-      { label: "Immediate", description: "Release to every environment at once." },
-      { label: "Canary", description: "Ramp gradually while monitoring metrics." },
-      { label: "Staged", description: "Release through environments in order." },
-      { label: "Flagged", description: "Enable for selected users first." },
-    ];
-    expect(planConvergeTask.evaluate(execution)).toEqual({ passed: true });
-
-    asked.options.push({ label: "Extra", description: "Exceeds the protocol contract." });
-    expect(planConvergeTask.evaluate(execution)).toMatchObject({
-      passed: false,
-      code: "plan_converge.question",
-    });
-  });
-
-  test("reports additional safe reads but rejects out-of-scope reads", () => {
-    const safe = directExecution();
-    safe.toolCalls.splice(2, 0, successfulRead(3, API_PATH, safe.world.apiFact));
-    safe.toolCalls.at(-1)!.sequence = 4;
-    expect(planConvergeTask.evaluate(safe)).toMatchObject({
-      passed: true,
-      diagnostics: [{ code: "plan_converge.additional_safe_read" }],
-    });
-
-    const escaped = directExecution();
-    escaped.toolCalls[0]!.input = { file_path: `/tmp/${API_PATH}` };
-    expect(planConvergeTask.evaluate(escaped).passed).toBe(false);
   });
 });
 

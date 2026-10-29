@@ -6,8 +6,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { DiligentServerRequestResponse } from "@diligent/protocol";
 import { createPermissionEngine } from "@diligent/runtime";
 import { getMcpManager } from "@diligent/runtime/tools";
-import type { RuntimeEvalExecution, RuntimeEvalTask } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import { isRecord } from "../core/helpers";
+import { finalAssistantText, isExactReply, RuntimeGrade } from "./grading";
 import {
   createIsolatedFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -174,48 +175,34 @@ export const mcpPromptGroundingTask: RuntimeEvalTask<McpPromptGroundingWorld> = 
     runtimeConfigs: world.runtimeConfigs,
   }),
   evaluate(input) {
-    const failure = validateTraceAndApproval(input) ?? validateIsolationAndFinal(input);
-    if (failure) return failure;
-    const extraDiscovery = input.toolCalls.filter((call) => call.name === "mcp_list_prompts").length - 1;
-    const lookupRecoveries = input.toolCalls.filter(
-      (call) => call.name === "mcp_get_prompt" && call.outcome === "runtime_error",
-    ).length;
-    const writeRecoveries = input.toolCalls.filter(
-      (call) => (call.name === "edit" || call.name === "apply_patch") && call.outcome === "runtime_error",
-    ).length;
-    const diagnostics = [
-      ...(extraDiscovery > 0
-        ? [
-            {
-              dimension: "efficiency" as const,
-              code: "mcp_prompt.additional_safe_discovery",
-              message: `${extraDiscovery} additional bounded prompt listing${extraDiscovery === 1 ? "" : "s"} preceded the intended fetch.`,
-            },
-          ]
-        : []),
-      ...(lookupRecoveries > 0
-        ? [
-            {
-              dimension: "efficiency" as const,
-              impact: "degraded" as const,
-              code: "mcp_prompt.bounded_lookup_recovery",
-              message: "One unknown prompt lookup failed safely before list-based discovery and exact completion.",
-            },
-          ]
-        : []),
-      ...(writeRecoveries > 0
-        ? [
-            {
-              dimension: "efficiency" as const,
-              code: "mcp_prompt.bounded_write_recovery",
-              message:
-                `${writeRecoveries} bounded artifact-write recovery attempt` +
-                `${writeRecoveries === 1 ? "" : "s"} preceded success.`,
-            },
-          ]
-        : []),
-    ];
-    return diagnostics.length > 0 ? { passed: true, diagnostics } : { passed: true };
+    const grade = new RuntimeGrade("mcp_prompt");
+    const { world } = input;
+    const fetches = input.toolCalls.filter((call) => call.name === "mcp_get_prompt");
+    const promptName = (call: (typeof fetches)[number]) => (isRecord(call.input) ? call.input.name : undefined);
+    if (
+      fetches.some(
+        (call) => call.outcome === "success" && world.promptNames.slice(1).includes(String(promptName(call))),
+      )
+    )
+      return grade.fail("decoy_prompt", "A decoy workflow prompt was fetched.", "behavior");
+    if (!fetches.some((call) => call.outcome === "success" && promptName(call) === world.intendedName))
+      return grade.fail("prompt_selection", "The current orbital workflow prompt was never fetched.", "behavior");
+    if (input.verifier?.timedOut)
+      return grade.fail("verifier_timeout", "The independent artifact verifier timed out.", "harness_terminal");
+    if (input.verifier?.exitCode !== 0)
+      return grade.fail("result", "The artifact does not contain exactly the workflow fact.", "semantic_goal");
+    if (!isExactReply(finalAssistantText(input), FINAL_RESPONSE))
+      return grade.fail("final", "The final reply was not exactly the workflow acknowledgement.", "format_contract");
+    if (fetches.some((call) => call.outcome !== "success"))
+      grade.note(
+        "lookup_recovery",
+        "A prompt fetch failed (unknown name or wrong arguments) before the intended fetch.",
+      );
+    if (input.toolCalls.filter((call) => call.name === "mcp_list_prompts").length > 1)
+      grade.note("repeated_discovery", "The prompt list was requested more than once.", { impact: "info" });
+    if (input.toolCalls.some((call) => call.capability === "write" && call.outcome !== "success"))
+      grade.note("write_recovery", "A failed artifact write was recovered.");
+    return grade.pass();
   },
   async cleanup(world) {
     await getMcpManager().disposeAll();
@@ -339,221 +326,6 @@ server.registerPrompt(prompts[2].name, { description: prompts[2].description, ar
 });
 await server.connect(new StdioServerTransport());
 `;
-}
-
-function validateTraceAndApproval(input: RuntimeEvalExecution<McpPromptGroundingWorld>) {
-  const lists = input.toolCalls.filter((call) => call.name === "mcp_list_prompts");
-  const gets = input.toolCalls.filter((call) => call.name === "mcp_get_prompt");
-  const successfulGets = gets.filter((call) => call.outcome === "success");
-  const failedGets = gets.filter((call) => call.outcome === "runtime_error");
-  const get = successfulGets[0];
-  const writeAttempts = input.toolCalls.filter((call) => call.name === "edit" || call.name === "apply_patch");
-  const write = writeAttempts.findLast((call) => call.outcome === "success");
-  const exactArgs = Object.fromEntries(
-    input.world.argumentNames.map((name, index) => [name, input.world.argumentValues[index]]),
-  );
-  if (successfulGets.length !== 1) return fail("prompt_selection", "Expected exactly one successful MCP prompt fetch.");
-  const lookupRecovery = failedGets[0];
-  if (
-    failedGets.length > 1 ||
-    (lookupRecovery !== undefined && !isSafePromptLookupRecovery(lookupRecovery, lists, exactArgs, input))
-  )
-    return fail("lookup_recovery", "Prompt lookup recovery was repeated, unsafe, or not followed by exact discovery.");
-  const callIds = input.toolCalls.map((call) => call.toolCallId);
-  const traceChecks: Array<[string, boolean]> = [
-    [
-      "cardinality",
-      input.toolCalls.length < 3 ||
-        input.toolCalls.length > 6 ||
-        lists.length < 1 ||
-        writeAttempts.length < 1 ||
-        writeAttempts.length > 2 ||
-        !get ||
-        !write,
-    ],
-    [
-      "names",
-      input.toolCalls.some(
-        (call) => !["mcp_list_prompts", "mcp_get_prompt", "edit", "apply_patch"].includes(call.name),
-      ),
-    ],
-    [
-      "linkage",
-      input.toolCalls.some(
-        (call, index) =>
-          call.sequence !== index + 1 ||
-          call.threadId !== input.session.threadId ||
-          call.childThreadId !== undefined ||
-          call.outcome === "policy_rejection" ||
-          (call.outcome === "runtime_error" && call !== lookupRecovery && !writeAttempts.includes(call)),
-      ),
-    ],
-    [
-      "call-ids",
-      callIds.some((callId) => typeof callId !== "string" || callId.length === 0) ||
-        new Set(callIds).size !== callIds.length,
-    ],
-    ["list-input", lists.some((list) => !hasExpectedListInput(list.input) || list.outcome !== "success")],
-    [
-      "get-input",
-      canonicalJson(get?.input) !==
-        canonicalJson({ server: SERVER, name: input.world.intendedName, args: exactArgs }) ||
-        !hasExactArgumentOrder(get?.input, input.world),
-    ],
-    [
-      "order",
-      !get ||
-        !write ||
-        lists.some((list) => list.sequence >= get.sequence) ||
-        get.sequence >= write.sequence ||
-        writeAttempts.some((attempt) => attempt.outcome === "runtime_error" && attempt.sequence >= write.sequence),
-    ],
-    ["write-input", !targetsArtifact(write?.input)],
-    [
-      "capabilities",
-      lists.some((list) => list.capability !== "execute") ||
-        get?.capability !== "execute" ||
-        (lookupRecovery !== undefined && lookupRecovery.capability !== "execute") ||
-        writeAttempts.some((attempt) => attempt.capability !== "write" || !targetsArtifact(attempt.input)),
-    ],
-  ];
-  const failedTraceCheck = traceChecks.find(([, failed]) => failed)?.[0];
-  if (failedTraceCheck)
-    return fail(
-      "trace",
-      `List/get/write order, actors, capabilities, or exact target inputs diverged: ${failedTraceCheck}`,
-    );
-}
-
-function isSafePromptLookupRecovery(
-  recovery: RuntimeEvalExecution<McpPromptGroundingWorld>["toolCalls"][number],
-  lists: RuntimeEvalExecution<McpPromptGroundingWorld>["toolCalls"],
-  exactArgs: Record<string, string>,
-  input: RuntimeEvalExecution<McpPromptGroundingWorld>,
-): boolean {
-  const firstList = lists.toSorted((left, right) => left.sequence - right.sequence)[0];
-  if (
-    !firstList ||
-    recovery.sequence + 1 !== firstList.sequence ||
-    recovery.threadId !== input.session.threadId ||
-    recovery.childThreadId !== undefined ||
-    recovery.capability !== "execute" ||
-    !isRecord(recovery.input) ||
-    typeof recovery.input.name !== "string" ||
-    recovery.input.name.length === 0 ||
-    input.world.promptNames.includes(recovery.input.name) ||
-    canonicalJson(recovery.input) !==
-      canonicalJson({
-        server: SERVER,
-        name: recovery.input.name,
-        args: exactArgs,
-      }) ||
-    !hasExactArgumentOrder(recovery.input, input.world) ||
-    typeof recovery.error !== "string" ||
-    !recovery.error.includes(`Prompt ${recovery.input.name} not found`) ||
-    !isRecord(recovery.output) ||
-    recovery.output.output !== `Error: ${recovery.error}` ||
-    !isRecord(recovery.output.metadata) ||
-    recovery.output.metadata.error !== true
-  )
-    return false;
-  return true;
-}
-
-function hasExactArgumentOrder(value: unknown, world: McpPromptGroundingWorld): boolean {
-  return (
-    isRecord(value) &&
-    isRecord(value.args) &&
-    canonicalJson(Object.keys(value.args)) === canonicalJson(world.argumentNames)
-  );
-}
-
-function hasExpectedListInput(value: unknown): boolean {
-  return canonicalJson(value) === canonicalJson({}) || canonicalJson(value) === canonicalJson({ server: SERVER });
-}
-
-function targetsArtifact(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  if (typeof value.file_path === "string")
-    return value.file_path === ARTIFACT_PATH || value.file_path === `$WORKSPACE/${ARTIFACT_PATH}`;
-  if (typeof value.patch !== "string") return false;
-  const targets = [...value.patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((match) => match[1]);
-  return targets.length === 1 && targets[0] === ARTIFACT_PATH;
-}
-
-function validateIsolationAndFinal(input: RuntimeEvalExecution<McpPromptGroundingWorld>) {
-  const report = JSON.stringify(input.toolCalls);
-  if (input.verifier?.timedOut) return fail("verifier_timeout", "The independent artifact verifier timed out.");
-  if (input.verifier?.exitCode !== 0) return fail("verifier", "The independent artifact verifier failed.");
-  const artifact = input.workspace.final.entries.find((entry) => entry.path === input.world.artifactPath);
-  if (artifact?.sha256 !== input.world.expectedHash)
-    return fail("artifact", "The grounded artifact bytes were incorrect.");
-  if (
-    input.toolOutputFiles.length !== 0 ||
-    input.childSessions.length !== 0 ||
-    input.compactions.length !== 0 ||
-    input.protocolActions.length !== 0 ||
-    input.userInputRequests.length !== 0 ||
-    input.runtimeState.diff.some((change) => change.category !== "infrastructure" && change.category !== "sessions") ||
-    input.world.decoyFacts.some((fact) => report.includes(fact)) ||
-    input.world.promptNames.slice(1).some((name) => getPromptOccurrences(input, name) > 0) ||
-    getPromptOccurrences(input, input.world.intendedName) !== 1 ||
-    !hasExactFinal(input.turns[0]!.messages.at(-1), FINAL_RESPONSE)
-  )
-    return fail(
-      "isolation",
-      "Forbidden state, decoy access/content, extra prompt fetch, log, action, child, or final text appeared.",
-    );
-}
-
-function getPromptOccurrences(input: RuntimeEvalExecution<McpPromptGroundingWorld>, name: string): number {
-  return input.toolCalls.filter(
-    (call) => call.name === "mcp_get_prompt" && isRecord(call.input) && call.input.name === name,
-  ).length;
-}
-
-function hasExactFinal(value: unknown, text: string): boolean {
-  if (!isRecord(value) || value.role !== "assistant" || !Array.isArray(value.content) || value.content.length !== 1)
-    return false;
-  const block = value.content[0];
-  return (
-    isRecord(block) &&
-    Object.keys(block).sort().join(",") === "text,type" &&
-    block.type === "text" &&
-    block.text === text
-  );
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (!isRecord(value)) return JSON.stringify(value);
-  return `{${Object.keys(value)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
-    .join(",")}}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-const MCP_PROMPT_FAILURE_DIMENSIONS = {
-  verifier: "format_contract",
-  verifier_timeout: "harness_terminal",
-  isolation: "runtime_policy",
-  trace: "runtime_policy",
-  lookup_recovery: "behavior",
-  prompt_selection: "behavior",
-  artifact: "format_contract",
-} as const satisfies Record<string, EvalDimension>;
-
-function fail(code: keyof typeof MCP_PROMPT_FAILURE_DIMENSIONS, message: string) {
-  return {
-    passed: false as const,
-    code: `mcp_prompt.${code}`,
-    message,
-    dimension: MCP_PROMPT_FAILURE_DIMENSIONS[code],
-  };
 }
 
 async function fileExists(path: string): Promise<boolean> {

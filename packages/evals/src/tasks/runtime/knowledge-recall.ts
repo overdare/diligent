@@ -2,6 +2,7 @@
 
 import type { RuntimeEvalTask } from "../../runtime-task";
 import type { EvalProfile } from "../../task";
+import { finalAssistantText, RuntimeGrade } from "./grading";
 import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -61,36 +62,29 @@ export const knowledgeRecallTask: RuntimeEvalTask<KnowledgeRecallWorld> = {
   ],
   snapshotWorld: async (world) => ({ token: world.token, result: await exactFile(world.root, "RELEASE.txt") }),
   evaluate(input) {
-    if (!input.toolCalls.some((call) => call.capability === "write" && !call.error))
-      return {
-        passed: false,
-        code: "knowledge_recall.no_write",
-        message: "No result write succeeded.",
-        dimension: "behavior",
-      };
-    if (input.toolCalls.some((call) => call.capability !== "write"))
-      return {
-        passed: false,
-        code: "knowledge_recall.forbidden_capability",
-        message: "A capability other than write was used.",
-        dimension: "runtime_policy",
-      };
+    const grade = new RuntimeGrade("knowledge_recall");
     const result = input.workspace.final.entries.find((entry) => entry.path === "RELEASE.txt");
     if (result?.sha256 === sha256Text(input.world.token))
-      return {
-        passed: false,
-        code: "knowledge_recall.wrong_release",
-        message: "RELEASE.txt omitted the prompt-declared trailing newline.",
-        dimension: "format_contract",
-      };
-    return result?.sha256 === input.world.expectedHash
-      ? { passed: true }
-      : {
-          passed: false,
-          code: "knowledge_recall.wrong_release",
-          message: "RELEASE.txt did not contain the exact stored release channel.",
-          dimension: "semantic_goal",
-        };
+      return grade.fail(
+        "wrong_release",
+        "RELEASE.txt omitted the prompt-declared trailing newline.",
+        "format_contract",
+      );
+    if (result?.sha256 !== input.world.expectedHash)
+      return grade.fail(
+        "wrong_release",
+        "RELEASE.txt did not contain the exact stored release channel.",
+        "semantic_goal",
+      );
+    if (finalAssistantText(input).includes(input.world.token))
+      return grade.fail(
+        "repeated_channel",
+        "The response repeated the channel despite the instruction.",
+        "format_contract",
+      );
+    if (input.toolCalls.some((call) => call.outcome !== "success"))
+      grade.note("write_recovery", "A failed write was recovered.");
+    return grade.pass();
   },
 };
 

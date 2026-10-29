@@ -8,7 +8,7 @@ import { EventStream } from "@diligent/core/event-stream";
 import type { ProviderEvent, ProviderResult, StreamFunction } from "@diligent/core/provider-contract";
 import { runRuntimeEvalExecution } from "../../../src/runner/runtime-execution";
 import { removeTemporaryRoot } from "../../../src/runner/runtime-workspace";
-import type { RuntimeEvalExecution } from "../../../src/runtime-task";
+import type { RuntimeEvalExecution, RuntimeToolTrace } from "../../../src/runtime-task";
 import {
   type AutoCompactionResumeWorld,
   autoCompactionResumeTask,
@@ -72,7 +72,15 @@ describe("auto-compaction-resume runtime eval", () => {
         timedOut: false,
       });
       await writeFixture(root, { [world.targetPath]: `${world.expected}extra\n` });
-      expect((await autoCompactionResumeTask.verify!(world, new AbortController().signal)).exitCode).toBe(1);
+      expect(await autoCompactionResumeTask.verify!(world, new AbortController().signal)).toMatchObject({
+        exitCode: 1,
+        stderr: expect.stringMatching(/^format_contract:/),
+      });
+      await writeFixture(root, { [world.targetPath]: world.expected.replace(world.facts[1]!, "WRONG") });
+      expect(await autoCompactionResumeTask.verify!(world, new AbortController().signal)).toMatchObject({
+        exitCode: 1,
+        stderr: expect.stringMatching(/^semantic_goal:/),
+      });
       const aborted = new AbortController();
       aborted.abort();
       expect(await autoCompactionResumeTask.verify!(world, aborted.signal)).toMatchObject({
@@ -84,36 +92,46 @@ describe("auto-compaction-resume runtime eval", () => {
     }
   });
 
-  test("accepts provider-neutral Anthropic edit evidence", async () => {
+  test("accepts an alternative write tool with a relative path", async () => {
     const { result } = await assembledExecution("shared-seed-123");
     const execution = structuredClone(result.execution) as RuntimeEvalExecution<AutoCompactionResumeWorld>;
     execution.profile.provider = "anthropic";
     const write = execution.toolCalls[1]!;
     write.name = "edit";
     write.input = {
-      file_path: `$WORKSPACE/${execution.world.targetPath}`,
+      file_path: execution.world.targetPath,
       old_string: "",
       new_string: execution.world.expected,
       replace_all: false,
     };
-    for (const notification of execution.turns[0]!.notifications) {
-      const params = notification.params as { event?: { toolCallId?: string; toolName?: string } };
-      if (params.event?.toolCallId === write.toolCallId) params.event.toolName = "edit";
-    }
-    for (const line of execution.session.lines) {
-      const entry = line as { message?: { toolCallId?: string; toolName?: string } };
-      if (entry.message?.toolCallId === write.toolCallId) entry.message.toolName = "edit";
-    }
     expect(autoCompactionResumeTask.evaluate(execution)).toEqual({ passed: true });
   });
 
-  test("accepts an optional newline after the exact OpenAI patch envelope", async () => {
+  test("notes a rejected probe, a recovered write, and a repeated inflation without failing", async () => {
     const { result } = await assembledExecution("shared-seed-123");
     const execution = structuredClone(result.execution) as RuntimeEvalExecution<AutoCompactionResumeWorld>;
-    const input = execution.toolCalls[1]!.input as { patch: string };
-    input.patch += "\n";
-
-    expect(autoCompactionResumeTask.evaluate(execution)).toEqual({ passed: true });
+    const [inflate, write] = execution.toolCalls as [RuntimeToolTrace, RuntimeToolTrace];
+    execution.toolCalls = [
+      { ...inflate, sequence: 1 },
+      { ...inflate, toolCallId: "inflate-again", sequence: 2 },
+      {
+        ...write,
+        toolCallId: "probe",
+        name: "read",
+        capability: "read",
+        sequence: 3,
+        input: { file_path: "$WORKSPACE/control.txt" },
+        outcome: "policy_rejection",
+      },
+      { ...write, toolCallId: "failed-write", sequence: 4, outcome: "runtime_error", error: "patch failed" },
+      { ...write, sequence: 5 },
+    ];
+    const evaluation = autoCompactionResumeTask.evaluate(execution);
+    expect(evaluation.passed).toBe(true);
+    expect(evaluation.diagnostics?.map((diagnostic) => diagnostic.code).sort()).toEqual([
+      "auto_compaction_resume.repeated_inflate",
+      "auto_compaction_resume.tool_recovery",
+    ]);
   });
 
   test("accepts low-level lifecycle, persistence, and provider-call variation with an efficiency diagnostic", async () => {
@@ -125,20 +143,17 @@ describe("auto-compaction-resume runtime eval", () => {
     execution.session.lines = execution.session.lines.filter(
       (line) => (line as { type?: string }).type !== "compaction",
     );
-    const extra = structuredClone(execution.providerCalls.at(-1)!);
-    extra.sequence = Math.max(...execution.providerCalls.map((call) => call.sequence)) + 1;
-    execution.providerCalls.push(extra);
+    while (execution.providerCalls.length <= autoCompactionResumeTask.limits.maxTurns + 3) {
+      const extra = structuredClone(execution.providerCalls.at(-1)!);
+      extra.sequence = Math.max(...execution.providerCalls.map((call) => call.sequence)) + 1;
+      execution.providerCalls.push(extra);
+    }
 
-    expect(autoCompactionResumeTask.evaluate(execution)).toEqual({
-      passed: true,
-      diagnostics: [
-        {
-          dimension: "efficiency",
-          code: "auto_compaction_resume.provider_call_variation",
-          message: expect.any(String),
-        },
-      ],
-    });
+    const evaluation = autoCompactionResumeTask.evaluate(execution);
+    expect(evaluation.passed).toBe(true);
+    expect(evaluation.diagnostics?.map((diagnostic) => diagnostic.code)).toEqual([
+      "auto_compaction_resume.provider_call_variation",
+    ]);
   });
 
   test("assigns explicit dimensions to adjacent semantic, format, behavior, and runtime-policy failures", async () => {
@@ -180,24 +195,24 @@ describe("auto-compaction-resume runtime eval", () => {
             sha256: "unexpected",
           }),
       ],
+      ["artifact written only before inflation", "behavior", (execution) => (execution.toolCalls[0]!.sequence = 3)],
       [
-        "wrong write path",
-        "runtime_policy",
-        (execution) => {
-          const input = execution.toolCalls[1]!.input as { patch: string };
-          input.patch = input.patch.replace(execution.world.targetPath, "OTHER.txt");
-        },
+        "no traced artifact write",
+        "behavior",
+        (execution) => (execution.toolCalls = execution.toolCalls.filter((call) => call.capability !== "write")),
       ],
-      ["reordered tools", "behavior", (execution) => (execution.toolCalls[0]!.sequence = 3)],
-      ["extra tool", "behavior", (execution) => execution.toolCalls.push({ ...execution.toolCalls[0]!, sequence: 3 })],
       [
-        "unbounded provider recovery",
-        "runtime_policy",
-        (execution) => {
-          while (execution.providerCalls.length <= autoCompactionResumeTask.limits.maxTurns + 3) {
-            execution.providerCalls.push(structuredClone(execution.providerCalls.at(-1)!));
-          }
-        },
+        "missing inflation",
+        "behavior",
+        (execution) => (execution.toolCalls = execution.toolCalls.filter((call) => call.name !== "inflate_context")),
+      ],
+      [
+        "no automatic compaction",
+        "behavior",
+        (execution) =>
+          (execution.turns[0]!.notifications = execution.turns[0]!.notifications.filter(
+            (notice) => (notice.params as { event?: { type?: string } }).event?.type !== "compaction_end",
+          )),
       ],
     ];
 

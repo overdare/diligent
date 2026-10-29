@@ -1,4 +1,4 @@
-// @summary Semantic JSON oracle regressions for manual-compaction-resume
+// @summary Outcome, compaction-event, and semantic JSON oracle regressions for manual-compaction-resume
 
 import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
@@ -14,7 +14,7 @@ import {
 } from "../../../src/tasks/runtime/manual-compaction-resume";
 
 describe("manual-compaction-resume", () => {
-  test("declares an eligible candidate while leaving compaction mechanics out of live scoring", async () => {
+  test("declares an eligible candidate and fails when manual compaction did not compact", async () => {
     const root = await mkdtemp(join(tmpdir(), "diligent-eval-manual-compaction-contract-"));
     try {
       const world = await manualCompactionResumeTask.setup("shared-seed-123", root);
@@ -25,14 +25,75 @@ describe("manual-compaction-resume", () => {
       );
       await writeFixture(root, { "CONTEXT.json": world.expected });
       const verifier = await manualCompactionResumeTask.verify!(world, new AbortController().signal);
-      const input = execution(world, verifier);
-      input.compactions = [];
-      input.session.lines = [{ type: "session", id: "thread-1" }];
-      expect(manualCompactionResumeTask.evaluate(input)).toEqual({ passed: true });
+      const skipped = execution(world, verifier);
+      skipped.compactions = [];
+      expect(manualCompactionResumeTask.evaluate(skipped)).toMatchObject({
+        passed: false,
+        code: "manual_compaction.not_compacted",
+        dimension: "behavior",
+      });
+      const noop = execution(world, verifier);
+      noop.compactions[0]!.response.compacted = false;
+      expect(manualCompactionResumeTask.evaluate(noop)).toMatchObject({ passed: false, dimension: "behavior" });
     } finally {
       await removeTemporaryRoot(root);
     }
   });
+
+  test("fails when CONTEXT.json was written only before compaction", async () => {
+    const root = await mkdtemp(join(tmpdir(), "diligent-eval-manual-compaction-early-"));
+    try {
+      const world = await manualCompactionResumeTask.setup("shared-seed-123", root);
+      await writeFixture(root, { "CONTEXT.json": world.expected });
+      const verifier = await manualCompactionResumeTask.verify!(world, new AbortController().signal);
+      const input = execution(world, verifier);
+      input.toolCalls[0]!.turnIndex = 0;
+      expect(manualCompactionResumeTask.evaluate(input)).toMatchObject({
+        passed: false,
+        code: "manual_compaction.no_write",
+        dimension: "behavior",
+      });
+    } finally {
+      await removeTemporaryRoot(root);
+    }
+  });
+
+  test("accepts a recovered continuation write through an alternative write tool and path form", async () => {
+    const root = await mkdtemp(join(tmpdir(), "diligent-eval-manual-compaction-variant-"));
+    try {
+      const world = await manualCompactionResumeTask.setup("shared-seed-123", root);
+      await writeFixture(root, { "CONTEXT.json": world.expected });
+      const verifier = await manualCompactionResumeTask.verify!(world, new AbortController().signal);
+      const input = execution(world, verifier);
+      input.toolCalls = [
+        {
+          sequence: 1,
+          toolCallId: "probe",
+          name: "read",
+          capability: "read",
+          turnIndex: 1,
+          input: { file_path: "$WORKSPACE/AGENTS.md" },
+          outcome: "policy_rejection",
+          error: "Tool is not allowed.",
+        },
+        {
+          sequence: 2,
+          toolCallId: "patch-context",
+          name: "apply_patch",
+          capability: "write",
+          turnIndex: 1,
+          input: { patch: `*** Begin Patch\n*** Add File: CONTEXT.json\n+${world.expected.trimEnd()}\n*** End Patch` },
+          outcome: "success",
+        },
+      ];
+      const result = manualCompactionResumeTask.evaluate(input);
+      expect(result.passed).toBe(true);
+      expect(result.diagnostics?.map((diagnostic) => diagnostic.code)).toEqual(["manual_compaction.tool_recovery"]);
+    } finally {
+      await removeTemporaryRoot(root);
+    }
+  });
+
   test("accepts JSON whitespace and key-order variants with the exact values and one final newline", async () => {
     const root = await mkdtemp(join(tmpdir(), "diligent-eval-manual-compaction-semantic-"));
     try {
@@ -112,7 +173,8 @@ function execution(
         toolCallId: "write-context",
         name: "edit",
         capability: "write",
-        input: {},
+        turnIndex: 1,
+        input: { file_path: "CONTEXT.json", old_string: "", new_string: world.expected, replace_all: false },
         outcome: "success",
       },
     ],

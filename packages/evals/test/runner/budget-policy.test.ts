@@ -1,15 +1,24 @@
-// @summary Tests shared eval target-budget grace and hard-stop calculation
+// @summary Tests that task budgets stay efficiency targets while hard limits only stop runaway executions
 
 import { describe, expect, test } from "bun:test";
-import { createBudgetGraceDiagnostics, EVAL_BUDGET_GRACE, resolveEvalHardLimits } from "../../src/runner/budget-policy";
+import {
+  createBudgetGraceDiagnostics,
+  EVAL_RUNAWAY_POLICY,
+  resolveEvalHardLimits,
+} from "../../src/runner/budget-policy";
 
 describe("eval budget policy", () => {
-  test("keeps task budgets as targets and adds fixed global execution grace", () => {
-    expect(EVAL_BUDGET_GRACE).toEqual({ turns: 2, toolCalls: 1 });
-    expect(resolveEvalHardLimits({ maxTurns: 5, maxToolCalls: 4 })).toEqual({
-      maxTurns: 7,
-      maxToolCalls: 5,
-    });
+  test("hard limits scale with the target so a moderately longer path is never terminated", () => {
+    const targets = { maxTurns: 20, maxToolCalls: 30 };
+    const hard = resolveEvalHardLimits(targets);
+    expect(hard.maxTurns).toBe(targets.maxTurns * EVAL_RUNAWAY_POLICY.multiplier);
+    expect(hard.maxToolCalls).toBe(targets.maxToolCalls * EVAL_RUNAWAY_POLICY.multiplier);
+  });
+
+  test("small targets keep a minimum headroom before termination", () => {
+    const hard = resolveEvalHardLimits({ maxTurns: 1, maxToolCalls: 0 });
+    expect(hard.maxTurns).toBe(1 + EVAL_RUNAWAY_POLICY.minHeadroom.turns);
+    expect(hard.maxToolCalls).toBe(EVAL_RUNAWAY_POLICY.minHeadroom.toolCalls);
   });
 
   test("reports target overruns as non-gating efficiency diagnostics", () => {

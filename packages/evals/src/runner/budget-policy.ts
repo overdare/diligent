@@ -1,19 +1,30 @@
-// @summary Defines global eval-runner grace above task-declared target budgets
+// @summary Separates task efficiency targets from the runaway hard limits that terminate an eval execution
 
 import type { EvalDiagnostic, EvalLimits } from "../task";
 
-export const EVAL_BUDGET_GRACE = {
-  turns: 2,
-  toolCalls: 1,
+/**
+ * Task budgets are efficiency targets: exceeding one is a non-gating diagnostic. The hard limit exists only to stop a
+ * runaway execution, so it leaves generous headroom above the target instead of judging quality.
+ */
+export const EVAL_RUNAWAY_POLICY = {
+  multiplier: 2,
+  minHeadroom: { turns: 4, toolCalls: 4 },
 } as const;
+
+export type EvalBudgetKind = "turns" | "toolCalls";
 
 export function resolveEvalHardLimits(
   targets: Pick<EvalLimits, "maxTurns" | "maxToolCalls">,
 ): Pick<EvalLimits, "maxTurns" | "maxToolCalls"> {
   return {
-    maxTurns: targets.maxTurns + EVAL_BUDGET_GRACE.turns,
-    maxToolCalls: targets.maxToolCalls + EVAL_BUDGET_GRACE.toolCalls,
+    maxTurns: runawayLimit(targets.maxTurns, EVAL_RUNAWAY_POLICY.minHeadroom.turns),
+    maxToolCalls: runawayLimit(targets.maxToolCalls, EVAL_RUNAWAY_POLICY.minHeadroom.toolCalls),
   };
+}
+
+export function describeHardLimitExceeded(kind: EvalBudgetKind, hardLimit: number, target: number): string {
+  const subject = kind === "turns" ? "Provider-turn count" : "Tool-call count";
+  return `${subject} exceeded runaway limit ${hardLimit} (target ${target}).`;
 }
 
 export function createBudgetGraceDiagnostics(
@@ -36,4 +47,8 @@ export function createBudgetGraceDiagnostics(
     });
   }
   return diagnostics;
+}
+
+function runawayLimit(target: number, minHeadroom: number): number {
+  return Math.max(target * EVAL_RUNAWAY_POLICY.multiplier, target + minHeadroom);
 }

@@ -1,7 +1,7 @@
 // @summary Runtime eval for nested AGENTS.md instruction hierarchy compliance
 
 import type { RuntimeEvalTask } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import { RuntimeGrade, successfulReadsOf } from "./grading";
 import {
   createFixtureRuntimeConfigForCwd,
   DEFAULT_RUNTIME_LIMITS,
@@ -72,49 +72,30 @@ export const instructionHierarchyTask: RuntimeEvalTask<InstructionHierarchyWorld
   verify: (world, signal) => verifyExactFiles(world, { [RESULT_PATH]: world.expected }, signal),
   snapshotWorld: async (world) => ({ result: await exactFile(world.root, RESULT_PATH) }),
   evaluate(input) {
-    const reads = input.toolCalls.filter((call) => call.name === "read" && call.outcome === "success");
-    if (!reads.some((call) => toolPath(call.input).endsWith(TARGET_PATH)))
-      return fail("target_read", "The model did not inspect the nested target file.", "behavior");
-    if (reads.some((call) => !isProjectRead(input.world.root, toolPath(call.input))))
-      return fail("read_scope", "A read escaped the fixture project.", "runtime_policy");
+    const grade = new RuntimeGrade("instruction_hierarchy");
     if (input.verifier?.timedOut)
-      return fail("verifier_timeout", "Independent exact-file verification timed out.", "harness_terminal");
+      return grade.fail("verifier_timeout", "Independent exact-file verification timed out.", "harness_terminal");
     if (input.verifier?.exitCode !== 0)
-      return fail("verifier", "Independent exact-file verification failed.", "semantic_goal");
+      return grade.fail("verifier", "Independent exact-file verification failed.", "semantic_goal");
     const result = input.workspace.final.entries.find((entry) => entry.path === RESULT_PATH);
     if (result?.sha256 !== input.world.expectedHash)
-      return fail(
+      return grade.fail(
         "wrong_result",
         "RESULT.txt did not combine both hidden instruction transformations exactly.",
-        "format_contract",
+        "semantic_goal",
       );
-    return reads.length > 1
-      ? {
-          passed: true,
-          diagnostics: [
-            {
-              dimension: "efficiency",
-              code: "instruction_hierarchy.additional_safe_read",
-              message: `Observed ${reads.length - 1} additional safe project read(s).`,
-            },
-          ],
-        }
-      : { passed: true };
+    if (successfulReadsOf(input, TARGET_PATH).length === 0)
+      grade.note("target_read_indirect", "The target payload was obtained without a direct read of target.txt.", {
+        impact: "info",
+      });
+    const reads = input.toolCalls.filter((call) => call.capability === "read" && call.outcome === "success");
+    if (reads.length > 1)
+      grade.note("additional_safe_read", `Observed ${reads.length - 1} additional successful project read(s).`, {
+        impact: "info",
+      });
+    const failed = input.toolCalls.filter((call) => call.outcome !== "success");
+    if (failed.length > 0)
+      grade.note("failed_call", `Observed ${failed.length} failed or rejected tool call(s) before completion.`);
+    return grade.pass();
   },
 };
-
-function toolPath(value: unknown): string {
-  return isRecord(value) && typeof value.file_path === "string" ? value.file_path : "";
-}
-
-function isProjectRead(root: string, path: string): boolean {
-  return path === root || path.startsWith(`${root}/`);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
-}
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `instruction_hierarchy.${code}`, message, dimension };
-}

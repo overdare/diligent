@@ -44,6 +44,16 @@ export function normalizePlatformAlias(path: string): string {
     : path;
 }
 
+/**
+ * Spellings of a fixture root that tools or models may emit, longest alias first: the macOS `/private` alias, the
+ * resolved root, and the Windows forward-slash form (`C:/...`) that models often pass for `C:\...`.
+ */
+export function rootSpellings(root: string): string[] {
+  const spellings = process.platform === "darwin" ? [`/private${normalizePlatformAlias(root)}`, root] : [root];
+  if (root.includes("\\")) spellings.push(root.replaceAll("\\", "/"));
+  return spellings;
+}
+
 export function validateTemporaryRoot(root: string): string {
   if (!root || !isAbsolute(root)) throw new Error("Runtime eval root must be an absolute resolved path.");
   const resolved = resolve(root);

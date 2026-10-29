@@ -2,18 +2,13 @@
 
 import { join } from "node:path";
 import { readKnowledge } from "@diligent/runtime";
-import type {
-  RuntimeEvalExecution,
-  RuntimeEvalTask,
-  RuntimeToolTrace,
-  RuntimeVerifierResult,
-} from "../../runtime-task";
-import type { EvalDimension, EvalProfile } from "../../task";
+import type { RuntimeEvalTask, RuntimeVerifierResult } from "../../runtime-task";
+import type { EvalProfile } from "../../task";
+import { RuntimeGrade } from "./grading";
 import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
   exactFile,
-  matchesExactPatchInput,
   type RuntimeFixtureWorld,
   seededToken,
   sha256Text,
@@ -90,75 +85,23 @@ export const knowledgeIntentSplitTask: RuntimeEvalTask<KnowledgeIntentSplitWorld
     output: await exactFile(world.root, OUTPUT_PATH),
   }),
   evaluate(input) {
-    const searches = input.toolCalls.filter((call) => call.name === "search_knowledge");
-    const updates = input.toolCalls.filter((call) => call.name === "update_knowledge");
-    const writes = input.toolCalls.filter((call) => call.capability === "write");
-    const hasCreateRecovery = writes.length === 2;
-    if (
-      input.toolCalls.length > knowledgeIntentSplitTask.limits.maxToolCalls ||
-      searches.length > 2 ||
-      updates.length !== 1 ||
-      (writes.length !== 1 && !hasCreateRecovery) ||
-      input.toolCalls.length !== searches.length + updates.length + writes.length
-    )
-      return fail(
-        "trace_count",
-        "Expected up to two searches, one update, and one bounded workspace create path.",
-        "runtime_policy",
-      );
-    const update = updates[0]!;
-    const write = writes.at(-1)!;
-    if (
-      searches.some(
-        (search) =>
-          search.capability !== "knowledge" ||
-          search.outcome !== "success" ||
-          !isSafeOptionalSearch(search.input, input.world),
-      )
-    )
-      return fail("search", "An optional search was not a safe durable-preference lookup.", "runtime_policy");
-    if (
-      update.name !== "update_knowledge" ||
-      update.capability !== "knowledge" ||
-      update.outcome !== "success" ||
-      !isExactDurableUpsert(update.input, input.world)
-    )
-      return fail("update", "The update was not the exact successful durable preference upsert.", "runtime_policy");
-    if (hasCreateRecovery && !isExactAnthropicCreateRecovery(input, update, searches, writes))
-      return fail(
-        "write_recovery",
-        "The failed workspace create was not the exact bounded Anthropic path recovery.",
-        "runtime_policy",
-      );
-    if (
-      write?.capability !== "write" ||
-      write.outcome !== "success" ||
-      !isProviderNativeExactCreate(write, OUTPUT_PATH, input.world.expected)
-    )
-      return fail(
-        "write",
-        "The final trace was not the provider-native exact workspace creation.",
-        writeTargetsPath(write, OUTPUT_PATH) ? "format_contract" : "runtime_policy",
-      );
+    const grade = new RuntimeGrade("knowledge_intent_split");
     if (input.verifier?.timedOut)
-      return fail("verifier_timeout", "Independent verification timed out.", "harness_terminal");
-    if (input.verifier?.exitCode !== 0)
-      return fail("verifier", "Independent knowledge-store and output verification failed.", "runtime_policy");
+      return grade.fail("verifier_timeout", "Independent verification timed out.", "harness_terminal");
     const output = input.workspace.final.entries.find((entry) => entry.path === OUTPUT_PATH);
     if (output?.sha256 !== input.world.expectedHash)
-      return fail("output_hash", `${OUTPUT_PATH} did not have the exact final hash.`, "format_contract");
-    return searches.length === 2
-      ? {
-          passed: true,
-          diagnostics: [
-            {
-              dimension: "efficiency",
-              code: "knowledge_intent_split.second_safe_search",
-              message: "A second bounded read-only knowledge search was used before successful completion.",
-            },
-          ],
-        }
-      : { passed: true };
+      return grade.fail("output", `${OUTPUT_PATH} does not contain exactly the current-task value.`, "semantic_goal");
+    if (input.verifier?.exitCode !== 0)
+      return grade.fail(
+        "knowledge_store",
+        "The store does not hold exactly the updated durable preference without the transient value.",
+        "semantic_goal",
+      );
+    if (input.toolCalls.some((call) => call.name === "search_knowledge"))
+      grade.note("knowledge_search", "Knowledge was searched before the update.", { impact: "info" });
+    if (input.toolCalls.some((call) => call.outcome !== "success"))
+      grade.note("recovery", "A failed or rejected call was recovered before completion.");
+    return grade.pass();
   },
 };
 
@@ -185,7 +128,8 @@ async function verifyIntentSplit(
     sameKeys(entry, ["confidence", "content", "id", "tags", "timestamp", "type"]) &&
     entry.id === world.knowledgeId &&
     entry.type === "preference" &&
-    entry.content === world.content &&
+    entry.content.includes(world.durableValue) &&
+    !entry.content.includes("OLD_AUDIENCE") &&
     entry.confidence === 0.7 &&
     Array.isArray(entry.tags) &&
     entry.tags.every((tag) => typeof tag === "string") &&
@@ -201,127 +145,8 @@ async function verifyIntentSplit(
   );
 }
 
-function isProviderNativeExactCreate(
-  call: RuntimeEvalExecution<unknown>["toolCalls"][number],
-  path: string,
-  content: string,
-): boolean {
-  if (call.name === "apply_patch") return matchesExactPatchInput(call.input, exactAddPatch(path, content));
-  if (call.name === "edit")
-    return exactObject(call.input, {
-      file_path: `$WORKSPACE/${path}`,
-      old_string: "",
-      new_string: content,
-      replace_all: false,
-    });
-  return false;
-}
-
-function writeTargetsPath(call: RuntimeToolTrace | undefined, path: string): boolean {
-  if (!call || !isRecord(call.input)) return false;
-  if (call.name === "edit") return call.input.file_path === `$WORKSPACE/${path}`;
-  return (
-    call.name === "apply_patch" && typeof call.input.patch === "string" && call.input.patch.includes(` File: ${path}`)
-  );
-}
-
-function isExactAnthropicCreateRecovery(
-  execution: RuntimeEvalExecution<KnowledgeIntentSplitWorld>,
-  update: RuntimeEvalExecution<KnowledgeIntentSplitWorld>["toolCalls"][number],
-  searches: RuntimeEvalExecution<KnowledgeIntentSplitWorld>["toolCalls"],
-  writes: RuntimeEvalExecution<KnowledgeIntentSplitWorld>["toolCalls"],
-): boolean {
-  if (execution.profile.provider !== "anthropic" || writes.length !== 2) return false;
-  const [recovery, write] = writes;
-  if (!recovery || !write) return false;
-  const error = `Error: file_path must be absolute: ${OUTPUT_PATH}`;
-  const parentThreadId = recovery.threadId;
-  const recoveryIndex = execution.toolCalls.indexOf(recovery);
-  const writeIndex = execution.toolCalls.indexOf(write);
-  const recoveryWindowIsBounded =
-    writeIndex === recoveryIndex + 1 ||
-    (writeIndex === recoveryIndex + 2 && execution.toolCalls[recoveryIndex + 1] === update);
-  return (
-    recoveryIndex >= 0 &&
-    recoveryWindowIsBounded &&
-    writeIndex === execution.toolCalls.length - 1 &&
-    execution.toolCalls.slice(0, recoveryIndex).every((call) => call === update || searches.includes(call)) &&
-    execution.toolCalls.every((call, index) => call.sequence === index + 1) &&
-    typeof parentThreadId === "string" &&
-    parentThreadId.length > 0 &&
-    execution.toolCalls.every((call) => call.threadId === parentThreadId && call.childThreadId === undefined) &&
-    recovery.name === "edit" &&
-    recovery.capability === "write" &&
-    recovery.outcome === "runtime_error" &&
-    recovery.error === error &&
-    exactObject(recovery.input, {
-      file_path: OUTPUT_PATH,
-      old_string: "",
-      new_string: execution.world.expected,
-      replace_all: false,
-    }) &&
-    exactObject(recovery.output, { output: error, metadata: { error: true } })
-  );
-}
-
-function exactAddPatch(path: string, content: string): string {
-  return `*** Begin Patch\n*** Add File: ${path}\n${content
-    .split("\n")
-    .slice(0, -1)
-    .map((line) => `+${line}`)
-    .join("\n")}\n*** End Patch`;
-}
-
-function exactObject(value: unknown, expected: Record<string, unknown>): boolean {
-  if (!isRecord(value)) return false;
-  const keys = Object.keys(value).sort();
-  const expectedKeys = Object.keys(expected).sort();
-  return (
-    JSON.stringify(keys) === JSON.stringify(expectedKeys) &&
-    expectedKeys.every((key) => JSON.stringify(value[key]) === JSON.stringify(expected[key]))
-  );
-}
-
-function isExactDurableUpsert(value: unknown, world: KnowledgeIntentSplitWorld): boolean {
-  if (!isRecord(value)) return false;
-  const allowedKeys = ["action", "content", "id", "tags", "type"];
-  if (Object.keys(value).some((key) => !allowedKeys.includes(key))) return false;
-  if (
-    value.action !== "upsert" ||
-    value.id !== world.knowledgeId ||
-    value.type !== "preference" ||
-    value.content !== world.content
-  )
-    return false;
-  return (
-    value.tags === undefined ||
-    (Array.isArray(value.tags) &&
-      value.tags.every((tag) => typeof tag === "string") &&
-      !JSON.stringify(value.tags).includes(world.transientValue))
-  );
-}
-
-function isSafeOptionalSearch(value: unknown, world: KnowledgeIntentSplitWorld): boolean {
-  if (!isRecord(value)) return false;
-  const keys = Object.keys(value);
-  return (
-    keys.length >= 1 &&
-    keys.length <= 2 &&
-    keys.every((key) => key === "id" || key === "id_prefix" || key === "query") &&
-    (value.id !== undefined || value.id_prefix !== undefined || value.query !== undefined) &&
-    (value.id === undefined || value.id === world.knowledgeId) &&
-    (value.id_prefix === undefined || value.id_prefix === world.knowledgeId) &&
-    (value.query === undefined ||
-      (typeof value.query === "string" && value.query.trim().length > 0 && !value.query.includes(world.transientValue)))
-  );
-}
-
 function sameKeys(value: object, expected: string[]): boolean {
   return JSON.stringify(Object.keys(value).sort()) === JSON.stringify(expected);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function verifierResult(
@@ -339,8 +164,4 @@ function verifierResult(
     stderr: valid ? "" : error,
     timedOut,
   };
-}
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `knowledge_intent_split.${code}`, message, dimension };
 }

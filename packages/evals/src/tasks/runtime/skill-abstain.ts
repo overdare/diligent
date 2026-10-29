@@ -1,12 +1,11 @@
 // @summary Runtime eval fixture proving abstention from attractive but irrelevant task-local skills
 
-import type { RuntimeEvalExecution, RuntimeEvalTask } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import { RuntimeGrade, tracePaths } from "./grading";
 import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
   exactFile,
-  matchesExactPatchInput,
   type RuntimeFixtureWorld,
   seededToken,
   sha256Text,
@@ -92,57 +91,34 @@ export const skillAbstainTask: RuntimeEvalTask<SkillAbstainWorld> = {
   verify: (world, signal) => verifyExactFiles(world, { [OUTPUT_PATH]: world.expected }, signal),
   snapshotWorld: async (world) => ({ result: await exactFile(world.root, OUTPUT_PATH) }),
   evaluate(input) {
-    if (input.toolCalls.some((call) => call.name === "skill"))
-      return failure("skill_called", "An irrelevant skill was loaded.", "behavior");
-    if (input.toolCalls.some((call) => call.capability === "read"))
-      return failure("skill_file_read", "A skill or reference file was read directly.", "runtime_policy");
-    const writes = input.toolCalls.filter((call) => call.capability === "write");
-    if (writes.length !== 1 || writes[0]?.outcome !== "success" || !isExactCreate(writes[0], input.world.expected)) {
-      const dimension = writes.some(writeTargetsOutput) ? "format_contract" : "runtime_policy";
-      return failure("wrong_write", "The task did not perform the one exact ordinary workspace write.", dimension);
-    }
+    const grade = new RuntimeGrade("skill_abstain");
+    if (input.toolCalls.some((call) => call.capability === "skill" && call.outcome === "success"))
+      return grade.fail("skill_called", "An irrelevant skill was loaded.", "behavior");
+    if (
+      input.toolCalls.some(
+        (call) =>
+          call.capability === "read" &&
+          call.outcome === "success" &&
+          tracePaths(call, input.threadCwd).some((path) => path.startsWith(".diligent/skills/")),
+      )
+    )
+      return grade.fail("skill_file_read", "A skill or reference file was read directly.", "runtime_policy");
     if (input.verifier?.timedOut)
-      return failure("verifier_timeout", "Independent exact-file verification timed out.", "harness_terminal");
+      return grade.fail("verifier_timeout", "Independent exact-file verification timed out.", "harness_terminal");
     if (input.verifier?.exitCode !== 0)
-      return failure("verifier", "Independent exact-file verification did not pass.", "format_contract");
+      return grade.fail("verifier", "Independent exact-file verification did not pass.", "semantic_goal");
     const result = input.workspace.final.entries.find((entry) => entry.path === OUTPUT_PATH);
-    return result?.sha256 === input.world.expectedHash
-      ? { passed: true }
-      : failure("wrong_result", `${OUTPUT_PATH} did not contain the exact requested content.`, "format_contract");
+    if (result?.sha256 !== input.world.expectedHash)
+      return grade.fail("wrong_result", `${OUTPUT_PATH} did not contain the exact requested content.`, "semantic_goal");
+    if (input.toolCalls.some((call) => call.capability === "skill"))
+      grade.note("rejected_skill_call", "A skill call was attempted but did not load a skill.");
+    if (input.toolCalls.some((call) => call.capability === "read"))
+      grade.note("extra_read", "Read calls were made for a fully specified direct edit.", { impact: "info" });
+    const writes = input.toolCalls.filter((call) => call.capability === "write");
+    if (writes.some((call) => call.outcome !== "success"))
+      grade.note("write_recovery", "A write attempt failed before the requested file was produced.");
+    if (writes.filter((call) => call.outcome === "success").length > 1)
+      grade.note("repeated_write", "The requested file was written more than once.");
+    return grade.pass();
   },
 };
-
-function isExactCreate(call: RuntimeEvalExecution<unknown>["toolCalls"][number], content: string): boolean {
-  if (call.input === null || typeof call.input !== "object" || Array.isArray(call.input)) return false;
-  const input = call.input as Record<string, unknown>;
-  if (call.name === "apply_patch") return matchesExactPatchInput(input, exactAddPatch(OUTPUT_PATH, content));
-  return (
-    call.name === "edit" &&
-    Object.keys(input).length === 4 &&
-    input.file_path === `$WORKSPACE/${OUTPUT_PATH}` &&
-    input.old_string === "" &&
-    input.new_string === content &&
-    input.replace_all === false
-  );
-}
-
-function writeTargetsOutput(call: RuntimeEvalExecution<unknown>["toolCalls"][number]): boolean {
-  if (call.input === null || typeof call.input !== "object" || Array.isArray(call.input)) return false;
-  const input = call.input as Record<string, unknown>;
-  if (call.name === "edit") return input.file_path === `$WORKSPACE/${OUTPUT_PATH}`;
-  return (
-    call.name === "apply_patch" && typeof input.patch === "string" && input.patch.includes(` File: ${OUTPUT_PATH}`)
-  );
-}
-
-function exactAddPatch(path: string, content: string): string {
-  return `*** Begin Patch\n*** Add File: ${path}\n${content
-    .split("\n")
-    .slice(0, -1)
-    .map((line) => `+${line}`)
-    .join("\n")}\n*** End Patch`;
-}
-
-function failure(suffix: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `skill_abstain.${suffix}`, message, dimension };
-}

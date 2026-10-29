@@ -1,7 +1,7 @@
 // @summary Runtime eval for adapting to one runner-owned steering requirement after an exact target read
 
-import type { RuntimeEvalExecution, RuntimeEvalTask, RuntimeToolTrace } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import { harmlessFailedProbes, RuntimeGrade, successfulReadsOf, successfulWritesTo } from "./grading";
 import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -117,189 +117,27 @@ export const steerDuringFixTask: RuntimeEvalTask<SteerDuringFixWorld> = {
   },
   snapshotWorld: async (world) => ({ target: await exactFile(world.root, world.targetPath) }),
   evaluate(input) {
+    const grade = new RuntimeGrade("steer_during_fix");
     const { world } = input;
-    const toolFailure = validateTools(input);
-    if (toolFailure) return toolFailure;
+    const reads = successfulReadsOf(input, world.targetPath);
+    const writes = successfulWritesTo(input, world.targetPath);
+    if (reads.length === 0 || !reads.some((read) => JSON.stringify(read.output).includes(world.baseValue)))
+      return grade.fail("read", "The target was never inspected before the change.", "behavior");
+    if (writes.length > 0 && writes[0]!.sequence < reads[0]!.sequence)
+      return grade.fail("write_before_read", "The target changed before it was inspected.", "behavior");
     if (input.verifier?.timedOut)
-      return fail("verifier_timeout", "Independent exact-byte verification timed out.", "harness_terminal");
+      return grade.fail("verifier_timeout", "Independent exact-byte verification timed out.", "harness_terminal");
     if (input.verifier?.exitCode !== 0)
-      return fail("verifier", "Independent exact-byte verification failed.", "format_contract");
-    const final = input.workspace.final.entries.filter((entry) => entry.path === world.targetPath);
-    if (final.length !== 1) return fail("artifact_missing", "The steered target artifact is missing.", "semantic_goal");
-    if (final[0]?.sha256 !== world.expectedHash || final[0].size !== Buffer.byteLength(world.expected))
-      return fail("final_hash", "The final target did not have the exact steered bytes and hash.", "format_contract");
-    return { passed: true };
+      return grade.fail(
+        "verifier",
+        "The target does not contain exactly the steered replacement value.",
+        "semantic_goal",
+      );
+    if (writes.some((write) => JSON.stringify(write.input).includes(world.originalRequestedValue)))
+      grade.note("superseded_value_written", "The superseded value was written before the steer was applied.");
+    if (harmlessFailedProbes(input).length > 0)
+      grade.note("failed_read_probe", "A read probe failed before completion.", { impact: "info" });
+    if (reads.length > 1) grade.note("repeated_target_read", "The target was read more than once.", { impact: "info" });
+    return grade.pass();
   },
 };
-
-function validateTools(input: RuntimeEvalExecution<SteerDuringFixWorld>) {
-  const layout = toolLayout(input);
-  if (!layout)
-    return fail(
-      "tool_count",
-      "Expected one read and one provider-native write, with only the bounded recovery and confirmation reads permitted.",
-      "behavior",
-    );
-  const { recovery, read, write, confirmation } = layout;
-  const traces = [recovery, read, write, confirmation].filter(
-    (trace): trace is RuntimeToolTrace => trace !== undefined,
-  );
-  if (traces.some((trace) => trace.threadId !== input.turns[0]!.threadId || trace.childThreadId !== undefined))
-    return fail("tool_actor", "Every permitted trace must belong directly to the outer turn thread.", "runtime_policy");
-  if (
-    traces.some((trace, index) => index > 0 && trace.sequence <= traces[index - 1]!.sequence) ||
-    new Set(traces.map((trace) => trace.sequence)).size !== traces.length ||
-    (recovery !== undefined && read.sequence !== recovery.sequence + 1) ||
-    (confirmation !== undefined && confirmation.sequence !== write.sequence + 1)
-  )
-    return fail("tool_order", "Read and write traces were not strictly increasing.", "behavior");
-  if (
-    read.name !== "read" ||
-    read.capability !== "read" ||
-    read.outcome !== "success" ||
-    !(recovery
-      ? exactObject(read.input, { file_path: `$WORKSPACE/${input.world.targetPath}` })
-      : exactTargetInput(read.input, input.world.targetPath)) ||
-    !JSON.stringify(read.output).includes(input.world.baseValue)
-  )
-    return fail("read", "The successful read did not target the exact seeded path and content.", "runtime_policy");
-  if (write.capability !== "write" || write.outcome !== "success" || !isExactProviderNativeMutation(input, write))
-    return fail("write", "The final trace was not the one exact provider-native target mutation.", "runtime_policy");
-  if (
-    confirmation &&
-    (confirmation.name !== "read" ||
-      confirmation.capability !== "read" ||
-      confirmation.outcome !== "success" ||
-      confirmation.error !== undefined ||
-      !exactObject(confirmation.input, { file_path: `$WORKSPACE/${input.world.targetPath}` }) ||
-      !JSON.stringify(confirmation.output).includes(input.world.replacementValue) ||
-      JSON.stringify(confirmation.output).includes(input.world.originalRequestedValue))
-  )
-    return fail(
-      "confirmation",
-      "The optional confirmation did not read the exact post-write target value.",
-      "runtime_policy",
-    );
-}
-
-interface SteerToolLayout {
-  recovery?: RuntimeToolTrace;
-  read: RuntimeToolTrace;
-  write: RuntimeToolTrace;
-  confirmation?: RuntimeToolTrace;
-}
-
-function toolLayout(input: RuntimeEvalExecution<SteerDuringFixWorld>): SteerToolLayout | undefined {
-  const calls = [...input.toolCalls];
-  let recovery: RuntimeToolTrace | undefined;
-  const expectedError = `Error: file_path must be absolute: ${input.world.targetPath}`;
-  const first = calls[0];
-  if (
-    first &&
-    (isExactMissingInstructionsProbe(first) ||
-      (input.profile.provider === "anthropic" &&
-        first.name === "read" &&
-        first.capability === "read" &&
-        first.outcome === "runtime_error" &&
-        exactObject(first.input, { file_path: input.world.targetPath }) &&
-        first.error === expectedError &&
-        isRecord(first.output) &&
-        first.output.output === expectedError &&
-        isRecord(first.output.metadata) &&
-        first.output.metadata.error === true))
-  )
-    recovery = calls.shift();
-  if (calls.length < 2 || calls.length > 3) return undefined;
-  const [read, write, confirmation] = calls;
-  return read && write ? { recovery, read, write, confirmation } : undefined;
-}
-
-function isExactMissingInstructionsProbe(trace: RuntimeToolTrace): boolean {
-  const error = "Error: File not found: $WORKSPACE/AGENTS.md";
-  return (
-    trace.name === "read" &&
-    trace.capability === "read" &&
-    trace.outcome === "runtime_error" &&
-    exactObject(trace.input, { file_path: "$WORKSPACE/AGENTS.md" }) &&
-    trace.error === error &&
-    isRecord(trace.output) &&
-    trace.output.output === error &&
-    isRecord(trace.output.metadata) &&
-    trace.output.metadata.error === true
-  );
-}
-
-function isExactProviderNativeMutation(
-  input: RuntimeEvalExecution<SteerDuringFixWorld>,
-  call: RuntimeToolTrace,
-): boolean {
-  const { world } = input;
-  if (call.name === "apply_patch") return isExactOpenAiPatch(call.input, world);
-  if (call.name === "edit")
-    return [
-      { old_string: world.initialContent, new_string: world.expected },
-      { old_string: world.baseValue, new_string: world.replacementValue },
-    ].some(({ old_string, new_string }) =>
-      exactObject(call.input, {
-        file_path: `$WORKSPACE/${world.targetPath}`,
-        old_string,
-        new_string,
-        replace_all: false,
-      }),
-    );
-  return false;
-}
-
-function isExactOpenAiPatch(value: unknown, world: SteerDuringFixWorld): boolean {
-  if (!isRecord(value) || Object.keys(value).length !== 1 || typeof value.patch !== "string") return false;
-  const lines = value.patch.trimEnd().split("\n");
-  if (lines[0] !== "*** Begin Patch" || lines.at(-1) !== "*** End Patch") return false;
-  const fileOperations = lines.filter(
-    (line) =>
-      line.startsWith("*** Add File:") ||
-      line.startsWith("*** Update File:") ||
-      line.startsWith("*** Delete File:") ||
-      line.startsWith("*** Move to:"),
-  );
-  if (JSON.stringify(fileOperations) !== JSON.stringify([`*** Update File: ${world.targetPath}`])) return false;
-  const additions = lines.filter((line) => line.startsWith("+") && !line.startsWith("+++"));
-  const deletions = lines.filter((line) => line.startsWith("-") && !line.startsWith("---"));
-  return (
-    JSON.stringify(additions) === JSON.stringify([`+${world.replacementValue}`]) &&
-    (JSON.stringify(deletions) === JSON.stringify([`-${world.baseValue}`]) ||
-      JSON.stringify(deletions) === JSON.stringify([`-${world.baseValue}`, "-"]))
-  );
-}
-
-function exactTargetInput(value: unknown, targetPath: string): boolean {
-  if (!isRecord(value)) return false;
-  return value.file_path === targetPath || value.file_path === `$WORKSPACE/${targetPath}`;
-}
-
-function exactObject(value: unknown, expected: Record<string, unknown>): boolean {
-  if (!isRecord(value)) return false;
-  const keys = Object.keys(value).sort();
-  const expectedKeys = Object.keys(expected).sort();
-  return (
-    JSON.stringify(keys) === JSON.stringify(expectedKeys) &&
-    expectedKeys.every((key) => stableStringify(value[key]) === stableStringify(expected[key]))
-  );
-}
-
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  if (isRecord(value))
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
-      .join(",")}}`;
-  return JSON.stringify(value) ?? "undefined";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `steer_during_fix.${code}`, message, dimension };
-}

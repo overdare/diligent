@@ -6,8 +6,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { DiligentServerRequestResponse } from "@diligent/protocol";
 import { createPermissionEngine } from "@diligent/runtime";
 import { getMcpManager } from "@diligent/runtime/tools";
-import type { RuntimeEvalExecution, RuntimeEvalTask } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import { isRecord } from "../core/helpers";
+import { finalAssistantText, isExactReply, RuntimeGrade } from "./grading";
 import {
   createIsolatedFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -158,20 +159,27 @@ export const mcpLazyToolTask: RuntimeEvalTask<McpLazyToolWorld> = {
     runtimeConfigs: world.runtimeConfigs,
   }),
   evaluate(input) {
-    const failure = validateTraceAndApproval(input) ?? validateIsolation(input) ?? validateFinal(input);
-    if (failure) return failure;
-    return input.toolCalls.length > 2
-      ? {
-          passed: true,
-          diagnostics: [
-            {
-              dimension: "efficiency",
-              code: "mcp_lazy.second_safe_search",
-              message: `${input.toolCalls.length - 1} bounded discovery searches preceded the intended MCP call.`,
-            },
-          ],
-        }
-      : { passed: true };
+    const grade = new RuntimeGrade("mcp_lazy");
+    const { world } = input;
+    const runs = input.toolCalls.filter((call) => call.name === "mcp_run_tool" && call.outcome === "success");
+    const toolOf = (call: (typeof runs)[number]) => (isRecord(call.input) ? call.input.tool : undefined);
+    if (runs.some((call) => toolOf(call) !== INTENDED_TOOL))
+      return grade.fail("decoy_tool", "A non-matching connected service was executed.", "behavior");
+    const intended = runs.filter((call) => toolOf(call) === INTENDED_TOOL);
+    if (intended.length === 0)
+      return grade.fail("tool_selection", "The matching connected service was never executed.", "behavior");
+    if (!intended.some((call) => JSON.stringify(call.output ?? "").includes(world.receipt)))
+      return grade.fail("arguments", "The service never confirmed the requested arrangement.", "semantic_goal");
+    const answer = finalAssistantText(input);
+    if (!answer.includes(world.receipt))
+      return grade.fail("final", "The final answer did not report the confirmation.", "semantic_goal");
+    if (!isExactReply(answer, world.receipt))
+      return grade.fail("final_format", "The final answer was not only the confirmation.", "format_contract");
+    if (intended.length > 1 || input.toolCalls.some((call) => call.outcome !== "success"))
+      grade.note("rejected_input_recovered", "The service was called again after a rejected or failed attempt.");
+    if (input.toolCalls.filter((call) => call.name === "mcp_search_tools").length > 1)
+      grade.note("repeated_search", "More than one tool search preceded the service call.", { impact: "info" });
+    return grade.pass();
   },
   async cleanup(world) {
     await getMcpManager().disposeAll();
@@ -274,199 +282,6 @@ server.registerTool("reserve_research_vessel_berth", { description: "Reserve a b
 server.registerTool("dispatch_museum_crate_team", { description: "Dispatch a handling team for museum crates.", inputSchema: { crate_ref: z.string() } }, async () => ({ content: [{ type: "text", text: "MUSEUM_DECOY" }] }));
 await server.connect(new StdioServerTransport());
 `;
-}
-
-function validateTraceAndApproval(input: RuntimeEvalExecution<McpLazyToolWorld>) {
-  const trace = splitMcpTrace(input);
-  if (!trace) return fail("trace", "Expected bounded searches followed by one exact run.");
-  const { searches, run } = trace;
-  const searchOutput = expectedSearchOutput();
-  if (
-    run.sequence !== searches.length + 1 ||
-    run.toolCallId.length === 0 ||
-    run.name !== "mcp_run_tool" ||
-    run.capability !== "execute" ||
-    run.threadId !== input.session.threadId ||
-    run.childThreadId !== undefined ||
-    run.outcome !== "success" ||
-    run.error !== undefined ||
-    searches.some(
-      (search, index) =>
-        search.sequence !== index + 1 ||
-        search.toolCallId.length === 0 ||
-        search.name !== "mcp_search_tools" ||
-        search.capability !== "execute" ||
-        search.threadId !== input.session.threadId ||
-        search.childThreadId !== undefined ||
-        search.outcome !== "success" ||
-        search.error !== undefined ||
-        !hasGroundedSearchInput(search.input, searchOutput),
-    ) ||
-    new Set([...searches.map((search) => search.toolCallId), run.toolCallId]).size !== searches.length + 1 ||
-    canonicalJson(run.input) !== canonicalJson({ server: SERVER, tool: INTENDED_TOOL, args: input.world.request })
-  )
-    return fail("trace", "Search/run order, call ids, actors, or exact target inputs diverged.");
-}
-
-function splitMcpTrace(input: RuntimeEvalExecution<McpLazyToolWorld>) {
-  if (input.toolCalls.length < 2 || input.toolCalls.length > 4) return undefined;
-  const searches = input.toolCalls.slice(0, -1);
-  const run = input.toolCalls.at(-1);
-  if (!run || searches.length < 1 || searches.length > 3) return undefined;
-  return { searches, run };
-}
-
-function hasGroundedSearchInput(value: unknown, searchOutput: string): boolean {
-  if (!isRecord(value)) return false;
-  const keys = Object.keys(value).sort();
-  if (
-    (keys.join(",") !== "query" && keys.join(",") !== "query,server") ||
-    (value.server !== undefined && value.server !== SERVER)
-  )
-    return false;
-  if (
-    typeof value.query !== "string" ||
-    value.query !== value.query.trim() ||
-    value.query.length === 0 ||
-    value.query.length > 128
-  )
-    return false;
-  const haystack = searchOutput.toLowerCase();
-  return value.query
-    .toLowerCase()
-    .split(/[^a-z0-9_]+/)
-    .some((term) => term.length >= 3 && haystack.includes(term));
-}
-
-function expectedSearchOutput(): string {
-  return JSON.stringify(
-    [{ server: SERVER, tool: INTENDED_TOOL, description: INTENDED_DESCRIPTION, inputSchema: intendedSchema() }],
-    null,
-    2,
-  );
-}
-
-function intendedSchema() {
-  return {
-    type: "object",
-    properties: {
-      case_ref: { type: "string" },
-      deployment: {
-        type: "object",
-        properties: {
-          location: {
-            type: "object",
-            properties: {
-              facility: { type: "string" },
-              region_code: { type: "string", pattern: "^[A-Z]{2}-[0-9]{2}$" },
-            },
-            required: ["facility", "region_code"],
-            additionalProperties: false,
-          },
-          operating_window: {
-            type: "object",
-            properties: { opens: { type: "string" }, closes: { type: "string" } },
-            required: ["opens", "closes"],
-            additionalProperties: false,
-          },
-          team: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: { badge: { type: "string" }, role: { type: "string", enum: ["clinician", "technician"] } },
-              required: ["badge", "role"],
-              additionalProperties: false,
-            },
-            minItems: 2,
-            maxItems: 2,
-          },
-        },
-        required: ["location", "operating_window", "team"],
-        additionalProperties: false,
-      },
-      support: {
-        type: "object",
-        properties: {
-          isolation_grade: { type: "string", enum: ["negative_pressure", "standard"] },
-          cold_chain: { type: "boolean" },
-        },
-        required: ["isolation_grade", "cold_chain"],
-        additionalProperties: false,
-      },
-    },
-    required: ["case_ref", "deployment", "support"],
-    additionalProperties: false,
-    $schema: "http://json-schema.org/draft-07/schema#",
-  };
-}
-
-function validateIsolation(input: RuntimeEvalExecution<McpLazyToolWorld>) {
-  const report = JSON.stringify([
-    input.turns,
-    input.providerCalls,
-    input.toolCalls,
-    input.logs,
-    input.session,
-    input.threadReads,
-  ]);
-  if (
-    input.toolOutputFiles.length !== 0 ||
-    input.childSessions.length !== 0 ||
-    input.compactions.length !== 0 ||
-    input.protocolActions.length !== 0 ||
-    input.userInputRequests.length !== 0 ||
-    input.verifier !== undefined ||
-    input.runtimeState.diff.some((change) => change.category !== "infrastructure" && change.category !== "sessions") ||
-    input.logs.length !== 0 ||
-    report.includes(input.world.decoyReceipt) ||
-    report.includes("INVENTORY_DECOY") ||
-    report.includes("VESSEL_DECOY") ||
-    report.includes("MUSEUM_DECOY")
-  )
-    return fail(
-      "isolation",
-      "Forbidden state, output, child, action, input, verifier, log, or decoy execution leaked.",
-    );
-}
-
-function validateFinal(input: RuntimeEvalExecution<McpLazyToolWorld>) {
-  if (!hasExactFinal(input.turns[0]!.messages.at(-1), input.world.receipt))
-    return fail("final", "The final answer was not only the exact MCP receipt.");
-}
-
-function hasExactFinal(value: unknown, receipt: string): boolean {
-  if (!isRecord(value) || value.role !== "assistant" || !Array.isArray(value.content) || value.content.length !== 1)
-    return false;
-  const block = value.content[0];
-  return (
-    isRecord(block) &&
-    Object.keys(block).sort().join(",") === "text,type" &&
-    block.type === "text" &&
-    block.text === receipt
-  );
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (!isRecord(value)) return JSON.stringify(value);
-  return `{${Object.keys(value)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
-    .join(",")}}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-const MCP_LAZY_FAILURE_DIMENSIONS = {
-  trace: "runtime_policy",
-  isolation: "runtime_policy",
-  final: "semantic_goal",
-} as const satisfies Record<string, EvalDimension>;
-
-function fail(code: keyof typeof MCP_LAZY_FAILURE_DIMENSIONS, message: string) {
-  return { passed: false as const, code: `mcp_lazy.${code}`, message, dimension: MCP_LAZY_FAILURE_DIMENSIONS[code] };
 }
 
 async function fileExists(path: string): Promise<boolean> {

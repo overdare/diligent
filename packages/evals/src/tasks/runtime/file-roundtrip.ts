@@ -2,9 +2,16 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Message } from "@diligent/core/message-contract";
-import type { RuntimeEvalExecution, RuntimeEvalTask, RuntimeVerifierResult } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import type { RuntimeEvalTask, RuntimeVerifierResult } from "../../runtime-task";
+import { isRecord } from "../core/helpers";
+import {
+  finalAssistantText,
+  RuntimeGrade,
+  successfulReadsOf,
+  successfulWritesTo,
+  tracePaths,
+  unwrapReply,
+} from "./grading";
 import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -85,21 +92,96 @@ export const fileRoundtripTask: RuntimeEvalTask<FileRoundtripWorld> = {
     ),
   }),
   evaluate(input) {
-    const failure = validateTrace(input) ?? validateWorkspaceAndVerifier(input) ?? validateFinal(input);
-    if (failure) return failure;
-    if (input.toolCalls.some((trace) => trace.outcome !== "success")) {
-      return {
-        passed: true,
-        diagnostics: [
-          {
-            dimension: "efficiency",
-            code: "file_roundtrip.safe_read_recovery",
-            message: "One bounded read inside the fixture boundary failed before successful completion.",
-          },
-        ],
-      };
+    const grade = new RuntimeGrade("file_roundtrip");
+    const world = input.world;
+    if (input.verifier?.timedOut)
+      return grade.fail(
+        "verifier_timeout",
+        "The deterministic selected-record verifier timed out.",
+        "harness_terminal",
+      );
+    const successfulWrites = input.toolCalls.filter(
+      (call) => call.capability === "write" && call.outcome === "success",
+    );
+    if (successfulWrites.some((call) => tracePaths(call, input.threadCwd).some((path) => path !== world.selectedPath)))
+      return grade.fail(
+        "mutation",
+        "A successful mutation targeted a file other than the index-selected record.",
+        "runtime_policy",
+      );
+    for (const path of world.protectedPaths) {
+      const initial = input.workspace.initial.entries.find((entry) => entry.path === path);
+      const final = input.workspace.final.entries.find((entry) => entry.path === path);
+      if (JSON.stringify(initial) !== JSON.stringify(final))
+        return grade.fail(
+          "isolation",
+          "An index or decoy record changed outside the selected mutation boundary.",
+          "runtime_policy",
+        );
     }
-    return { passed: true };
+    const selected = input.workspace.final.entries.find((entry) => entry.path === world.selectedPath);
+    if (selected?.kind !== "file" || input.verifier?.exitCode !== 0)
+      return grade.fail("semantic_result", "The deterministic selected-record verifier did not pass.", "semantic_goal");
+
+    const selectedWrites = successfulWritesTo(input, world.selectedPath);
+    const finalWrite = selectedWrites.at(-1);
+    const groundingRead = input.toolCalls.find(
+      (call) =>
+        call.capability === "read" &&
+        call.outcome === "success" &&
+        outputContains(call.output, world.selectedRecordId, world.pendingStatus),
+    );
+    if (!groundingRead || (finalWrite && groundingRead.sequence > finalWrite.sequence))
+      return grade.fail(
+        "grounding",
+        "The record update was not preceded by a successful read exposing the index selection and pending status.",
+        "behavior",
+      );
+
+    const answer = finalAssistantText(input);
+    if (!answer.includes(world.expected))
+      return grade.fail("answer", "The final answer did not identify the index-selected record.", "semantic_goal");
+    if (unwrapReply(answer) !== world.expected)
+      return grade.fail("answer", `The final answer must be exactly ${world.expected}.`, "format_contract");
+
+    const firstWrite = selectedWrites[0];
+    if (firstWrite && groundingRead.sequence > firstWrite.sequence)
+      grade.note("ungrounded_first_write", "The record was first written before the index evidence was read.");
+    if (successfulReadsOf(input, world.selectedPath).length === 0)
+      grade.note("target_not_read", "The selected record was updated without reading it first.", { impact: "info" });
+    if (selectedWrites.length > 1)
+      grade.note("repeated_write", `The selected record was written ${selectedWrites.length} times.`);
+    const fixturePaths = new Set([world.indexPath, ...world.recordPaths, "records"]);
+    if (
+      input.toolCalls.some(
+        (call) =>
+          call.capability === "read" &&
+          call.outcome === "success" &&
+          tracePaths(call, input.threadCwd).some((path) => !fixturePaths.has(path)),
+      )
+    )
+      grade.note("read_outside_fixture", "A successful read addressed a path outside the index and records.", {
+        impact: "info",
+      });
+    if (finalWrite && input.toolCalls.some((call) => call.capability === "read" && call.sequence > finalWrite.sequence))
+      grade.note("verification_read", "The model read files after its final write.", { impact: "info" });
+    const failed = input.toolCalls.filter((call) => call.outcome !== "success");
+    if (failed.length > 0)
+      grade.note("failed_call", `Observed ${failed.length} failed or rejected tool call(s) before completion.`);
+    if (
+      input.childSessions.length !== 0 ||
+      input.compactions.length !== 0 ||
+      input.protocolActions.length !== 0 ||
+      input.userInputRequests.length !== 0
+    )
+      grade.note(
+        "unexpected_runtime_activity",
+        "Child, compaction, protocol action, or user-input evidence appeared.",
+        {
+          impact: "info",
+        },
+      );
+    return grade.pass();
   },
 };
 
@@ -169,159 +251,6 @@ async function verifySelectedRecord(world: FileRoundtripWorld): Promise<RuntimeV
   };
 }
 
-function validateTrace(input: RuntimeEvalExecution<FileRoundtripWorld>) {
-  const traces = input.toolCalls;
-  const failed = traces.filter((trace) => trace.outcome !== "success");
-  if (
-    traces.length < 3 ||
-    traces.length > fileRoundtripTask.limits.maxToolCalls ||
-    traces.some((trace, index) => trace.sequence !== index + 1) ||
-    traces.some((trace) => !["read", "apply_patch", "edit"].includes(trace.name)) ||
-    failed.length > 1 ||
-    (failed.length === 1 && !isBoundedSafeReadRecovery(traces))
-  )
-    return fail(
-      "recovery",
-      "Only one bounded failed read inside the fixture boundary is accepted as recovery.",
-      "runtime_policy",
-    );
-
-  const successfulWrites = traces.filter((trace) => trace.outcome === "success" && trace.capability === "write");
-  const firstWriteIndex = traces.indexOf(successfulWrites[0]!);
-  if (
-    successfulWrites.length === 0 ||
-    successfulWrites.some((trace) => !writeTargetsOnly(trace, input.world.selectedPath))
-  )
-    return fail("mutation", "Every successful mutation must target only the index-selected record.", "runtime_policy");
-
-  const successfulReads = traces
-    .map((trace, index) => ({ trace, index }))
-    .filter(({ trace }) => trace.outcome === "success" && trace.name === "read");
-  const allowedReadPaths = new Set(
-    [input.world.indexPath, ...input.world.recordPaths].map((path) => workspacePath(path)),
-  );
-  if (
-    successfulReads.some(({ trace }) => !isRecord(trace.input) || !allowedReadPaths.has(String(trace.input.file_path)))
-  )
-    return fail("read_scope", "A successful read escaped the seeded index and record fixture.", "runtime_policy");
-  const indexRead = successfulReads.find(
-    ({ trace, index }) => index < firstWriteIndex && isExactReadPath(trace.input, workspacePath(input.world.indexPath)),
-  );
-  const targetRead = successfulReads.find(
-    ({ trace, index }) =>
-      index < firstWriteIndex && isExactReadPath(trace.input, workspacePath(input.world.selectedPath)),
-  );
-  const selected = input.world.records.find((record) => record.path === input.world.selectedPath);
-  if (
-    !indexRead ||
-    !targetRead ||
-    !selected ||
-    !outputContains(indexRead.trace.output, input.world.selectedRecordId, input.world.pendingStatus) ||
-    !outputContains(targetRead.trace.output, selected.id, selected.owner, selected.initialStatus)
-  )
-    return fail(
-      "grounding",
-      "The successful mutation was not grounded in the selected index and target record evidence.",
-      "behavior",
-    );
-}
-
-function validateWorkspaceAndVerifier(input: RuntimeEvalExecution<FileRoundtripWorld>) {
-  const selected = input.workspace.final.entries.find((entry) => entry.path === input.world.selectedPath);
-  if (input.verifier?.timedOut)
-    return fail("verifier_timeout", "The deterministic selected-record verifier timed out.", "harness_terminal");
-  if (selected?.kind !== "file" || input.verifier?.exitCode !== 0)
-    return fail("semantic_result", "The deterministic selected-record verifier did not pass.", "semantic_goal");
-  for (const path of input.world.protectedPaths) {
-    const initial = input.workspace.initial.entries.find((entry) => entry.path === path);
-    const final = input.workspace.final.entries.find((entry) => entry.path === path);
-    if (JSON.stringify(initial) !== JSON.stringify(final))
-      return fail(
-        "isolation",
-        "An index or decoy record changed outside the selected mutation boundary.",
-        "runtime_policy",
-      );
-  }
-  if (
-    input.runtimeState.diff.some((change) => !["infrastructure", "sessions"].includes(change.category)) ||
-    input.childSessions.length !== 0 ||
-    input.compactions.length !== 0 ||
-    input.protocolActions.length !== 0 ||
-    input.userInputRequests.length !== 0
-  )
-    return fail(
-      "isolation",
-      "Undeclared runtime state, child, compaction, action, or input evidence appeared.",
-      "runtime_policy",
-    );
-}
-
-function validateFinal(input: RuntimeEvalExecution<FileRoundtripWorld>) {
-  const actual = lastAssistantText(input.turns[0]?.messages ?? []);
-  if (actual === input.world.expected) return undefined;
-  return fail(
-    "answer",
-    "The final answer did not identify only the index-selected record.",
-    actual.trim() === input.world.expected ? "format_contract" : "semantic_goal",
-  );
-}
-
-function isBoundedSafeReadRecovery(traces: RuntimeEvalExecution<FileRoundtripWorld>["toolCalls"]): boolean {
-  const failedIndex = traces.findIndex((trace) => trace.outcome !== "success");
-  const failed = traces[failedIndex];
-  const firstWriteIndex = traces.findIndex((trace) => trace.outcome === "success" && trace.capability === "write");
-  return (
-    failedIndex >= 0 &&
-    failedIndex < firstWriteIndex &&
-    failed?.name === "read" &&
-    failed.capability === "read" &&
-    failed.outcome === "runtime_error" &&
-    (isSafeRecordsReadInput(failed.input) || isMissingRootInstructionsProbe(failed.input))
-  );
-}
-
-function isMissingRootInstructionsProbe(input: unknown): boolean {
-  return isRecord(input) && Object.keys(input).length === 1 && input.file_path === "$WORKSPACE/AGENTS.md";
-}
-
-function isSafeRecordsReadInput(input: unknown): boolean {
-  if (!isRecord(input) || Object.keys(input).some((key) => !["file_path", "limit", "offset"].includes(key)))
-    return false;
-  const path = input.file_path;
-  if (
-    typeof path !== "string" ||
-    path.split("/").includes("..") ||
-    (input.offset !== undefined &&
-      (typeof input.offset !== "number" || !Number.isInteger(input.offset) || input.offset < 1)) ||
-    (input.limit !== undefined &&
-      (typeof input.limit !== "number" || !Number.isInteger(input.limit) || input.limit < 1))
-  )
-    return false;
-  return (
-    path === "records" ||
-    path.startsWith("records/") ||
-    path === "$WORKSPACE/records" ||
-    path.startsWith("$WORKSPACE/records/")
-  );
-}
-
-function writeTargetsOnly(
-  trace: RuntimeEvalExecution<FileRoundtripWorld>["toolCalls"][number],
-  selectedPath: string,
-): boolean {
-  if (!isRecord(trace.input)) return false;
-  if (trace.name === "edit") return trace.input.file_path === workspacePath(selectedPath);
-  if (trace.name !== "apply_patch" || typeof trace.input.patch !== "string") return false;
-  const headers = [...trace.input.patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map(
-    (match) => match[1],
-  );
-  return headers.length === 1 && headers[0] === relativePath(selectedPath);
-}
-
-function isExactReadPath(input: unknown, path: string): boolean {
-  return isRecord(input) && Object.keys(input).length === 1 && input.file_path === path;
-}
-
 function outputContains(output: unknown, ...values: string[]): boolean {
   const text = JSON.stringify(output);
   return values.every((value) => text.includes(value));
@@ -335,31 +264,4 @@ function isExactRecord(value: unknown, id: string, owner: string, status: string
     value.owner === owner &&
     value.status === status
   );
-}
-
-function relativePath(path: string, root = "$WORKSPACE"): string {
-  const prefix = `${root}/`;
-  if (path.startsWith(prefix)) return path.slice(prefix.length);
-  return path.startsWith("$WORKSPACE/") ? path.slice("$WORKSPACE/".length) : path;
-}
-
-function workspacePath(path: string): string {
-  return path.startsWith("$WORKSPACE/") ? path : `$WORKSPACE/${path}`;
-}
-
-function lastAssistantText(messages: Message[]): string {
-  const last = messages.filter((message) => message.role === "assistant").at(-1);
-  if (!last || last.role !== "assistant") return "";
-  return last.content
-    .filter((block): block is { type: "text"; text: string } => block.type === "text")
-    .map((block) => block.text)
-    .join("");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `file_roundtrip.${code}`, message, dimension };
 }

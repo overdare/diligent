@@ -47,131 +47,75 @@ describe("file-roundtrip", () => {
     for (const profile of DEFAULT_PROFILES) {
       const execution = await assembledExecution(profile);
       expect(fileRoundtripTask.evaluate(execution)).toEqual({ passed: true });
-      const writeIndex = execution.toolCalls.findIndex(
-        (call) => call.outcome === "success" && call.capability === "write",
-      );
-      expect(execution.toolCalls.slice(writeIndex + 1).some((call) => call.name === "read")).toBe(false);
     }
   });
 
-  test("accepts one provider-neutral index-path recovery and an extra safe record read", async () => {
+  test("notes bounded failed reads instead of failing a correct grounded update", async () => {
     for (const profile of DEFAULT_PROFILES) {
       const execution = await assembledExecution(profile, { relativeIndexRecovery: true, extraSafeRead: true });
-      expect(fileRoundtripTask.evaluate(execution)).toEqual({
-        passed: true,
-        diagnostics: [
-          {
-            dimension: "efficiency",
-            code: "file_roundtrip.safe_read_recovery",
-            message: "One bounded read inside the fixture boundary failed before successful completion.",
-          },
-        ],
-      });
-      expect(execution.toolCalls).toHaveLength(5);
+      const result = fileRoundtripTask.evaluate(execution);
+      expect(result.passed).toBe(true);
+      expect(diagnosticCodes(result)).toContain("file_roundtrip.failed_call");
     }
-  });
 
-  test("accepts the preserved Anthropic failed records-directory read as one bounded safe recovery", async () => {
-    const execution = await assembledExecution(DEFAULT_PROFILES[1]!, { recordsDirectoryRecovery: true });
-
-    expect(execution.toolCalls.map(({ name, outcome, input }) => ({ name, outcome, input }))).toEqual([
-      {
-        name: "read",
-        outcome: "success",
-        input: { file_path: "$WORKSPACE/records/index.json" },
-      },
-      {
-        name: "read",
-        outcome: "runtime_error",
-        input: { file_path: "$WORKSPACE/records" },
-      },
-      {
-        name: "read",
-        outcome: "success",
-        input: { file_path: `$WORKSPACE/${execution.world.selectedPath}` },
-      },
-      {
-        name: "edit",
-        outcome: "success",
-        input: expect.objectContaining({ file_path: `$WORKSPACE/${execution.world.selectedPath}` }),
-      },
-    ]);
-    expect(fileRoundtripTask.evaluate(execution)).toEqual({
-      passed: true,
-      diagnostics: [
-        {
-          dimension: "efficiency",
-          code: "file_roundtrip.safe_read_recovery",
-          message: "One bounded read inside the fixture boundary failed before successful completion.",
-        },
-      ],
+    const directoryProbe = await assembledExecution(DEFAULT_PROFILES[1]!, { recordsDirectoryRecovery: true });
+    const repeated = structuredClone(directoryProbe);
+    const duplicate = structuredClone(repeated.toolCalls[1]!);
+    duplicate.toolCallId = "second-failed-read";
+    duplicate.input = { file_path: "$WORKSPACE/private" };
+    repeated.toolCalls.splice(2, 0, duplicate);
+    repeated.toolCalls.forEach((call, index) => {
+      call.sequence = index + 1;
     });
-
-    const incidentalShape = structuredClone(execution);
-    Object.assign(incidentalShape.toolCalls[1]!.input as Record<string, unknown>, { offset: 1, limit: 10 });
-    incidentalShape.toolCalls[1]!.error = "Provider-neutral read failure wording";
-    expect(fileRoundtripTask.evaluate(incidentalShape)).toEqual({
-      passed: true,
-      diagnostics: expect.any(Array),
-    });
-  });
-
-  test("accepts one missing root instruction-file probe before grounded completion", async () => {
-    const execution = await assembledExecution(DEFAULT_PROFILES[0]!);
-    const probe = structuredClone(execution.toolCalls[0]!);
+    const probe = structuredClone(repeated.toolCalls[0]!);
     probe.toolCallId = "missing-root-instructions";
     probe.input = { file_path: "$WORKSPACE/AGENTS.md" };
     probe.outcome = "runtime_error";
-    probe.error = "Error: File not found: $WORKSPACE/AGENTS.md";
-    probe.output = { output: probe.error, metadata: { error: true } };
-    execution.toolCalls.splice(1, 0, probe);
-    execution.toolCalls.forEach((call, index) => (call.sequence = index + 1));
-
-    expect(fileRoundtripTask.evaluate(execution)).toEqual({
-      passed: true,
-      diagnostics: [
-        {
-          dimension: "efficiency",
-          code: "file_roundtrip.safe_read_recovery",
-          message: "One bounded read inside the fixture boundary failed before successful completion.",
-        },
-      ],
-    });
-  });
-
-  test("rejects wrong target, wrong content, extra mutation, unsafe recovery, and repeated failures", async () => {
-    const baseline = await assembledExecution(DEFAULT_PROFILES[0]!);
-    const world = baseline.world;
-    const wrongTarget = structuredClone(baseline);
-    const decoy = world.records.find((record) => record.path !== world.selectedPath)!;
-    const write = wrongTarget.toolCalls.find((call) => call.capability === "write")!;
-    write.input = rewriteWriteTarget(write.input, world.selectedPath, decoy.path);
-    expect(fileRoundtripTask.evaluate(wrongTarget).passed).toBe(false);
-
-    const wrongContent = structuredClone(baseline);
-    wrongContent.verifier!.exitCode = 1;
-    expect(fileRoundtripTask.evaluate(wrongContent).passed).toBe(false);
-
-    const extraMutation = structuredClone(baseline);
-    extraMutation.workspace.final.entries.find((entry) => entry.path === decoy.path)!.sha256 = "mutated-decoy";
-    expect(fileRoundtripTask.evaluate(extraMutation).passed).toBe(false);
-
-    const unsupportedRecovery = await assembledExecution(DEFAULT_PROFILES[1]!, { relativeIndexRecovery: true });
-    (unsupportedRecovery.toolCalls[0]!.input as { file_path: string }).file_path = "private/unknown.json";
-    expect(fileRoundtripTask.evaluate(unsupportedRecovery).passed).toBe(false);
-
-    const unsafeRecovery = await assembledExecution(DEFAULT_PROFILES[1]!, { recordsDirectoryRecovery: true });
-    (unsafeRecovery.toolCalls[1]!.input as { file_path: string }).file_path = "$WORKSPACE/private";
-    expect(fileRoundtripTask.evaluate(unsafeRecovery).passed).toBe(false);
-
-    const repeatedFailure = await assembledExecution(DEFAULT_PROFILES[1]!, { recordsDirectoryRecovery: true });
-    const duplicateFailure = structuredClone(repeatedFailure.toolCalls[1]!);
-    duplicateFailure.toolCallId = "second-failed-read";
-    repeatedFailure.toolCalls.splice(2, 0, duplicateFailure);
-    repeatedFailure.toolCalls.forEach((call, index) => {
+    probe.output = { output: "Error: File not found", metadata: { error: true } };
+    repeated.toolCalls.unshift(probe);
+    repeated.toolCalls.forEach((call, index) => {
       call.sequence = index + 1;
     });
-    expect(fileRoundtripTask.evaluate(repeatedFailure).passed).toBe(false);
+    const result = fileRoundtripTask.evaluate(repeated);
+    expect(result.passed).toBe(true);
+    expect(diagnosticCodes(result)).toContain("file_roundtrip.failed_call");
+  });
+
+  test("accepts relative paths, an alternative write tool, and a verification read", async () => {
+    const execution = await assembledExecution(DEFAULT_PROFILES[1]!);
+    const world = execution.world;
+    for (const call of execution.toolCalls) {
+      const input = call.input as Record<string, unknown>;
+      if (typeof input.file_path === "string") input.file_path = input.file_path.replace("$WORKSPACE/", "");
+    }
+    const write = execution.toolCalls.find((call) => call.capability === "write")!;
+    write.name = "write";
+    write.input = { file_path: world.selectedPath, content: "{}" };
+    const verification = structuredClone(execution.toolCalls.find((call) => call.capability === "read")!);
+    verification.toolCallId = "verification-read";
+    verification.sequence = execution.toolCalls.length + 1;
+    verification.input = { file_path: world.selectedPath };
+    execution.toolCalls.push(verification);
+    execution.turns[0]!.messages.push(assistantMessageText(`\`${world.expected}\``));
+
+    const result = fileRoundtripTask.evaluate(execution);
+    expect(result.passed).toBe(true);
+    expect(diagnosticCodes(result)).toContain("file_roundtrip.verification_read");
+  });
+
+  test("rejects wrong target, wrong content, decoy mutation, ungrounded update, and wrong answer", async () => {
+    const baseline = await assembledExecution(DEFAULT_PROFILES[0]!);
+    const world = baseline.world;
+    const decoy = world.records.find((record) => record.path !== world.selectedPath)!;
+
+    const wrongTarget = structuredClone(baseline);
+    const write = wrongTarget.toolCalls.find((call) => call.capability === "write")!;
+    write.input = rewriteWriteTarget(write.input, world.selectedPath, decoy.path);
+    expect(fileRoundtripTask.evaluate(wrongTarget)).toMatchObject({
+      passed: false,
+      code: "file_roundtrip.mutation",
+      dimension: "runtime_policy",
+    });
 
     const wrongIntermediateWrite = structuredClone(baseline);
     const successfulWrite = wrongIntermediateWrite.toolCalls.find((call) => call.capability === "write")!;
@@ -182,7 +126,51 @@ describe("file-roundtrip", () => {
     wrongIntermediateWrite.toolCalls.forEach((call, index) => {
       call.sequence = index + 1;
     });
-    expect(fileRoundtripTask.evaluate(wrongIntermediateWrite).passed).toBe(false);
+    expect(fileRoundtripTask.evaluate(wrongIntermediateWrite)).toMatchObject({
+      passed: false,
+      code: "file_roundtrip.mutation",
+    });
+
+    const wrongContent = structuredClone(baseline);
+    wrongContent.verifier!.exitCode = 1;
+    expect(fileRoundtripTask.evaluate(wrongContent)).toMatchObject({
+      passed: false,
+      code: "file_roundtrip.semantic_result",
+      dimension: "semantic_goal",
+    });
+
+    const extraMutation = structuredClone(baseline);
+    extraMutation.workspace.final.entries.find((entry) => entry.path === decoy.path)!.sha256 = "mutated-decoy";
+    expect(fileRoundtripTask.evaluate(extraMutation)).toMatchObject({
+      passed: false,
+      code: "file_roundtrip.isolation",
+    });
+
+    const ungrounded = structuredClone(baseline);
+    for (const call of ungrounded.toolCalls) {
+      if (call.capability === "read") call.output = { output: "redacted" };
+    }
+    expect(fileRoundtripTask.evaluate(ungrounded)).toMatchObject({
+      passed: false,
+      code: "file_roundtrip.grounding",
+      dimension: "behavior",
+    });
+
+    const wrongAnswer = structuredClone(baseline);
+    wrongAnswer.turns[0]!.messages.push(assistantMessageText(`UPDATED=${decoy.id}`));
+    expect(fileRoundtripTask.evaluate(wrongAnswer)).toMatchObject({
+      passed: false,
+      code: "file_roundtrip.answer",
+      dimension: "semantic_goal",
+    });
+
+    const chattyAnswer = structuredClone(baseline);
+    chattyAnswer.turns[0]!.messages.push(assistantMessageText(`Done: ${world.expected}`));
+    expect(fileRoundtripTask.evaluate(chattyAnswer)).toMatchObject({
+      passed: false,
+      code: "file_roundtrip.answer",
+      dimension: "format_contract",
+    });
   });
 });
 
@@ -252,17 +240,16 @@ async function assembledExecution(
     result.failures,
     JSON.stringify({ failures: result.failures, events: result.execution.turns[0]?.coreEvents }),
   ).toEqual([]);
-  if (scenario.relativeIndexRecovery || scenario.recordsDirectoryRecovery) {
-    expect(result.diagnostics).toEqual([
-      {
-        dimension: "efficiency",
-        code: "file_roundtrip.safe_read_recovery",
-        message: "One bounded read inside the fixture boundary failed before successful completion.",
-      },
-    ]);
-    expect(result.passed).toBe(true);
-  }
+  expect(result.passed).toBe(true);
   return result.execution as RuntimeEvalExecution<FileRoundtripWorld>;
+}
+
+function assistantMessageText(text: string) {
+  return assistantMessage([{ type: "text", text }]);
+}
+
+function diagnosticCodes(result: { diagnostics?: readonly { code: string }[] }): string[] {
+  return result.diagnostics?.map((diagnostic) => diagnostic.code) ?? [];
 }
 
 function toolCall(id: string, name: string, input: Record<string, unknown>) {

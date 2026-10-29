@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
+import { resolveEvalHardLimits } from "../../src/runner/budget-policy";
 import { runEvalExecution } from "../../src/runner/execution";
 import type { EvalTask } from "../../src/task";
 import { assistantMessage, hangingStream, sequenceStream, TEST_MODEL } from "../helpers/fake-stream";
@@ -34,7 +35,7 @@ function toolTask(overrides: Partial<EvalTask<{ executions: number }>["limits"]>
 }
 
 describe("runEvalExecution", () => {
-  test("allows two turns and one tool call beyond the task target", async () => {
+  test("keeps executions above the task target as degraded passes", async () => {
     const result = await runEvalExecution({
       task: toolTask({ maxTurns: 1, maxToolCalls: 0 }),
       profile: PROFILE,
@@ -57,28 +58,28 @@ describe("runEvalExecution", () => {
   });
 
   test("classifies a turn limit even when core resolves after abort", async () => {
+    const limits = { maxTurns: 1, maxToolCalls: 10 };
+    const hard = resolveEvalHardLimits(limits);
     const result = await runEvalExecution({
-      task: toolTask({ maxTurns: 1, maxToolCalls: 10 }),
+      task: toolTask(limits),
       profile: PROFILE,
       model: TEST_MODEL,
       seed: "turn-limit-seed",
-      streamFunction: sequenceStream([
-        assistantMessage([{ type: "tool_call", id: "call-1", name: "touch_world", input: {} }], "tool_use"),
-        assistantMessage([{ type: "tool_call", id: "call-2", name: "touch_world", input: {} }], "tool_use"),
-        assistantMessage([{ type: "tool_call", id: "call-3", name: "touch_world", input: {} }], "tool_use"),
-      ]),
+      streamFunction: sequenceStream(toolCalls(hard.maxTurns + 1)),
     });
 
     expect(result.passed).toBe(false);
     expect(result.status).toBe("invalid");
     expect(result.execution.termination).toBe("turn_limit");
-    expect(result.execution.turnCount).toBe(4);
+    expect(result.execution.turnCount).toBe(hard.maxTurns + 1);
     expect(result.failure?.category).toBe("budget_exceeded");
   });
 
   test("prevents an over-budget tool from mutating the world", async () => {
     let evaluatorCalls = 0;
-    const task = toolTask({ maxTurns: 10, maxToolCalls: 0 });
+    const limits = { maxTurns: 20, maxToolCalls: 0 };
+    const hard = resolveEvalHardLimits(limits);
+    const task = toolTask(limits);
     task.evaluate = () => {
       evaluatorCalls += 1;
       return { passed: true };
@@ -88,15 +89,12 @@ describe("runEvalExecution", () => {
       profile: PROFILE,
       model: TEST_MODEL,
       seed: "tool-limit-seed",
-      streamFunction: sequenceStream([
-        assistantMessage([{ type: "tool_call", id: "call-1", name: "touch_world", input: {} }], "tool_use"),
-        assistantMessage([{ type: "tool_call", id: "call-2", name: "touch_world", input: {} }], "tool_use"),
-      ]),
+      streamFunction: sequenceStream(toolCalls(hard.maxToolCalls + 1)),
     });
 
     expect(result.execution.termination).toBe("tool_call_limit");
-    expect(result.execution.toolCallCount).toBe(2);
-    expect(result.worldSnapshot).toEqual({ executions: 1 });
+    expect(result.execution.toolCallCount).toBe(hard.maxToolCalls + 1);
+    expect(result.worldSnapshot).toEqual({ executions: hard.maxToolCalls });
     expect(result.failure?.dimension).toBe("harness_terminal");
     expect(evaluatorCalls).toBe(0);
   });
@@ -183,3 +181,9 @@ describe("runEvalExecution", () => {
     ]);
   });
 });
+
+function toolCalls(count: number) {
+  return Array.from({ length: count }, (_, index) =>
+    assistantMessage([{ type: "tool_call", id: `call-${index + 1}`, name: "touch_world", input: {} }], "tool_use"),
+  );
+}

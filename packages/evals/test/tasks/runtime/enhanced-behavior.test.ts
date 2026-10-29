@@ -105,8 +105,6 @@ describe("enhanced runtime eval behaviors", () => {
       expect(JSON.stringify(cancelSteps[1])).toContain(cancel.targetPath);
       expect(JSON.stringify(cancelSteps[1])).toContain("previous interactive choice was cancelled");
       expect(JSON.stringify(cancelSteps[1])).toContain("replace the entire contents");
-      expect(inputCancelResumeTask.fixtureVersion).toBe("input-cancel-resume-v4");
-      expect(inputCancelResumeTask.limits.maxToolCalls).toBe(7);
       expect(explore.sourcePaths).toHaveLength(6);
       expect(explore.sourcePaths.every((path) => path.startsWith("reference-map/"))).toBe(true);
       expect(explore.sourcePaths.every((path) => path.split("/").length === 3)).toBe(true);
@@ -114,8 +112,6 @@ describe("enhanced runtime eval behaviors", () => {
       expect(explore.clientPrompt).toContain("region_marker");
       expect(explore.clientPrompt).toContain("filename variants");
       expect(explore.clientPrompt).toContain("main task must not directly read");
-      expect(autonomousExploreDelegationTask.fixtureVersion).toBe("autonomous-explore-delegation-v3");
-      expect(autonomousExploreDelegationTask.limits.maxToolCalls).toBe(20);
       expect(explore.clientPrompt.toLowerCase()).not.toContain("review");
       expect(explore.clientPrompt.toLowerCase()).not.toContain("audit");
       expect(explore.clientPrompt.toLowerCase()).not.toContain("agent");

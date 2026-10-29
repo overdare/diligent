@@ -3,10 +3,9 @@
 import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Message } from "@diligent/core/message-contract";
-import type { RuntimeEvalExecution, RuntimeEvalTask } from "../../runtime-task";
-import type { EvalDimension, EvalSemanticResult } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
 import { type EvalImageColor, seededImagePair, solidColorPng } from "../image-fixture";
+import { finalAssistantText, isExactReply, RuntimeGrade, successfulReadsOf } from "./grading";
 import { createFixtureRuntimeConfig, DEFAULT_RUNTIME_LIMITS, type RuntimeFixtureWorld } from "./helpers";
 
 const FIXTURE_PATH = "remembered-color.png";
@@ -73,69 +72,27 @@ export const imageResumeRecallTask: RuntimeEvalTask<ImageResumeRecallWorld> = {
   ],
   snapshotWorld: async (world) => ({ color: world.color }),
   evaluate(input) {
-    return evaluateLiveImageResumeRecall(input);
+    const grade = new RuntimeGrade("image_resume");
+    const { world } = input;
+    if (input.turns.length !== 2)
+      return grade.fail("turns", "Expected the inspection and resumed recall turns.", "harness_terminal");
+    const imageReads = successfulReadsOf(input, world.fixturePath).filter((call) => call.name === TOOL_NAME);
+    if (!imageReads.some((call) => call.turnIndex === 0))
+      return grade.fail("read", "The image was not inspected before the restart.", "behavior");
+    if (input.toolCalls.some((call) => call.turnIndex === 1 && call.capability === "read"))
+      return grade.fail("reinspected", "The image was inspected again instead of recalled after restart.", "behavior");
+    const ack = finalAssistantText(input, 0);
+    if (!isExactReply(ack, "ACK"))
+      return grade.fail("ack", "The inspection turn must reply exactly ACK.", "format_contract");
+    const answer = finalAssistantText(input, 1);
+    const recalled = /COLOR=([A-Za-z]+)/.exec(answer)?.[1]?.toUpperCase();
+    if (recalled !== world.color)
+      return grade.fail("answer", "The resumed answer recalled the wrong color.", "semantic_goal");
+    if (!isExactReply(answer.replace(/COLOR=[A-Za-z]+/, `COLOR=${world.color}`), `COLOR=${world.color}`))
+      return grade.fail("answer_format", "The resumed answer must be exactly COLOR=<color>.", "format_contract");
+    if (JSON.stringify(input).includes("iVBOR"))
+      return grade.fail("base64", "Raw PNG base64 leaked into captured evidence.", "runtime_policy");
+    if (imageReads.length > 1) grade.note("repeated_read", "The image was read more than once before the restart.");
+    return grade.pass();
   },
 };
-
-function evaluateLiveImageResumeRecall(input: RuntimeEvalExecution<ImageResumeRecallWorld>): EvalSemanticResult {
-  const fail = (code: string, message: string, dimension: EvalDimension): EvalSemanticResult => ({
-    passed: false,
-    code,
-    message,
-    dimension,
-  });
-  if (input.turns.length !== 2)
-    return fail("image_resume.turns", "Expected the inspection and resumed recall turns.", "behavior");
-  if (
-    input.childSessions.length !== 0 ||
-    input.compactions.length !== 0 ||
-    input.protocolActions.length !== 0 ||
-    input.approvals.length !== 0 ||
-    input.userInputRequests.length !== 0
-  )
-    return fail("image_resume.forbidden_activity", "The recall used a forbidden side channel.", "runtime_policy");
-  if (input.toolCalls.length !== 1)
-    return fail("image_resume.read_count", "The image must be read exactly once before restart.", "behavior");
-  const read = input.toolCalls[0]!;
-  if (
-    read.name !== TOOL_NAME ||
-    read.capability !== "read" ||
-    read.outcome !== "success" ||
-    read.childThreadId !== undefined ||
-    !deepEqual(read.input, { file_path: `$WORKSPACE/${input.world.fixturePath}` })
-  )
-    return fail("image_resume.read", "The intended image read was missing or broadened.", "runtime_policy");
-  const ack = lastAssistantText(input.turns[0]!.messages);
-  if (ack !== "ACK")
-    return fail("image_resume.ack", "The inspection turn must end with exactly ACK.", "format_contract");
-  const answer = lastAssistantText(input.turns[1]!.messages);
-  if (!isExactColorAnswer(answer, input.world.color))
-    return fail("image_resume.answer", "The resumed answer recalled the wrong color.", "semantic_goal");
-  if (JSON.stringify(input).includes("iVBOR"))
-    return fail("image_resume.base64", "Raw PNG base64 leaked into captured evidence.", "runtime_policy");
-  if (!deepEqual(projectEntries(input.workspace.initial.entries), projectEntries(input.workspace.final.entries)))
-    return fail("image_resume.project_manifest", "The protected project changed.", "runtime_policy");
-  return { passed: true };
-}
-
-function isExactColorAnswer(value: string, color: EvalImageColor): boolean {
-  const match = /^COLOR=([A-Za-z]+)$/.exec(value);
-  return match?.[1]?.toUpperCase() === color;
-}
-
-function lastAssistantText(messages: Message[]): string {
-  const last = messages.filter((message) => message.role === "assistant").at(-1);
-  if (!last || last.role !== "assistant") return "";
-  return last.content
-    .filter((block): block is { type: "text"; text: string } => block.type === "text")
-    .map((block) => block.text)
-    .join("");
-}
-
-function projectEntries(entries: RuntimeEvalExecution<ImageResumeRecallWorld>["workspace"]["initial"]["entries"]) {
-  return entries.filter((entry) => entry.path !== ".diligent" && !entry.path.startsWith(".diligent/"));
-}
-
-function deepEqual(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}

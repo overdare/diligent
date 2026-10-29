@@ -3,7 +3,8 @@
 import type { RuntimeConfig } from "@diligent/runtime";
 import { getMcpManager } from "@diligent/runtime/tools";
 import type { RuntimeEvalTask } from "../../runtime-task";
-import type { EvalDimension, EvalProfile } from "../../task";
+import type { EvalProfile } from "../../task";
+import { finalAssistantText, RuntimeGrade } from "./grading";
 import {
   createIsolatedFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -91,19 +92,20 @@ export const mcpNeedsAuthAbstainTask: RuntimeEvalTask<McpNeedsAuthAbstainWorld> 
   createSteps: (world) => [{ kind: "turn", mode: "default", message: world.clientPrompt }],
   snapshotWorld: async (world) => ({ authRequests: world.authRequests, serverName: world.serverName }),
   evaluate(input) {
-    if (input.toolCalls.length > 0)
-      return fail(
-        "tool_attempt",
-        "The model attempted a tool despite the unavailable authenticated service.",
-        "behavior",
-      );
-    const text = lastAssistantText(input).toLowerCase();
+    const grade = new RuntimeGrade("mcp_needs_auth");
+    const text = finalAssistantText(input).toLowerCase();
     const loginHint = `/mcp login ${input.world.serverName}`;
     if (!text.includes(loginHint))
-      return fail("login_hint", `The response did not direct the user to ${loginHint}.`, "semantic_goal");
+      return grade.fail("login_hint", `The response did not direct the user to ${loginHint}.`, "semantic_goal");
     if (!text.includes("auth"))
-      return fail("auth_reason", "The response did not explain that authentication is required.", "semantic_goal");
-    return { passed: true };
+      return grade.fail(
+        "auth_reason",
+        "The response did not explain that authentication is required.",
+        "semantic_goal",
+      );
+    if (input.toolCalls.length > 0)
+      grade.note("tool_attempt", "A tool was attempted before abstaining.", { dimension: "behavior" });
+    return grade.pass();
   },
   async cleanup(world) {
     await getMcpManager().disposeAll();
@@ -123,21 +125,4 @@ function withAuthServer(config: RuntimeConfig, world: McpNeedsAuthAbstainWorld, 
   };
   config.diligent.mcp = { toolLoading: "eager", resources: false, prompts: false };
   return config;
-}
-
-function lastAssistantText(input: Parameters<typeof mcpNeedsAuthAbstainTask.evaluate>[0]): string {
-  const message = input.turns
-    .at(-1)
-    ?.messages.filter((item) => item.role === "assistant")
-    .at(-1);
-  return (
-    message?.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("") ?? ""
-  );
-}
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `mcp_needs_auth.${code}`, message, dimension };
 }

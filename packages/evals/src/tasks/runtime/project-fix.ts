@@ -1,6 +1,7 @@
 // @summary Runtime eval fixture for instruction-guided diagnosis, editing, and verification
 
-import type { RuntimeEvalTask, RuntimeToolTrace } from "../../runtime-task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import { passingCommandRuns, RuntimeGrade, successfulWritesTo } from "./grading";
 import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -10,6 +11,8 @@ import {
   sha256Text,
   writeFixture,
 } from "./helpers";
+
+const SOURCE_PATH = "src/value.ts";
 
 interface ProjectFixWorld extends RuntimeFixtureWorld {
   operand: number;
@@ -55,88 +58,34 @@ export const projectFixTask: RuntimeEvalTask<ProjectFixWorld> = {
     },
   ],
   verify: (world, signal) => runVerifier(world, ["bun", "test"], signal),
-  snapshotWorld: async (world) => ({ operand: world.operand, source: await exactFile(world.root, "src/value.ts") }),
+  snapshotWorld: async (world) => ({ operand: world.operand, source: await exactFile(world.root, SOURCE_PATH) }),
   evaluate(input) {
-    const world = input.world;
-    const source = input.workspace.final.entries.find((entry) => entry.path === "src/value.ts");
-    const changed = input.workspace.initial.entries.find((entry) => entry.path === "src/value.ts");
-    if (!input.toolCalls.some((call) => call.capability === "read"))
-      return {
-        passed: false,
-        code: "project_fix.no_read",
-        message: "No read capability was used.",
-        dimension: "behavior",
-      };
-    const writes = input.toolCalls.filter((call) => call.capability === "write" && call.outcome === "success");
-    if (writes.length === 0)
-      return {
-        passed: false,
-        code: "project_fix.no_write",
-        message: "No write capability succeeded.",
-        dimension: "behavior",
-      };
-    const passingTest = input.toolCalls
-      .filter(isPassingBunTest)
-      .sort((left, right) => left.sequence - right.sequence)
-      .at(-1);
-    if (!passingTest)
-      return {
-        passed: false,
-        code: "project_fix.no_test",
-        message: "No exact successful bun test command with zero-exit evidence was recorded.",
-        dimension: "behavior",
-      };
-    if (passingTest.sequence <= Math.max(...writes.map((call) => call.sequence)))
-      return {
-        passed: false,
-        code: "project_fix.test_order",
-        message: "The final successful write was not followed by an exact passing bun test command.",
-        dimension: "behavior",
-      };
+    const grade = new RuntimeGrade("project_fix");
     if (input.verifier?.timedOut)
-      return {
-        passed: false,
-        code: "project_fix.test_failed",
-        message: "Independent verifier timed out.",
-        dimension: "harness_terminal",
-      };
+      return grade.fail("test_failed", "Independent verifier timed out.", "harness_terminal");
     if (input.verifier?.exitCode !== 0)
-      return {
-        passed: false,
-        code: "project_fix.test_failed",
-        message: "Independent verifier failed.",
-        dimension: "semantic_goal",
-      };
-    if (source?.sha256 === changed?.sha256 || source?.sha256 !== world.expectedHash)
-      return {
-        passed: false,
-        code: "project_fix.wrong_source",
-        message: "The source does not match the expected semantic fix.",
-        dimension: "semantic_goal",
-      };
-    return { passed: true };
+      return grade.fail("test_failed", "Independent verifier failed.", "semantic_goal");
+    const source = input.workspace.final.entries.find((entry) => entry.path === SOURCE_PATH);
+    if (source?.sha256 !== input.world.expectedHash)
+      return grade.fail("wrong_source", "The source does not match the expected semantic fix.", "semantic_goal");
+    if (successfulWritesTo(input, SOURCE_PATH).length === 0)
+      return grade.fail("no_write", `No successful write changed ${SOURCE_PATH}.`, "behavior");
+    if (!input.toolCalls.some((call) => call.capability === "read" && call.outcome === "success"))
+      grade.note("no_read", "The fix was made without a successful read.", { dimension: "behavior", impact: "info" });
+    const lastWrite = Math.max(
+      ...input.toolCalls
+        .filter((call) => call.capability === "write" && call.outcome === "success")
+        .map((call) => call.sequence),
+    );
+    const passingTests = passingCommandRuns(input, "bun test");
+    if (passingTests.length === 0)
+      return grade.fail("no_test", "No successful `bun test` with zero-exit evidence was recorded.", "behavior");
+    if (!passingTests.some((call) => call.sequence > lastWrite))
+      return grade.fail(
+        "test_order",
+        "The final successful write was not followed by a passing `bun test`.",
+        "behavior",
+      );
+    return grade.pass();
   },
 };
-
-function isPassingBunTest(call: RuntimeToolTrace): boolean {
-  return (
-    call.name === "bash" &&
-    commandOf(call.input) === "bun test" &&
-    call.outcome === "success" &&
-    exitCodeOf(call.output) === 0
-  );
-}
-
-function commandOf(value: unknown): string | undefined {
-  return isRecord(value) && typeof value.command === "string" ? value.command.trim() : undefined;
-}
-
-function exitCodeOf(value: unknown): number | undefined {
-  return isRecord(value) && isRecord(value.metadata) && typeof value.metadata.exitCode === "number"
-    ? value.metadata.exitCode
-    : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
-}
