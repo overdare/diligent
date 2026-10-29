@@ -66,6 +66,8 @@ Named `exec_wait` because `wait` is the collab tool. Input: `cell_id`, `yield_ti
 
 While no `exec`/`exec_wait` call is waiting on a cell, the script keeps running but nested tool calls it requests are held; they run under the next `exec_wait`. A yield waits for in-flight nested calls to finish so every nested call belongs to exactly one parent call; if the deadline passed during such a call, the cell then waits up to 500 ms for the script to finish, so a script whose last call outlasts `yield_time_ms` returns `Script completed` instead of a running result plus an `exec_wait` round trip. When a script finishes, unawaited nested calls are aborted.
 
+For time-sensitive sequences such as captures or cleanup, allow enough `yield_time_ms` for the entire sequence with margin. If it still yields, resume with `exec_wait` immediately until completion before reviewing output or doing other work. Timers and external systems continue while nested calls are held, and a long yield interval does not guarantee an external hard deadline: an in-flight call can run past it, and the external stop can itself be delayed.
+
 ## Execution model
 
 - Each `exec` call starts a cell: a Bun `Worker` whose source is `codeModeWorkerMain` (`packages/runtime/src/tools/code-mode/worker.ts`) serialized into a Blob URL, so single-file `bun build --compile` binaries need no extra entrypoint. The script runs in a `node:vm` context inside that worker.

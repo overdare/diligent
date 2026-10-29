@@ -72,6 +72,15 @@ describe("applyCodeMode exposure", () => {
     const { exposed } = setup([echo, plan], "on");
     expect(exposed.map((tool) => tool.name)).toEqual(["echo", "plan", "exec", "exec_wait"]);
   });
+
+  test("exec exposes the yield timing contract in both code modes", () => {
+    for (const mode of ["on", "only"] as const) {
+      const { exec } = setup([echo], mode);
+      expect(exec.description).toContain("new nested tool calls are held until `exec_wait`");
+      expect(exec.description).toContain("in-flight nested calls must finish before returning");
+      expect(exec.description).toContain("This does not guarantee a hard external time limit");
+    }
+  });
 });
 
 describe("exec", () => {

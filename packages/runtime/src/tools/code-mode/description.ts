@@ -18,7 +18,8 @@ const EXEC_DESCRIPTION = `Run JavaScript code to orchestrate/compose tool calls.
 - Nested tools run with the same approvals and permissions as direct tool calls. Independent calls may run concurrently with \`Promise.all\`; tools that are not parallel-safe still run one at a time.
 - Runs plain JavaScript only: no Node or Bun APIs, no require/import, no file system, no network, no console. Do all I/O through \`tools\`.
 - \`code\` is raw JavaScript source, not JSON, quoted strings, or markdown code fences. Write multi-line text (shell heredocs, file contents, patches, reports) as template literals (\`\` \`...\` \`\`); a raw line break inside "..." or '...' is a SyntaxError.
-- \`yield_time_ms\` makes \`exec\` return early while the script keeps running. Defaults to ${DEFAULT_YIELD_TIME_MS} ms.
+- \`yield_time_ms\` makes \`exec\` return early while the script keeps running. Defaults to ${DEFAULT_YIELD_TIME_MS} ms. It is not a hard deadline: in-flight nested calls must finish before returning.
+- After a yield, timers and external systems continue running, but new nested tool calls are held until \`${EXEC_WAIT_TOOL_NAME}\` waits on the cell. For time-sensitive sequences, including capture and cleanup, set \`yield_time_ms\` to cover the whole sequence with margin; if it still yields, immediately continue \`${EXEC_WAIT_TOOL_NAME}\` until completion before doing other work. This does not guarantee a hard external time limit.
 - \`max_output_tokens\` sets the token budget for the returned output. Defaults to ${DEFAULT_MAX_OUTPUT_TOKENS} tokens.
 - When the script finishes, its context ends and unawaited promises and pending nested calls are discarded.
 - A non-undefined value returned from the top level is appended to the output like \`text(value)\`.
