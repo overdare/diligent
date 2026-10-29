@@ -39,34 +39,36 @@ async function captureVersionHeader(run: () => Promise<unknown>): Promise<string
 afterEach(restoreChatGPTStreamTestState);
 
 describe("ChatGPT client version", () => {
-  test("GPT-6.1 Sol sends a verified compatible version over HTTP, WebSocket, and compaction", async () => {
-    // Live requests with 0.155.0 reject this model; 0.159.0 returns a successful response.
+  test("GPT-6.1 Sol and Terra send a verified compatible version over HTTP, WebSocket, and compaction", async () => {
+    // Live requests below 0.159.0 reject both models with model_not_found; 0.159.0 returns a successful response.
     const compatibleVersion = "0.159.0";
-    const model = resolveModel({ provider: "chatgpt", modelId: "gpt-6.1-sol" });
-    const streamed = await captureVersionHeader(() =>
-      collectEvents(
-        createChatGPTStream(() => testTokens(), { useWebSocket: false })(model, TEST_CONTEXT, { effort: "low" }),
-      ),
-    );
-    const compacted = await captureVersionHeader(() =>
-      createChatGPTNativeCompaction(() => testTokens())({
-        model,
-        systemPrompt: [],
-        messages: TEST_CONTEXT.messages,
-      }),
-    );
-    const harness = createWebSocketHarness((_body, socket) => completeWebSocketResponse(socket));
-    await collectEvents(
-      createChatGPTStream(() => testTokens(), {
-        webSocketFactory: harness.factory,
-      })(model, TEST_CONTEXT, { effort: "low" }),
-    );
+    for (const modelId of ["gpt-6.1-sol", "gpt-6.1-terra"]) {
+      const model = resolveModel({ provider: "chatgpt", modelId });
+      const streamed = await captureVersionHeader(() =>
+        collectEvents(
+          createChatGPTStream(() => testTokens(), { useWebSocket: false })(model, TEST_CONTEXT, { effort: "low" }),
+        ),
+      );
+      const compacted = await captureVersionHeader(() =>
+        createChatGPTNativeCompaction(() => testTokens())({
+          model,
+          systemPrompt: [],
+          messages: TEST_CONTEXT.messages,
+        }),
+      );
+      const harness = createWebSocketHarness((_body, socket) => completeWebSocketResponse(socket));
+      await collectEvents(
+        createChatGPTStream(() => testTokens(), {
+          webSocketFactory: harness.factory,
+        })(model, TEST_CONTEXT, { effort: "low" }),
+      );
 
-    expect(streamed).toBeDefined();
-    expect(isAtLeast(streamed as string, compatibleVersion)).toBe(true);
-    expect(compacted).toBe(streamed as string);
-    expect(harness.requests).toHaveLength(1);
-    expect(harness.requests[0]?.headers.version).toBe(streamed as string);
+      expect(streamed, modelId).toBeDefined();
+      expect(isAtLeast(streamed as string, compatibleVersion), modelId).toBe(true);
+      expect(compacted, modelId).toBe(streamed as string);
+      expect(harness.requests, modelId).toHaveLength(1);
+      expect(harness.requests[0]?.headers.version, modelId).toBe(streamed as string);
+    }
   });
 
   test("streaming and compaction pin the same version", async () => {
