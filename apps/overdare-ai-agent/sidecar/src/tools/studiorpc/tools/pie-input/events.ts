@@ -261,8 +261,10 @@ export const inputEventsSchema = z
   .describe(
     "Ordered PIE input, up to 64 events. Keys use Enum.KeyCode names and down/up/press. pointerMove and " +
       "pointerButton take a normalized position or live UI target; separate down/up positions form a drag. " +
-      "Pointer buttons arrive to Lua as Touch, while Activated still fires. look reports reached, clamped, " +
-      "blocked, or timedOut. mouseDelta needs capture; scroll uses wheel notches. wait uses real durationMs " +
+      "Pointer buttons may arrive to Lua as MouseButton1 rather than Touch; input type is not guaranteed. " +
+      "Check the Lua InputObject.UserInputType when validating touch-specific behavior; pointerMode describes " +
+      "the routing used, not the Lua input type. look reports reached, clamped, blocked, or timedOut. " +
+      "mouseDelta needs capture; scroll uses wheel notches. wait uses real durationMs " +
       "and optional instance/UI/log conditions. Every down must be released " +
       "inside the batch; prefer press for self-balanced input.",
   );
