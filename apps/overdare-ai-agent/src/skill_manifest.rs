@@ -88,7 +88,7 @@ impl DeploymentLock {
     }
 }
 
-fn valid_name(name: &str) -> bool {
+pub(crate) fn valid_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
         && name
@@ -114,7 +114,7 @@ fn validate_entries(entries: &[Entry]) -> Result<(), String> {
     Ok(())
 }
 
-fn reject_symlink(path: &Path) -> Result<(), String> {
+pub(crate) fn reject_symlink(path: &Path) -> Result<(), String> {
     match fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => {
             Err(format!("refusing symlink: {}", path.display()))
@@ -327,7 +327,7 @@ fn write_agent_state(global: &Path, state: &AgentRevocations) -> Result<(), Stri
     fs::rename(&tmp, path).map_err(|error| error.to_string())
 }
 
-fn remove_entry(path: &Path) -> io::Result<()> {
+pub(crate) fn remove_entry(path: &Path) -> io::Result<()> {
     match fs::symlink_metadata(path) {
         // Do not recurse through links (including Windows directory symlinks).
         Ok(meta) if meta.file_type().is_symlink() => {
