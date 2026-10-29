@@ -154,6 +154,46 @@ describe("Studio RPC cancellation", () => {
       message: expect.stringContaining("Reason: navigationSystemUnavailable"),
     });
   });
+
+  test("geometry draft failures expose native traceback and captured output", async () => {
+    server = createServer((socket) => {
+      accepted = socket;
+      socket.once("data", (bytes) => {
+        const request = JSON.parse(bytes.toString());
+        socket.write(
+          `${JSON.stringify({
+            jsonrpc: "2.0",
+            id: request.id,
+            error: {
+              code: -32005,
+              message: "The recipe raised an exception",
+              data: {
+                traceback: "Traceback: ValueError: not closed",
+                stdout: "union started",
+                suggestions: ["check mesh"],
+              },
+            },
+          })}\n`,
+        );
+      });
+    });
+    const listening = Promise.withResolvers<void>();
+    server.listen(0, "127.0.0.1", listening.resolve);
+    await listening.promise;
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("no TCP port");
+    process.env.STUDIO_HOST = "127.0.0.1";
+    process.env.STUDIO_PORT = String(address.port);
+    try {
+      await call("proceduralmodel.run", { id: "draft" });
+      throw new Error("expected rejection");
+    } catch (error) {
+      expect(error).toMatchObject({ code: -32005 });
+      expect(String(error)).toContain("ValueError: not closed");
+      expect(String(error)).toContain("union started");
+      expect(String(error)).toContain("check mesh");
+    }
+  });
   test("full discovery preserves UTF-8 descriptions split across TCP chunks", async () => {
     const description = "\uD55C\uAE00 \uC18D\uC131 \uC124\uBA85";
     server = createServer((socket) => {
