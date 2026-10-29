@@ -9,7 +9,7 @@ Use existing Studio tools and supported properties. Basic Part and MeshPart have
 
 | Target | Existing path | Constraint |
 |---|---|---|
-| Basic Part | MaterialVariant under MaterialService; set ColorMap and the Part's Material/MaterialVariant | Repeating material, scaled with MetersPerTile. It does not provide independent images on six faces. ColorMap alpha is ignored. |
+| Basic Part | MaterialVariant under MaterialService; set ColorMap and the Part's Material/MaterialVariant | Repeating material; MetersPerTile scaling requires a supported non-Unlit BaseMaterial. It does not provide independent images on six faces. ColorMap alpha is ignored. |
 | MeshPart | Set its TextureId to a published image | Placement follows the mesh UVs. Inspect the UV layout and actual rendering. |
 | ProceduralModel | Generate geometry/UVs with the current recipe API, then use its baked MeshParts' existing TextureId | Re-read baked children after rebuilds; match stable recipe part names and verify/reapply supported properties when needed. |
 
