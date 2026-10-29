@@ -51,6 +51,8 @@ export type PluginDiscoveryMode = "global" | "explicit";
 
 export interface CollectPluginHooksOptions {
   pluginDiscovery?: PluginDiscoveryMode;
+  /** Packages replaced by bundled providers or retired; their hooks must not run. */
+  supersededPackages?: ReadonlySet<string>;
 }
 
 const pluginHooksCache = new Map<string, CollectedPluginHooks>();
@@ -74,7 +76,13 @@ export async function collectPluginHooks(
   options: CollectPluginHooksOptions = {},
 ): Promise<CollectedPluginHooks> {
   const pluginDiscovery = options.pluginDiscovery ?? "global";
-  const cacheKey = JSON.stringify({ toolsConfig: toolsConfig ?? null, cwd, pluginDiscovery });
+  const supersededPackages = options.supersededPackages ?? new Set<string>();
+  const cacheKey = JSON.stringify({
+    toolsConfig: toolsConfig ?? null,
+    cwd,
+    pluginDiscovery,
+    supersededPackages: [...supersededPackages].sort(),
+  });
   const cached = pluginHooksCache.get(cacheKey);
   if (cached) return cached;
 
@@ -87,7 +95,9 @@ export async function collectPluginHooks(
     .filter((name) => !explicitPackageNames.has(name))
     .map((name) => ({ package: name, enabled: true as const }));
 
-  const pluginConfigs = [...explicitPlugins, ...autoPlugins];
+  const pluginConfigs = [...explicitPlugins, ...autoPlugins].filter(
+    (pluginConfig) => !supersededPackages.has(pluginConfig.package),
+  );
   const result: CollectedPluginHooks = { onUserPromptSubmit: [], onStop: [] };
 
   for (const pluginConfig of pluginConfigs) {

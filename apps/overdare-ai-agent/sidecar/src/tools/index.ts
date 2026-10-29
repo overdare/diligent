@@ -6,6 +6,7 @@ import { createGatewayToolProvider } from "./gateway";
 import { createHelloWorldToolProvider, type StudioToolProviderOptions } from "./hello-world";
 import { createImageGenerationToolProvider } from "./image-generation";
 import { createRagToolProvider } from "./rag";
+import { createRetiredPluginProvider } from "./retired-plugins";
 import { createSleepToolProvider } from "./sleep";
 import { createStudioRpcToolProvider, type StudioRpcToolProviderOptions } from "./studiorpc";
 
@@ -27,5 +28,6 @@ export function createStudioBundledToolProviders(options: StudioBundledToolProvi
     ...(options.studioDisabled ? [] : [createStudioRpcToolProvider(options.studioRpc)]),
     createAnalyticsToolProvider(),
     createGatewayToolProvider(options),
+    createRetiredPluginProvider(),
   ];
 }

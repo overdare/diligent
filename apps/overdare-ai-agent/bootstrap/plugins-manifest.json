@@ -1,9 +1,0 @@
-{
-  "schemaVersion": 1,
-  "revoked": [
-    "@overdare/plugin-analytics",
-    "@overdare/plugin-rag",
-    "@overdare/plugin-studiorpc",
-    "@overdare/plugin-validator"
-  ]
-}

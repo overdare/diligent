@@ -53,7 +53,11 @@ import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "..
 import { readSessionHeader } from "../session/history";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
 import type { AppendedEntryInfo, SessionRunOutcome } from "../session/types";
-import { type BundledToolProvider, collectBundledHooks } from "../tools/bundled-provider";
+import {
+  type BundledToolProvider,
+  collectBundledHooks,
+  collectSupersededPluginPackages,
+} from "../tools/bundled-provider";
 import { collectPluginHooks, type PluginDiscoveryMode } from "../tools/plugin-loader";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
 import type { ConfigReloadResult } from "./config-handlers";
@@ -1031,6 +1035,7 @@ export class DiligentAppServer {
     const stopShellHandlers = this.config.hooks?.Stop ?? [];
     const { onStop: stopPluginHandlers } = await collectPluginHooks(this.config.toolConfig?.getTools(), info.cwd, {
       pluginDiscovery: this.config.pluginDiscovery ?? "global",
+      supersededPackages: collectSupersededPluginPackages(this.config.bundledToolProviders),
     });
     const { onStop: stopBundledHandlers } = collectBundledHooks(this.config.bundledToolProviders);
     const stopHandlers = [...stopPluginHandlers, ...stopBundledHandlers];
@@ -1126,6 +1131,7 @@ export class DiligentAppServer {
       getPluginHooks: async (cwd: string) => {
         const pluginHooks = await collectPluginHooks(this.config.toolConfig?.getTools(), cwd, {
           pluginDiscovery: this.config.pluginDiscovery ?? "global",
+          supersededPackages: collectSupersededPluginPackages(this.config.bundledToolProviders),
         });
         const bundledHooks = collectBundledHooks(this.config.bundledToolProviders);
         return {

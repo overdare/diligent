@@ -87,12 +87,11 @@ function createStopInput(): HookInput {
 }
 
 describe("createAnalyticsToolProvider", () => {
-  test("creates hook-only analytics provider with plugin supersession", async () => {
+  test("creates a hook-only analytics provider", async () => {
     const providers = createStudioBundledToolProviders({ cwd: "/tmp/project" });
     const provider = providers.find((candidate) => candidate.id === "@overdare/analytics-hooks");
 
     expect(provider).toBeDefined();
-    expect(provider!.supersedesPluginPackages).toContain("@overdare/plugin-analytics");
     expect(provider!.onStop).toBeFunction();
     expect(provider!.onStop!.mode).toBe("async");
     expect(await provider!.createTools({ cwd: "/tmp/project" })).toEqual([]);

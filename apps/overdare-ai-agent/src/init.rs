@@ -249,6 +249,7 @@ pub fn run(env: Env, update_applied: bool) -> Result<(), String> {
         fs::read_dir(&bootstrap).map_err(|e| format!("Cannot read bootstrap dir: {e}"))?;
     for entry in entries.flatten() {
         let name = entry.file_name();
+        // Runtime bundles 0.12.12 and 0.12.13 ship a retired `plugins-manifest.json`; never copy it to global storage.
         if name == "skills"
             || name == "skills-manifest.json"
             || name == "agents-manifest.json"
@@ -278,10 +279,6 @@ pub fn run(env: Env, update_applied: bool) -> Result<(), String> {
         }
     }
     let _ = fs::remove_dir_all(&staging);
-    // Cleanup is not needed to boot; a bad plugin manifest must not block start.
-    if let Err(e) = crate::bootstrap_manifest::remove_revoked_plugins(&bootstrap, &global) {
-        eprintln!("[init] Skipped plugin revocations: {e}");
-    }
     Ok(())
 }
 

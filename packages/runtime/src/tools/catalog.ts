@@ -5,7 +5,7 @@ import type { ImageGenerationFn, ProviderName } from "@diligent/core/provider-co
 import type { Tool } from "@diligent/core/tool-contract";
 import { COLLAB_TOOL_NAMES } from "../collab";
 import type { DiligentConfig } from "../config/schema";
-import type { BundledToolProvider, TextGenerationFn } from "./bundled-provider";
+import { type BundledToolProvider, collectSupersededPluginPackages, type TextGenerationFn } from "./bundled-provider";
 import type { RuntimeToolHost } from "./capabilities";
 import { isImmutableTool } from "./immutable";
 import { discoverGlobalPlugins, loadPlugin, type PluginDiscoveryMode } from "./plugin-loader";
@@ -519,9 +519,7 @@ export async function buildToolCatalog(
   const builtinToggles = config.builtin ?? {};
   const explicitPlugins = config.plugins ?? [];
   const bundledProviders = options.bundledProviders ?? [];
-  const supersededPluginPackages = new Set(
-    bundledProviders.flatMap((provider) => provider.supersedesPluginPackages ?? []),
-  );
+  const supersededPluginPackages = collectSupersededPluginPackages(bundledProviders);
 
   // Auto-discover plugins from ~/.diligent/plugins/ and merge with explicit config.
   // Explicit config entries always take precedence (for enable/disable, per-tool toggles, etc.).

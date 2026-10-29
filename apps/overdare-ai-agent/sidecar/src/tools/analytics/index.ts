@@ -377,7 +377,6 @@ export function createAnalyticsToolProvider(): BundledToolProvider {
   return {
     id: "@overdare/analytics-hooks",
     displayName: "OVERDARE Analytics Hooks",
-    supersedesPluginPackages: ["@overdare/plugin-analytics"],
     createTools: () => [],
     onStop,
   };

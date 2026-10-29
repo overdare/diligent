@@ -5,12 +5,11 @@ import { createStudioBundledToolProviders } from "../../src/tools";
 import { parameters } from "../../src/tools/rag/overdaresearch";
 
 describe("createRagToolProvider", () => {
-  test("creates bundled RAG tools with Zod schemas and plugin supersession", async () => {
+  test("creates bundled RAG tools with Zod schemas", async () => {
     const providers = createStudioBundledToolProviders({ cwd: "/tmp/project" });
     const provider = providers.find((candidate) => candidate.id === "@overdare/rag-tools");
 
     expect(provider).toBeDefined();
-    expect(provider!.supersedesPluginPackages).toContain("@overdare/plugin-rag");
 
     const tools = await provider!.createTools({ cwd: "/tmp/project" });
     const searchTool = tools.find((candidate) => candidate.name === "overdaresearch");

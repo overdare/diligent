@@ -104,12 +104,11 @@ afterEach(() => {
 });
 
 describe("createStudioRpcToolProvider", () => {
-  test("creates bundled Studio RPC tools with Zod schemas and plugin supersession", async () => {
+  test("creates bundled Studio RPC tools with Zod schemas", async () => {
     const providers = createStudioBundledToolProviders({ cwd: "/tmp/project" });
     const provider = providers.find((candidate) => candidate.id === "@overdare/studiorpc-tools");
 
     expect(provider).toBeDefined();
-    expect(provider!.supersedesPluginPackages).toContain("@overdare/plugin-studiorpc");
 
     const tools = await provider!.createTools({ cwd: "/tmp/project" });
     const toolNames = tools.map((tool) => tool.name);

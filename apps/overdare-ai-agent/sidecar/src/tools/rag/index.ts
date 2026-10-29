@@ -10,7 +10,6 @@ export function createRagToolProvider(): BundledToolProvider {
   return {
     id: "@overdare/rag-tools",
     displayName: "OVERDARE RAG Tools",
-    supersedesPluginPackages: ["@overdare/plugin-rag"],
     createTools: ({ host }) => createRagTools(host),
   };
 }
