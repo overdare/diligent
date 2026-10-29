@@ -86,6 +86,8 @@ Its RPC deadline is 30 seconds. Studio may continue the native run after this de
 the model before retrying a timed-out operation. The draft tool allows 300 seconds, beyond its
 native 240-second deadline. A native `success: false` result is preserved
 and marked as a tool error, including MCP `isError`, so a failed run is not presented as success.
+For RPC errors, the draft tool includes Studio's error data in its error message, including traceback
+and captured stdout/stderr when Studio provides them. Availability depends on the Studio version.
 
 The standalone `game.ui.*`, `asset_manager.model.import`, and `instance.vfx_recipe.add` tools
 are not exposed by this provider.

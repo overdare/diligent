@@ -134,6 +134,9 @@ export async function call(
             let errorMsg = `Studio RPC error [${response.error.code}]: ${response.error.message}`;
             errorMsg += renderReason(response.error.data);
             errorMsg += renderMeasurements(response.error.data);
+            if (method === "proceduralmodel.run" && response.error.data != null) {
+              errorMsg += `\n\nRecipe failure details:\n${JSON.stringify(response.error.data, null, 2)}`;
+            }
             errorMsg += `\n\nRequest method: ${method} (id ${id})`;
             if (response.error.message?.toLowerCase().includes("guid")) {
               errorMsg += `\n\nTip: Use studiorpc_level_browse first to get valid GUIDs.`;
