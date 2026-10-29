@@ -36,6 +36,21 @@ async function setup(reply: unknown = { success: true }, approve = true) {
 }
 
 describe("native Studio method contracts", () => {
+  test("texture prepare is read only and apply preserves pending state without an extra save", async () => {
+    const ctx = await setup({ success: true, status: "pending", requestId: "request-1" });
+    await ctx.invoke("studiorpc_texture_prepare", { targetGuid: "wall" });
+    expect(ctx.approvals()).toBe(0);
+    const args = { targetGuid: "wall", prepareId: "P", targetRevision: "R", requestId: "request-1" };
+    const result = await ctx.invoke("studiorpc_texture_apply", args);
+    expect(result.isError).not.toBe(true);
+    expect(JSON.stringify(result)).toContain("pending");
+    expect(ctx.calls.map(({ method, params }) => ({ method, params }))).toEqual([
+      { method: "texture.prepare", params: { targetGuid: "wall" } },
+      { method: "texture.apply", params: args },
+    ]);
+    expect(ctx.approvals()).toBe(1);
+  });
+
   test("the runtime executor exposes settings patches and propagates native failures to client tool results", async () => {
     const ctx = await setup({ success: false, error: "Native update failed" });
     const result = await executeTool(

@@ -84,3 +84,56 @@ test("unified import rejects files outside the configured mount before calling S
   await expect(rpc("asset_manager.import", { file: "/elsewhere/sound.wav" })).rejects.toThrow("outside");
   expect(called).toBe(false);
 });
+
+test("texture paths cross the shared mount in both directions without changing asset ids", async () => {
+  const calls: unknown[] = [];
+  const rpc = createDevStudioRpc(
+    { enabled: true, localFileRoot: "/shared", remoteFileRoot: "C:/shared" },
+    async (...args) => {
+      calls.push(args);
+      return {
+        guidePath: "C:/shared/texture/guide.png",
+        previewPaths: ["C:/shared/texture/front.png"],
+        requiredImages: [{ imageKey: "fox" }],
+      };
+    },
+  );
+  const input = {
+    requestId: "R",
+    images: { fox: { filePath: "/shared/fox.png" }, logo: { assetId: "ovdrassetid://123" } },
+  };
+  await rpc("texture.apply", input);
+  expect(calls[0]).toEqual([
+    "texture.apply",
+    { ...input, images: { fox: { filePath: "C:\\shared\\fox.png" }, logo: input.images.logo } },
+    undefined,
+  ]);
+  expect(input.images.fox.filePath).toBe("/shared/fox.png");
+  expect(await rpc("texture.prepare", {})).toEqual({
+    guidePath: "/shared/texture/guide.png",
+    previewPaths: ["/shared/texture/front.png"],
+    requiredImages: [{ imageKey: "fox" }],
+  });
+});
+
+test("texture apply rejects every unshared image before Studio sees the request", async () => {
+  let called = false;
+  const rpc = createDevStudioRpc({ enabled: true, localFileRoot: "/shared", remoteFileRoot: "C:/shared" }, async () => {
+    called = true;
+    return {};
+  });
+  await expect(rpc("texture.apply", { images: { x: { filePath: "/elsewhere/x.png" } } })).rejects.toThrow("outside");
+  expect(called).toBe(false);
+});
+
+test("texture apply maps result previews for painting and repeated requests without images", async () => {
+  const rpc = createDevStudioRpc(
+    { enabled: true, localFileRoot: "/shared", remoteFileRoot: "C:/shared" },
+    async () => ({ status: "applied", imagePath: "C:/shared/results/final.png", textureId: "ovdrassetid://123" }),
+  );
+  expect(await rpc("texture.apply", { requestId: "R" })).toEqual({
+    status: "applied",
+    imagePath: "/shared/results/final.png",
+    textureId: "ovdrassetid://123",
+  });
+});

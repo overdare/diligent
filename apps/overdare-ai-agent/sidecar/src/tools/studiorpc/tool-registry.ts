@@ -35,6 +35,8 @@ import * as rigBuilderInsert from "./methods/rig_builder.insert";
 import * as _scriptAdd from "./methods/script.add";
 // biome-ignore lint/correctness/noUnusedImports: script.delete moved to tools/script-delete-tool.ts
 import * as _scriptDelete from "./methods/script.delete";
+import * as textureApply from "./methods/texture.apply";
+import * as texturePrepare from "./methods/texture.prepare";
 import * as viewportCameraRead from "./methods/viewport.camera.read";
 import * as viewportCameraSet from "./methods/viewport.camera.set";
 import {
@@ -96,6 +98,8 @@ export const methodModules: MethodModule[] = [
   levelSaveFile,
   levelPublish,
   rigBuilderInsert,
+  texturePrepare,
+  textureApply,
   gamePlay,
   gameStop,
   gameScreenshot,
@@ -119,6 +123,7 @@ export const mutatingMethods = new Set([
   assetManagerImport.method,
   gameSettingsUpdate.method,
   rigBuilderInsert.method,
+  textureApply.method,
 ]);
 export const savingMethods = new Set([assetDrawerImport.method, assetManagerImport.method, gameSettingsUpdate.method]);
 

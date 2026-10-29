@@ -1,0 +1,22 @@
+---
+name: texture-authoring
+description: Decorate existing Block Parts, ProceduralModels and static MeshParts with one published albedo using native painting and generated artwork. Use for wall markings, signs, patterns, painted surfaces and model skins. For screen or interactive GUI use gui-builder instead.
+---
+
+# Albedo authoring
+
+Keep geometry for silhouette, volume and collision. Express flat detail through the albedo. Do not build a sun, lettering or a painted trim out of small Parts or SurfaceGui widgets.
+
+Use the existing Studio material and image asset systems through these native tools. Do not introduce a separate shader, master material, second material instance or custom image publishing backend to decorate a target. Inspect the native Texture summary's resolution and loaded/resident pixel dimensions when a result looks blurry; also check the actual pixel budget of the decorated region.
+
+1. Read the target and call `studiorpc_texture_prepare` with `targetGuid` to discover its real surfaces and saved plan. Block surfaces are Front, Back, Left, Right, Top and Bottom, viewed from outside. Procedural surfaces use stable recipe part names and existing UV0; inspect the preview before choosing a placement. Author the ProceduralModel owner rather than its generated children.
+2. Write the complete version 1 plan. Use fill, shape (rect, ellipse, line, sun, star, arrow), pattern (stripes, checker, dots), text or image layers in drawing order. Use stable unique layer ids, sRGB byte colors, normalized `[x,y,width,height]` rectangles and optional opacity in 0..1. Use `default-korean` for text. Paint simple graphics directly. A single surface can mix painting and artwork.
+3. Call prepare again with that plan and resolution 256, 512 or 1024 (default 512). Inspect warnings, physical dimensions, guide and `requiredImages`. Prefer an explicit base fill; `base.current` can be rejected for unsupported materials. Prepare changes no world objects.
+4. Generate only missing artwork with the existing `generate_image` capability, or reuse a published image. Prompts and model settings stay in this agent; native plans contain only image keys or asset ids. Generate standalone sources at the returned aspect ratio. Put lettering in a text layer. Do not ask the image generator to align a final UV atlas. Use grid crops only for compatible source images sharing a style and aspect ratio. Review the images before applying them. If generation is unavailable or fails, report the missing artwork; do not silently replace required artwork with code drawings.
+5. Call `studiorpc_texture_apply` with `targetGuid`, `prepareId`, `targetRevision`, a fresh `requestId`, and `images: { key: { filePath } }` or `{ key: { assetId } }` for missing keys. Pure painting needs no images. Files must be readable by Studio; shared-root mapping does not transfer them. Existing images and final outputs use `ovdrassetid://` references.
+6. Inspect `status`. Only `applied` proves publication, binding and save. `pending` means accepted: repeat the same arguments and requestId after a short delay to recover progress. Retain the same requestId after transport timeout. On `applied_save_failed`, the binding already exists; the same request retries saving. Do not generate a new requestId just to bypass an unresolved upload. `TARGET_CHANGED` requires a new prepare. Review failed results and retained published image ids before retrying an interrupted operation.
+7. Read the target and inspect editor and play-test screenshots, including each decorated face and any back face, text orientation or alpha edge that matters. Publication success does not establish visual quality. Check that instance and geometry counts did not grow for flat detail.
+
+For another edit, retrieve the saved plan through prepare, change only the needed layers and submit the complete plan. Saved image layers use published source ids, so changing a color or label needs no image generation. Rebuild compatible procedural geometry with the same stable names and UV correspondence; a stale mapping must be repaired or cleared before world publication.
+
+Box MeshParts need face-split normals for six-face mapping. Call the existing `G.recompute_normals(mesh)` before `model.part`; smooth corner normals are rejected by prepare. The existing mobile World albedo group supports up to 1024 with mipmaps and streaming. Compare `texturePixels`, `allowedPixels` and `residentPixels` when diagnosing blur.

@@ -46,7 +46,7 @@ Fix the actual bottleneck rather than changing settings across the board. You ca
 
 ## Memory and loading
 
-- Mesh textures (`TextureId`) are capped at 256 × 256 pixels. Resize larger textures to fit before importing them. Texture memory follows pixel dimensions, along with compression and mipmaps, not file size.
+- Use the smallest texture dimensions that remain readable at player distance. Managed Part/ProceduralModel albedo supports 256, 512, or 1024 pixels through the texture-authoring tools. Inspect the native `Texture` summary's source, allowed, and resident dimensions; streaming can temporarily use smaller mips. Other texture groups and legacy imports have their own limits. Texture memory follows pixel dimensions, along with compression and mipmaps, not file size.
 - Combine small icons into one sprite sheet and select each with `ImageRectOffset` and `ImageRectSize`.
 - Keep rarely opened UI panels in a ScreenGui with `Enabled = false` until the player opens them; a disabled ScreenGui does not create its child widgets.
 - Keep `ReplicatedStorage` to what clients need. Put server-only objects and modules in `ServerStorage`; the server-only hierarchy is excluded from client loading, though assets it shares with replicated objects still download.

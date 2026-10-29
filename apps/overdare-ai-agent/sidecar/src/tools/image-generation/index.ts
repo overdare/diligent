@@ -24,7 +24,7 @@ const IMAGE_FAILURE_GUIDANCE =
   "unless the user explicitly approves an alternative.";
 
 const IMAGE_TOOL_DESCRIPTION =
-  "Generate and save one UI mockup, icon, panel, or illustration directly with Diligent ChatGPT OAuth. No Codex installation is required. " +
+  "Generate and save one UI mockup, icon, panel, illustration, or albedo source artwork directly with Diligent ChatGPT OAuth. No Codex installation is required. " +
   "Attach referenceImages for edits or coherent variants, and set background explicitly for transparent assets. " +
   "Choose the model that fits the task and set model explicitly; honor a model the user names, otherwise make the choice yourself. " +
   "Both models generate and edit images from text and referenceImages. " +
@@ -41,6 +41,9 @@ const IMAGE_TOOL_DESCRIPTION =
   "Transparent requests include actual pixel inspection. Repair opaque output using its preserved file; " +
   "regenerate empty output from the guide or last non-empty source within the same retry budget. " +
   "To use it in Studio, pass the file to studiorpc_asset_manager_import and bind asset.assetid to ImageLabel or ImageButton. " +
+  "For Part or ProceduralModel decoration, first use studiorpc_texture_prepare, generate only its required source artwork, " +
+  "then pass files to studiorpc_texture_apply. Studio paints simple shapes and text and composes and publishes the final atlas. " +
+  "Do not generate a final UV atlas or use GUI objects for flat surface decoration. " +
   IMAGE_FAILURE_GUIDANCE;
 
 const parameters = z
