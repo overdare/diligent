@@ -37,8 +37,8 @@ If `hub_world_categories_list` is unavailable or fails for an authentication or 
 3. Check the Knowledge cards already injected into this session's context for the `overdare.publish_state` card (identified by the `OVERDARE_PUBLISH_STATE` content marker; see Step 1).
 4. If the card is missing or does not say `published: true`, treat the world as **not yet published**: prepare metadata and call `studiorpc_level_publish` with metadata fields.
 5. If the card says `published: true`, treat the world as **already published**: call `studiorpc_level_publish` without metadata fields.
-6. If the publish call returns `{ success: true }`, record `published: true` to Knowledge via `update_knowledge` (stable id `overdare.publish_state`).
-7. Report the result and tell the user to review/confirm on the Creator Hub page in the browser if needed.
+6. If the publish call returns `{ success: true }`, record `published: true` to Knowledge via `update_knowledge` (stable id `overdare.publish_state`). This legacy marker only records a successful Studio publish request, not public availability.
+7. Report the uploaded version separately from the Creator Hub published version and guide the user through the appropriate confirmation or private test steps.
 
 ## Step 1: Determine Whether the World Was Already Published
 
@@ -58,6 +58,8 @@ Interpret it:
 
 - Card missing, or its content does not contain `published: true` → treat the world as **not yet published**. Prepare metadata and call `studiorpc_level_publish` with metadata fields.
 - Card present with `published: true` → treat the world as **already published**. Call `studiorpc_level_publish` without metadata fields.
+
+This card is a hint about prior Studio requests, not proof of the existing world identity, current metadata, or public status. A missing card does not guarantee a CREATE: inspect the project's existing publish target when available, and confirm with the user before overwriting a target that may be unintended.
 
 ## Step 2: Publish When the World Was Already Published
 
@@ -356,7 +358,7 @@ After calling `studiorpc_level_publish`, Studio should open the Creator Hub publ
 
 ### Record the Publish State
 
-Only when `studiorpc_level_publish` returns `{ success: true }`, record the state so future sessions know this world was published:
+Only when `studiorpc_level_publish` returns `{ success: true }`, record the legacy marker so future sessions know a Studio publish request succeeded. It does not establish that the version is public or approved:
 
 ```text
 update_knowledge({
@@ -376,12 +378,14 @@ Do not record anything when the call fails or returns error `-32009` (user cance
 
 ## Step 8: Final User Message
 
-After a successful `studiorpc_level_publish` call, tell the user:
+After a successful `studiorpc_level_publish` call:
 
-- Whether this was a first publish or an update, based on `publishResult.mode` in the tool result (`CREATE` = new world, `UPDATE` = new version of an existing world).
-- That the Creator Hub publish page should now be open in the browser.
-- Whether they need to review and confirm anything on that page.
-- The metadata used, if metadata fields were sent (show the raw, human-readable form — do not show the URL-encoded `description`).
+- Report `publishResult.mode`, `worldId`, and `version` as the Studio upload result, not as a confirmed live or accessible version.
+- Do not claim the Creator Hub published version, approval, access status, or test availability is confirmed unless independently verified. A successful response or a reachable build URL does not verify these states.
+- Tell the user to check the target world and Version tab in Creator Hub. For a public update, select Publish now and Publish if needed, then check Published version and access status. For private testing, use the current version's test QR code or URL instead; do not instruct them to publish publicly unless requested.
+- For `UPDATE`, metadata arguments are ignored. Do not present the supplied `worldName` or other metadata as the current Hub metadata; ask the user to check World Info and edit and save it there if a change is wanted.
+- For `CREATE`, show any supplied metadata in raw, human-readable form and ask the user to review it in Creator Hub.
+- If the expected title and existing target may differ, ask the user to confirm the world ID and title rather than assuming they match.
 
 Keep the message short.
 
