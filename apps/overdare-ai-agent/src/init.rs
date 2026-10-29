@@ -170,9 +170,9 @@ fn deploy_plugins(
 }
 
 /// Sync non-skill directories that mix bundled entries and user additions.
-/// Skills use skill_manifest's journal and revocation policy instead.
+/// Skills use bootstrap_manifest's journal and revocation policy instead.
 ///
-/// Explicitly revoked product agents are removed by skill_manifest and skipped
+/// Explicitly revoked product agents are removed by bootstrap_manifest and skipped
 /// here, including on rollback. Other absent entries remain user-owned.
 fn deploy_managed_dir(
     src: &Path,
@@ -189,7 +189,7 @@ fn deploy_managed_dir(
         let src_child = entry.path();
         let dest_child = dest.join(&name);
         if dir_label == "agents"
-            && crate::skill_manifest::is_agent_revoked(dest.parent().unwrap(), &src_child)
+            && crate::bootstrap_manifest::is_agent_revoked(dest.parent().unwrap(), &src_child)
                 .map_err(std::io::Error::other)?
         {
             continue;
@@ -229,7 +229,7 @@ pub fn run(env: Env, update_applied: bool) -> Result<(), String> {
         return Ok(());
     };
     fs::create_dir_all(&global).map_err(|e| format!("Cannot create {}: {e}", global.display()))?;
-    let _deployment_lock = crate::skill_manifest::DeploymentLock::acquire(&global)?;
+    let _deployment_lock = crate::bootstrap_manifest::DeploymentLock::acquire(&global)?;
     let Some(bootstrap) = resolve_updated_bootstrap_dir(env, &mut log) else {
         return Ok(());
     };
@@ -241,7 +241,7 @@ pub fn run(env: Env, update_applied: bool) -> Result<(), String> {
         .and_then(|json| serde_json::from_str::<crate::update::InstalledVersion>(&json).ok())
         .map(|installed| installed.version)
         .unwrap_or_else(|| bootstrap.display().to_string());
-    crate::skill_manifest::deploy_skills(&bootstrap, &global, &runtime_version, update_applied)?;
+    crate::bootstrap_manifest::deploy_skills(&bootstrap, &global, &runtime_version, update_applied)?;
     // Fresh staging dir for atomic swaps; clear any leftovers from a prior crash.
     let staging = staging_dir(&global);
     let _ = fs::remove_dir_all(&staging);
@@ -249,7 +249,11 @@ pub fn run(env: Env, update_applied: bool) -> Result<(), String> {
         fs::read_dir(&bootstrap).map_err(|e| format!("Cannot read bootstrap dir: {e}"))?;
     for entry in entries.flatten() {
         let name = entry.file_name();
-        if name == "skills" || name == "skills-manifest.json" || name == "agents-manifest.json" {
+        if name == "skills"
+            || name == "skills-manifest.json"
+            || name == "agents-manifest.json"
+            || name == "plugins-manifest.json"
+        {
             continue;
         }
         let src = entry.path();
@@ -274,6 +278,10 @@ pub fn run(env: Env, update_applied: bool) -> Result<(), String> {
         }
     }
     let _ = fs::remove_dir_all(&staging);
+    // Cleanup is not needed to boot; a bad plugin manifest must not block start.
+    if let Err(e) = crate::bootstrap_manifest::remove_revoked_plugins(&bootstrap, &global) {
+        eprintln!("[init] Skipped plugin revocations: {e}");
+    }
     Ok(())
 }
 

@@ -1,7 +1,7 @@
 pub mod cli;
 mod env;
 mod init;
-mod skill_manifest;
+mod bootstrap_manifest;
 mod mcp_protocol;
 mod mcp_router;
 mod monitoring;
