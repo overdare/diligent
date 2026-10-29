@@ -135,6 +135,42 @@ describe("createAnthropicStream", () => {
     }
   });
 
+  test("serializes Sonnet 5.5 Messages requests with all documented efforts and image input", async () => {
+    const model = resolveModel({ provider: "anthropic", modelId: "claude-sonnet-5-5" });
+    for (const effort of ["low", "medium", "high", "xhigh", "max"] as const) {
+      const context: StreamContext = {
+        ...EMPTY_CONTEXT,
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" } }],
+            timestamp: 1,
+          },
+        ],
+        tools: [{ kind: "function", name: "read_file", description: "Read a file", inputSchema: { type: "object" } }],
+      };
+      await createAnthropicStream("test-key")(model, context, { effort, temperature: 0.5 }).result();
+      const request = anthropicCalls.at(-1) as Record<string, unknown>;
+      expect(request.model).toBe("claude-sonnet-5-5");
+      expect(request.max_tokens).toBe(128_000);
+      expect(request.output_config).toEqual({ effort });
+      expect(request.thinking).toMatchObject({ type: "adaptive", display: "summarized" });
+      expect(request.temperature).toBeUndefined();
+      expect(request.tool_choice).toBeUndefined();
+      expect(request.tools).toContainEqual(expect.objectContaining({ name: "read_file" }));
+      expect(request.messages).toContainEqual({
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" },
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      });
+    }
+  });
+
   test("uses always-on adaptive thinking for Claude Opus 5.5", async () => {
     const request = await collectRequest(resolveModel({ provider: "anthropic", modelId: "claude-opus-5-5" }), {
       effort: "medium",
@@ -149,8 +185,11 @@ describe("createAnthropicStream", () => {
     expect(request.output_config).toEqual({ effort: "medium" });
   });
 
-  test("drops stale Opus 5.5 thinking blocks when a replayed conversation prefix changes", async () => {
-    const model = resolveModel({ provider: "anthropic", modelId: "claude-opus-5-5" });
+  test.each([
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+  ])("requests stale-block dropping for %s when a replayed conversation prefix changes", async (modelId) => {
+    const model = resolveModel({ provider: "anthropic", modelId });
     const context: StreamContext = {
       systemPrompt: [{ label: "system", content: "Updated instructions" }],
       messages: [

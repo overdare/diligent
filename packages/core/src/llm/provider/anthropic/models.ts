@@ -42,6 +42,28 @@ export const ANTHROPIC_MODELS = defineProviderModels("anthropic", [
     aliases: ["fable", "fable-5-1"],
   },
   {
+    modelId: "claude-sonnet-5-5",
+    display: "Claude Sonnet 5.5",
+    // Keep the operational context budget aligned with the other Claude cards (official limit: 1M).
+    contextWindow: 500_000,
+    maxOutputTokens: 128_000,
+    inputCostPer1M: 2,
+    outputCostPer1M: 10,
+    cacheReadCostPer1M: 0.1,
+    cacheWriteCostPer1M: 2.5,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+    supportsVision: true,
+    supportsAdaptiveThinking: true,
+    supportsXhighEffort: true,
+    aliases: ["sonnet-5-5"],
+    provenance: {
+      source: "Anthropic Claude Sonnet 5.5 model documentation",
+      sourceUrl: "https://platform.claude.com/docs/en/models/sonnet-5-5/overview",
+      updatedAt: "2026-10-29",
+    },
+  },
+  {
     modelId: "claude-sonnet-5",
     display: "Claude Sonnet 5",
     contextWindow: 500_000,
