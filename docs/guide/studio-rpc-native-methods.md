@@ -71,6 +71,12 @@ client. Omitting both selects the main client. At least one section must be requ
 { "character": true, "instances": true, "pieSessionId": "session-id", "clientId": "client-id" }
 ```
 
+For player-specific tests, check the current local player for each client after every play or restart.
+`targeted` identifies the default client, not a player index. For UI input, use a named target when
+possible; it resolves the live rectangle. When testing a specific point, observe that client's current
+UI rectangle and viewport after play, restart, or resize, and derive normalized coordinates from that
+observation instead of reusing coordinates from a previous layout.
+
 ## Geometry drafts and placed models
 
 `studiorpc_proceduralmodel_run` runs a draft recipe without placing a model. The world must already

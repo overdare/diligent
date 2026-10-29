@@ -347,9 +347,11 @@ function createPieStatusTool(callRpc: CallRpc): Tool {
   return {
     name: "studiorpc_game_pie_status",
     description:
-      "Report PIE session state, pieSessionId, and clients. targeted marks the default client. " +
-      "Input, move, and studiorpc_game_character_read accept another injectable clientId; studiorpc_game_observe " +
-      "and studiorpc_game_screenshot accept pieSessionId with clientId; the camera uses the targeted client.",
+      "Report PIE session state, pieSessionId, and clients. targeted marks the default client, not a player " +
+      "index. After each play or restart, identify each client's actual local player from game state before " +
+      "running player-specific scenarios. Input, move, and studiorpc_game_character_read accept another " +
+      "injectable clientId; studiorpc_game_observe and studiorpc_game_screenshot accept pieSessionId with " +
+      "clientId; the camera uses the targeted client.",
     parameters: z.object({}),
     supportParallel: true,
     async execute(_args, ctx): Promise<ToolResult> {
@@ -370,8 +372,11 @@ function createInputInjectTool(callRpc: CallRpc): Tool {
       "Apply a self-contained ordered batch of PIE keyboard, pointer, look, scroll, and wait events. Target " +
       "ids resolve automatically. The expanded batch is limited to 64 events and 60 seconds; every down must " +
       "have an up. Physical input in the targeted viewport cancels the batch and releases held state. On " +
-      "failure, earlier events remain applied and failedEventIndex marks the stop. Verify game effects with " +
-      "studiorpc_game_observe. characterTrack and fellAtEvent appear when the batch moved or dropped the character.",
+      "failure, earlier events remain applied and failedEventIndex marks the stop. For UI input, prefer a " +
+      "named target which resolves its live rect. If specific coordinates are needed, observe the same " +
+      "client's current UI rect and viewport after play, restart, or resize; do not reuse old coordinates. " +
+      "Verify game effects with studiorpc_game_observe. characterTrack and fellAtEvent appear when the batch " +
+      "moved or dropped the character.",
     parameters: injectParams,
     async execute(args: InjectParams, ctx): Promise<ToolResult> {
       const toolCallRpc = withSignal(callRpc, ctx.signal);
