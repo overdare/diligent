@@ -1,8 +1,9 @@
 // @summary Runtime eval for preserving a fresh second-turn request across automatic compaction
 
 import type { RuntimeConfig } from "@diligent/runtime";
-import type { RuntimeEvalExecution, RuntimeEvalTask } from "../../runtime-task";
-import type { EvalDimension, EvalProfile } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import type { EvalProfile } from "../../task";
+import { compactionEndCount, RuntimeGrade } from "./grading";
 import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -76,35 +77,39 @@ export const freshPromptAfterCompactionTask: RuntimeEvalTask<FreshPromptAfterCom
   verify: (world, signal) => verifyExactFiles(world, { [TARGET_PATH]: world.expected }, signal),
   snapshotWorld: async (world) => ({ artifact: await exactFile(world.root, TARGET_PATH) }),
   evaluate(input) {
-    const firstTurnToolIds = new Set(
-      input.turns[0]?.coreEvents.flatMap(({ event }) => (event.type === "tool_start" ? [event.toolCallId] : [])) ?? [],
+    const grade = new RuntimeGrade("fresh_prompt");
+    const archivalTurn = input.turns[0]?.index ?? 0;
+    const archivalWrites = input.toolCalls.filter(
+      (call) => call.capability === "write" && call.turnIndex === archivalTurn,
     );
-    if (input.toolCalls.some((call) => firstTurnToolIds.has(call.toolCallId) && call.capability === "write"))
-      return fail("early_mutation", "The archival turn mutated the workspace.", "runtime_policy");
+    if (archivalWrites.some((call) => call.outcome === "success"))
+      return grade.fail("early_mutation", "The archival turn mutated the workspace.", "runtime_policy");
     if (input.verifier?.timedOut)
-      return fail("verifier_timeout", "Fresh-request verification timed out.", "harness_terminal");
+      return grade.fail("verifier_timeout", "Fresh-request verification timed out.", "harness_terminal");
     if (input.verifier?.exitCode !== 0)
-      return fail("artifact", "The fresh post-compaction requirement was not applied.", "semantic_goal");
+      return grade.fail("artifact", "The fresh post-compaction requirement was not applied.", "semantic_goal");
     const artifact = input.workspace.final.entries.find((entry) => entry.path === TARGET_PATH);
     const control = input.workspace.final.entries.find((entry) => entry.path === CONTROL_PATH);
     if (artifact?.sha256 !== input.world.expectedHash)
-      return fail("artifact_bytes", "The fresh requirement was not preserved exactly.", "format_contract");
+      return grade.fail("artifact_bytes", "The fresh requirement was not preserved exactly.", "format_contract");
     if (control?.sha256 !== input.world.controlHash)
-      return fail("protected_state", "Protected state changed.", "runtime_policy");
-    const secondTurnCompactions = input.turns[1] ? countCompactionEnds(input.turns[1].notifications) : 0;
-    return secondTurnCompactions === 0
-      ? {
-          passed: true,
-          diagnostics: [
-            {
-              dimension: "efficiency",
-              code: "fresh_prompt.compaction_not_observed",
-              message:
-                "No second-turn compaction notification was captured; deterministic coverage owns lifecycle plumbing.",
-            },
-          ],
-        }
-      : { passed: true };
+      return grade.fail("protected_state", "Protected state changed.", "runtime_policy");
+    const compactionsByTurn = input.turns.map(compactionEndCount);
+    if (compactionsByTurn.every((count) => count === 0))
+      return grade.fail("compaction_missing", "No automatic compaction completed in any turn.", "behavior");
+
+    if (archivalWrites.length > 0)
+      grade.note("archival_write_attempt", "The archival turn attempted a write that did not take effect.");
+    if ((compactionsByTurn[1] ?? 0) === 0)
+      grade.note(
+        "compaction_not_observed",
+        "Compaction completed before the fresh request rather than while it was being applied.",
+        { impact: "info" },
+      );
+    const failed = input.toolCalls.filter((call) => call.outcome !== "success");
+    if (failed.length > 0)
+      grade.note("tool_recovery", `Recovered from ${failed.length} failed or rejected tool call(s).`);
+    return grade.pass();
   },
 };
 
@@ -114,19 +119,4 @@ async function createCompactingConfig(
 ): Promise<RuntimeConfig> {
   const config = await createFixtureRuntimeConfig(world, profile);
   return { ...config, compaction: { enabled: true, reservePercent: 99.95, timeoutMs: 60_000 } };
-}
-
-function countCompactionEnds(notifications: RuntimeEvalExecution<unknown>["turns"][number]["notifications"]): number {
-  return notifications.filter((notification) => {
-    if (notification.method !== "agent/event" || !isRecord(notification.params)) return false;
-    return isRecord(notification.params.event) && notification.params.event.type === "compaction_end";
-  }).length;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `fresh_prompt.${code}`, message, dimension };
 }

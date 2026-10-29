@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { COMPACTION_MIN_INPUT_TOKENS } from "@diligent/core/compaction-contract";
 import type { RuntimeEvalTask, RuntimeVerifierResult } from "../../runtime-task";
 import type { EvalProfile } from "../../task";
+import { isRecord } from "../core/helpers";
+import { RuntimeGrade, successfulWritesTo } from "./grading";
 import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -13,6 +15,8 @@ import {
   seededToken,
   sha256Text,
 } from "./helpers";
+
+const CONTEXT_PATH = "CONTEXT.json";
 
 export interface ManualCompactionResumeWorld extends RuntimeFixtureWorld {
   alpha: string;
@@ -43,7 +47,7 @@ export const manualCompactionResumeTask: RuntimeEvalTask<ManualCompactionResumeW
       expected,
       expectedHash: sha256Text(expected),
       protectedPaths: [],
-      allowedChanges: ["CONTEXT.json"],
+      allowedChanges: [CONTEXT_PATH],
     };
   },
   createRuntimeConfig: createCompactionRuntimeConfig,
@@ -69,32 +73,35 @@ export const manualCompactionResumeTask: RuntimeEvalTask<ManualCompactionResumeW
   snapshotWorld: async (world) => ({
     alpha: world.alpha,
     beta: world.beta,
-    result: await exactFile(world.root, "CONTEXT.json"),
+    result: await exactFile(world.root, CONTEXT_PATH),
   }),
   evaluate(input) {
-    if (!input.toolCalls.some((call) => call.capability === "write" && !call.error))
-      return {
-        passed: false,
-        code: "manual_compaction.no_write",
-        message: "No continuation write succeeded.",
-        dimension: "behavior",
-      };
-    const result = input.workspace.final.entries.find((entry) => entry.path === "CONTEXT.json");
+    const grade = new RuntimeGrade("manual_compaction");
+    if (!input.compactions.some((compaction) => compaction.response.compacted))
+      return grade.fail("not_compacted", "The manual compaction step did not compact the session.", "behavior");
     if (input.verifier?.timedOut)
-      return {
-        passed: false,
-        code: "manual_compaction.wrong_context",
-        message: "The independent semantic JSON verifier timed out.",
-        dimension: "harness_terminal",
-      };
-    if (result?.kind === "file" && input.verifier?.exitCode === 0) return { passed: true };
-    const formatFailure = input.verifier?.stderr.startsWith("format_contract:") ?? false;
-    return {
-      passed: false,
-      code: "manual_compaction.wrong_context",
-      message: "CONTEXT.json did not contain the exact pre-compaction facts and declared envelope.",
-      dimension: formatFailure ? "format_contract" : "semantic_goal",
-    };
+      return grade.fail("wrong_context", "The independent semantic JSON verifier timed out.", "harness_terminal");
+    const result = input.workspace.final.entries.find((entry) => entry.path === CONTEXT_PATH);
+    if (result?.kind !== "file" || input.verifier?.exitCode !== 0)
+      return grade.fail(
+        "wrong_context",
+        "CONTEXT.json did not contain the exact pre-compaction facts and declared envelope.",
+        input.verifier?.stderr.startsWith("format_contract:") ? "format_contract" : "semantic_goal",
+      );
+    const continuationTurn = input.turns.at(-1)?.index;
+    const writes = successfulWritesTo(input, CONTEXT_PATH);
+    if (!writes.some((call) => call.turnIndex === continuationTurn))
+      return grade.fail(
+        "no_write",
+        "CONTEXT.json was not written after compaction and resume, so the compacted facts were not exercised.",
+        "behavior",
+      );
+    if (writes.some((call) => call.turnIndex !== continuationTurn))
+      grade.note("pre_compaction_write", "CONTEXT.json was also written before compaction.");
+    const failed = input.toolCalls.filter((call) => call.outcome !== "success");
+    if (failed.length > 0)
+      grade.note("tool_recovery", `Recovered from ${failed.length} failed or rejected tool call(s).`);
+    return grade.pass();
   },
 };
 
@@ -109,12 +116,11 @@ async function verifyContextJson(world: ManualCompactionResumeWorld): Promise<Ru
   let stdout = "";
   let stderr = "";
   try {
-    const text = await readFile(join(world.root, "CONTEXT.json"), "utf8");
+    const text = await readFile(join(world.root, CONTEXT_PATH), "utf8");
     const body = text.endsWith("\n") ? text.slice(0, -1) : text;
     const parsed: unknown = JSON.parse(body);
     const semanticValid =
       isRecord(parsed) &&
-      !Array.isArray(parsed) &&
       Object.keys(parsed).sort().join(",") === "alpha,beta" &&
       parsed.alpha === world.alpha &&
       parsed.beta === world.beta;
@@ -129,7 +135,7 @@ async function verifyContextJson(world: ManualCompactionResumeWorld): Promise<Ru
     stderr = error instanceof Error ? error.message : String(error);
   }
   return {
-    argv: ["semantic-json", "CONTEXT.json"],
+    argv: ["semantic-json", CONTEXT_PATH],
     exitCode: valid ? 0 : 1,
     elapsedMs: Math.round(performance.now() - started),
     stdout,
@@ -144,8 +150,4 @@ async function createCompactionRuntimeConfig(world: ManualCompactionResumeWorld,
     ...config,
     compaction: { enabled: true, reservePercent: 16, timeoutMs: 180_000 },
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
 }

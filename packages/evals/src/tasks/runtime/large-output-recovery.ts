@@ -2,8 +2,9 @@
 
 import type { BundledToolProvider } from "@diligent/runtime";
 import { z } from "zod";
-import type { RuntimeEvalExecution, RuntimeEvalTask, RuntimeWorldSnapshot } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import { isRecord } from "../core/helpers";
+import { finalAssistantText, RuntimeGrade, unwrapReply } from "./grading";
 import {
   createIsolatedFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -17,7 +18,8 @@ const FIXTURE_TOOL = "retrieve_archived_record";
 const PROVIDER_ID = "eval-large-output-recovery";
 const MANIFEST_PATH = "manifest.json";
 const KEEP_PATH = ".git/.keep";
-const OUTPUT_PATH = "$TOOL_OUTPUT/full-output-000001.txt";
+const TOOL_OUTPUT_ROOT = "$TOOL_OUTPUT";
+const MAX_BOUNDED_READ_LINES = 20;
 const RETAINED_BYTES = 1_024;
 const FACT_LINE = 501;
 const SENTINEL_LINE = 450;
@@ -103,22 +105,51 @@ export const largeOutputRecoveryTask: RuntimeEvalTask<LargeOutputRecoveryWorld> 
     protectedPaths: world.protectedPaths,
   }),
   evaluate(input) {
-    if (!input.turns[0]) return fail("turn", "The recovery turn is missing.");
-    const failure =
-      validateManifest(input) ?? validateTools(input) ?? validateForbiddenSurfaces(input) ?? validateFinal(input);
-    if (failure) return failure;
-    return input.toolCalls.length === 3
-      ? {
-          passed: true,
-          diagnostics: [
-            {
-              dimension: "efficiency" as const,
-              code: "large_output_recovery.duplicate_retrieval",
-              message: "The same archived record was retrieved twice before bounded recovery.",
-            },
-          ],
-        }
-      : { passed: true };
+    const grade = new RuntimeGrade("large_output_recovery");
+    const world = input.world;
+    const outputReads = input.toolCalls.filter(
+      (call) =>
+        call.capability === "read" &&
+        isRecord(call.input) &&
+        [call.input.file_path, call.input.path].some(
+          (path) => typeof path === "string" && path.replaceAll("\\", "/").startsWith(`${TOOL_OUTPUT_ROOT}/`),
+        ),
+    );
+    const recoveryReads = outputReads.filter(
+      (call) => call.outcome === "success" && JSON.stringify(call.output ?? "").includes(world.hiddenFact),
+    );
+    const recovery = recoveryReads[0];
+    if (!recovery)
+      return grade.fail(
+        "tools",
+        "No successful read of the spilled full output recovered the hidden fact.",
+        "behavior",
+      );
+    const answer = finalAssistantText(input);
+    if (!answer.includes(world.hiddenFact))
+      return grade.fail(
+        "final",
+        "The final response did not report the recovered authorization value.",
+        "semantic_goal",
+      );
+    if (!isAuthorizationAnswer(answer, world.hiddenFact))
+      return grade.fail(
+        "final_format",
+        "The final response was not the value alone or one declared label followed by the value.",
+        "format_contract",
+      );
+    const retrievals = input.toolCalls.filter((call) => call.name === FIXTURE_TOOL);
+    if (retrievals.filter((call) => call.outcome === "success").length > 1)
+      grade.note("duplicate_retrieval", "The same archived record was retrieved more than once.");
+    if (retrievals.some((call) => call.outcome !== "success"))
+      grade.note("failed_retrieval", "An archived-record retrieval failed before recovery.");
+    if (outputReads.length > recoveryReads.length)
+      grade.note("read_recovery", "A full-output read missed the fact or failed.");
+    if (recoveryReads.length > 1) grade.note("repeated_recovery_read", "The fact was recovered by more than one read.");
+    const limit = isRecord(recovery.input) ? recovery.input.limit : undefined;
+    if (typeof limit !== "number" || limit > MAX_BOUNDED_READ_LINES)
+      grade.note("unbounded_read", `The recovering read was not bounded to ${MAX_BOUNDED_READ_LINES} lines.`);
+    return grade.pass();
   },
 };
 
@@ -160,150 +191,9 @@ function generatePayload(world: Pick<LargeOutputRecoveryWorld, "guidance" | "hid
   }).join("\n");
 }
 
-function validateManifest(input: RuntimeEvalExecution<LargeOutputRecoveryWorld>) {
-  if (
-    !hasExactInitialManifest(input.workspace.initial, input.world) ||
-    !sameProjectManifest(input.workspace.initial, input.workspace.final)
-  )
-    return fail("manifest", "The protected manifest kind, size, hash, membership, or final project state changed.");
-}
-
-function validateTools(input: RuntimeEvalExecution<LargeOutputRecoveryWorld>) {
-  const fixture = input.toolCalls[0];
-  const duplicate = input.toolCalls.length === 3 ? input.toolCalls[1] : undefined;
-  const read = input.toolCalls.at(-1);
-  if (
-    (input.toolCalls.length !== 2 && input.toolCalls.length !== 3) ||
-    !fixture ||
-    !read ||
-    !isExactFixtureCall(fixture, input, 1) ||
-    (duplicate !== undefined && !isExactFixtureCall(duplicate, input, 2)) ||
-    read.toolCallId.length === 0 ||
-    new Set(input.toolCalls.map((call) => call.toolCallId)).size !== input.toolCalls.length ||
-    read.sequence !== input.toolCalls.length ||
-    read.name !== "read" ||
-    read.capability !== "read" ||
-    read.outcome !== "success" ||
-    read.error !== undefined ||
-    read.childThreadId !== undefined ||
-    read.threadId !== input.session.threadId ||
-    !isBoundedFactReadInput(read.input, input.world.factLine)
-  )
-    return fail("tools", "The advertised or executed tools, order, actor, outcome, or strict arguments were wrong.");
-}
-
-function isExactFixtureCall(
-  call: RuntimeEvalExecution<LargeOutputRecoveryWorld>["toolCalls"][number],
-  input: RuntimeEvalExecution<LargeOutputRecoveryWorld>,
-  sequence: number,
-): boolean {
-  return (
-    call.toolCallId.length > 0 &&
-    call.sequence === sequence &&
-    call.name === FIXTURE_TOOL &&
-    call.capability === "execute" &&
-    call.outcome === "success" &&
-    call.error === undefined &&
-    call.childThreadId === undefined &&
-    call.threadId === input.session.threadId &&
-    JSON.stringify(call.input) === JSON.stringify({ request_id: input.world.argument })
-  );
-}
-
-function isBoundedFactReadInput(value: unknown, factLine: number): boolean {
-  if (!isRecord(value) || Object.keys(value).sort().join(",") !== "file_path,limit,offset") return false;
-  const { file_path, offset, limit } = value;
-  return (
-    file_path === OUTPUT_PATH &&
-    typeof offset === "number" &&
-    Number.isInteger(offset) &&
-    typeof limit === "number" &&
-    Number.isInteger(limit) &&
-    offset >= 1 &&
-    limit >= 1 &&
-    limit <= 20 &&
-    offset <= factLine &&
-    factLine < offset + limit
-  );
-}
-
-function validateForbiddenSurfaces(input: RuntimeEvalExecution<LargeOutputRecoveryWorld>) {
-  if (
-    input.compactions.length !== 0 ||
-    input.protocolActions.length !== 0 ||
-    input.approvals.length !== 0 ||
-    input.userInputRequests.length !== 0 ||
-    input.childSessions.length !== 0 ||
-    input.verifier !== undefined ||
-    input.runtimeState.diff.some((change) => change.category !== "infrastructure" && change.category !== "sessions") ||
-    input.toolCalls.some((call) => call.name !== FIXTURE_TOOL && call.name !== "read")
-  )
-    return fail(
-      "forbidden",
-      "A forbidden mutation, action, approval, input, child, compaction, verifier, or tool appeared.",
-    );
-}
-
-function validateFinal(input: RuntimeEvalExecution<LargeOutputRecoveryWorld>) {
-  const final = [...input.turns[0]!.messages].reverse().find((message) => message.role === "assistant");
-  const textBlocks = final?.content.filter((block) => block.type === "text") ?? [];
-  if (
-    !final ||
-    !Array.isArray(final.content) ||
-    final.content.some((block) => block.type !== "thinking" && block.type !== "text") ||
-    textBlocks.length !== 1 ||
-    Object.keys(textBlocks[0]!).length !== 2 ||
-    !isExclusiveAuthorizationAnswer(textBlocks[0]!.text, input.world.hiddenFact)
-  )
-    return fail("final", "The final response was not the exclusive authorization value in a declared format.");
-}
-
-function isExclusiveAuthorizationAnswer(text: string, hiddenFact: string): boolean {
-  if (text === hiddenFact) return true;
+/** Accepts the value alone or after the declared label, optionally wrapped in backticks or a code fence. */
+function isAuthorizationAnswer(answer: string, hiddenFact: string): boolean {
+  const body = unwrapReply(answer);
   const label = "The authorization value is:";
-  if (!text.startsWith(label)) return false;
-  const labeledValue = text.slice(label.length).trim();
-  return labeledValue === hiddenFact || labeledValue === `\`${hiddenFact}\``;
-}
-
-function hasExactInitialManifest(snapshot: RuntimeWorldSnapshot, world: LargeOutputRecoveryWorld): boolean {
-  const expected = [
-    { path: ".git", kind: "directory", size: 0 },
-    { path: KEEP_PATH, kind: "file", size: 17, sha256: sha256Text("fixture boundary\n"), executable: false },
-    {
-      path: MANIFEST_PATH,
-      kind: "file",
-      size: Buffer.byteLength(world.manifestContent),
-      sha256: world.manifestHash,
-      executable: false,
-    },
-  ];
-  return JSON.stringify(snapshot.entries) === JSON.stringify(expected);
-}
-
-function sameProjectManifest(initial: RuntimeWorldSnapshot, final: RuntimeWorldSnapshot): boolean {
-  const project = (snapshot: RuntimeWorldSnapshot) =>
-    snapshot.entries.filter((entry) => entry.path !== ".diligent" && !entry.path.startsWith(".diligent/"));
-  return JSON.stringify(project(initial)) === JSON.stringify(project(final));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-const LARGE_OUTPUT_FAILURE_DIMENSIONS = {
-  turn: "behavior",
-  manifest: "runtime_policy",
-  tools: "runtime_policy",
-  forbidden: "runtime_policy",
-  final: "semantic_goal",
-} as const satisfies Record<string, EvalDimension>;
-
-function fail(code: keyof typeof LARGE_OUTPUT_FAILURE_DIMENSIONS, message: string) {
-  return {
-    passed: false as const,
-    code: `large_output_recovery.${code}`,
-    message,
-    dimension: LARGE_OUTPUT_FAILURE_DIMENSIONS[code],
-  };
+  return (body.startsWith(label) ? unwrapReply(body.slice(label.length)) : body) === hiddenFact;
 }

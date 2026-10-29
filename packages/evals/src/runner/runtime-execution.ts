@@ -21,7 +21,7 @@ import type {
   RuntimeWorldSnapshot,
 } from "../runtime-task";
 import { deriveEvalStatus, type EvalDiagnostic, type EvalFailure, type EvalProfile, ZERO_USAGE } from "../task";
-import { createBudgetGraceDiagnostics, EVAL_BUDGET_GRACE, resolveEvalHardLimits } from "./budget-policy";
+import { createBudgetGraceDiagnostics, describeHardLimitExceeded, resolveEvalHardLimits } from "./budget-policy";
 import { RuntimeDeadline, RuntimeDeadlineError, raceBounded } from "./runtime-deadline";
 import { checkRuntimeInvariants } from "./runtime-invariants";
 import { createRuntimeEvalOutputStore, type RuntimeEvalOutputStore } from "./runtime-output-store";
@@ -32,9 +32,9 @@ import { normalizeEvidencePath, transformRuntimeTools } from "./runtime-tool-pol
 import {
   canonicalizeTemporaryRoot,
   captureWorkspace,
-  normalizePlatformAlias,
   removeTemporaryRoot,
   resolveWorkspacePath,
+  rootSpellings,
   workspaceDiff,
 } from "./runtime-workspace";
 
@@ -146,9 +146,7 @@ export async function runRuntimeEvalExecution(input: {
           if (providerTurns <= hardLimits.maxTurns) return;
           budgetTerminated = true;
           budgetReason = "turn_limit";
-          throw new Error(
-            `Provider-turn hard limit exceeded (${hardLimits.maxTurns}; target ${task.limits.maxTurns} + ${EVAL_BUDGET_GRACE.turns} grace).`,
-          );
+          throw new Error(describeHardLimitExceeded("turns", hardLimits.maxTurns, task.limits.maxTurns));
         },
         (model, context, options) => {
           providerCalls.push(
@@ -210,6 +208,8 @@ export async function runRuntimeEvalExecution(input: {
                   budgetReason = "changed_bytes";
                 }
               },
+              onTraceComplete: (trace) => task.observeToolTrace?.(world, trace),
+              currentTurnIndex: () => activeTurnIndex,
             });
           },
         }),
@@ -447,9 +447,9 @@ export async function runRuntimeEvalExecution(input: {
         code: `budget_exceeded.${budgetReason}`,
         message:
           budgetReason === "turn_limit"
-            ? `Provider-turn count exceeded hard limit ${hardLimits.maxTurns} (target ${task.limits.maxTurns} + ${EVAL_BUDGET_GRACE.turns} grace).`
+            ? describeHardLimitExceeded("turns", hardLimits.maxTurns, task.limits.maxTurns)
             : budgetReason === "tool_call_limit"
-              ? `Tool-call count exceeded hard limit ${hardLimits.maxToolCalls} (target ${task.limits.maxToolCalls} + ${EVAL_BUDGET_GRACE.toolCalls} grace).`
+              ? describeHardLimitExceeded("toolCalls", hardLimits.maxToolCalls, task.limits.maxToolCalls)
               : budgetReason === "user_input_limit"
                 ? `User-input request count exceeded ${task.limits.maxUserInputRequests}.`
                 : budgetReason === "child_agent_limit"
@@ -821,16 +821,11 @@ function classifyRuntimeTerminalFailure(execution: RuntimeEvalExecution<unknown>
 
 function normalizeWorkspaceEvidence<T>(value: T, root: string, outputRoot?: string): T {
   if (typeof value === "string") {
-    const aliasedRoot = root && process.platform === "darwin" ? `/private${normalizePlatformAlias(root)}` : root;
-    const aliasedOutputRoot =
-      outputRoot && process.platform === "darwin" ? `/private${normalizePlatformAlias(outputRoot)}` : outputRoot;
     let normalized: string = value;
-    for (const candidate of [aliasedOutputRoot, outputRoot]) {
-      if (candidate) normalized = normalized.split(candidate).join("$TOOL_OUTPUT");
-    }
-    for (const candidate of [aliasedRoot, root]) {
-      if (candidate) normalized = normalized.split(candidate).join("$WORKSPACE");
-    }
+    for (const candidate of outputRoot ? rootSpellings(outputRoot) : [])
+      normalized = normalized.split(candidate).join("$TOOL_OUTPUT");
+    for (const candidate of root ? rootSpellings(root) : [])
+      normalized = normalized.split(candidate).join("$WORKSPACE");
     return normalizeEvidencePath(normalized) as T;
   }
   if (Array.isArray(value)) return value.map((item) => normalizeWorkspaceEvidence(item, root, outputRoot)) as T;

@@ -2,7 +2,7 @@
 
 import type { BundledToolProvider, PluginHookFn } from "@diligent/runtime";
 import type { RuntimeEvalTask } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import { RuntimeGrade, successfulWritesTo } from "./grading";
 import {
   createIsolatedFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -67,47 +67,32 @@ export const hookContextFollowTask: RuntimeEvalTask<HookContextFollowWorld> = {
   verify: (world, signal) => verifyExactFiles(world, { [OUTPUT_PATH]: world.expected }, signal),
   snapshotWorld: async (world) => ({ result: await exactFile(world.root, OUTPUT_PATH) }),
   evaluate(input) {
-    const successfulWrites = input.toolCalls.filter(
-      (call) => call.capability === "write" && call.outcome === "success",
-    );
-    if (
-      successfulWrites.length === 0 ||
-      input.toolCalls.some(
-        (call) => call.capability !== "write" || (call.outcome !== "success" && call.outcome !== "runtime_error"),
-      )
-    )
-      return fail(
-        "tool_scope",
-        "The model must stay within declared writes and produce a successful write.",
-        "runtime_policy",
-      );
+    const grade = new RuntimeGrade("hook_context_follow");
     if (input.verifier?.timedOut)
-      return fail("verifier_timeout", "Independent exact-file verification timed out.", "harness_terminal");
+      return grade.fail("verifier_timeout", "Independent exact-file verification timed out.", "harness_terminal");
     if (input.verifier?.exitCode !== 0)
-      return fail("verifier", "Independent exact-file verification failed.", "format_contract");
+      return grade.fail("verifier", "Independent exact-file verification failed.", "format_contract");
     const output = input.workspace.final.entries.find((entry) => entry.path === OUTPUT_PATH);
     if (output?.sha256 !== input.world.expectedHash)
-      return fail(
+      return grade.fail(
         "output",
         "HOOK.txt did not combine the user request with the injected constraint.",
         "format_contract",
       );
-    const recoveryCount = input.toolCalls.length - 1;
-    return recoveryCount > 0
-      ? {
-          passed: true,
-          diagnostics: [
-            {
-              dimension: "efficiency",
-              code: "hook_context_follow.write_recovery",
-              message: `Observed ${recoveryCount} additional bounded write attempt(s).`,
-            },
-          ],
-        }
-      : { passed: true };
+    const failedWrites = input.toolCalls.filter((call) => call.capability === "write" && call.outcome !== "success");
+    if (failedWrites.length > 0)
+      grade.note("write_recovery", `Observed ${failedWrites.length} failed write attempt(s) before completion.`);
+    if (successfulWritesTo(input, OUTPUT_PATH).length > 1)
+      grade.note("repeated_write", "HOOK.txt was written more than once.");
+    const otherCalls = input.toolCalls.filter((call) => call.capability !== "write");
+    if (otherCalls.length > 0)
+      grade.note(
+        "non_write_call",
+        `Observed ${otherCalls.length} non-write tool call(s), such as verification reads.`,
+        {
+          impact: "info",
+        },
+      );
+    return grade.pass();
   },
 };
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `hook_context_follow.${code}`, message, dimension };
-}

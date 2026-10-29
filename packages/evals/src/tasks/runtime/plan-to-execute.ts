@@ -1,8 +1,8 @@
 // @summary Runtime eval for carrying an opaque diagnosis across a plan-to-execute transition
 
 import { unlink } from "node:fs/promises";
-import type { RuntimeEvalTask, RuntimeToolTrace } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import { finalAssistantText, passingCommandRuns, RuntimeGrade, successfulReadsOf } from "./grading";
 import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -110,71 +110,35 @@ export const planToExecuteTask: RuntimeEvalTask<PlanToExecuteWorld> = {
   },
   snapshotWorld: async (world) => ({ source: await exactFile(world.root, SOURCE_PATH) }),
   evaluate(input) {
-    const firstTurnIds = new Set(
-      input.turns[0]!.coreEvents.flatMap(({ event }) => (event.type === "tool_start" ? [event.toolCallId] : [])),
-    );
-    const firstTurnCalls = input.toolCalls.filter((call) => firstTurnIds.has(call.toolCallId));
-    if (firstTurnCalls.some((call) => !["read", "grep", "glob", "ls"].includes(call.name)))
-      return fail("plan_mutation", "The planning turn used a non-read tool.", "runtime_policy");
-    if (!firstTurnCalls.some((call) => call.name === "read" && toolPath(call.input).endsWith(DIAGNOSIS_PATH)))
-      return fail("diagnosis", "The planning turn did not inspect the private contract.", "behavior");
-    const planText = lastAssistantText(input.turns[0]!.messages);
+    const grade = new RuntimeGrade("plan_to_execute");
+    const planCalls = input.toolCalls.filter((call) => call.turnIndex === 0);
+    if (planCalls.some((call) => call.capability !== "read" && call.outcome === "success"))
+      return grade.fail("plan_mutation", "The planning turn ran a non-read tool successfully.", "runtime_policy");
+    const rejected = planCalls.filter((call) => call.capability !== "read");
+    if (rejected.length > 0)
+      grade.note("plan_rejected_non_read", `${rejected.length} non-read call(s) were rejected in the planning turn.`);
+    if (successfulReadsOf(input, DIAGNOSIS_PATH).length === 0)
+      return grade.fail("diagnosis", "The planning turn did not inspect the private contract.", "behavior");
+    const planText = input.turns[0] ? finalAssistantText({ turns: [input.turns[0]] }) : "";
     if (
       !planText.includes(input.world.token) ||
       !planText.includes(String(input.world.multiplier)) ||
       !planText.includes(String(input.world.offset))
     )
-      return fail("plan_context", "The plan did not retain every opaque contract detail.", "semantic_goal");
-    const writes = input.toolCalls.filter((call) => call.capability === "write" && call.outcome === "success");
-    if (writes.length === 0) return fail("no_write", "No implementation write succeeded.", "behavior");
-    const passingTest = input.toolCalls.filter(isPassingBunTest).at(-1);
-    if (!passingTest || passingTest.sequence <= Math.max(...writes.map((call) => call.sequence)))
-      return fail("no_test", "The final implementation was not followed by a passing bun test.", "behavior");
+      return grade.fail("plan_context", "The plan did not retain every opaque contract detail.", "semantic_goal");
     if (input.verifier?.timedOut)
-      return fail("verifier_timeout", "Hidden contract verification timed out.", "harness_terminal");
-    return input.verifier?.exitCode === 0
-      ? { passed: true }
-      : fail("contract", "The implementation did not satisfy the retained private contract.", "semantic_goal");
+      return grade.fail("verifier_timeout", "Hidden contract verification timed out.", "harness_terminal");
+    if (input.verifier?.exitCode !== 0)
+      return grade.fail(
+        "contract",
+        "The implementation did not satisfy the retained private contract.",
+        "semantic_goal",
+      );
+    const writes = input.toolCalls.filter((call) => call.capability === "write" && call.outcome === "success");
+    if (writes.length === 0) return grade.fail("no_write", "No implementation write succeeded.", "behavior");
+    const lastWrite = Math.max(...writes.map((call) => call.sequence));
+    if (!passingCommandRuns(input, "bun test").some((call) => call.sequence > lastWrite))
+      return grade.fail("no_test", "The final implementation was not followed by a passing `bun test`.", "behavior");
+    return grade.pass();
   },
 };
-
-function isPassingBunTest(call: RuntimeToolTrace): boolean {
-  return (
-    call.name === "bash" &&
-    commandOf(call.input) === "bun test" &&
-    call.outcome === "success" &&
-    exitCodeOf(call.output) === 0
-  );
-}
-
-function lastAssistantText(messages: import("@diligent/core/message-contract").Message[]): string {
-  const last = messages.filter((message) => message.role === "assistant").at(-1);
-  return (
-    last?.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("") ?? ""
-  );
-}
-
-function toolPath(value: unknown): string {
-  return isRecord(value) && typeof value.file_path === "string" ? value.file_path : "";
-}
-
-function commandOf(value: unknown): string | undefined {
-  return isRecord(value) && typeof value.command === "string" ? value.command.trim() : undefined;
-}
-
-function exitCodeOf(value: unknown): number | undefined {
-  return isRecord(value) && isRecord(value.metadata) && typeof value.metadata.exitCode === "number"
-    ? value.metadata.exitCode
-    : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `plan_to_execute.${code}`, message, dimension };
-}

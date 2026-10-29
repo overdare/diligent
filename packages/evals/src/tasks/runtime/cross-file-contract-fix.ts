@@ -1,7 +1,7 @@
 // @summary Runtime eval for an autonomous parser-caller contract repair verified by behavior
 
-import type { RuntimeEvalTask, RuntimeToolTrace } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import { passingCommandRuns, RuntimeGrade } from "./grading";
 import {
   createIsolatedFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -90,42 +90,16 @@ export const crossFileContractFixTask: RuntimeEvalTask<CrossFileContractFixWorld
     caller: await exactFile(world.root, CALLER_PATH),
   }),
   evaluate(input) {
-    const writes = input.toolCalls.filter((call) => call.capability === "write" && call.outcome === "success");
-    if (writes.length === 0) return fail("write", "No implementation mutation succeeded.", "behavior");
-    const passingTest = input.toolCalls.filter(isPassingBunTest).at(-1);
-    if (!passingTest || passingTest.sequence <= Math.max(...writes.map((call) => call.sequence)))
-      return fail("test", "The final mutation was not followed by a passing project test.", "behavior");
+    const grade = new RuntimeGrade("cross_file_contract_fix");
     if (input.verifier?.timedOut)
-      return fail("verifier_timeout", "Independent test verification timed out.", "harness_terminal");
-    return input.verifier?.exitCode === 0
-      ? { passed: true }
-      : fail("contract", "The parser-caller public contract still fails.", "semantic_goal");
+      return grade.fail("verifier_timeout", "Independent test verification timed out.", "harness_terminal");
+    if (input.verifier?.exitCode !== 0)
+      return grade.fail("contract", "The parser-caller public contract still fails.", "semantic_goal");
+    const writes = input.toolCalls.filter((call) => call.capability === "write" && call.outcome === "success");
+    if (writes.length === 0) return grade.fail("write", "No implementation mutation succeeded.", "behavior");
+    const lastWrite = Math.max(...writes.map((call) => call.sequence));
+    if (!passingCommandRuns(input, "bun test").some((call) => call.sequence > lastWrite))
+      return grade.fail("test", "The final mutation was not followed by a passing project test.", "behavior");
+    return grade.pass();
   },
 };
-
-function isPassingBunTest(call: RuntimeToolTrace): boolean {
-  return (
-    call.name === "bash" &&
-    command(call.input) === "bun test" &&
-    call.outcome === "success" &&
-    commandExitCode(call.output) === 0
-  );
-}
-
-function command(value: unknown): string | undefined {
-  return isRecord(value) && typeof value.command === "string" ? value.command.trim() : undefined;
-}
-
-function commandExitCode(value: unknown): number | undefined {
-  return isRecord(value) && isRecord(value.metadata) && typeof value.metadata.exitCode === "number"
-    ? value.metadata.exitCode
-    : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `cross_file_contract_fix.${code}`, message, dimension };
-}

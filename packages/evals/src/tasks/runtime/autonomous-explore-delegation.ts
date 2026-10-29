@@ -1,7 +1,9 @@
 // @summary Runtime eval for autonomous delegation of a multi-file known-key reference lookup
 
-import type { RuntimeEvalExecution, RuntimeEvalTask } from "../../runtime-task";
-import type { EvalDimension, EvalProfile } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import type { EvalProfile } from "../../task";
+import { isRecord } from "../core/helpers";
+import { finalAssistantText, RuntimeGrade, traceTargets } from "./grading";
 import {
   createIsolatedFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -63,33 +65,36 @@ export const autonomousExploreDelegationTask: RuntimeEvalTask<AutonomousExploreD
   createSteps: (world) => [{ kind: "turn", mode: "default", message: world.clientPrompt }],
   snapshotWorld: async (world) => ({ sourcePaths: world.sourcePaths }),
   evaluate(input) {
+    const grade = new RuntimeGrade("autonomous_explore");
+    const { world } = input;
+    const rootId = input.session.threadId;
     const spawns = input.toolCalls.filter((call) => call.name === "spawn_agent" && call.outcome === "success");
-    if (spawns.length !== 1 || !isExploreSpawn(spawns[0]!.input))
-      return fail("spawn", "The multi-file reference lookup was not delegated to one explore agent.", "behavior");
-    const reads = input.toolCalls.filter((call) => call.name === "read" && call.outcome === "success");
-    const childIds = new Set(reads.map((call) => call.childThreadId).filter((id): id is string => Boolean(id)));
-    if (childIds.size !== 1)
-      return fail("actor", "The six reads were not isolated to one child actor.", "runtime_policy");
-    const childId = [...childIds][0]!;
-    for (const [index, path] of input.world.sourcePaths.entries()) {
-      if (
-        !reads.some(
-          (call) =>
-            call.childThreadId === childId &&
-            toolPath(call.input).endsWith(path) &&
-            toolOutput(call).includes(input.world.facts[index]!),
-        )
-      )
-        return fail("coverage", `The explore agent did not ground ${path}.`, "semantic_goal");
-    }
-    if (reads.some((call) => call.threadId === input.session.threadId && call.childThreadId === undefined))
-      return fail("parent_read", "The parent bypassed the delegated exploration with direct reads.", "behavior");
-    if (!input.toolCalls.some((call) => call.name === "wait" && call.outcome === "success"))
-      return fail("join", "The parent did not join the delegated exploration.", "behavior");
-    const text = lastAssistantText(input);
-    return input.world.facts.every((fact) => text.includes(fact))
-      ? { passed: true }
-      : fail("synthesis", "The final response omitted a grounded regional fact.", "semantic_goal");
+    if (!spawns.some((call) => isRecord(call.input) && call.input.agent_type === "explore"))
+      return grade.fail("spawn", "The multi-file lookup was not delegated to an explore agent.", "behavior");
+    const parentSourceReads = input.toolCalls.filter(
+      (call) =>
+        call.threadId === rootId &&
+        call.capability === "read" &&
+        call.outcome === "success" &&
+        (world.sourcePaths.some((path) => traceTargets(call, path)) ||
+          world.facts.some((fact) => JSON.stringify(call.output ?? "").includes(fact))),
+    );
+    if (parentSourceReads.length > 0)
+      return grade.fail("parent_read", "The main task read regional source content directly.", "runtime_policy");
+    const childOutputs = input.toolCalls
+      .filter((call) => call.threadId !== rootId && call.capability === "read" && call.outcome === "success")
+      .map((call) => JSON.stringify(call.output ?? ""));
+    if (!world.facts.every((fact) => childOutputs.some((output) => output.includes(fact))))
+      return grade.fail("coverage", "The exploration did not ground every regional value.", "semantic_goal");
+    const text = finalAssistantText(input);
+    const positions = world.facts.map((fact) => text.indexOf(fact));
+    if (positions.some((position) => position < 0))
+      return grade.fail("synthesis", "The final response omitted a grounded regional value.", "semantic_goal");
+    if (positions.some((position, index) => index > 0 && position < positions[index - 1]!))
+      return grade.fail("order", "The values were not reported in region-number order.", "format_contract");
+    if (input.toolCalls.some((call) => call.outcome !== "success"))
+      grade.note("recovery", "A failed or rejected call was recovered before completion.", { impact: "info" });
+    return grade.pass();
   },
 };
 
@@ -97,38 +102,4 @@ async function createAgentEnabledConfig(world: AutonomousExploreDelegationWorld,
   const config = await createIsolatedFixtureRuntimeConfig(world, profile);
   config.diligent = { ...config.diligent, agents: { enabled: true } };
   return config;
-}
-
-function isExploreSpawn(value: unknown): boolean {
-  return isRecord(value) && value.agent_type === "explore" && typeof value.message === "string";
-}
-
-function toolPath(value: unknown): string {
-  return isRecord(value) && typeof value.file_path === "string" ? value.file_path : "";
-}
-
-function toolOutput(call: RuntimeEvalExecution<unknown>["toolCalls"][number]): string {
-  if (typeof call.output === "string") return call.output;
-  return isRecord(call.output) && typeof call.output.output === "string" ? call.output.output : "";
-}
-
-function lastAssistantText(input: Parameters<typeof autonomousExploreDelegationTask.evaluate>[0]): string {
-  const message = input.turns
-    .at(-1)
-    ?.messages.filter((item) => item.role === "assistant")
-    .at(-1);
-  return (
-    message?.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("") ?? ""
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `autonomous_explore.${code}`, message, dimension };
 }

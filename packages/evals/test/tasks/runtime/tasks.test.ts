@@ -277,7 +277,7 @@ describe("runtime eval tasks", () => {
     });
   });
 
-  test("accepts exact skill auto-selection evidence and rejects decoy or undeclared reads", () => {
+  test("grades skill auto-selection by selection, decoy isolation, and the exact artifact", () => {
     const world = {
       root: "$WORKSPACE",
       seed: "seed",
@@ -307,66 +307,73 @@ describe("runtime eval tasks", () => {
     ];
     execution.workspace.final.entries = [{ path: "HANDOFF.txt", kind: "file", size: 1, sha256: "auto-hash" }];
     expect(skillAutoSelectTask.evaluate(execution)).toEqual({ passed: true });
-    const directCreate = structuredClone(execution.toolCalls[2]!);
-    const missingFileError = "Error reading file: ENOENT: no such file or directory, open '$WORKSPACE/HANDOFF.txt'";
-    const failedEdit = trace(3, "edit", "write", {
+
+    const alternative = structuredClone(execution);
+    const probe = trace(1, "read", "read", { file_path: "$WORKSPACE/AGENTS.md" });
+    probe.outcome = "runtime_error";
+    const failedEdit = trace(4, "edit", "write", {
       file_path: "$WORKSPACE/HANDOFF.txt",
       old_string: "placeholder",
       new_string: "placeholder",
-      replace_all: false,
     });
     failedEdit.outcome = "runtime_error";
-    failedEdit.error = missingFileError;
-    failedEdit.output = { output: missingFileError, metadata: { error: true } };
-    failedEdit.threadId = "thread-1";
-    const recoveredCreate = trace(4, "edit", "write", {
-      file_path: "$WORKSPACE/HANDOFF.txt",
-      old_string: "",
-      new_string: world.expected,
-      replace_all: false,
+    alternative.toolCalls = [
+      probe,
+      trace(2, "skill", "skill", { name: world.selectedSkillName }),
+      trace(3, "read", "read", { file_path: world.selectedReferencePath }),
+      failedEdit,
+      trace(5, "write", "write", { file_path: "HANDOFF.txt", content: world.expected }),
+      trace(6, "read", "read", { file_path: "$WORKSPACE/HANDOFF.txt" }),
+    ];
+    const alternativeResult = skillAutoSelectTask.evaluate(alternative);
+    expect(alternativeResult.passed).toBe(true);
+    expect(alternativeResult.diagnostics?.map((diagnostic) => diagnostic.code)).toEqual([
+      "skill_auto_select.skill_not_first",
+      "skill_auto_select.failed_read_probe",
+      "skill_auto_select.undeclared_read",
+      "skill_auto_select.write_recovery",
+    ]);
+
+    const failedLoad = structuredClone(execution);
+    failedLoad.toolCalls[0]!.outcome = "runtime_error";
+    expect(skillAutoSelectTask.evaluate(failedLoad)).toMatchObject({
+      passed: true,
+      diagnostics: [expect.objectContaining({ code: "skill_auto_select.skill_load_failed" })],
     });
-    recoveredCreate.threadId = "thread-1";
-    execution.toolCalls.splice(2, 1, failedEdit, recoveredCreate);
-    expect(skillAutoSelectTask.evaluate(execution)).toEqual({ passed: true });
-    (failedEdit.input as { old_string: string }).old_string = "different-placeholder";
-    expect(skillAutoSelectTask.evaluate(execution)).toMatchObject({
-      passed: false,
-      code: "skill_auto_select.wrong_write",
-    });
-    (failedEdit.input as { old_string: string }).old_string = "placeholder";
-    execution.profile.provider = "openai";
-    expect(skillAutoSelectTask.evaluate(execution)).toMatchObject({
-      passed: false,
-      code: "skill_auto_select.wrong_write",
-    });
-    execution.profile.provider = "anthropic";
-    execution.toolCalls.splice(2, 2, directCreate);
-    (execution.toolCalls[2]!.input as { patch: string }).patch += "\n";
-    expect(skillAutoSelectTask.evaluate(execution)).toEqual({ passed: true });
-    (execution.toolCalls[2]!.input as { patch: string }).patch = (
-      execution.toolCalls[2]!.input as { patch: string }
-    ).patch.trimEnd();
-    execution.toolCalls[0] = trace(1, "skill", "skill", { name: world.skillNames[1] });
-    expect(skillAutoSelectTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls[0] = trace(1, "skill", "skill", { name: world.selectedSkillName });
-    execution.toolCalls.splice(
-      2,
-      0,
-      trace(3, "read", "read", { file_path: `$WORKSPACE/${world.decoyReferencePaths[0]}` }),
-    );
-    expect(skillAutoSelectTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls.splice(2, 1);
-    execution.toolCalls[0]!.outcome = "runtime_error";
-    expect(skillAutoSelectTask.evaluate(execution)).toEqual({ passed: true });
-    execution.toolCalls[0]!.outcome = "success";
-    execution.verifier!.exitCode = 1;
-    expect(skillAutoSelectTask.evaluate(execution).passed).toBe(false);
-    execution.verifier!.exitCode = 0;
-    execution.workspace.final.entries[0]!.sha256 = "wrong-hash";
-    expect(skillAutoSelectTask.evaluate(execution).passed).toBe(false);
+
+    const failures: Array<[string, (value: typeof execution) => void, string]> = [
+      [
+        "decoy skill loaded",
+        (value) => value.toolCalls.unshift(trace(0, "skill", "skill", { name: world.skillNames[1] })),
+        "skill_auto_select.unexpected_skill_call",
+      ],
+      [
+        "decoy reference read",
+        (value) =>
+          value.toolCalls.push(trace(4, "read", "read", { file_path: `$WORKSPACE/${world.decoyReferencePaths[0]}` })),
+        "skill_auto_select.wrong_reference_reads",
+      ],
+      ["no skill selection", (value) => value.toolCalls.shift(), "skill_auto_select.skill_not_loaded"],
+      [
+        "reference read before selection",
+        (value) => (value.toolCalls[0]!.sequence = 5),
+        "skill_auto_select.skill_not_loaded",
+      ],
+      ["verifier failed", (value) => (value.verifier!.exitCode = 1), "skill_auto_select.verifier"],
+      [
+        "wrong artifact",
+        (value) => (value.workspace.final.entries[0]!.sha256 = "wrong-hash"),
+        "skill_auto_select.wrong_result",
+      ],
+    ];
+    for (const [label, mutate, code] of failures) {
+      const changed = structuredClone(execution);
+      mutate(changed);
+      expect(skillAutoSelectTask.evaluate(changed), label).toMatchObject({ passed: false, code });
+    }
   });
 
-  test("accepts advertised skill abstention and rejects any skill use or skill-path read", () => {
+  test("grades skill abstention by absent skill loads and skill-file reads plus the exact file", () => {
     const world = {
       root: "$WORKSPACE",
       seed: "seed",
@@ -398,22 +405,48 @@ describe("runtime eval tasks", () => {
     ];
     execution.workspace.final.entries = [{ path: "STATUS.txt", kind: "file", size: 1, sha256: "abstain-hash" }];
     expect(skillAbstainTask.evaluate(execution)).toEqual({ passed: true });
-    (execution.toolCalls[0]!.input as { patch: string }).patch += "\n";
-    expect(skillAbstainTask.evaluate(execution)).toEqual({ passed: true });
-    (execution.toolCalls[0]!.input as { patch: string }).patch = (
-      execution.toolCalls[0]!.input as { patch: string }
-    ).patch.trimEnd();
-    execution.toolCalls.unshift(trace(1, "skill", "skill", { name: world.skillNames[0] }));
-    expect(skillAbstainTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls.shift();
-    execution.toolCalls.unshift(trace(1, "read", "read", { file_path: `$WORKSPACE/${world.skillPaths[0]}` }));
-    expect(skillAbstainTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls.shift();
-    execution.verifier!.exitCode = 1;
-    expect(skillAbstainTask.evaluate(execution).passed).toBe(false);
-    execution.verifier!.exitCode = 0;
-    execution.workspace.final.entries[0]!.sha256 = "wrong-hash";
-    expect(skillAbstainTask.evaluate(execution).passed).toBe(false);
+
+    const alternative = structuredClone(execution);
+    const rejectedSkill = trace(1, "skill", "skill", { name: world.skillNames[0] });
+    rejectedSkill.outcome = "policy_rejection";
+    const failedEdit = trace(2, "edit", "write", { file_path: "STATUS.txt", old_string: "x", new_string: "y" });
+    failedEdit.outcome = "runtime_error";
+    alternative.toolCalls = [
+      rejectedSkill,
+      failedEdit,
+      trace(3, "edit", "write", { file_path: "STATUS.txt", old_string: "", new_string: world.expected }),
+    ];
+    const alternativeResult = skillAbstainTask.evaluate(alternative);
+    expect(alternativeResult.passed).toBe(true);
+    expect(alternativeResult.diagnostics?.map((diagnostic) => diagnostic.code)).toEqual([
+      "skill_abstain.rejected_skill_call",
+      "skill_abstain.write_recovery",
+    ]);
+
+    const failures: Array<[string, (value: typeof execution) => void, string]> = [
+      [
+        "skill loaded",
+        (value) => value.toolCalls.unshift(trace(0, "skill", "skill", { name: world.skillNames[0] })),
+        "skill_abstain.skill_called",
+      ],
+      [
+        "skill file read",
+        (value) =>
+          value.toolCalls.unshift(trace(0, "read", "read", { file_path: `$WORKSPACE/${world.skillPaths[0]}` })),
+        "skill_abstain.skill_file_read",
+      ],
+      ["verifier failed", (value) => (value.verifier!.exitCode = 1), "skill_abstain.verifier"],
+      [
+        "wrong file",
+        (value) => (value.workspace.final.entries[0]!.sha256 = "wrong-hash"),
+        "skill_abstain.wrong_result",
+      ],
+    ];
+    for (const [label, mutate, code] of failures) {
+      const changed = structuredClone(execution);
+      mutate(changed);
+      expect(skillAbstainTask.evaluate(changed), label).toMatchObject({ passed: false, code });
+    }
   });
 
   test("defines paired image reads with seed-controlled color assignment", async () => {
@@ -440,10 +473,59 @@ describe("runtime eval tasks", () => {
       expect(world.recordPaths).toHaveLength(3);
       expect(world.allowedChanges).toEqual([world.selectedPath]);
       expect(world.protectedPaths).toContain(world.indexPath);
-      expect(fileRoundtripTask.limits.maxToolCalls).toBeGreaterThan(3);
     } finally {
       await removeTemporaryRoot(root);
     }
+  });
+
+  test("grades read-image-pair by both successful reads and the classified answer, not by call count", () => {
+    const world = {
+      root: "$WORKSPACE",
+      seed: "seed",
+      colors: { a: "RED" as const, b: "BLUE" as const },
+      expected: "A=RED; B=BLUE",
+      protectedPaths: ["a.png", "b.png"],
+      allowedChanges: [],
+    };
+    const execution = baseExecution(world, "Read both images", "A=RED; B=BLUE");
+    execution.toolCalls = [
+      trace(1, "read_image", "read", { file_path: "$WORKSPACE/a.png" }),
+      trace(2, "read_image", "read", { file_path: "$WORKSPACE/b.png" }),
+    ];
+    expect(readImagePairTask.evaluate(execution)).toEqual({ passed: true });
+
+    const failedProbe = trace(1, "read_image", "read", { file_path: "missing.png" });
+    failedProbe.outcome = "runtime_error";
+    const varied = structuredClone(execution);
+    varied.turns[0]!.messages = [assistant("`A=RED; B=BLUE`")];
+    varied.toolCalls = [
+      failedProbe,
+      trace(2, "read_image", "read", { file_path: "a.png" }),
+      trace(3, "read_image", "read", { file_path: "b.png" }),
+      trace(4, "read_image", "read", { file_path: "$WORKSPACE/a.png" }),
+    ];
+    const result = readImagePairTask.evaluate(varied);
+    expect(result.passed).toBe(true);
+    expect(result.diagnostics?.map((diagnostic) => diagnostic.code)).toEqual([
+      "read_image_pair.repeated_read",
+      "read_image_pair.failed_call",
+    ]);
+
+    const missingB = structuredClone(execution);
+    missingB.toolCalls[1]!.outcome = "runtime_error";
+    expect(readImagePairTask.evaluate(missingB)).toMatchObject({ passed: false, code: "read_image_pair.paths" });
+
+    const swapped = structuredClone(execution);
+    swapped.turns[0]!.messages = [assistant("A=BLUE; B=RED")];
+    expect(readImagePairTask.evaluate(swapped)).toMatchObject({ passed: false, dimension: "semantic_goal" });
+
+    const chatty = structuredClone(execution);
+    chatty.turns[0]!.messages = [assistant("The colors are A=RED; B=BLUE")];
+    expect(readImagePairTask.evaluate(chatty)).toMatchObject({ passed: false, dimension: "format_contract" });
+
+    const leaked = structuredClone(execution);
+    leaked.toolCalls[0]!.output = "iVBORw0KGgo";
+    expect(readImagePairTask.evaluate(leaked)).toMatchObject({ passed: false, code: "read_image_pair.base64" });
   });
 
   test("defines manual compaction as turn, compact, restart, and resumed turn", async () => {
@@ -633,7 +715,7 @@ describe("runtime eval tasks", () => {
     }
   });
 
-  test("accepts exact knowledge intent split and rejects trace, store, and output violations", () => {
+  test("grades knowledge intent split by the store and output, not the tool path", () => {
     const world = {
       root: "$WORKSPACE",
       seed: "seed",
@@ -648,93 +730,35 @@ describe("runtime eval tasks", () => {
       allowedChanges: ["CURRENT.txt"],
     };
     const execution = baseExecution(world, "Remember one value and write another.", "Done.");
-    execution.profile.provider = "openai";
     execution.toolCalls = [
-      trace(1, "search_knowledge", "knowledge", { id: world.knowledgeId }),
-      trace(2, "update_knowledge", "knowledge", {
-        action: "upsert",
-        id: world.knowledgeId,
-        type: "preference",
-        content: world.content,
-        tags: world.tags,
-      }),
-      trace(3, "apply_patch", "write", {
-        patch: "*** Begin Patch\n*** Add File: CURRENT.txt\n+CURRENT_once\n*** End Patch",
-      }),
+      trace(1, "update_knowledge", "knowledge", { action: "upsert", id: world.knowledgeId, content: "x" }),
+      trace(2, "write", "write", { file_path: "CURRENT.txt", content: world.expected }),
     ];
     execution.workspace.final.entries = [{ path: "CURRENT.txt", kind: "file", size: 1, sha256: "split-hash" }];
     expect(knowledgeIntentSplitTask.evaluate(execution)).toEqual({ passed: true });
-    const splitBaseline = structuredClone(execution.toolCalls);
-    execution.toolCalls.shift();
-    execution.toolCalls[0]!.sequence = 1;
-    execution.toolCalls[1]!.sequence = 2;
-    expect(knowledgeIntentSplitTask.evaluate(execution)).toEqual({ passed: true });
-    (execution.toolCalls[0]!.input as { tags?: string[] }).tags = ["review-audience"];
-    expect(knowledgeIntentSplitTask.evaluate(execution)).toEqual({ passed: true });
-    delete (execution.toolCalls[0]!.input as { tags?: string[] }).tags;
-    expect(knowledgeIntentSplitTask.evaluate(execution)).toEqual({ passed: true });
-    (execution.toolCalls[0]!.input as { tags?: string[] }).tags = [world.transientValue];
-    expect(knowledgeIntentSplitTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls = structuredClone(splitBaseline);
-    execution.toolCalls[0]!.sequence = 2;
-    execution.toolCalls[0]!.input = { query: "review audience" };
-    execution.toolCalls[1]!.sequence = 1;
-    expect(knowledgeIntentSplitTask.evaluate(execution)).toEqual({ passed: true });
-    execution.toolCalls[0]!.input = { query: world.transientValue };
-    expect(knowledgeIntentSplitTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls = structuredClone(splitBaseline);
-    (execution.toolCalls[2]!.input as { patch: string }).patch += "\n";
-    expect(knowledgeIntentSplitTask.evaluate(execution)).toEqual({ passed: true });
-    execution.toolCalls = splitBaseline;
-    execution.profile.provider = "anthropic";
-    execution.toolCalls[2] = trace(3, "edit", "write", {
-      file_path: "$WORKSPACE/CURRENT.txt",
-      old_string: "",
-      new_string: world.expected,
-      replace_all: false,
-    });
-    expect(knowledgeIntentSplitTask.evaluate(execution)).toEqual({ passed: true });
-    execution.profile.provider = "openai";
-    execution.toolCalls[2] = trace(3, "apply_patch", "write", {
-      patch: "*** Begin Patch\n*** Add File: CURRENT.txt\n+CURRENT_once\n*** End Patch",
-    });
-    [execution.toolCalls[0], execution.toolCalls[1]] = [execution.toolCalls[1]!, execution.toolCalls[0]!];
-    expect(knowledgeIntentSplitTask.evaluate(execution)).toEqual({ passed: true });
-    [execution.toolCalls[0], execution.toolCalls[1]] = [execution.toolCalls[1]!, execution.toolCalls[0]!];
-    execution.toolCalls[0]!.input = { id: "wrong-id" };
-    expect(knowledgeIntentSplitTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls[0]!.input = { id: world.knowledgeId };
-    (execution.toolCalls[1]!.input as Record<string, unknown>).action = "delete";
-    expect(knowledgeIntentSplitTask.evaluate(execution).passed).toBe(false);
-    (execution.toolCalls[1]!.input as Record<string, unknown>).action = "upsert";
-    execution.verifier!.exitCode = 1;
-    expect(knowledgeIntentSplitTask.evaluate(execution).passed).toBe(false);
-    execution.verifier!.exitCode = 0;
-    execution.verifier!.timedOut = true;
-    expect(knowledgeIntentSplitTask.evaluate(execution).passed).toBe(false);
-    execution.verifier!.timedOut = false;
-    execution.toolCalls.splice(2, 0, trace(3, "search_knowledge", "knowledge", { id: world.knowledgeId }));
-    expect(knowledgeIntentSplitTask.evaluate(execution)).toEqual({
+
+    const searched = structuredClone(execution);
+    searched.toolCalls.unshift(trace(0, "search_knowledge", "knowledge", { query: world.transientValue }));
+    expect(knowledgeIntentSplitTask.evaluate(searched)).toMatchObject({
       passed: true,
-      diagnostics: [
-        {
-          dimension: "efficiency",
-          code: "knowledge_intent_split.second_safe_search",
-          message: "A second bounded read-only knowledge search was used before successful completion.",
-        },
-      ],
+      diagnostics: [{ code: "knowledge_intent_split.knowledge_search", impact: "info" }],
     });
-    execution.toolCalls.splice(2, 0, trace(3, "search_knowledge", "knowledge", { query: "review audience" }));
-    expect(knowledgeIntentSplitTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls.splice(2, 2);
-    execution.workspace.final.entries[0]!.sha256 = "wrong-hash";
-    expect(knowledgeIntentSplitTask.evaluate(execution).passed).toBe(false);
-    execution.workspace.final.entries[0]!.sha256 = world.expectedHash;
-    execution.toolCalls[1]!.outcome = "runtime_error";
-    expect(knowledgeIntentSplitTask.evaluate(execution).passed).toBe(false);
+
+    const wrongStore = structuredClone(execution);
+    wrongStore.verifier!.exitCode = 1;
+    expect(knowledgeIntentSplitTask.evaluate(wrongStore)).toMatchObject({
+      passed: false,
+      code: "knowledge_intent_split.knowledge_store",
+    });
+    const wrongOutput = structuredClone(execution);
+    wrongOutput.workspace.final.entries[0]!.sha256 = "wrong-hash";
+    expect(knowledgeIntentSplitTask.evaluate(wrongOutput)).toMatchObject({
+      passed: false,
+      code: "knowledge_intent_split.output",
+    });
   });
 
-  test("accepts exact knowledge deletion and rejects wrong deletion or replacement evidence", () => {
+  test("grades knowledge deletion by the store and output, not the tool path", () => {
     const world = {
       root: "$WORKSPACE",
       seed: "seed",
@@ -756,92 +780,33 @@ describe("runtime eval tasks", () => {
       allowedChanges: ["FORGET.txt"],
     };
     const execution = baseExecution(world, "Forget one preference and write a separate value.", "Done.");
+    const failedWrite = trace(1, "edit", "write", { file_path: "FORGET.txt", old_string: "", new_string: "x" });
+    failedWrite.outcome = "runtime_error";
     execution.toolCalls = [
-      trace(1, "search_knowledge", "knowledge", { id: world.knowledgeId }),
-      trace(2, "update_knowledge", "knowledge", { action: "delete", id: world.knowledgeId }),
-      trace(3, "edit", "write", {
-        file_path: "$WORKSPACE/FORGET.txt",
-        old_string: "",
-        new_string: world.expected,
-        replace_all: false,
+      failedWrite,
+      trace(2, "apply_patch", "write", {
+        patch: "*** Begin Patch\n*** Add File: FORGET.txt\n+TASK_once\n*** End Patch",
       }),
+      trace(3, "update_knowledge", "knowledge", { action: "delete", id: world.knowledgeId }),
+      trace(4, "search_knowledge", "knowledge", { id_prefix: "preference." }),
     ];
     execution.workspace.final.entries = [{ path: "FORGET.txt", kind: "file", size: 1, sha256: "forget-hash" }];
-    expect(knowledgeForgetTask.evaluate(execution)).toEqual({ passed: true });
-    execution.toolCalls[0]!.input = { id: world.knowledgeId, query: "deployment window" };
-    expect(knowledgeForgetTask.evaluate(execution)).toEqual({ passed: true });
-    execution.toolCalls[0]!.input = { id: "wrong-id", query: "deployment window" };
-    expect(knowledgeForgetTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls[0]!.input = { id: world.knowledgeId };
-    const directDeleteCalls = structuredClone(execution.toolCalls);
-    directDeleteCalls.shift();
-    directDeleteCalls[0]!.sequence = 1;
-    directDeleteCalls[1]!.sequence = 2;
-    execution.toolCalls = directDeleteCalls;
-    expect(knowledgeForgetTask.evaluate(execution)).toEqual({ passed: true });
-    execution.toolCalls = [
-      trace(1, "search_knowledge", "knowledge", { id: world.knowledgeId }),
-      trace(2, "update_knowledge", "knowledge", { action: "delete", id: world.knowledgeId }),
-      trace(3, "edit", "write", {
-        file_path: "$WORKSPACE/FORGET.txt",
-        old_string: "",
-        new_string: world.expected,
-        replace_all: false,
-      }),
-    ];
-    execution.profile.provider = "openai";
-    execution.toolCalls[2] = trace(3, "apply_patch", "write", {
-      patch: "*** Begin Patch\n*** Add File: FORGET.txt\n+TASK_once\n*** End Patch",
+    const result = knowledgeForgetTask.evaluate(execution);
+    expect(result.passed).toBe(true);
+    expect(result.diagnostics?.map((diagnostic) => diagnostic.code)).toEqual([
+      "knowledge_forget.knowledge_search",
+      "knowledge_forget.recovery",
+    ]);
+
+    const wrongStore = structuredClone(execution);
+    wrongStore.verifier!.exitCode = 1;
+    expect(knowledgeForgetTask.evaluate(wrongStore)).toMatchObject({
+      passed: false,
+      code: "knowledge_forget.knowledge_store",
     });
-    expect(knowledgeForgetTask.evaluate(execution)).toEqual({ passed: true });
-    const forgetBaseline = structuredClone(execution.toolCalls);
-    execution.toolCalls[1]!.sequence = 3;
-    execution.toolCalls[2]!.sequence = 2;
-    [execution.toolCalls[1], execution.toolCalls[2]] = [execution.toolCalls[2]!, execution.toolCalls[1]!];
-    expect(knowledgeForgetTask.evaluate(execution)).toEqual({ passed: true });
-    execution.toolCalls = structuredClone(forgetBaseline);
-    (execution.toolCalls[2]!.input as { patch: string }).patch += "\n";
-    expect(knowledgeForgetTask.evaluate(execution)).toEqual({ passed: true });
-    execution.toolCalls = forgetBaseline;
-    execution.toolCalls[1]!.sequence = 3;
-    execution.toolCalls[2]!.sequence = 4;
-    execution.toolCalls.splice(1, 0, trace(2, "search_knowledge", "knowledge", { query: "deployment window" }));
-    expect(knowledgeForgetTask.evaluate(execution)).toEqual({ passed: true });
-    execution.toolCalls[1]!.input = { query: world.taskValue };
-    expect(knowledgeForgetTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls = structuredClone(forgetBaseline);
-    execution.profile.provider = "anthropic";
-    execution.toolCalls[2] = trace(3, "edit", "write", {
-      file_path: "$WORKSPACE/FORGET.txt",
-      old_string: "",
-      new_string: world.expected,
-      replace_all: false,
-    });
-    execution.toolCalls[0]!.sequence = 3;
-    expect(knowledgeForgetTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls[0]!.sequence = 1;
-    execution.toolCalls[1]!.input = { action: "upsert", id: world.knowledgeId };
-    expect(knowledgeForgetTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls[1]!.input = { action: "delete", id: "wrong-id" };
-    expect(knowledgeForgetTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls[1]!.input = { action: "delete", id: world.knowledgeId };
-    execution.toolCalls.push(trace(4, "update_knowledge", "knowledge", { action: "delete", id: world.knowledgeId }));
-    expect(knowledgeForgetTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls.pop();
-    execution.verifier!.exitCode = 1;
-    expect(knowledgeForgetTask.evaluate(execution).passed).toBe(false);
-    execution.verifier!.exitCode = 0;
-    execution.verifier!.timedOut = true;
-    expect(knowledgeForgetTask.evaluate(execution).passed).toBe(false);
-    execution.verifier!.timedOut = false;
-    execution.workspace.final.entries[0]!.sha256 = "wrong-hash";
-    expect(knowledgeForgetTask.evaluate(execution).passed).toBe(false);
-    execution.workspace.final.entries[0]!.sha256 = world.expectedHash;
-    execution.toolCalls[0]!.outcome = "runtime_error";
-    expect(knowledgeForgetTask.evaluate(execution).passed).toBe(false);
-    execution.toolCalls[0]!.outcome = "success";
-    execution.toolCalls[1]!.outcome = "runtime_error";
-    expect(knowledgeForgetTask.evaluate(execution).passed).toBe(false);
+    const wrongOutput = structuredClone(execution);
+    wrongOutput.workspace.final.entries[0]!.sha256 = "wrong-hash";
+    expect(knowledgeForgetTask.evaluate(wrongOutput)).toMatchObject({ passed: false, code: "knowledge_forget.output" });
   });
 
   test("creates equivalent independent workspaces from the same task seed", async () => {
@@ -926,9 +891,7 @@ describe("runtime eval tasks", () => {
     }
   });
 
-  test("scores instruction-hierarchy decisions independently of provider prompt plumbing", async () => {
-    expect(instructionHierarchyTask.fixtureVersion).toBe("instruction-hierarchy-v2");
-    expect(instructionHierarchyTask.limits).toMatchObject({ maxTurns: 5, maxToolCalls: 4 });
+  test("scores instruction-hierarchy outcomes independently of provider prompt plumbing and read path", async () => {
     const world = {
       root: "$WORKSPACE",
       seed: "seed",
@@ -951,9 +914,32 @@ describe("runtime eval tasks", () => {
     expect(instructionHierarchyTask.evaluate(execution)).toEqual({ passed: true });
     execution.providerCalls = [providerCall(["$WORKSPACE/AGENTS.md"], [])];
     expect(instructionHierarchyTask.evaluate(execution)).toEqual({ passed: true });
+
+    const failedProbe = trace(1, "read", "read", { file_path: "missing.txt" });
+    failedProbe.outcome = "runtime_error";
+    execution.toolCalls = [
+      failedProbe,
+      trace(2, "read", "read", { file_path: "target.txt" }),
+      trace(3, "read", "read", { file_path: "$WORKSPACE/AGENTS.md" }),
+      trace(4, "write", "write", { file_path: "RESULT.txt" }),
+      trace(5, "read", "read", { file_path: "RESULT.txt" }),
+    ];
+    const result = instructionHierarchyTask.evaluate(execution);
+    expect(result.passed).toBe(true);
+    expect(result.diagnostics?.map((diagnostic) => diagnostic.code)).toEqual([
+      "instruction_hierarchy.additional_safe_read",
+      "instruction_hierarchy.failed_call",
+    ]);
+
+    execution.workspace.final.entries[0]!.sha256 = "root-only-hash";
+    expect(instructionHierarchyTask.evaluate(execution)).toMatchObject({
+      passed: false,
+      code: "instruction_hierarchy.wrong_result",
+      dimension: "semantic_goal",
+    });
   });
 
-  test("accepts repeated fact references, but rejects missing facts or a question before discovery", async () => {
+  test("accepts repeated fact references, rejects missing facts, and degrades a question before discovery", async () => {
     const world = {
       root: "$WORKSPACE",
       seed: "seed",
@@ -1005,7 +991,10 @@ describe("runtime eval tasks", () => {
     expect(planConvergeTask.evaluate(execution).passed).toBe(false);
     execution.turns[0]!.messages = baseExecution(world, "plan", finalText).turns[0]!.messages;
     execution.toolCalls[2]!.sequence = 1;
-    expect(planConvergeTask.evaluate(execution).passed).toBe(false);
+    expect(planConvergeTask.evaluate(execution)).toMatchObject({
+      passed: true,
+      diagnostics: [{ code: "plan_converge.asked_before_discovery" }],
+    });
   });
 
   test("accepts behaviorally verified cross-file repair evidence", async () => {
@@ -1043,6 +1032,20 @@ describe("runtime eval tasks", () => {
       code: "cross_file_contract_fix.test",
     });
     execution.toolCalls.pop();
+    execution.toolCalls.unshift(
+      { ...trace(0, "read", "read", { file_path: "AGENTS.local.md" }), outcome: "runtime_error" },
+      { ...trace(0.5, "bash", "execute", { command: "bun test" }), output: { metadata: { exitCode: 1 } } },
+    );
+    execution.toolCalls[2] = trace(1, "apply_patch", "write", {
+      patch: "*** Begin Patch\n*** Update File: src/retry-config.ts\n*** End Patch",
+    });
+    expect(crossFileContractFixTask.evaluate(execution)).toEqual({ passed: true });
+    execution.verifier!.exitCode = 1;
+    expect(crossFileContractFixTask.evaluate(execution)).toMatchObject({
+      passed: false,
+      code: "cross_file_contract_fix.contract",
+      dimension: "semantic_goal",
+    });
   });
 
   test("accepts recovered policy rejections and ordered progress, but rejects invalid plan states", async () => {
@@ -1128,6 +1131,40 @@ describe("runtime eval tasks", () => {
       passed: false,
       code: "plan_progress.premature_completion",
     });
+    execution.toolCalls[2] = plan(3, ["in_progress", "pending", "pending", "pending"]);
+    execution.toolCalls = structuredClone(baselineToolCalls);
+    execution.toolCalls[5] = trace(6, "write", "write", { file_path: "generated/stage-three.txt" });
+    execution.toolCalls[7] = trace(8, "write", "write", { file_path: "generated/stage-two.txt" });
+    expect(planProgressTask.evaluate(execution)).toMatchObject({
+      passed: false,
+      code: "plan_progress.write_order",
+      dimension: "behavior",
+    });
+    execution.toolCalls = structuredClone(baselineToolCalls);
+    execution.toolCalls[0]!.sequence = 5.5;
+    execution.toolCalls[3] = trace(4, "apply_patch", "write", {
+      patch: [
+        "*** Begin Patch",
+        "*** Add File: generated/stage-one.txt",
+        "*** Add File: generated/stage-two.txt",
+        "*** Add File: generated/stage-three.txt",
+        "*** End Patch",
+      ].join("\n"),
+    });
+    execution.toolCalls.splice(5, 1);
+    expect(planProgressTask.evaluate(execution)).toMatchObject({
+      passed: true,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "plan_progress.input_discovery" }),
+        expect.objectContaining({ code: "plan_progress.write_order" }),
+      ]),
+    });
+    execution.workspace.final.entries[1]!.sha256 = "wrong";
+    expect(planProgressTask.evaluate(execution)).toMatchObject({
+      passed: false,
+      code: "plan_progress.output",
+      dimension: "semantic_goal",
+    });
   });
 
   test("scores hook-follow behavior independently of provider-context plumbing", async () => {
@@ -1165,10 +1202,17 @@ describe("runtime eval tasks", () => {
       diagnostics: [{ code: "hook_context_follow.write_recovery", dimension: "efficiency" }],
     });
     execution.toolCalls.push(trace(3, "read", "read", { file_path: "HOOK.txt" }));
-    expect(hookContextFollowTask.evaluate(execution).passed).toBe(false);
+    const verified = hookContextFollowTask.evaluate(execution);
+    expect(verified.passed).toBe(true);
+    expect(verified.diagnostics?.map((diagnostic) => diagnostic.code)).toContain("hook_context_follow.non_write_call");
     execution.toolCalls = [trace(1, "write", "write", { file_path: "HOOK.txt" })];
     execution.providerCalls = [providerCall([], ["write"], world.clientPrompt)];
     expect(hookContextFollowTask.evaluate(execution)).toEqual({ passed: true });
+    execution.workspace.final.entries = [{ path: "HOOK.txt", kind: "file", size: 1, sha256: "prompt-only-hash" }];
+    expect(hookContextFollowTask.evaluate(execution)).toMatchObject({
+      passed: false,
+      code: "hook_context_follow.output",
+    });
   });
 });
 

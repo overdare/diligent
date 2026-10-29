@@ -1,6 +1,7 @@
 // @summary Runtime eval fixture for plan-mode read-only diagnosis
 
 import type { RuntimeEvalTask } from "../../runtime-task";
+import { finalAssistantText, RuntimeGrade } from "./grading";
 import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -51,45 +52,19 @@ export const planReadonlyTask: RuntimeEvalTask<PlanWorld> = {
   ],
   snapshotWorld: async (world) => ({ token: world.token, cause: world.cause }),
   evaluate(input) {
-    if (!input.toolCalls.some((call) => call.capability === "read"))
-      return {
-        passed: false,
-        code: "plan_readonly.no_read",
-        message: "No read capability was used.",
-        dimension: "behavior",
-      };
-    if (input.toolCalls.some((call) => call.capability !== "read"))
-      return {
-        passed: false,
-        code: "plan_readonly.mutation",
-        message: "A non-read capability was used.",
-        dimension: "runtime_policy",
-      };
-    const last = input.turns
-      .at(-1)
-      ?.messages.filter((message) => message.role === "assistant")
-      .at(-1);
-    const text = last
-      ? last.content
-          .filter((block) => block.type === "text")
-          .map((block) => block.text)
-          .join("")
-          .trim()
-      : "";
+    const grade = new RuntimeGrade("plan_readonly");
+    if (input.toolCalls.some((call) => call.capability !== "read" && call.outcome === "success"))
+      return grade.fail("mutation", "A non-read capability succeeded in plan mode.", "runtime_policy");
+    const rejected = input.toolCalls.filter((call) => call.capability !== "read");
+    if (rejected.length > 0)
+      grade.note("rejected_non_read", `${rejected.length} non-read call(s) were attempted and rejected.`);
+    if (!input.toolCalls.some((call) => call.capability === "read" && call.outcome === "success"))
+      return grade.fail("no_read", "The diagnosis did not inspect the workspace.", "behavior");
+    const text = finalAssistantText(input);
     if (!text.includes(input.world.cause) || !text.includes(input.world.token))
-      return {
-        passed: false,
-        code: "plan_readonly.wrong_answer",
-        message: "The diagnosis omitted or changed a seeded fact.",
-        dimension: "semantic_goal",
-      };
-    return text === input.world.expected
-      ? { passed: true }
-      : {
-          passed: false,
-          code: "plan_readonly.wrong_answer",
-          message: `Expected ${input.world.expected}.`,
-          dimension: "format_contract",
-        };
+      return grade.fail("wrong_answer", "The diagnosis omitted or changed a seeded fact.", "semantic_goal");
+    if (text !== input.world.expected)
+      return grade.fail("wrong_answer", `Expected exactly ${input.world.expected}.`, "format_contract");
+    return grade.pass();
   },
 };

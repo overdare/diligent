@@ -159,18 +159,6 @@ export function sha256Text(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-export function matchesExactPatchInput(input: unknown, expectedPatch: string): boolean {
-  if (input === null || typeof input !== "object" || Array.isArray(input)) return false;
-  const entries = Object.entries(input as Record<string, unknown>);
-  const patch = entries[0]?.[1];
-  return (
-    entries.length === 1 &&
-    entries[0]?.[0] === "patch" &&
-    typeof patch === "string" &&
-    patch.trimEnd() === expectedPatch
-  );
-}
-
 export const DEFAULT_RUNTIME_LIMITS = {
   maxChangedFiles: 3,
   maxChangedBytes: 65_536,

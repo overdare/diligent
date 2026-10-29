@@ -2,8 +2,10 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { RuntimeEvalExecution, RuntimeEvalTask, RuntimeWorldSnapshot } from "../../runtime-task";
-import type { EvalDimension, EvalProfile } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import type { EvalProfile } from "../../task";
+import { isRecord } from "../core/helpers";
+import { finalAssistantText, isExactReply, RuntimeGrade, successfulReadsOf } from "./grading";
 import {
   createIsolatedFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -19,16 +21,6 @@ const SOURCE_PATHS = ["references/initial.fact", "references/follow-up.fact"] as
 const ARTIFACT_PATH = "collaboration-resume-reference.txt";
 const ACK = "REFERENCE_ACK";
 const FINAL = "REFERENCE_PAIR_RECORDED";
-const AGENT_TYPE = "explore";
-const CALL_IDS = {
-  spawnInitial: "resume-reference-spawn-1",
-  readInitial: "resume-reference-read-2",
-  waitInitial: "resume-reference-wait-3",
-  spawnFollowUp: "resume-reference-spawn-4",
-  readFollowUp: "resume-reference-read-5",
-  waitFollowUp: "resume-reference-wait-6",
-  write: "resume-reference-write-7",
-} as const;
 
 interface RuntimeConfigRecord {
   agentsEnabled: boolean;
@@ -98,21 +90,60 @@ export const collaborationResumeReferenceTask: RuntimeEvalTask<CollaborationResu
     runtimeConfigs: world.runtimeConfigs,
   }),
   evaluate(input) {
-    if (input.turns.length !== 2) return fail("turns", "Expected the original and resumed parent turns.");
-    const failure = validateTools(input) ?? validateWorkspace(input) ?? validateFinal(input);
-    if (failure) return failure;
-    return input.toolCalls.some((call) => call.outcome === "runtime_error")
-      ? {
-          passed: true,
-          diagnostics: [
-            {
-              dimension: "efficiency",
-              code: "collaboration_resume_reference.bounded_recovery",
-              message: "One bounded provider-native recovery preceded successful resumed synthesis.",
-            },
-          ],
-        }
-      : { passed: true };
+    const grade = new RuntimeGrade("collaboration_resume_reference");
+    const { world } = input;
+    const rootId = input.session.threadId;
+    if (input.turns.length !== 2)
+      return grade.fail("turns", "Expected the original and resumed parent turns.", "harness_terminal");
+    const [initialReads, followUpReads] = SOURCE_PATHS.map((path) => successfulReadsOf(input, path));
+    if ([...initialReads!, ...followUpReads!].some((call) => call.threadId === rootId))
+      return grade.fail("parent_read", "The main task read a reference directly.", "runtime_policy");
+    const childId = initialReads!.find((call) => call.turnIndex === 0)?.threadId;
+    if (!childId)
+      return grade.fail(
+        "initial_delegation",
+        "No specialist read the initial reference in the first turn.",
+        "behavior",
+      );
+    const resumed = input.toolCalls.some(
+      (call) =>
+        call.name === "spawn_agent" &&
+        call.outcome === "success" &&
+        call.turnIndex === 1 &&
+        isRecord(call.input) &&
+        call.input.resume_id === childId,
+    );
+    if (!resumed) return grade.fail("resume", "The second turn did not resume the persisted specialist.", "behavior");
+    if (!followUpReads!.some((call) => call.turnIndex === 1 && call.threadId === childId))
+      return grade.fail("follow_up_read", "The resumed specialist did not read the follow-up reference.", "behavior");
+    if (initialReads!.some((call) => call.turnIndex === 1))
+      return grade.fail("reread_initial", "The initial reference was reread instead of recalled.", "behavior");
+    const resumeBriefs = input.toolCalls.filter(
+      (call) =>
+        call.name === "spawn_agent" && call.turnIndex === 1 && JSON.stringify(call.input).includes(world.tokens[0]),
+    );
+    if (resumeBriefs.length > 0)
+      return grade.fail(
+        "leaked_initial",
+        "The resume request supplied the initial value instead of relying on the specialist.",
+        "behavior",
+      );
+    if (input.verifier?.timedOut)
+      return grade.fail("verifier_timeout", "Artifact verification timed out.", "harness_terminal");
+    if (input.verifier?.exitCode !== 0)
+      return grade.fail("result", "The artifact does not contain both references in order.", "semantic_goal");
+    const acknowledgement = finalAssistantText(input, 0);
+    if (!acknowledgement.endsWith(ACK) || world.tokens.some((token) => acknowledgement.includes(token)))
+      return grade.fail(
+        "acknowledgement",
+        `The first reply must omit the value and end with ${ACK}.`,
+        "format_contract",
+      );
+    if (!isExactReply(finalAssistantText(input, 1), FINAL))
+      return grade.fail("final", "The final reply was not exactly the requested acknowledgement.", "format_contract");
+    if (input.toolCalls.some((call) => call.outcome !== "success"))
+      grade.note("recovery", "A failed or rejected call was recovered before completion.");
+    return grade.pass();
   },
 };
 
@@ -163,300 +194,3 @@ function fixtureFor(seed: string) {
     expectedHash: sha256Text(expected),
   };
 }
-
-function validateTools(input: RuntimeEvalExecution<CollaborationResumeReferenceWorld>) {
-  const recoveries = input.toolCalls.filter((call) => call.outcome === "runtime_error");
-  if (
-    input.toolCalls.length < 7 ||
-    input.toolCalls.length > 10 ||
-    recoveries.length > 2 ||
-    input.toolCalls.some(
-      (call, index) =>
-        call.sequence !== index + 1 ||
-        typeof call.toolCallId !== "string" ||
-        call.toolCallId.length === 0 ||
-        call.outcome === "policy_rejection" ||
-        (call.outcome === "runtime_error" && !isSafeRecovery(call)),
-    ) ||
-    new Set(input.toolCalls.map((call) => call.toolCallId)).size !== input.toolCalls.length
-  )
-    return fail("tool_shape", "Expected seven successful calls with at most two bounded path or write recoveries.");
-  const traces = traceMap(input);
-  const childId = spawnedChildId(input);
-  const firstSpawn = traces.get(CALL_IDS.spawnInitial);
-  const secondSpawn = traces.get(CALL_IDS.spawnFollowUp);
-  if (!childId || !firstSpawn || !secondSpawn) return fail("spawn_missing", "Spawn evidence was incomplete.");
-  if (
-    !exactSpawnInput(firstSpawn.input, input.world, false) ||
-    !exactSpawnInput(secondSpawn.input, input.world, true, childId) ||
-    firstSpawn.threadId !== input.session.threadId ||
-    secondSpawn.threadId !== input.session.threadId ||
-    firstSpawn.childThreadId !== undefined ||
-    secondSpawn.childThreadId !== undefined
-  )
-    return fail("spawn_contract", "The original id and nickname were not reused by the exact resume spawn.");
-  for (let index = 0; index < 2; index += 1) {
-    const read = traces.get(index === 0 ? CALL_IDS.readInitial : CALL_IDS.readFollowUp);
-    if (
-      !read ||
-      read.name !== "read" ||
-      read.capability !== "read" ||
-      read.threadId !== childId ||
-      read.childThreadId !== childId ||
-      !exactReadInput(read.input, SOURCE_PATHS[index])
-    )
-      return fail("child_read", "Each child turn must perform its one exact protected read under the reused id.");
-  }
-  const waits = [traces.get(CALL_IDS.waitInitial), traces.get(CALL_IDS.waitFollowUp)];
-  if (
-    waits.some(
-      (wait) =>
-        !wait ||
-        wait.name !== "wait" ||
-        wait.capability !== "collab" ||
-        wait.threadId !== input.session.threadId ||
-        wait.childThreadId !== undefined ||
-        !exactWaitInput(wait.input, childId),
-    )
-  )
-    return fail("wait_contract", "Each parent turn must wait once on the same canonical child id.");
-  const write = traces.get(CALL_IDS.write);
-  if (
-    !write ||
-    !["edit", "apply_patch"].includes(write.name) ||
-    write.capability !== "write" ||
-    write.threadId !== input.session.threadId ||
-    write.childThreadId !== undefined ||
-    !targetsArtifact(write.input)
-  )
-    return fail("write_contract", "The parent-only artifact write diverged.");
-  if (input.toolCalls.some((call) => call.childThreadId && call.capability !== "read"))
-    return fail("nested_child", "The child performed a non-read or nested collaboration action.");
-}
-
-function validateWorkspace(input: RuntimeEvalExecution<CollaborationResumeReferenceWorld>) {
-  const initial = fixtureEntries(input.world);
-  const artifact = input.workspace.final.entries.find((entry) => entry.path === ARTIFACT_PATH);
-  const sources = input.workspace.final.entries.filter((entry) => SOURCE_PATHS.includes(entry.path as never));
-  const unexpectedProject = input.workspace.final.entries.some(
-    (entry) =>
-      entry.path !== ARTIFACT_PATH &&
-      !entry.path.startsWith(".diligent") &&
-      !initial.some((expected) => expected.path === entry.path),
-  );
-  if (
-    canonical(input.workspace.initial.entries) !== canonical(initial) ||
-    canonical(artifact) !==
-      canonical({
-        path: ARTIFACT_PATH,
-        kind: "file",
-        size: Buffer.byteLength(input.world.expected),
-        sha256: input.world.expectedHash,
-        executable: false,
-      }) ||
-    canonical(sources) !== canonical(initial.filter((entry) => entry.kind === "file")) ||
-    unexpectedProject ||
-    input.runtimeState.diff.some((change) => change.category !== "infrastructure" && change.category !== "sessions") ||
-    !input.verifier ||
-    input.verifier.exitCode !== 0 ||
-    input.verifier.timedOut
-  )
-    return fail("workspace", "Project artifacts, protected sources, verifier result, or isolation policy diverged.");
-}
-
-function validateFinal(input: RuntimeEvalExecution<CollaborationResumeReferenceWorld>) {
-  if (
-    !exactAssistant(input.turns[0]!.messages.at(-1), input.world.acknowledgement, true, input.world.tokens) ||
-    !exactAssistant(input.turns[1]!.messages.at(-1), input.world.finalResponse) ||
-    input.approvals.length !== 0 ||
-    input.userInputRequests.length !== 0 ||
-    input.logs.length !== 0 ||
-    input.toolOutputFiles.length !== 0
-  )
-    return fail("final", "Terse finals or forbidden side-channel evidence diverged.");
-}
-
-function exactSpawnInput(input: unknown, world: CollaborationResumeReferenceWorld, resume: boolean, childId?: string) {
-  if (!isRecord(input) || typeof input.message !== "string") return false;
-  const message = input.message;
-  const allowedKeys = new Set(["message", "description", "agent_type", "resume_id", "allow_nested_agents"]);
-  return (
-    Object.keys(input).every((key) => allowedKeys.has(key)) &&
-    message.includes(SOURCE_PATHS[resume ? 1 : 0]) &&
-    !world.tokens.some((token) => message.includes(token)) &&
-    (resume ? input.agent_type === undefined || input.agent_type === AGENT_TYPE : input.agent_type === AGENT_TYPE) &&
-    (resume ? input.resume_id === childId : input.resume_id === undefined) &&
-    (input.description === undefined ||
-      (typeof input.description === "string" && input.description.length > 0 && input.description.length <= 160)) &&
-    (input.allow_nested_agents === undefined || input.allow_nested_agents === false)
-  );
-}
-
-function exactReadInput(input: unknown, path: string) {
-  if (!isRecord(input)) return false;
-  const keys = Object.keys(input);
-  return (
-    keys.every((key) => key === "file_path" || key === "limit" || key === "offset") &&
-    input.file_path === `$WORKSPACE/${path}` &&
-    (input.limit === undefined || input.limit === 2_000) &&
-    (input.offset === undefined || input.offset === 1)
-  );
-}
-
-function exactWaitInput(input: unknown, childId: string) {
-  if (!isRecord(input) || canonical(input.ids) !== canonical([childId])) return false;
-  if (Object.keys(input).some((key) => key !== "ids" && key !== "timeout_ms")) return false;
-  return (
-    input.timeout_ms === undefined ||
-    (typeof input.timeout_ms === "number" &&
-      Number.isInteger(input.timeout_ms) &&
-      input.timeout_ms > 0 &&
-      input.timeout_ms <= 3_600_000)
-  );
-}
-
-function targetsArtifact(input: unknown): boolean {
-  if (!isRecord(input)) return false;
-  if (typeof input.file_path === "string")
-    return input.file_path === ARTIFACT_PATH || input.file_path === `$WORKSPACE/${ARTIFACT_PATH}`;
-  if (typeof input.patch !== "string") return false;
-  const targets = [...input.patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((match) => match[1]);
-  return targets.length === 1 && targets[0] === ARTIFACT_PATH;
-}
-
-function isSafeRecovery(trace: RuntimeEvalExecution<CollaborationResumeReferenceWorld>["toolCalls"][number]) {
-  if (trace.capability === "write") return targetsArtifact(trace.input);
-  if (trace.capability !== "read" || !isRecord(trace.input) || typeof trace.input.file_path !== "string") return false;
-  const filePath = trace.input.file_path;
-  return SOURCE_PATHS.some((path) => filePath === path || filePath === `$WORKSPACE/${path}`);
-}
-
-function fixtureEntries(world: CollaborationResumeReferenceWorld): RuntimeWorldSnapshot["entries"] {
-  return [
-    { path: "references", kind: "directory" as const, size: 0 },
-    ...SOURCE_PATHS.map((path, index) => ({
-      path,
-      kind: "file" as const,
-      size: Buffer.byteLength(`${world.tokens[index]}\n`),
-      sha256: world.sourceHashes[index],
-      executable: false,
-    })),
-  ].sort((a, b) => a.path.localeCompare(b.path));
-}
-
-function traceMap(input: RuntimeEvalExecution<CollaborationResumeReferenceWorld>) {
-  const traces = new Map(input.toolCalls.map((trace) => [trace.toolCallId, trace]));
-  const unique = (matches: typeof input.toolCalls) => (matches.length === 1 ? matches[0] : undefined);
-  const spawns = input.toolCalls.filter((trace) => trace.name === "spawn_agent" && isRecord(trace.input));
-  const reads = input.toolCalls.filter((trace) => trace.name === "read" && trace.outcome === "success");
-  const waits = input.toolCalls.filter((trace) => trace.name === "wait").sort((a, b) => a.sequence - b.sequence);
-  const aliases = [
-    [CALL_IDS.spawnInitial, unique(spawns.filter((trace) => spawnResumeId(trace.input) === undefined))],
-    [CALL_IDS.spawnFollowUp, unique(spawns.filter((trace) => typeof spawnResumeId(trace.input) === "string"))],
-    [CALL_IDS.readInitial, unique(reads.filter((trace) => exactReadInput(trace.input, SOURCE_PATHS[0])))],
-    [CALL_IDS.readFollowUp, unique(reads.filter((trace) => exactReadInput(trace.input, SOURCE_PATHS[1])))],
-    [CALL_IDS.waitInitial, waits.length === 2 ? waits[0] : undefined],
-    [CALL_IDS.waitFollowUp, waits.length === 2 ? waits[1] : undefined],
-    [
-      CALL_IDS.write,
-      unique(
-        input.toolCalls.filter(
-          (trace) =>
-            (trace.name === "edit" || trace.name === "apply_patch") &&
-            trace.outcome === "success" &&
-            targetsArtifact(trace.input),
-        ),
-      ),
-    ],
-  ] as const;
-  for (const [alias, trace] of aliases) if (trace) traces.set(alias, trace);
-  return traces;
-}
-
-function spawnResumeId(input: unknown) {
-  return isRecord(input) ? input.resume_id : undefined;
-}
-
-function spawnedChildId(input: RuntimeEvalExecution<CollaborationResumeReferenceWorld>) {
-  const ids = input.toolCalls
-    .filter((trace) => trace.name === "read" && trace.outcome === "success")
-    .map((trace) => trace.threadId)
-    .filter((id): id is string => typeof id === "string");
-  return ids.length >= 2 && new Set(ids).size === 1 ? ids[0] : undefined;
-}
-
-function exactAssistant(value: unknown, text: string, allowTrailingReport = false, forbiddenTokens: string[] = []) {
-  const message = isRecord(value) && value.type === "message" ? value.message : value;
-  return (
-    isRecord(message) &&
-    message.role === "assistant" &&
-    exactAssistantContent(message.content, text, allowTrailingReport, forbiddenTokens)
-  );
-}
-
-function exactAssistantContent(
-  value: unknown,
-  expected: string,
-  allowTrailingReport: boolean,
-  forbiddenTokens: string[],
-) {
-  if (!Array.isArray(value)) return false;
-  const textBlocks = value.filter((block) => isRecord(block) && block.type === "text");
-  return (
-    textBlocks.length === 1 &&
-    value.every((block) => isRecord(block) && (block.type === "thinking" || block.type === "text")) &&
-    (allowTrailingReport
-      ? reportMatchesToken(textBlocks[0]!.text, expected, forbiddenTokens)
-      : textBlocks[0]!.text === expected)
-  );
-}
-
-function reportMatchesToken(value: unknown, token: string, forbiddenTokens: string[] = []): boolean {
-  if (value === token || value === `${token}\n`) return true;
-  if (typeof value !== "string" || value.length > 1_000 || value.includes("\0")) return false;
-  return value.includes(token) && forbiddenTokens.every((forbidden) => !value.includes(forbidden));
-}
-
-function canonical(value: unknown): string {
-  return JSON.stringify(sortObjectKeys(value));
-}
-
-function sortObjectKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortObjectKeys);
-  if (!isRecord(value)) return value;
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .map((key) => [key, sortObjectKeys(value[key])]),
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
-}
-
-const RESUME_FAILURE_DIMENSIONS = {
-  turns: "behavior",
-  tool_shape: "behavior",
-  spawn_missing: "behavior",
-  spawn_contract: "runtime_policy",
-  child_read: "runtime_policy",
-  wait_contract: "behavior",
-  write_contract: "runtime_policy",
-  write_recovery_order: "runtime_policy",
-  nested_child: "runtime_policy",
-  workspace_id: "runtime_policy",
-  workspace: "runtime_policy",
-  final: "semantic_goal",
-} as const satisfies Record<string, EvalDimension>;
-
-function fail(code: keyof typeof RESUME_FAILURE_DIMENSIONS, message: string) {
-  return {
-    passed: false as const,
-    code: `collaboration_resume_reference.${code}`,
-    message,
-    dimension: RESUME_FAILURE_DIMENSIONS[code],
-  };
-}
-
-export const COLLABORATION_RESUME_REFERENCE_TOOL_CALL_IDS = CALL_IDS;

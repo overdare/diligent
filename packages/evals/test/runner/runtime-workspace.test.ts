@@ -10,6 +10,7 @@ import {
   removeTemporaryRoot,
   resolveWorkspacePath,
   resolveWorkspacePathForFlavor,
+  rootSpellings,
   validateTemporaryRoot,
   workspaceDiff,
 } from "../../src/runner/runtime-workspace";
@@ -60,6 +61,16 @@ describe("runtime workspace", () => {
     expect(() => resolveWorkspacePathForFlavor(root, "\\\\server\\share\\outside.txt", "win32")).toThrow(
       "workspace_escape",
     );
+  });
+
+  test("recognizes the forward-slash spelling of a Windows root so evidence normalizes to $WORKSPACE", () => {
+    const root = "C:\\Users\\runner\\AppData\\Local\\Temp\\diligent-runtime-eval";
+    const evidence = "C:/Users/runner/AppData/Local/Temp/diligent-runtime-eval/regions/north.fact";
+    const normalized = rootSpellings(root).reduce(
+      (text, spelling) => text.split(spelling).join("$WORKSPACE"),
+      evidence,
+    );
+    expect(normalized).toBe("$WORKSPACE/regions/north.fact");
   });
 
   test("canonicalizes an existing temporary-root alias before runtime assembly", async () => {

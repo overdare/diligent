@@ -2,7 +2,7 @@
 
 import type { DiligentServerRequestResponse } from "@diligent/protocol";
 import type { RuntimeEvalTask } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import { RuntimeGrade } from "./grading";
 import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -100,26 +100,21 @@ export const inputCancelResumeTask: RuntimeEvalTask<InputCancelResumeWorld> = {
     unselected: await exactFile(world.root, world.otherPath),
   }),
   evaluate(input) {
-    if (input.userInputRequests.length !== 1)
-      return fail("question_count", "The cancelled clarification must not be repeated on resume.", "behavior");
-    const firstTurnIds = new Set(
-      input.turns[0]?.coreEvents.flatMap(({ event }) => (event.type === "tool_start" ? [event.toolCallId] : [])) ?? [],
-    );
-    if (input.toolCalls.some((call) => firstTurnIds.has(call.toolCallId) && call.capability === "write"))
-      return fail("early_mutation", "The workspace changed before a target was supplied.", "runtime_policy");
-    if (input.verifier?.timedOut) return fail("verifier_timeout", "Resume verification timed out.", "harness_terminal");
+    const grade = new RuntimeGrade("input_cancel_resume");
+    if (input.userInputRequests.length === 0)
+      return grade.fail("no_question", "The target choice was never offered through the interactive UI.", "behavior");
+    if (input.userInputRequests.length > 1)
+      return grade.fail("question_count", "The cancelled clarification was repeated on resume.", "behavior");
+    if (
+      input.toolCalls.some((call) => call.turnIndex === 0 && call.capability === "write" && call.outcome === "success")
+    )
+      return grade.fail("early_mutation", "The workspace changed before a target was supplied.", "runtime_policy");
+    if (input.verifier?.timedOut)
+      return grade.fail("verifier_timeout", "Resume verification timed out.", "harness_terminal");
     if (input.verifier?.exitCode !== 0)
-      return fail("result", "The resumed turn did not update only the supplied target.", "semantic_goal");
-    const target = input.workspace.final.entries.find((entry) => entry.path === input.world.targetPath);
-    const other = input.workspace.final.entries.find((entry) => entry.path === input.world.otherPath);
-    if (target?.sha256 !== input.world.expectedHash)
-      return fail("target", "The resumed value was not written to the supplied target.", "semantic_goal");
-    return other?.sha256 === input.world.otherHash
-      ? { passed: true }
-      : fail("other", "The unselected target changed.", "runtime_policy");
+      return grade.fail("result", "The resumed turn did not update only the supplied target.", "semantic_goal");
+    if (input.toolCalls.some((call) => call.outcome !== "success"))
+      grade.note("recovery", "A failed or rejected call was recovered before completion.");
+    return grade.pass();
   },
 };
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `input_cancel_resume.${code}`, message, dimension };
-}

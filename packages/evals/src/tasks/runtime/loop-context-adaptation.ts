@@ -2,8 +2,8 @@
 
 import type { AgentContextInjection, AgentLoopHook } from "@diligent/core/agent";
 import type { BundledToolProvider } from "@diligent/runtime";
-import type { RuntimeEvalExecution, RuntimeEvalTask, RuntimeWorldSnapshot } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import { finalAssistantText, RuntimeGrade, successfulReadsOf, successfulWritesTo, traceTargets } from "./grading";
 import {
   createIsolatedFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -26,12 +26,9 @@ const PRESENTATION = {
 
 export interface LoopContextHookRecord {
   sequence: number;
-  phase: "before_turn" | "tool_result";
+  phase: "before_turn";
   turnId: string;
-  injected?: boolean;
-  toolName?: string;
-  toolCallId?: string;
-  success?: boolean;
+  injected: boolean;
 }
 
 export interface LoopContextAdaptationWorld extends RuntimeFixtureWorld {
@@ -41,6 +38,8 @@ export interface LoopContextAdaptationWorld extends RuntimeFixtureWorld {
   injectedContext: string;
   clientPrompt: string;
   expectedHash: string;
+  /** Trace sequence of the first successful brief read that revealed the initial lane; arms the injection. */
+  briefReadSequence?: number;
   hookRecords: LoopContextHookRecord[];
   factoryCalls: Array<{ agentKind: string; cwd: string; tools: string[] }>;
 }
@@ -91,6 +90,16 @@ export const loopContextAdaptationTask: RuntimeEvalTask<LoopContextAdaptationWor
     };
   },
   createRuntimeConfig: createIsolatedFixtureRuntimeConfig,
+  observeToolTrace(world, trace) {
+    if (
+      world.briefReadSequence === undefined &&
+      trace.capability === "read" &&
+      trace.outcome === "success" &&
+      traceTargets(trace, BRIEF_PATH) &&
+      JSON.stringify(trace.output ?? "").includes(world.initialValue)
+    )
+      world.briefReadSequence = trace.sequence;
+  },
   createBundledToolProviders(world): readonly BundledToolProvider[] {
     return [
       {
@@ -102,12 +111,11 @@ export const loopContextAdaptationTask: RuntimeEvalTask<LoopContextAdaptationWor
             cwd: context.cwd,
             tools: context.tools.map((tool) => tool.name),
           });
-          let armed = false;
           let injected = false;
           const hook: AgentLoopHook = {
             id: HOOK_SOURCE,
             beforeTurn({ turnId }) {
-              const shouldInject = armed && !injected;
+              const shouldInject = world.briefReadSequence !== undefined && !injected;
               world.hookRecords.push({
                 sequence: world.hookRecords.length + 1,
                 phase: "before_turn",
@@ -117,27 +125,6 @@ export const loopContextAdaptationTask: RuntimeEvalTask<LoopContextAdaptationWor
               if (!shouldInject) return;
               injected = true;
               return [injection(world)];
-            },
-            onToolResult({ turnId, toolCall, result }) {
-              const success = !result.isError;
-              world.hookRecords.push({
-                sequence: world.hookRecords.length + 1,
-                phase: "tool_result",
-                turnId,
-                toolName: toolCall.name,
-                toolCallId: toolCall.id,
-                success,
-              });
-              if (
-                !armed &&
-                success &&
-                toolCall.name === "read" &&
-                isRecord(toolCall.input) &&
-                typeof toolCall.input.file_path === "string" &&
-                toolCall.input.file_path.replaceAll("\\", "/").endsWith(`/${BRIEF_PATH}`) &&
-                String(result.output).includes(world.initialValue)
-              )
-                armed = true;
             },
           };
           return [hook];
@@ -149,32 +136,43 @@ export const loopContextAdaptationTask: RuntimeEvalTask<LoopContextAdaptationWor
   verify: (world, signal) => verifyExactFiles(world, { [OUTPUT_PATH]: world.expected }, signal),
   snapshotWorld: async (world) => ({
     result: await exactFile(world.root, OUTPUT_PATH),
+    briefReadSequence: world.briefReadSequence,
     hookRecords: structuredClone(world.hookRecords),
     factoryCalls: structuredClone(world.factoryCalls),
   }),
   evaluate(input) {
-    const failure = validateToolsAndResult(input) ?? validateIsolation(input);
-    if (failure) return failure;
-    const diagnostics = [];
-    if (absentFileEditRecovery(input))
-      diagnostics.push({
-        dimension: "efficiency" as const,
-        code: "loop_context_adaptation.absent_file_recovery",
-        message: "One bounded provider-neutral absent-file recovery preceded the adapted write.",
+    const grade = new RuntimeGrade("loop_context_adaptation");
+    const world = input.world;
+    if (successfulReadsOf(input, BRIEF_PATH).length === 0)
+      return grade.fail(
+        "brief_not_read",
+        "The deployment brief was never read, so no requirement update could arrive.",
+        "behavior",
+      );
+    if (!world.hookRecords.some((record) => record.injected))
+      return grade.fail("no_injection", "The requirement update was armed but no later turn received it.", "behavior");
+    if (input.verifier?.timedOut)
+      return grade.fail("verifier_timeout", "Independent verifier timed out.", "harness_terminal");
+    const output = input.workspace.final.entries.find((entry) => entry.path === OUTPUT_PATH);
+    if (input.verifier?.exitCode !== 0 || output?.sha256 !== world.expectedHash)
+      return grade.fail(
+        "result",
+        output?.sha256 === sha256Text(`${world.initialValue}\n`)
+          ? "RESULT.txt kept the stale lane instead of the updated requirement."
+          : "RESULT.txt does not contain exactly the updated lane.",
+        "semantic_goal",
+      );
+    const answer = finalAssistantText(input);
+    if (answer.includes(world.initialValue) && !answer.includes(world.injectedValue))
+      return grade.fail("final_answer", "The final answer reported the stale lane as the result.", "semantic_goal");
+    if (successfulWritesTo(input, OUTPUT_PATH).some((call) => JSON.stringify(call.input).includes(world.initialValue)))
+      grade.note("stale_write_corrected", "RESULT.txt first received the stale lane and was corrected later.");
+    if (!answer.includes(world.injectedValue))
+      grade.note("final_answer_omits_result", "The final answer did not name the adapted lane.", {
+        dimension: "format_contract",
+        impact: "info",
       });
-    if (missingRootInstructionsRead(input))
-      diagnostics.push({
-        dimension: "efficiency" as const,
-        code: "loop_context_adaptation.missing_root_instructions",
-        message: "One bounded root-instructions probe failed before the adapted write.",
-      });
-    if (postWriteConfirmationRead(input))
-      diagnostics.push({
-        dimension: "efficiency" as const,
-        code: "loop_context_adaptation.post_write_confirmation",
-        message: "One bounded target read confirmed the adapted write before completion.",
-      });
-    return diagnostics.length > 0 ? { passed: true, diagnostics } : { passed: true };
+    return grade.pass();
   },
 };
 
@@ -183,219 +181,5 @@ function injection(world: LoopContextAdaptationWorld): AgentContextInjection {
     source: HOOK_SOURCE,
     content: world.injectedContext,
     metadata: { presentation: PRESENTATION },
-  };
-}
-
-function validateToolsAndResult(input: RuntimeEvalExecution<LoopContextAdaptationWorld>) {
-  const recovery = absentFileEditRecovery(input);
-  const instructionsProbe = missingRootInstructionsRead(input);
-  const confirmation = postWriteConfirmationRead(input);
-  const read = input.toolCalls[0];
-  const write = recovery?.succeeded ?? input.toolCalls[instructionsProbe ? 2 : 1];
-  const expectedToolCount = recovery || instructionsProbe || confirmation ? 3 : 2;
-  const expectedWriteSequence = recovery || instructionsProbe ? 3 : 2;
-  const expectedReadInput = { file_path: `$WORKSPACE/${BRIEF_PATH}` };
-  if (
-    input.toolCalls.length !== expectedToolCount ||
-    read?.sequence !== 1 ||
-    read.name !== "read" ||
-    read.capability !== "read" ||
-    read.outcome !== "success" ||
-    JSON.stringify(read.input) !== JSON.stringify(expectedReadInput) ||
-    write?.sequence !== expectedWriteSequence ||
-    !["apply_patch", "edit"].includes(write.name) ||
-    write.capability !== "write" ||
-    write.outcome !== "success" ||
-    !hasExactWriteInput(write.name, write.input, input.world.expected) ||
-    input.verifier?.exitCode !== 0 ||
-    input.verifier.timedOut ||
-    input.verifier.argv.join(" ") !== `eval-exact-files ${OUTPUT_PATH}`
-  )
-    return fail("tools", "The exact read-then-adapted-write trace or independent verifier failed.");
-  const output = input.workspace.final.entries.find((entry) => entry.path === OUTPUT_PATH);
-  if (
-    output?.sha256 !== input.world.expectedHash ||
-    output.sha256 === sha256Text(`${input.world.initialValue}\n`) ||
-    !hasExactFinalFixture(
-      input.workspace.final,
-      input.world.initialBrief,
-      input.world.expected,
-      input.world.expectedHash,
-    )
-  )
-    return fail("result", "The final artifact did not contain the exclusive injected value.");
-  if (!isValidFinalAssistant(input.turns[0]!.messages.at(-1), input.world.injectedValue, input.world.initialValue))
-    return fail("final_answer", "The final answer did not exclusively report the adapted result.");
-}
-
-function postWriteConfirmationRead(input: RuntimeEvalExecution<LoopContextAdaptationWorld>) {
-  if (input.toolCalls.length !== 3) return undefined;
-  const trace = input.toolCalls[2];
-  const output = isRecord(trace?.output) ? trace.output.output : undefined;
-  return trace?.sequence === 3 &&
-    trace.name === "read" &&
-    trace.capability === "read" &&
-    trace.outcome === "success" &&
-    trace.error === undefined &&
-    trace.threadId === input.session.threadId &&
-    trace.childThreadId === undefined &&
-    JSON.stringify(trace.input) === JSON.stringify({ file_path: `$WORKSPACE/${OUTPUT_PATH}` }) &&
-    output === `1\t${input.world.expected.trimEnd()}\n2\t`
-    ? trace
-    : undefined;
-}
-
-function missingRootInstructionsRead(input: RuntimeEvalExecution<LoopContextAdaptationWorld>) {
-  if (input.toolCalls.length !== 3) return undefined;
-  const trace = input.toolCalls[1];
-  const error = "Error: File not found: $WORKSPACE/AGENTS.md";
-  return trace?.sequence === 2 &&
-    trace.name === "read" &&
-    trace.capability === "read" &&
-    trace.outcome === "runtime_error" &&
-    trace.threadId === input.session.threadId &&
-    trace.childThreadId === undefined &&
-    JSON.stringify(trace.input) === JSON.stringify({ file_path: "$WORKSPACE/AGENTS.md" }) &&
-    trace.error === error
-    ? trace
-    : undefined;
-}
-
-function absentFileEditRecovery(input: RuntimeEvalExecution<LoopContextAdaptationWorld>) {
-  if (input.profile.provider !== "anthropic" || input.toolCalls.length !== 3) return undefined;
-  const failed = input.toolCalls[1];
-  const succeeded = input.toolCalls[2];
-  const failedInput = isRecord(failed?.input) ? failed.input : undefined;
-  if (
-    !failed ||
-    !succeeded ||
-    failed.name !== "edit" ||
-    failed.capability !== "write" ||
-    failed.outcome !== "runtime_error" ||
-    failed.sequence + 1 !== succeeded.sequence ||
-    failedInput?.file_path !== `$WORKSPACE/${OUTPUT_PATH}` ||
-    typeof failedInput.old_string !== "string" ||
-    failedInput.old_string.length === 0 ||
-    failedInput.new_string !== input.world.expected ||
-    failedInput.replace_all !== false ||
-    !failed.error?.includes("ENOENT") ||
-    !failed.error.includes(OUTPUT_PATH) ||
-    succeeded.name !== "edit" ||
-    succeeded.capability !== "write" ||
-    succeeded.outcome !== "success" ||
-    !hasExactWriteInput(succeeded.name, succeeded.input, input.world.expected)
-  )
-    return undefined;
-  return { failed, succeeded };
-}
-
-function validateIsolation(input: RuntimeEvalExecution<LoopContextAdaptationWorld>) {
-  if (
-    input.childSessions.length !== 0 ||
-    input.compactions.length !== 0 ||
-    input.protocolActions.length !== 0 ||
-    input.approvals.length !== 0 ||
-    input.userInputRequests.length !== 0 ||
-    input.toolOutputFiles.length !== 0 ||
-    input.toolCalls.some((call) => !["read", "apply_patch", "edit"].includes(call.name))
-  )
-    return fail(
-      "forbidden",
-      "Child, compaction, action, approval, input, network, output-file, or undeclared tools are forbidden.",
-    );
-  const initialBrief = input.workspace.initial.entries.find((entry) => entry.path === BRIEF_PATH);
-  const finalBrief = input.workspace.final.entries.find((entry) => entry.path === BRIEF_PATH);
-  const initialKeep = input.workspace.initial.entries.find((entry) => entry.path === ".git/.keep");
-  const finalKeep = input.workspace.final.entries.find((entry) => entry.path === ".git/.keep");
-  if (
-    JSON.stringify(initialBrief) !== JSON.stringify(finalBrief) ||
-    JSON.stringify(initialKeep) !== JSON.stringify(finalKeep) ||
-    input.runtimeState.diff.some((change) => !["infrastructure", "sessions"].includes(change.category))
-  )
-    return fail("workspace", "A protected project path or forbidden runtime-state category changed.");
-}
-
-function hasExactFinalFixture(
-  snapshot: RuntimeWorldSnapshot,
-  initialBrief: string,
-  expected: string,
-  expectedHash: string,
-): boolean {
-  const entries = snapshot.entries.filter(
-    (entry) => entry.path !== ".diligent" && !entry.path.startsWith(".diligent/"),
-  );
-  return (
-    entries.length === 4 &&
-    hasExactDirectory(entries, ".git") &&
-    hasExactFile(entries, ".git/.keep", "fixture boundary\n", sha256Text("fixture boundary\n")) &&
-    hasExactFile(entries, BRIEF_PATH, initialBrief, sha256Text(initialBrief)) &&
-    hasExactFile(entries, OUTPUT_PATH, expected, expectedHash)
-  );
-}
-
-function hasExactDirectory(entries: RuntimeWorldSnapshot["entries"], path: string): boolean {
-  return (
-    JSON.stringify(entries.find((entry) => entry.path === path)) ===
-    JSON.stringify({ path, kind: "directory", size: 0 })
-  );
-}
-
-function hasExactFile(
-  entries: RuntimeWorldSnapshot["entries"],
-  path: string,
-  content: string,
-  sha256: string,
-): boolean {
-  const size = new TextEncoder().encode(content).byteLength;
-  return (
-    JSON.stringify(entries.find((entry) => entry.path === path)) ===
-    JSON.stringify({ path, kind: "file", size, sha256, executable: false })
-  );
-}
-
-function hasExactWriteInput(toolName: string, input: unknown, expected: string): boolean {
-  if (toolName === "edit") {
-    return (
-      JSON.stringify(input) ===
-      JSON.stringify({
-        file_path: `$WORKSPACE/${OUTPUT_PATH}`,
-        old_string: "",
-        new_string: expected,
-        replace_all: false,
-      })
-    );
-  }
-  if (toolName !== "apply_patch" || !isRecord(input) || typeof input.patch !== "string") return false;
-  const expectedPatch = `*** Begin Patch\n*** Add File: ${OUTPUT_PATH}\n+${expected.trimEnd()}\n*** End Patch`;
-  return input.patch === expectedPatch || input.patch === `${expectedPatch}\n`;
-}
-
-function isValidFinalAssistant(value: unknown, expected: string, forbidden: string): boolean {
-  if (!isRecord(value) || value.role !== "assistant" || !Array.isArray(value.content) || value.content.length !== 1)
-    return false;
-  const block = value.content[0];
-  if (!isRecord(block) || Object.keys(block).length !== 2 || block.type !== "text" || typeof block.text !== "string")
-    return false;
-  return block.text.length <= 512 && block.text.split(expected).length === 2 && !block.text.includes(forbidden);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-const LOOP_FAILURE_DIMENSIONS = {
-  tools: "behavior",
-  result: "semantic_goal",
-  final_answer: "semantic_goal",
-  forbidden: "runtime_policy",
-  workspace: "runtime_policy",
-} as const satisfies Record<string, EvalDimension>;
-
-function fail(code: keyof typeof LOOP_FAILURE_DIMENSIONS, message: string) {
-  return {
-    passed: false as const,
-    code: `loop_context_adaptation.${code}`,
-    message,
-    dimension: LOOP_FAILURE_DIMENSIONS[code],
   };
 }

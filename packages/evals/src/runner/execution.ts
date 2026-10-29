@@ -18,7 +18,7 @@ import {
   type EvalTerminationReason,
   ZERO_USAGE,
 } from "../task";
-import { createBudgetGraceDiagnostics, EVAL_BUDGET_GRACE, resolveEvalHardLimits } from "./budget-policy";
+import { createBudgetGraceDiagnostics, describeHardLimitExceeded, resolveEvalHardLimits } from "./budget-policy";
 import { checkStructuralInvariants } from "./invariants";
 
 export interface RunEvalExecutionInput<TWorld> {
@@ -82,9 +82,7 @@ export async function runEvalExecution<TWorld>(
           dimension: "harness_terminal",
           category: "budget_exceeded",
           code: "budget_exceeded.turn_limit",
-          message:
-            `Turn count exceeded hard limit ${hardLimits.maxTurns} ` +
-            `(target ${task.limits.maxTurns} + ${EVAL_BUDGET_GRACE.turns} grace).`,
+          message: describeHardLimitExceeded("turns", hardLimits.maxTurns, task.limits.maxTurns),
         });
       }
     }
@@ -95,9 +93,7 @@ export async function runEvalExecution<TWorld>(
           dimension: "harness_terminal",
           category: "budget_exceeded",
           code: "budget_exceeded.tool_call_limit",
-          message:
-            `Tool-call count exceeded hard limit ${hardLimits.maxToolCalls} ` +
-            `(target ${task.limits.maxToolCalls} + ${EVAL_BUDGET_GRACE.toolCalls} grace).`,
+          message: describeHardLimitExceeded("toolCalls", hardLimits.maxToolCalls, task.limits.maxToolCalls),
         });
       }
     }

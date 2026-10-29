@@ -1,8 +1,9 @@
 // @summary Runtime eval for plan-mode discovery, one bounded question, and decision-complete convergence
 
 import type { DiligentServerRequestResponse } from "@diligent/protocol";
-import type { RuntimeEvalExecution, RuntimeEvalTask, RuntimeToolTrace } from "../../runtime-task";
-import type { EvalDimension } from "../../task";
+import type { RuntimeEvalTask } from "../../runtime-task";
+import { isRecord } from "../core/helpers";
+import { finalAssistantText, harmlessFailedProbes, RuntimeGrade, successfulReadsOf, traceTargets } from "./grading";
 import {
   createIsolatedFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -76,162 +77,66 @@ export const planConvergeTask: RuntimeEvalTask<PlanConvergeWorld> = {
     verifyExactFiles(world, { [API_PATH]: `${world.apiFact}\n`, [UI_PATH]: `${world.uiFact}\n` }, signal),
   snapshotWorld: async (world) => ({ apiFact: world.apiFact, uiFact: world.uiFact, preference: world.preference }),
   evaluate(input) {
-    const traceError = validateTraceShape(input);
-    if (traceError) return fail("trace_shape", traceError.message, traceError.dimension);
-    const request = input.toolCalls.find((call) => call.name === "request_user_input" && call.outcome === "success")!;
-    const askedQuestion = boundedQuestion(request.input);
-    if (!askedQuestion)
-      return fail(
-        "question",
-        "The successful request must contain one bounded rollout_preference question.",
-        "behavior",
-      );
-    const text = lastAssistantText(input);
+    const grade = new RuntimeGrade("plan_converge");
+    const { world } = input;
+    const apiRead = successfulReadsOf(input, API_PATH).find((call) =>
+      JSON.stringify(call.output).includes(world.apiFact),
+    );
+    const uiRead = successfulReadsOf(input, UI_PATH).find((call) => JSON.stringify(call.output).includes(world.uiFact));
+    if (!apiRead || !uiRead)
+      return grade.fail("discovery", "Both fixture facts must be read before planning.", "behavior");
+    const questions = input.toolCalls.filter(
+      (call) => call.capability === "user_input" && call.outcome === "success" && asksFor(call.input, QUESTION_ID),
+    );
+    if (questions.length === 0)
+      return grade.fail("question", "The unavailable rollout preference was never asked for.", "behavior");
+    if (questions[0]!.sequence < Math.max(apiRead.sequence, uiRead.sequence))
+      grade.note("asked_before_discovery", "The preference was requested before both facts were read.");
+    if (questionCount(questions[0]!.input) > 1)
+      grade.note("extra_questions", "The clarification bundled questions beyond the unavailable preference.");
+    const text = finalAssistantText(input);
     if (count(text, "<proposed_plan>") !== 1 || count(text, "</proposed_plan>") !== 1)
-      return fail("plan_block", "The final response must contain exactly one proposed_plan block.", "format_contract");
-    for (const value of [input.world.apiFact, input.world.uiFact, input.world.preference]) {
-      if (!text.includes(value))
-        return fail("plan_facts", "The final plan must contain every hidden fact and preference.", "semantic_goal");
-    }
+      return grade.fail(
+        "plan_block",
+        "The final response must contain exactly one proposed_plan block.",
+        "format_contract",
+      );
+    if (![world.apiFact, world.uiFact, world.preference].every((value) => text.includes(value)))
+      return grade.fail(
+        "plan_facts",
+        "The final plan must contain every discovered fact and the answer.",
+        "semantic_goal",
+      );
     if (input.verifier?.timedOut)
-      return fail("verifier_timeout", "Fixture verification timed out.", "harness_terminal");
-    if (input.verifier?.exitCode !== 0) return fail("verifier", "Fixture verification failed.", "runtime_policy");
-    const recoveries = input.toolCalls.filter((call) => call.name === "read" && call.outcome !== "success").length;
-    const successfulReads = input.toolCalls.filter((call) => call.name === "read" && call.outcome === "success").length;
-    const diagnostics = [];
-    if (recoveries > 0)
-      diagnostics.push({
-        dimension: "efficiency" as const,
-        code: "plan_converge.read_recovery",
-        message: `Observed ${recoveries} bounded read recovery attempt(s).`,
-      });
-    if (successfulReads > 2)
-      diagnostics.push({
-        dimension: "efficiency" as const,
-        code: "plan_converge.additional_safe_read",
-        message: `Observed ${successfulReads - 2} additional safe read(s).`,
-      });
-    return diagnostics.length > 0 ? { passed: true, diagnostics } : { passed: true };
+      return grade.fail("verifier_timeout", "Fixture verification timed out.", "harness_terminal");
+    if (input.verifier?.exitCode !== 0)
+      return grade.fail("verifier", "Plan mode changed the fixture facts.", "runtime_policy");
+    if (harmlessFailedProbes(input).length > 0)
+      grade.note("read_probe", "A read failed before the facts were discovered.", { impact: "info" });
+    const otherReads = input.toolCalls.filter(
+      (call) =>
+        call.capability === "read" &&
+        call.outcome === "success" &&
+        !traceTargets(call, API_PATH, input.threadCwd) &&
+        !traceTargets(call, UI_PATH, input.threadCwd),
+    );
+    if (otherReads.length > 0) grade.note("additional_read", "Additional safe reads were made.", { impact: "info" });
+    return grade.pass();
   },
 };
 
-function validateTraceShape(
-  input: RuntimeEvalExecution<PlanConvergeWorld>,
-): { message: string; dimension: EvalDimension } | undefined {
-  const traces = [...input.toolCalls].sort((left, right) => left.sequence - right.sequence);
-  const parentThreadId = input.turns[0]!.threadId;
-  if (traces.some((trace) => trace.threadId !== parentThreadId || trace.childThreadId !== undefined))
-    return {
-      message: "Every trace must be attributed only to the parent thread.",
-      dimension: "runtime_policy",
-    };
-  if (traces.some((trace) => trace.name !== "read" && trace.name !== "request_user_input"))
-    return { message: "Plan convergence used an undeclared tool.", dimension: "runtime_policy" };
-  const reads = traces.filter((trace) => trace.name === "read");
-  if (reads.some((trace) => !isDeclaredRead(trace)))
-    return { message: "A read targeted an undeclared path.", dimension: "runtime_policy" };
-  const questions = traces.filter((trace) => trace.name === "request_user_input");
-  if (questions.length !== 1 || questions[0]!.capability !== "user_input" || questions[0]!.outcome !== "success")
-    return { message: "Expected one successful clarification after discovery.", dimension: "behavior" };
-  const question = questions[0]!;
-  const apiRead = reads.find((trace) => isExactSuccessfulRead(trace, API_PATH, input.world.apiFact));
-  if (!apiRead)
-    return {
-      message: "The API fact must be read successfully from its exact absolute path.",
-      dimension: "runtime_policy",
-    };
-  const uiRead = reads.find((trace) => isExactSuccessfulRead(trace, UI_PATH, input.world.uiFact));
-  if (!uiRead)
-    return {
-      message: "The UI fact must be read successfully from its exact absolute path.",
-      dimension: "runtime_policy",
-    };
-  if (question.sequence <= Math.max(apiRead.sequence, uiRead.sequence))
-    return {
-      message: "The rollout preference was requested before both fixture facts were discovered.",
-      dimension: "behavior",
-    };
-  return undefined;
-}
-
-function isDeclaredRead(call: RuntimeToolTrace): boolean {
-  if (call.capability !== "read" || !isRecord(call.input) || typeof call.input.file_path !== "string") return false;
-  const filePath = call.input.file_path;
-  const declared = [API_PATH, UI_PATH];
-  return declared.some((path) => filePath === path || filePath === `$WORKSPACE/${path}`);
-}
-
-function isExactSuccessfulRead(call: RuntimeToolTrace, path: string, fact: string): boolean {
+function asksFor(value: unknown, id: string): boolean {
   return (
-    call.name === "read" &&
-    call.capability === "read" &&
-    call.outcome === "success" &&
-    isRecord(call.input) &&
-    call.input.file_path === `$WORKSPACE/${path}` &&
-    toolOutputText(call).includes(fact)
+    isRecord(value) &&
+    Array.isArray(value.questions) &&
+    value.questions.some((question) => isRecord(question) && question.id === id)
   );
 }
 
-function boundedQuestion(value: unknown): Record<string, unknown> | undefined {
-  if (!isRecord(value) || Object.keys(value).length !== 1 || !Array.isArray(value.questions)) return undefined;
-  if (value.questions.length !== 1 || !isRecord(value.questions[0])) return undefined;
-  const question = value.questions[0];
-  const keys = Object.keys(question);
-  if (
-    !keys.every((key) => ["allow_multiple", "header", "id", "options", "question"].includes(key)) ||
-    question.id !== QUESTION_ID ||
-    typeof question.header !== "string" ||
-    question.header.length === 0 ||
-    question.header.length > 12 ||
-    typeof question.question !== "string" ||
-    question.question.length === 0 ||
-    (question.allow_multiple !== undefined && question.allow_multiple !== false) ||
-    !Array.isArray(question.options) ||
-    question.options.length < 1 ||
-    question.options.length > 4
-  )
-    return undefined;
-  if (
-    question.options.some(
-      (option) =>
-        !isRecord(option) ||
-        Object.keys(option).length !== 2 ||
-        typeof option.label !== "string" ||
-        option.label.length === 0 ||
-        typeof option.description !== "string" ||
-        option.description.length === 0,
-    )
-  )
-    return undefined;
-  return question;
-}
-
-function toolOutputText(call: RuntimeToolTrace): string {
-  if (typeof call.output === "string") return call.output;
-  return isRecord(call.output) && typeof call.output.output === "string" ? call.output.output : "";
-}
-
-function lastAssistantText(input: Parameters<typeof planConvergeTask.evaluate>[0]): string {
-  const message = input.turns
-    .at(-1)
-    ?.messages.filter((item) => item.role === "assistant")
-    .at(-1);
-  return (
-    message?.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("") ?? ""
-  );
+function questionCount(value: unknown): number {
+  return isRecord(value) && Array.isArray(value.questions) ? value.questions.length : 0;
 }
 
 function count(text: string, value: string): number {
   return text.split(value).length - 1;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
-}
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `plan_converge.${code}`, message, dimension };
 }

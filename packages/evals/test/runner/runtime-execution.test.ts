@@ -10,6 +10,7 @@ import type { StreamContext, StreamFunction } from "@diligent/core/provider-cont
 import type { BundledToolProvider } from "@diligent/runtime";
 import * as runtime from "@diligent/runtime";
 import { z } from "zod";
+import { resolveEvalHardLimits } from "../../src/runner/budget-policy";
 import { runRuntimeEvalExecution } from "../../src/runner/runtime-execution";
 import type { RuntimeEvalExecution, RuntimeEvalTask } from "../../src/runtime-task";
 import {
@@ -880,12 +881,9 @@ describe("runRuntimeEvalExecution", () => {
       outputHash?: string;
     };
     expect(result.failures).toEqual([]);
-    expect(result.diagnostics).toEqual([
-      {
-        dimension: "efficiency",
-        code: "knowledge_intent_split.second_safe_search",
-        message: "A second bounded read-only knowledge search was used before successful completion.",
-      },
+    expect(result.status).toBe("pass");
+    expect(result.diagnostics?.map((diagnostic) => diagnostic.code)).toEqual([
+      "knowledge_intent_split.knowledge_search",
     ]);
     expect(result.execution.toolCalls.map((call) => [call.name, call.outcome])).toEqual([
       ["search_knowledge", "success"],
@@ -1580,25 +1578,21 @@ describe("runRuntimeEvalExecution", () => {
 
   test("stops before an over-budget provider turn reaches the underlying stream", async () => {
     let providerCalls = 0;
-    const messages = sequenceStream([
-      assistantMessage(
-        [{ type: "tool_call", id: "read-1", name: "read", input: { file_path: "value.txt" } }],
-        "tool_use",
+    const limits = { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 1, maxToolCalls: 20, timeoutMs: 5_000 };
+    const hard = resolveEvalHardLimits(limits);
+    const messages = sequenceStream(
+      Array.from({ length: hard.maxTurns + 1 }, (_, index) =>
+        assistantMessage(
+          [{ type: "tool_call", id: `read-${index + 1}`, name: "read", input: { file_path: "value.txt" } }],
+          "tool_use",
+        ),
       ),
-      assistantMessage(
-        [{ type: "tool_call", id: "read-2", name: "read", input: { file_path: "value.txt" } }],
-        "tool_use",
-      ),
-      assistantMessage(
-        [{ type: "tool_call", id: "read-3", name: "read", input: { file_path: "value.txt" } }],
-        "tool_use",
-      ),
-    ]);
+    );
     const task: RuntimeEvalTask<RuntimeFixtureWorld> = {
       id: "runtime-turn-limit",
       description: "turn limit",
       fixtureVersion: "turn-limit-v0",
-      limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 1, maxToolCalls: 2, timeoutMs: 5_000 },
+      limits,
       toolPolicy: { allowedCapabilities: ["read"], allowedCommands: [] },
       async setup(seed, root) {
         await writeFixture(root, { "value.txt": "value\n" });
@@ -1621,7 +1615,7 @@ describe("runRuntimeEvalExecution", () => {
 
     expect(result.passed).toBe(false);
     expect(result.failures.some((failure) => failure.code === "budget_exceeded.turn_limit")).toBe(true);
-    expect(providerCalls).toBe(3);
+    expect(providerCalls).toBe(hard.maxTurns);
   });
 
   test("captures initial and post-tool provider context with session, prompt, and tool evidence", async () => {

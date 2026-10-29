@@ -3,8 +3,9 @@
 import { COMPACTION_MIN_INPUT_TOKENS } from "@diligent/core/compaction-contract";
 import type { BundledToolProvider, RuntimeConfig } from "@diligent/runtime";
 import { z } from "zod";
-import type { RuntimeEvalExecution, RuntimeEvalTask, RuntimeToolTrace } from "../../runtime-task";
-import type { EvalDimension, EvalProfile } from "../../task";
+import type { RuntimeEvalExecution, RuntimeEvalTask } from "../../runtime-task";
+import type { EvalProfile } from "../../task";
+import { compactionEndCount, RuntimeGrade, successfulWritesTo } from "./grading";
 import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -93,67 +94,80 @@ export const autoCompactionResumeTask: RuntimeEvalTask<AutoCompactionResumeWorld
     const started = performance.now();
     const actual = await exactFile(world.root, world.targetPath);
     const valid = !signal.aborted && actual === world.expected;
+    const factsPresent = actual !== undefined && world.facts.every((fact) => actual.includes(fact));
     return {
       argv: ["auto-compaction-resume-verifier", world.targetPath],
       exitCode: valid ? 0 : 1,
       elapsedMs: Math.round(performance.now() - started),
       stdout: valid ? `Exact compacted-context artifact verified: ${world.expectedHash}\n` : "",
-      stderr: valid ? "" : "Artifact bytes did not reconstruct all seeded compacted facts exactly.\n",
+      stderr: valid
+        ? ""
+        : factsPresent
+          ? "format_contract: Artifact kept every seeded fact but violated the declared line envelope.\n"
+          : "semantic_goal: Artifact bytes did not reconstruct all seeded compacted facts.\n",
       timedOut: signal.aborted,
     };
   },
   snapshotWorld: async (world) => ({ artifact: await exactFile(world.root, world.targetPath) }),
   evaluate(input) {
+    const grade = new RuntimeGrade("auto_compaction_resume");
+    if (input.compactions.length !== 0)
+      return grade.fail(
+        "manual_compaction",
+        "Runner-owned manual compaction evidence must be empty.",
+        "runtime_policy",
+      );
     const turn = input.turns[0];
-    const manualFailure = validateNoManualCompaction(input);
-    if (manualFailure) return manualFailure;
-    const toolFailure = validateTools(input);
-    if (toolFailure) return toolFailure;
-    if (input.providerCalls.length > autoCompactionResumeTask.limits.maxTurns + 3)
-      return fail("unbounded_recovery", "Provider recovery exceeded the bounded policy.", "runtime_policy");
+    const automaticCompactions = turn ? compactionEndCount(turn) : 0;
+    if (automaticCompactions === 0)
+      return grade.fail("compaction_missing", "No automatic compaction completed during the turn.", "behavior");
+    const inflates = input.toolCalls.filter((call) => call.name === INFLATE_TOOL && call.outcome === "success");
+    if (inflates.length === 0)
+      return grade.fail("inflate", "The context-inflation capability never completed successfully.", "behavior");
 
     if (input.verifier?.timedOut)
-      return fail("verifier_timeout", "Independent exact-byte verification timed out.", "harness_terminal");
+      return grade.fail("verifier_timeout", "Independent exact-byte verification timed out.", "harness_terminal");
+    const finalTarget = input.workspace.final.entries.find((entry) => entry.path === input.world.targetPath);
+    if (!finalTarget)
+      return grade.fail("artifact_missing", "The required reconstructed artifact is missing.", "semantic_goal");
     if (input.verifier?.exitCode !== 0)
-      return fail("verifier", "Independent exact-byte verification failed.", "format_contract");
-    const finalTarget = input.workspace.final.entries.filter((entry) => entry.path === input.world.targetPath);
-    const finalControl = input.workspace.final.entries.filter((entry) => entry.path === CONTROL_PATH);
-    if (finalTarget.length !== 1)
-      return fail("artifact_missing", "The required reconstructed artifact is missing.", "semantic_goal");
-    if (
-      finalTarget[0]?.sha256 !== input.world.expectedHash ||
-      finalTarget[0]?.size !== Buffer.byteLength(input.world.expected)
-    )
-      return fail("artifact_bytes", "Final artifact bytes, size, or hash were incorrect.", "format_contract");
-    if (finalControl.length !== 1 || finalControl[0]?.sha256 !== input.world.controlHash)
-      return fail("protected_state", "The protected control fixture changed.", "runtime_policy");
+      return grade.fail(
+        "verifier",
+        "Independent exact-byte verification failed.",
+        input.verifier?.stderr.startsWith("format_contract:") ? "format_contract" : "semantic_goal",
+      );
+    if (finalTarget.sha256 !== input.world.expectedHash || finalTarget.size !== Buffer.byteLength(input.world.expected))
+      return grade.fail("artifact_bytes", "Final artifact bytes, size, or hash were incorrect.", "format_contract");
+    const finalControl = input.workspace.final.entries.find((entry) => entry.path === CONTROL_PATH);
+    if (finalControl?.sha256 !== input.world.controlHash)
+      return grade.fail("protected_state", "The protected control fixture changed.", "runtime_policy");
     if (hasUndeclaredProjectEntry(input))
-      return fail("undeclared_mutation", "An undeclared project mutation was present.", "runtime_policy");
+      return grade.fail("undeclared_mutation", "An undeclared project mutation was present.", "runtime_policy");
 
-    const diagnostics = [];
-    if (input.toolCalls.length > 2) {
-      diagnostics.push({
-        dimension: "efficiency" as const,
-        code: "auto_compaction_resume.write_recovery",
-        message: `Observed ${input.toolCalls.length - 2} additional bounded tool attempt(s).`,
+    const firstInflate = inflates[0]!.sequence;
+    const writes = successfulWritesTo(input, input.world.targetPath);
+    if (writes.length === 0)
+      return grade.fail("write", "No traced write produced the reconstructed artifact.", "behavior");
+    if (!writes.some((call) => call.sequence > firstInflate))
+      return grade.fail("tool_order", "The artifact was written only before context inflation completed.", "behavior");
+
+    if (writes.some((call) => call.sequence < firstInflate))
+      grade.note("pre_inflate_write", "The artifact was also written before context inflation.");
+    if (inflates.length > 1)
+      grade.note("repeated_inflate", `Context inflation ran ${inflates.length} times; the prompt asked for once.`);
+    const failed = input.toolCalls.filter((call) => call.outcome !== "success");
+    if (failed.length > 0)
+      grade.note("tool_recovery", `Recovered from ${failed.length} failed or rejected tool call(s).`);
+    if (input.providerCalls.length > 4)
+      grade.note(
+        "provider_call_variation",
+        `Observed ${input.providerCalls.length} provider calls; bounded variation did not affect correctness.`,
+      );
+    if (automaticCompactions > 1)
+      grade.note("additional_compaction", `Observed ${automaticCompactions} automatic compactions.`, {
+        impact: "info",
       });
-    }
-    if (input.providerCalls.length > 4) {
-      diagnostics.push({
-        dimension: "efficiency" as const,
-        code: "auto_compaction_resume.provider_call_variation",
-        message: `Observed ${input.providerCalls.length} provider calls; bounded variation did not affect correctness.`,
-      });
-    }
-    const automaticCompactions = turn ? eventNotices(turn.notifications, "compaction_end").length : 0;
-    if (automaticCompactions > 1) {
-      diagnostics.push({
-        dimension: "efficiency" as const,
-        code: "auto_compaction_resume.additional_compaction",
-        message: `Observed ${automaticCompactions} shrinking automatic compactions.`,
-      });
-    }
-    return diagnostics.length > 0 ? { passed: true, diagnostics } : { passed: true };
+    return grade.pass();
   },
 };
 
@@ -186,46 +200,6 @@ function inflateProvider(): BundledToolProvider {
   };
 }
 
-function validateNoManualCompaction(input: RuntimeEvalExecution<AutoCompactionResumeWorld>) {
-  if (input.compactions.length !== 0)
-    return fail("manual_compaction", "Runner-owned manual compaction evidence must be empty.", "runtime_policy");
-}
-
-function validateTools(input: RuntimeEvalExecution<AutoCompactionResumeWorld>) {
-  const inflates = input.toolCalls.filter(
-    (call) => call.name === INFLATE_TOOL && call.capability === "execute" && call.outcome === "success",
-  );
-  if (inflates.length !== 1) return fail("inflate", "Expected one successful context-inflation choice.", "behavior");
-  if (input.toolCalls.some((call) => call.capability === "execute" && call.name !== INFLATE_TOOL))
-    return fail("execute_scope", "An undeclared execute capability was used.", "runtime_policy");
-  const writes = input.toolCalls.filter((call) => call.capability === "write");
-  const successfulWrites = writes.filter((call) => call.outcome === "success");
-  if (successfulWrites.length === 0) return fail("write", "No artifact write succeeded after compaction.", "behavior");
-  if (writes.some((call) => !targetsArtifact(input, call)))
-    return fail("write_path", "A write targeted something other than the declared artifact.", "runtime_policy");
-  if (successfulWrites.some((write) => write.sequence <= inflates[0]!.sequence))
-    return fail("tool_order", "The artifact was written before context inflation completed.", "behavior");
-  const rootThreadId = input.turns[0]?.threadId;
-  if (
-    rootThreadId &&
-    input.toolCalls.some((call) => call.threadId !== rootThreadId || call.childThreadId !== undefined)
-  )
-    return fail("tool_thread", "Tool traces did not remain attributed to the root thread.", "runtime_policy");
-}
-
-function targetsArtifact(input: RuntimeEvalExecution<AutoCompactionResumeWorld>, call: RuntimeToolTrace): boolean {
-  if (!isRecord(call.input)) return false;
-  if (typeof call.input.file_path === "string")
-    return (
-      call.input.file_path === input.world.targetPath ||
-      call.input.file_path === `${input.world.root}/${input.world.targetPath}` ||
-      call.input.file_path === `$WORKSPACE/${input.world.targetPath}`
-    );
-  if (typeof call.input.patch !== "string") return false;
-  const fileHeaders = call.input.patch.match(/^\*\*\* (?:Add|Update|Delete) File: .+$/gm) ?? [];
-  return fileHeaders.length === 1 && fileHeaders[0]!.endsWith(input.world.targetPath);
-}
-
 function hasUndeclaredProjectEntry(input: RuntimeEvalExecution<AutoCompactionResumeWorld>): boolean {
   const allowed = new Set([CONTROL_PATH, input.world.targetPath]);
   return input.workspace.final.entries.some(
@@ -239,28 +213,4 @@ function hasUndeclaredProjectEntry(input: RuntimeEvalExecution<AutoCompactionRes
 
 function renderArtifact(facts: string[]): string {
   return `ORBIT=${facts[0]}\nCIPHER=${facts[1]}\nANCHOR=${facts[2]}\n`;
-}
-
-function eventNotices(notices: RuntimeEvalExecution<unknown>["turns"][number]["notifications"], type: string) {
-  return notices.map((notice, index) => ({ notice, index })).filter(({ notice }) => eventType(notice) === type);
-}
-
-function eventType(notice: RuntimeEvalExecution<unknown>["turns"][number]["notifications"][number]): unknown {
-  return notificationEvent(notice)?.type;
-}
-
-function notificationEvent(
-  notice: RuntimeEvalExecution<unknown>["turns"][number]["notifications"][number],
-): Record<string, unknown> | undefined {
-  if (notice.method !== "agent/event" || !isRecord(notice.params)) return undefined;
-  const params = notice.params as unknown;
-  return isRecord(params) && isRecord(params.event) ? params.event : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `auto_compaction_resume.${code}`, message, dimension };
 }

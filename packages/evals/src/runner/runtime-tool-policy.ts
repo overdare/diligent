@@ -3,7 +3,7 @@
 import { isAbsolute, resolve } from "node:path";
 import type { Tool } from "@diligent/core/tool-contract";
 import type { RuntimeEvalToolPolicy, RuntimeToolCapability, RuntimeToolTrace } from "../runtime-task";
-import { normalizePlatformAlias, resolveWorkspacePath } from "./runtime-workspace";
+import { normalizePlatformAlias, resolveWorkspacePath, rootSpellings } from "./runtime-workspace";
 
 const CAPABILITIES: Record<string, RuntimeToolCapability> = {
   read: "read",
@@ -44,6 +44,8 @@ export function transformRuntimeTools(input: {
   isTerminated: () => boolean;
   onBudgetExceeded: (reason: RuntimeEvalOperationBudgetReason) => void;
   afterMutation?: () => Promise<void>;
+  onTraceComplete?: (trace: Readonly<RuntimeToolTrace>) => void;
+  currentTurnIndex?: () => number;
 }): Tool[] {
   const allowedTools = input.policy.allowedTools ? new Set(input.policy.allowedTools) : undefined;
   const allowedCapabilities = new Set(input.policy.allowedCapabilities);
@@ -66,6 +68,7 @@ export function transformRuntimeTools(input: {
           name: tool.name,
           capability,
           input: normalizeEvidence(args, input.root, input.outputRoot),
+          ...(input.currentTurnIndex && { turnIndex: input.currentTurnIndex() }),
           outcome: "success",
         };
         input.traces.push(trace);
@@ -89,6 +92,7 @@ export function transformRuntimeTools(input: {
             trace.error = normalizeEvidence(result.output, input.root, input.outputRoot) as string;
           }
           if (capability === "write" || capability === "execute") await input.afterMutation?.();
+          input.onTraceComplete?.(trace);
           return result;
         } catch (error) {
           trace.error = normalizeEvidence(
@@ -103,11 +107,13 @@ export function transformRuntimeTools(input: {
               metadata: { error: true, runtimeEvalRejected: true },
             };
             trace.output = normalizeEvidence(result, input.root, input.outputRoot);
+            input.onTraceComplete?.(trace);
             return result;
           }
           trace.outcome = "runtime_error";
           const result = { output: `Error: ${trace.error}`, metadata: { error: true } };
           trace.output = normalizeEvidence(result, input.root, input.outputRoot);
+          input.onTraceComplete?.(trace);
           return result;
         }
       },
@@ -213,19 +219,11 @@ function resolveEvalToolPath(
 
 function normalizeEvidence(value: unknown, root: string, outputRoot?: string): unknown {
   if (typeof value === "string") {
-    const aliasedRoot = process.platform === "darwin" ? `/private${normalizePlatformAlias(root)}` : root;
-    const aliasedOutputRoot =
-      outputRoot && process.platform === "darwin" ? `/private${normalizePlatformAlias(outputRoot)}` : outputRoot;
-    const normalized = value
-      .split(aliasedOutputRoot ?? "\0")
-      .join("$TOOL_OUTPUT")
-      .split(outputRoot ?? "\0")
-      .join("$TOOL_OUTPUT")
-      .split(aliasedRoot)
-      .join("$WORKSPACE")
-      .split(root)
-      .join("$WORKSPACE")
-      .slice(0, 16_384);
+    let normalized = value;
+    for (const candidate of outputRoot ? rootSpellings(outputRoot) : [])
+      normalized = normalized.split(candidate).join("$TOOL_OUTPUT");
+    for (const candidate of rootSpellings(root)) normalized = normalized.split(candidate).join("$WORKSPACE");
+    normalized = normalized.slice(0, 16_384);
     return normalizeEvidencePath(normalized);
   }
   if (Array.isArray(value)) return value.map((item) => normalizeEvidence(item, root, outputRoot));

@@ -73,6 +73,8 @@ export interface RuntimeToolTrace {
   name: string;
   capability: RuntimeToolCapability;
   threadId?: string;
+  /** Index of the client turn during which the call ran. */
+  turnIndex?: number;
   childThreadId?: string;
   input: unknown;
   outcome: "success" | "runtime_error" | "policy_rejection";
@@ -285,6 +287,11 @@ export interface RuntimeEvalTask<TWorld> {
   createBundledToolProviders?(world: TWorld): readonly BundledToolProvider[] | Promise<readonly BundledToolProvider[]>;
   createSteps(world: TWorld): RuntimeEvalStep[];
   prepareStep?(world: TWorld, step: RuntimeEvalStep, index: number): void | Promise<void>;
+  /**
+   * Observes each completed tool execution, including calls nested inside code-mode `exec`. Agent-loop hooks see only
+   * top-level calls, so tasks that react to a tool result must use this observer.
+   */
+  observeToolTrace?(world: TWorld, trace: Readonly<RuntimeToolTrace>): void;
   respondToServerRequest?(
     world: TWorld,
     request: DiligentServerRequest,

@@ -2,18 +2,13 @@
 
 import { join } from "node:path";
 import { type KnowledgeEntry, readKnowledge } from "@diligent/runtime";
-import type {
-  RuntimeEvalExecution,
-  RuntimeEvalTask,
-  RuntimeToolTrace,
-  RuntimeVerifierResult,
-} from "../../runtime-task";
-import type { EvalDimension, EvalProfile } from "../../task";
+import type { RuntimeEvalTask, RuntimeVerifierResult } from "../../runtime-task";
+import type { EvalProfile } from "../../task";
+import { RuntimeGrade } from "./grading";
 import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
   exactFile,
-  matchesExactPatchInput,
   type RuntimeFixtureWorld,
   seededToken,
   sha256Text,
@@ -97,89 +92,23 @@ export const knowledgeForgetTask: RuntimeEvalTask<KnowledgeForgetWorld> = {
     output: await exactFile(world.root, OUTPUT_PATH),
   }),
   evaluate(input) {
-    const searches = input.toolCalls.filter((call) => call.name === "search_knowledge");
-    const deletions = input.toolCalls.filter((call) => call.name === "update_knowledge");
-    const writes = input.toolCalls.filter((call) => call.capability === "write");
-    const hasCreateRecovery = writes.length === 2;
-    if (
-      searches.length > 2 ||
-      deletions.length !== 1 ||
-      (writes.length !== 1 && !hasCreateRecovery) ||
-      input.toolCalls.length !== searches.length + deletions.length + writes.length
-    )
-      return fail(
-        "trace_count",
-        "Expected at most two searches, one delete, and one workspace write.",
-        "runtime_policy",
-      );
-    const deletion = deletions[0]!;
-    const write = writes.at(-1)!;
-    const preDeleteSearches = searches.filter((search) => search.sequence < deletion.sequence);
-    const postDeleteSearches = searches.filter((search) => search.sequence > deletion.sequence);
-    if (
-      preDeleteSearches.some(
-        (search) =>
-          search.capability !== "knowledge" || search.outcome !== "success" || !isSafeSearch(search.input, input.world),
-      )
-    )
-      return fail(
-        "search",
-        "Every bounded pre-delete search must be successful and exclude transient task intent.",
-        "runtime_policy",
-      );
-    if (
-      preDeleteSearches.length + postDeleteSearches.length !== searches.length ||
-      postDeleteSearches.length > 1 ||
-      (postDeleteSearches[0] !== undefined &&
-        !isExactPostDeleteAbsenceConfirmation(input, deletion, write, postDeleteSearches[0]))
-    )
-      return fail(
-        "confirmation",
-        "The optional post-delete search did not prove bounded absence of the target entry.",
-        "runtime_policy",
-      );
-    if (
-      deletion.name !== "update_knowledge" ||
-      deletion.capability !== "knowledge" ||
-      deletion.outcome !== "success" ||
-      !exactObject(deletion.input, { action: "delete", id: input.world.knowledgeId })
-    )
-      return fail("delete", "The update trace was not the exact successful knowledge deletion.", "runtime_policy");
-    if (hasCreateRecovery && !isExactAnthropicCreateRecovery(input, writes))
-      return fail(
-        "write_recovery",
-        "The failed workspace create was not the exact bounded Anthropic path recovery.",
-        "runtime_policy",
-      );
-    if (
-      write?.capability !== "write" ||
-      write.outcome !== "success" ||
-      !isProviderNativeExactCreate(write, OUTPUT_PATH, input.world.expected)
-    )
-      return fail(
-        "write",
-        "The write trace was not the provider-native exact workspace creation.",
-        writeTargetsPath(write, OUTPUT_PATH) ? "format_contract" : "runtime_policy",
-      );
+    const grade = new RuntimeGrade("knowledge_forget");
     if (input.verifier?.timedOut)
-      return fail("verifier_timeout", "Independent verification timed out.", "harness_terminal");
-    if (input.verifier?.exitCode !== 0)
-      return fail("verifier", "Independent knowledge-store and output verification failed.", "runtime_policy");
+      return grade.fail("verifier_timeout", "Independent verification timed out.", "harness_terminal");
     const output = input.workspace.final.entries.find((entry) => entry.path === OUTPUT_PATH);
-    return output?.sha256 === input.world.expectedHash
-      ? postDeleteSearches.length === 1
-        ? {
-            passed: true,
-            diagnostics: [
-              {
-                dimension: "efficiency" as const,
-                code: "knowledge_forget.confirmation_search",
-                message: "A bounded post-delete absence confirmation was used before completion.",
-              },
-            ],
-          }
-        : { passed: true }
-      : fail("output_hash", `${OUTPUT_PATH} did not have the exact final hash.`, "format_contract");
+    if (output?.sha256 !== input.world.expectedHash)
+      return grade.fail("output", `${OUTPUT_PATH} does not contain exactly the task value.`, "semantic_goal");
+    if (input.verifier?.exitCode !== 0)
+      return grade.fail(
+        "knowledge_store",
+        "The store does not hold exactly the untouched control preference after forgetting the target.",
+        "semantic_goal",
+      );
+    if (input.toolCalls.some((call) => call.name === "search_knowledge"))
+      grade.note("knowledge_search", "Knowledge was searched around the deletion.", { impact: "info" });
+    if (input.toolCalls.some((call) => call.outcome !== "success"))
+      grade.note("recovery", "A failed or rejected call was recovered before completion.");
+    return grade.pass();
   },
 };
 
@@ -214,145 +143,4 @@ async function verifyForgottenKnowledge(
     stderr: valid ? "" : "Forgotten knowledge or independent project output did not match the exact final state.",
     timedOut: signal.aborted,
   };
-}
-
-function isProviderNativeExactCreate(
-  call: RuntimeEvalExecution<unknown>["toolCalls"][number],
-  path: string,
-  content: string,
-): boolean {
-  if (call.name === "apply_patch") return matchesExactPatchInput(call.input, exactAddPatch(path, content));
-  if (call.name === "edit")
-    return exactObject(call.input, {
-      file_path: `$WORKSPACE/${path}`,
-      old_string: "",
-      new_string: content,
-      replace_all: false,
-    });
-  return false;
-}
-
-function writeTargetsPath(call: RuntimeToolTrace | undefined, path: string): boolean {
-  if (!call || !isRecord(call.input)) return false;
-  if (call.name === "edit") return call.input.file_path === `$WORKSPACE/${path}`;
-  return (
-    call.name === "apply_patch" && typeof call.input.patch === "string" && call.input.patch.includes(` File: ${path}`)
-  );
-}
-
-function isExactAnthropicCreateRecovery(
-  execution: RuntimeEvalExecution<KnowledgeForgetWorld>,
-  writes: RuntimeEvalExecution<KnowledgeForgetWorld>["toolCalls"],
-): boolean {
-  if (execution.profile.provider !== "anthropic" || writes.length !== 2) return false;
-  const [failed, retry] = writes;
-  if (!failed || !retry) return false;
-  const error = `Error: file_path must be absolute: ${OUTPUT_PATH}`;
-  const failedIndex = execution.toolCalls.indexOf(failed);
-  const retryIndex = execution.toolCalls.indexOf(retry);
-  return (
-    failedIndex >= 0 &&
-    retryIndex === failedIndex + 1 &&
-    retry.sequence === failed.sequence + 1 &&
-    typeof failed.threadId === "string" &&
-    failed.threadId.length > 0 &&
-    retry.threadId === failed.threadId &&
-    failed.childThreadId === undefined &&
-    retry.childThreadId === undefined &&
-    failed.name === "edit" &&
-    failed.capability === "write" &&
-    failed.outcome === "runtime_error" &&
-    failed.error === error &&
-    exactObject(failed.input, {
-      file_path: OUTPUT_PATH,
-      old_string: "",
-      new_string: execution.world.expected,
-      replace_all: false,
-    }) &&
-    exactObject(failed.output, { output: error, metadata: { error: true } })
-  );
-}
-
-function exactAddPatch(path: string, content: string): string {
-  return `*** Begin Patch\n*** Add File: ${path}\n${content
-    .split("\n")
-    .slice(0, -1)
-    .map((line) => `+${line}`)
-    .join("\n")}\n*** End Patch`;
-}
-
-function exactObject(value: unknown, expected: Record<string, unknown>): boolean {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  const keys = Object.keys(record).sort();
-  const expectedKeys = Object.keys(expected).sort();
-  return (
-    JSON.stringify(keys) === JSON.stringify(expectedKeys) &&
-    expectedKeys.every((key) => JSON.stringify(record[key]) === JSON.stringify(expected[key]))
-  );
-}
-
-function isSafeSearch(value: unknown, world: KnowledgeForgetWorld): boolean {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  const keys = Object.keys(record);
-  return (
-    keys.length >= 1 &&
-    keys.length <= 2 &&
-    keys.every((key) => key === "id" || key === "query") &&
-    (record.id !== undefined || record.query !== undefined) &&
-    (record.id === undefined || record.id === world.knowledgeId) &&
-    (record.query === undefined ||
-      (typeof record.query === "string" && record.query.trim().length > 0 && !record.query.includes(world.taskValue)))
-  );
-}
-
-function isExactPostDeleteAbsenceConfirmation(
-  execution: RuntimeEvalExecution<KnowledgeForgetWorld>,
-  deletion: RuntimeEvalExecution<KnowledgeForgetWorld>["toolCalls"][number],
-  write: RuntimeEvalExecution<KnowledgeForgetWorld>["toolCalls"][number],
-  confirmation: RuntimeEvalExecution<KnowledgeForgetWorld>["toolCalls"][number],
-): boolean {
-  if (!isRecord(confirmation.input) || !exactKeys(confirmation.input, ["id_prefix", "query"])) return false;
-  const { id_prefix: idPrefix, query } = confirmation.input;
-  if (
-    typeof idPrefix !== "string" ||
-    idPrefix.length === 0 ||
-    !execution.world.knowledgeId.startsWith(idPrefix) ||
-    typeof query !== "string" ||
-    query.trim().length === 0 ||
-    query.includes(execution.world.taskValue)
-  )
-    return false;
-  if (!isRecord(confirmation.output)) return false;
-  const outputText = JSON.stringify(confirmation.output);
-  const deletionIndex = execution.toolCalls.indexOf(deletion);
-  const confirmationIndex = execution.toolCalls.indexOf(confirmation);
-  return (
-    confirmation.capability === "knowledge" &&
-    confirmation.outcome === "success" &&
-    confirmation.output.output === "No knowledge entries found" &&
-    exactObject(confirmation.output.metadata, { matchCount: 0, ids: [] }) &&
-    !outputText.includes(execution.world.targetContent) &&
-    !outputText.includes(execution.world.forgottenValue) &&
-    confirmation.sequence > deletion.sequence &&
-    confirmationIndex > deletionIndex &&
-    typeof confirmation.threadId === "string" &&
-    confirmation.threadId.length > 0 &&
-    confirmation.threadId === deletion.threadId &&
-    confirmation.threadId === write.threadId &&
-    confirmation.childThreadId === undefined
-  );
-}
-
-function exactKeys(value: Record<string, unknown>, expected: string[]): boolean {
-  return JSON.stringify(Object.keys(value).sort()) === JSON.stringify(expected.slice().sort());
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function fail(code: string, message: string, dimension: EvalDimension) {
-  return { passed: false as const, code: `knowledge_forget.${code}`, message, dimension };
 }
