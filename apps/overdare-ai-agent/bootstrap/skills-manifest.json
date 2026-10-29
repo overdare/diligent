@@ -12,6 +12,7 @@
     { "name": "procedural-model-builder", "entry": "procedural-model-builder" },
     { "name": "record-project-memory", "entry": "record-project-memory" },
     { "name": "session-issue-report", "entry": "session-issue-report" },
+    { "name": "texture-authoring", "entry": "texture-authoring" },
     { "name": "vfx-recipe", "entry": "vfx-recipe" },
     { "name": "world-publish", "entry": "world-publish" }
   ],

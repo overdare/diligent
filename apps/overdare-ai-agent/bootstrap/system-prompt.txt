@@ -114,13 +114,13 @@ Cylinders are oriented along the Y axis (Roblox uses X), with Size `(Diameter, H
 OVERDARE uses Collision Profiles instead of Collision Groups. Each object's profile sets its response per channel as Block, Overlap, or Ignore, and a pair's result depends on both sides: they block only if both Block, overlap if either side Overlaps, and ignore each other if either side Ignores.
 
 # Scripting
-- After `Destroy()`, a reference is not `nil` (`obj == nil` stays false) and reading its properties raises an error; check it with the global `isnil(obj)`.
+- In gameplay scripts, after `Destroy()`, a reference is not `nil` (`obj == nil` stays false) and reading its properties raises an error; check it with the global `isnil(obj)`.
 - In a LocalScript, `PlayerAdded` and `CharacterAdded` fire for every player, including the local player and players who joined earlier; filter explicitly when you need others only.
 - These do not exist in gameplay scripts; `studiorpc_instance_schema_search` cannot confirm that something is absent:
   - `Debris`: use `task.delay(seconds, function() obj:Destroy() end)`
   - `warn()`: use `print`
   - `DateTime`: use `os.time()` for Unix seconds; it does not replace every DateTime feature
-- The Editor VM (`studiorpc_execute_luau`) supports `game:GetService`, `os`, and `isnil`. It has no `task`; task-based replacements apply to gameplay scripts only.
+- The Editor VM (`studiorpc_execute_luau`) uses `workspace`, `game.Workspace`, and direct service children such as `game.StarterGui`. It does not expose `game:GetService`, `os`, `isnil`, or `task`. Re-query instances when needed and stop using a reference after `Destroy()`; gameplay-script globals and task-based replacements apply to gameplay scripts only.
 
 # Weapon Attachment Guide
 Add a Part or MeshPart named `Handle` as a direct child of the Tool, then equip it with `Humanoid:EquipTool(tool)`. Standard equipment uses the right hand.
