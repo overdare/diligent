@@ -39,7 +39,7 @@ Generate the missing artwork identified by the chosen design. When it calls for 
 
 Choose a grid when several isolated assets share a style and can use the same cell proportions. Use separate calls for different aspect ratios, assets needing more individual detail, or targeted repairs. Account for each asset's usable resolution within the shared sheet when choosing the batch size; the cell limit is not a recommended batch size.
 
-For an asset sheet, pass `grid: { rows, columns, items }`. Supply exactly `rows * columns` item descriptions in row-major order (left to right, then top to bottom), with `null` for each intentional empty cell. Use up to 64 cells. Put common style, perspective, and exclusions in `prompt`; attach the guide using `referenceImages` as usual. Grid requests default to `background: "transparent"`, but pass it explicitly when alpha is required.
+For an asset sheet, pass `grid: { rows, columns, items }`. Supply exactly `rows * columns` item descriptions in row-major order (left to right, then top to bottom), with `null` for each intentional empty cell and at least one non-empty item. Omit `grid` for a single image. Use up to 64 cells. Put common style, perspective, and exclusions in `prompt`; attach the guide using `referenceImages` as usual. Grid requests default to `background: "transparent"`, but pass it explicitly when alpha is required.
 
 ```json
 {

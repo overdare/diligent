@@ -181,6 +181,22 @@ describe("generate_image", () => {
       expect(tool.parameters.safeParse({ prompt: "Icons", grid }).success).toBe(false);
   });
 
+  test("rejects all-empty grids while allowing mixed grids and single images", async () => {
+    const tool = await toolFor({ cwd: "/repo" });
+    for (const grid of [
+      { rows: 1, columns: 1, items: [null] },
+      { rows: 1, columns: 2, items: [null, null] },
+    ]) {
+      const result = tool.parameters.safeParse({ prompt: "Icons", grid });
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.issues[0]?.message).toContain("omit grid for a single image");
+    }
+    expect(tool.parameters.safeParse({ prompt: "An illustration" }).success).toBe(true);
+    expect(
+      tool.parameters.safeParse({ prompt: "Icons", grid: { rows: 1, columns: 2, items: [null, "coin"] } }).success,
+    ).toBe(true);
+  });
+
   test("generates once and returns the original plus occupied PNG cells, skipping requested blanks", async () => {
     const { cwd, cleanup } = project();
     const bytes = Buffer.from(

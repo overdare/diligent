@@ -14,7 +14,7 @@ export const gridSchema = z
       .min(1)
       .max(64)
       .describe(
-        "Exactly rows * columns entries in row-major order. Describe one isolated asset per cell; use null for an empty cell.",
+        "Exactly rows * columns entries in row-major order. Describe one isolated asset per occupied cell; use null for an empty cell. At least one item must be non-empty.",
       ),
   })
   .strict()
@@ -26,6 +26,12 @@ export const gridSchema = z
         code: z.ZodIssueCode.custom,
         path: ["items"],
         message: "Provide exactly rows * columns items, using null for empty cells.",
+      });
+    if (grid.items.every((item) => item === null))
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["items"],
+        message: "Provide at least one non-empty grid item, or omit grid for a single image.",
       });
   });
 
