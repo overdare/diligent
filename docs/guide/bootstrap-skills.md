@@ -99,7 +99,7 @@ control against local users modifying policy files or running old binaries.
 ## Verification
 
 ```sh
-cargo test --manifest-path apps/overdare-ai-agent/Cargo.toml --test skill-manifest
+cargo test --manifest-path apps/overdare-ai-agent/Cargo.toml --test bootstrap-manifest
 bun test ./packages/runtime/test/skills ./packages/runtime/test/tools/skill.test.ts
 bun test ./apps/overdare-ai-agent/test/scripts/skills-manifest.test.ts
 bun test ./apps/overdare-ai-agent/sidecar/test/mcp-server.test.ts

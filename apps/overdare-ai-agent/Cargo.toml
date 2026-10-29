@@ -17,8 +17,8 @@ name = "mcp-router-binary"
 path = "test/mcp_router_binary.rs"
 
 [[test]]
-name = "skill-manifest"
-path = "test/skill_manifest.rs"
+name = "bootstrap-manifest"
+path = "test/bootstrap_manifest.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

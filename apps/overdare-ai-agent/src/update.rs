@@ -307,7 +307,7 @@ fn runtime_current_metadata_path(env: Env) -> Option<PathBuf> {
     updates_dir(env).map(|u| u.join("runtime-current.json"))
 }
 
-pub(crate) fn sidecar_bin_name() -> &'static str {
+fn sidecar_bin_name() -> &'static str {
     if cfg!(windows) {
         "diligent-web-server.exe"
     } else {
