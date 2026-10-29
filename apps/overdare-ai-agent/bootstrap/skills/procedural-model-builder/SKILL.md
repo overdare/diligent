@@ -124,10 +124,15 @@ stay inside that object's recipe.
   set explicitly to `S`, `M`, `L`, or `XL`; that changes only the part target, so do not use it to
   silence a model-wide warning.
 - `warnings` — read every warning actually returned; missing diagnostics do not mean no warnings.
-- On the preset (material) path, project UVs at the size the pattern was drawn for — each preset
-  tiles at its own `LocalUVWscale`, and `model.part`'s `tile_cm` must land in 25–400 cm (a
-  finer tile is refused, and would render as flat colour anyway). A 400 cm wall tiled every 20 cm
+- Preset materials render with LocalUV tiling. `model.part`'s `tile_cm` controls that tiling:
+  use 25–400 cm, or 0 to keep the preset's authored size. A 400 cm wall tiled every 20 cm
   is a grey field; the same wall at 128 cm reads as masonry.
+- UV0 projection and LocalUV tiling are separate. The template's box-projection cube uses
+  `max(size)`, so a large model can report a large `cmPerTile` even when `requestedTileCm`
+  is 100 or 200. `cmPerTile` measures UV0 density; it is not the rendered preset tile size.
+  `tile_cm` does not rewrite UV0. If UV0 density matters for another use, choose a projection
+  cube at the intended UV0 scale instead of the model's longest axis. Do not infer a visual
+  preset-tiling defect from a mismatch between these report fields; inspect the rendered model.
 - Use exact preset names from the API's `presets`; do not invent one from an appearance adjective.
   If a bake error names a preset, change that preset rather than unrelated valid ones.
 - A changed recipe can keep child GUIDs, mesh ids, and outer bounds. Compare a shape or measurement
