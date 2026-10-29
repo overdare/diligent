@@ -21,9 +21,10 @@ export const params = z
       .number()
       .int()
       .positive()
+      .max(8)
       .optional()
       .describe(
-        "Number of PIE players when starting a stopped session. Omit to keep Studio's configured player count. " +
+        "Number of PIE players when starting a stopped session (1–8, independent of the world's maxPlayers). Omit to keep Studio's configured player count. " +
           "Input and move tools can target another injectable client by " +
           "clientId. game.observe can read that client when pieSessionId and clientId are supplied together.",
       ),
