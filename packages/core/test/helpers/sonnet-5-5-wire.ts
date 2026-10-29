@@ -1,11 +1,12 @@
-// @summary Isolated real-SDK loopback probe for the Sonnet 5.5 Messages wire contract
+// @summary Isolated real-SDK loopback probe for Claude 5.5 Messages wire contracts
 import assert from "node:assert/strict";
 import { resolveModel } from "../../src/llm/models";
 import { createAnthropicStream } from "../../src/llm/provider/anthropic";
 import type { StreamContext } from "../../src/llm/types";
 
 // Synthetic responses prove serialization and parsing, never live model behavior.
-const model = resolveModel({ provider: "anthropic", modelId: "claude-sonnet-5-5" });
+const modelId = process.argv[2] ?? "claude-sonnet-5-5";
+const model = resolveModel({ provider: "anthropic", modelId });
 const requests: Array<{ path: string; headers: Headers; body: Record<string, unknown> }> = [];
 const server = Bun.serve({
   hostname: "127.0.0.1",
@@ -69,7 +70,7 @@ try {
     assert(captured);
     assert.equal(captured.path, "/v1/messages");
     assert.equal(captured.headers.get("anthropic-beta"), "thinking-binding-controls-2026-08-01");
-    assert.equal(captured.body.model, "claude-sonnet-5-5");
+    assert.equal(captured.body.model, modelId);
     assert.equal(captured.body.max_tokens, 128_000);
     assert.equal(captured.body.stream, true);
     assert.deepEqual(captured.body.output_config, { effort });
@@ -93,7 +94,7 @@ try {
     ]);
   }
   assert.equal(requests.length, 5);
-  console.log("Sonnet 5.5 loopback wire contract: 5 efforts verified");
+  console.log(`${modelId} loopback wire contract: 5 efforts verified`);
 } finally {
   await server.stop(true);
 }
