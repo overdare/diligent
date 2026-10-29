@@ -470,4 +470,24 @@ describe("collectPluginHooks", () => {
 
     await rm(pluginDir, { recursive: true, force: true });
   });
+
+  it("skips hooks from discovered plugins that a bundled provider supersedes", async () => {
+    const pluginDir = getGlobalPluginPath("@legacy/stop-hook-plugin");
+    await mkdir(pluginDir, { recursive: true });
+    await Bun.write(
+      join(pluginDir, "package.json"),
+      JSON.stringify({ name: "@legacy/stop-hook-plugin", version: "0.1.0", type: "module", main: "./index.js" }),
+    );
+    await Bun.write(join(pluginDir, "index.js"), "export async function onStop() { return { continue: true }; }");
+
+    const loaded = await collectPluginHooks(undefined, CWD);
+    expect(loaded.onStop).toHaveLength(1);
+
+    const suppressed = await collectPluginHooks(undefined, CWD, {
+      supersededPackages: new Set(["@legacy/stop-hook-plugin"]),
+    });
+    expect(suppressed.onStop).toEqual([]);
+
+    await rm(getGlobalPluginPath("@legacy"), { recursive: true, force: true });
+  });
 });

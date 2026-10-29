@@ -184,6 +184,7 @@ export async function startStudioServer(argv: string[] = process.argv.slice(2)):
           // STUDIO_DISABLED=1 → skip the Studio RPC provider entirely (no 13377 connects).
           studioDisabled,
           studioRpc,
+          bootstrapDir: resolveBootstrapDir(),
         }),
         experimentDefinitions: OVERDARE_EXPERIMENTS,
         // STUDIO_DISABLED=1 is UI-only development with no Studio behind it, so there is nothing for

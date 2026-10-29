@@ -69,6 +69,11 @@ export function createBundledAgentLoopHooks(
   return providers.flatMap((provider) => provider.createAgentLoopHooks?.(context) ?? []);
 }
 
+/** Plugin packages that bundled providers replace; neither their tools nor their hooks may load. */
+export function collectSupersededPluginPackages(providers: readonly BundledToolProvider[] = []): Set<string> {
+  return new Set(providers.flatMap((provider) => provider.supersedesPluginPackages ?? []));
+}
+
 export interface CollectedBundledHooks {
   onUserPromptSubmit: PluginHookFn[];
   onStop: PluginHookFn[];
