@@ -45,6 +45,17 @@ Call `generate_image` for one image using the game brief, user preferences, and 
 - Safe margins around faces, hands, important props, and any title so a centered square crop will retain them.
 - If a title is included: exact quoted wording, large high-contrast lettering, short line breaks, and separation from the main action. If excluded: explicitly no title, captions, or added text.
 
+For a single thumbnail, omit the `grid` argument entirely, including during repairs. Do not use `null` as a placeholder: a null grid item requests a blank cell, not the scene described in `prompt`. For example, replace the prompt and paths below with the actual brief and verified references:
+
+```text
+generate_image({
+  prompt: "Create one square, text-free thumbnail showing the game's main action.",
+  background: "opaque",
+  referenceImages: ["<verified character reference path>", "<verified style reference path>"]
+})
+```
+
+
 ## Finalize and inspect
 
 Requested dimensions are not guaranteed. Always pass the generated `file` to:
