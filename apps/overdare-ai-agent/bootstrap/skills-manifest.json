@@ -5,6 +5,7 @@
     { "name": "action-library", "entry": "action-library" },
     { "name": "agent-guide", "entry": "agent-guide" },
     { "name": "asset-pack-import", "entry": "asset-pack-import" },
+    { "name": "autonomous-playtest", "entry": "autonomous-playtest" },
     { "name": "gui-builder", "entry": "gui-builder" },
     { "name": "image-asset-generation", "entry": "image-asset-generation" },
     { "name": "overdare-camera-templates", "entry": "overdare-camera-templates" },
