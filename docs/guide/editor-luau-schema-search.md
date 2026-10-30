@@ -14,7 +14,7 @@ removed in this long-term draft. VFXRecipe authoring stays on the dedicated
 `studiorpc_vfx_recipe_upsert` tool (#491). It owns a VFXRecipe-only schema
 (`methods/vfx-recipe.params.ts`) with source-name expansion and type tags, plus its
 own file/RPC write path; nothing else from the static catalog remains. ActionSequence
-authoring stays on `studiorpc_action_sequencer_service_apply_json`.
+authoring stays on `studiorpc_action_sequence_write`.
 
 Select an implementation from its execution lifetime, not from a keyword or model
 category. An Editor command runs once and its VM is discarded. A persistent

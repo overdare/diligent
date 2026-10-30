@@ -2,7 +2,7 @@
 
 ## Current Studio compatibility (verified 2026-09-25)
 
-`studiorpc_action_sequencer_service_apply_json` takes an existing Action Sequence instance's `instanceGuid` and an absolute `jsonFilePath`. The file contains the sequence object itself, not a level wrapper or a JSON-encoded `Data` string.
+`studiorpc_action_sequence_write` takes an existing Action Sequence instance's `instanceGuid` and an absolute `jsonFilePath`. The file contains the sequence object itself, not a level wrapper or a JSON-encoded `Data` string.
 
 Studio's `FActionSequenceSerializer::ValidateJsonObjectProperties` checks serialized root and track properties, including inherited track properties. A missing property fails validation even when the log labels it optional and reports only a warning. Legacy level data may need the same fields as legacy templates.
 
