@@ -46,7 +46,7 @@ Fix the actual bottleneck rather than changing settings across the board. You ca
 
 ## Memory and loading
 
-- Use the smallest texture dimensions that remain readable at player distance. The existing World albedo group supports up to 1024 pixels through its device-profile settings, with mips and streaming enabled. Use existing MaterialVariant or MeshPart image paths; do not add per-face atlases to basic Parts. Other texture groups and imports have their own limits. Source, cooked/allowed and resident dimensions may differ. Texture memory follows pixel dimensions, compression and mipmaps, not file size.
+- Preserve original source artwork. Existing device profiles, mips and streaming determine cooked/allowed and resident dimensions. Source resolution guarantees neither. Texture resolution/LOD quality is a known issue for the owning team. Report observed limits without resizing/reimporting artwork, changing profiles or adding rendering workarounds. Use existing MaterialVariant or MeshPart image paths; do not add per-face atlases to basic Parts. Other texture groups and imports have their own limits. Texture memory follows pixel dimensions, compression and mipmaps, not file size.
 - Combine small icons into one sprite sheet and select each with `ImageRectOffset` and `ImageRectSize`.
 - Keep rarely opened UI panels in a ScreenGui with `Enabled = false` until the player opens them; a disabled ScreenGui does not create its child widgets.
 - Keep `ReplicatedStorage` to what clients need. Put server-only objects and modules in `ServerStorage`; the server-only hierarchy is excluded from client loading, though assets it shares with replicated objects still download.
