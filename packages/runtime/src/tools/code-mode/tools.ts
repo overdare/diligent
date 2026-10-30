@@ -13,6 +13,7 @@ import {
   EXEC_WAIT_TOOL_NAME,
   toCodeModeIdentifier,
 } from "./description";
+import type { ToolGate } from "./gate";
 import type { CodeModeCellSnapshot, CodeModeSession, CodeModeToolBinding } from "./session";
 
 export type CodeMode = "off" | "on" | "only";
@@ -81,12 +82,16 @@ export function applyCodeMode(tools: Tool[], options: CodeModeAssemblyOptions): 
   const nestedTools = tools.filter(isNested);
   const registry = new Map(nestedTools.map((tool) => [tool.name, tool]));
   const bindings = bindNestedTools(nestedTools);
-  const direct = tools.filter(
-    (tool) =>
-      tool.name !== EXEC_TOOL_NAME &&
-      tool.name !== EXEC_WAIT_TOOL_NAME &&
-      (options.codeMode === "on" || !isNested(tool)),
-  );
+  // A yielded cell keeps running nested calls while the model issues direct calls; direct calls of the
+  // same tools take the session gate so non-parallel tools never overlap across both paths.
+  const direct = tools
+    .filter(
+      (tool) =>
+        tool.name !== EXEC_TOOL_NAME &&
+        tool.name !== EXEC_WAIT_TOOL_NAME &&
+        (options.codeMode === "on" || !isNested(tool)),
+    )
+    .map((tool) => (isNested(tool) ? gateDirectTool(tool, options.session.gate) : tool));
   const exec: Tool<typeof ExecParams> = {
     name: EXEC_TOOL_NAME,
     description: buildExecDescription(options.codeMode, nestedTools),
@@ -120,6 +125,20 @@ export function applyCodeMode(tools: Tool[], options: CodeModeAssemblyOptions): 
   };
 
   return [...direct, exec, execWait];
+}
+
+function gateDirectTool(tool: Tool, gate: ToolGate): Tool {
+  return {
+    ...tool,
+    async execute(args, ctx) {
+      const release = await gate.acquire(tool.supportParallel === true, ctx.signal);
+      try {
+        return await tool.execute(args, ctx);
+      } finally {
+        release();
+      }
+    },
+  };
 }
 
 /** Maps catalog names to guest identifiers; the first tool wins when two names normalize identically. */

@@ -94,6 +94,15 @@ export function reduceToolEvent(state: ThreadState, event: ToolAgentEvent): Thre
       const renderId = nextToolRenderId(event.itemId);
       if (state.itemSlots[event.itemId]) return state;
       const now = Date.now();
+      // Nested rows render under the row above them, so a call is nested only while its parent group is the
+      // latest row. A yielded cell's background call can arrive after other rows.
+      const lastItem = state.items.at(-1);
+      const background =
+        event.parentToolCallId !== undefined &&
+        !(
+          lastItem?.kind === "tool" &&
+          (lastItem.toolCallId === event.parentToolCallId || lastItem.parentToolCallId === event.parentToolCallId)
+        );
       return {
         ...state,
         itemSlots: { ...state.itemSlots, [event.itemId]: renderId },
@@ -118,6 +127,7 @@ export function reduceToolEvent(state: ThreadState, event: ToolAgentEvent): Thre
                 : now,
             render: ("render" in event ? toToolRenderPayload(event.render) : undefined) ?? undefined,
             ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}),
+            ...(background ? { background: true } : {}),
           },
         ],
       };

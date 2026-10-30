@@ -18,7 +18,8 @@ const EXEC_DESCRIPTION = `Run JavaScript code to orchestrate/compose tool calls.
 - Nested tools run with the same approvals and permissions as direct tool calls. Independent calls may run concurrently with \`Promise.all\`; tools that are not parallel-safe still run one at a time.
 - Runs plain JavaScript only: no Node or Bun APIs, no require/import, no file system, no network, no console. Do all I/O through \`tools\`.
 - \`code\` is raw JavaScript source, not JSON, quoted strings, or markdown code fences. Write multi-line text (shell heredocs, file contents, patches, reports) as template literals (\`\` \`...\` \`\`); a raw line break inside "..." or '...' is a SyntaxError.
-- \`yield_time_ms\` makes \`exec\` return early while the script keeps running. Defaults to ${DEFAULT_YIELD_TIME_MS} ms.
+- \`yield_time_ms\` makes \`exec\` return early while the script keeps running. Defaults to ${DEFAULT_YIELD_TIME_MS} ms. A running script keeps making its nested tool calls in the background until the current turn ends; calls requested after that wait for the next \`${EXEC_WAIT_TOOL_NAME}\`. Before ending your turn, wait on a cell whose remaining steps (cleanup, stop, capture) must happen on time.
+- Your direct calls of tools that are not parallel-safe wait for the script's in-progress non-parallel nested call, and vice versa.
 - \`max_output_tokens\` sets the token budget for the returned output. Defaults to ${DEFAULT_MAX_OUTPUT_TOKENS} tokens.
 - When the script finishes, its context ends and unawaited promises and pending nested calls are discarded.
 - A non-undefined value returned from the top level is appended to the output like \`text(value)\`.
@@ -44,7 +45,7 @@ export const EXEC_WAIT_DESCRIPTION = `Waits on a yielded \`${EXEC_TOOL_NAME}\` c
 - \`terminate: true\` stops the running cell; false or omitted waits for output.
 - Returns only the new output since the last yield, or the final completion or termination result for that cell.
 - If the cell is still running, \`${EXEC_WAIT_TOOL_NAME}\` may yield again with the same \`cell_id\`.
-- Nested tool calls requested while no \`${EXEC_TOOL_NAME}\`/\`${EXEC_WAIT_TOOL_NAME}\` call is waiting are held until the next wait.`;
+- A running cell keeps making nested tool calls without a wait until the current turn ends; later calls run under the next wait.`;
 
 /** Normalizes a catalog tool name into the identifier used on the guest `tools` object. */
 export function toCodeModeIdentifier(name: string): string {

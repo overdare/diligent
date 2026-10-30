@@ -1,9 +1,10 @@
-// @summary Code mode session: owns exec cells (Bun Workers), the cross-exec store, and nested tool dispatch
+// @summary Code mode session: owns exec cells (Bun Workers), the cross-exec store, the agent tool gate, and nested tool dispatch
 
 import type { ImageBlock } from "@diligent/core/message-contract";
 import type { ToolContext, ToolOutputFileStore, ToolRegistry } from "@diligent/core/tool-contract";
 import { executeTool } from "@diligent/core/tool-contract";
 import { SUPPORTED_IMAGE_MEDIA_TYPES, type SupportedImageMediaType } from "@diligent/protocol";
+import { ToolGate } from "./gate";
 import { type CodeModeHostMessage, type CodeModeWorkerMessage, codeModeWorkerMain } from "./worker";
 
 /** Live (yielded) cells kept per session; starting another evicts the least recently driven one. */
@@ -19,13 +20,8 @@ const MAX_PERSISTED_NESTED_OUTPUT_CHARS = 8_000;
  * Larger outputs are truncated head+tail and spilled whole to the output store.
  */
 export const MAX_GUEST_TOOL_OUTPUT_BYTES = 8 * 1024 * 1024;
-/**
- * When the yield deadline passes during a nested call, the script usually finishes right after that call
- * returns. Waiting briefly avoids an empty "running" result followed by an exec_wait that only collects it.
- */
-const POST_NESTED_CALL_GRACE_MS = 500;
 
-/** The tool call currently awaiting a cell (`exec` or `exec_wait`); nested calls run under its context. */
+/** The tool call awaiting a cell (`exec` or `exec_wait`); nested calls run under its context. */
 export interface CodeModeDriver {
   ctx: ToolContext;
   /** Tools callable from the guest `tools` object, keyed by catalog name. */
@@ -33,9 +29,11 @@ export interface CodeModeDriver {
   outputStore?: ToolOutputFileStore;
 }
 
-/** One nested call, persisted in the driving call's result metadata so history can rebuild nested items. */
+/** One nested call, persisted in a later driving call's result metadata so history can rebuild nested items. */
 export interface CodeModeNestedCallRecord {
   toolCallId: string;
+  /** The `exec`/`exec_wait` call whose context dispatched this call; history groups the call under it. */
+  parentToolCallId: string;
   toolName: string;
   input: unknown;
   /** Output as shown in history; capped at MAX_PERSISTED_NESTED_OUTPUT_CHARS. */
@@ -66,9 +64,14 @@ export interface CodeModeToolBinding {
   description: string;
 }
 
-interface ActiveDriver extends CodeModeDriver {
-  dispatching: boolean;
+/**
+ * Context nested calls dispatch under: the cell's latest driver. After the driver yields it stays attached
+ * while the driver's run is open, so the script keeps running its nested calls in the background.
+ */
+interface Dispatcher extends CodeModeDriver {
   nextNestedIndex: number;
+  /** Removes the run listeners registered for this dispatcher. */
+  release: () => void;
 }
 
 interface PendingToolCall {
@@ -90,42 +93,18 @@ function createWorker(): Worker {
   return worker;
 }
 
-/**
- * Reader/writer gate mirroring the agent loop's batching rule: tools marked `supportParallel` may overlap,
- * every other tool runs alone.
- */
-class NestedToolGate {
-  private lastExclusive: Promise<void> = Promise.resolve();
-  private sharedSinceExclusive: Promise<void>[] = [];
-
-  async acquire(shared: boolean): Promise<() => void> {
-    const { promise: held, resolve: release } = Promise.withResolvers<void>();
-    let gate: Promise<unknown>;
-    if (shared) {
-      gate = this.lastExclusive;
-      this.sharedSinceExclusive.push(held);
-    } else {
-      gate = Promise.all([this.lastExclusive, ...this.sharedSinceExclusive]);
-      this.lastExclusive = held;
-      this.sharedSinceExclusive = [];
-    }
-    await gate;
-    return release;
-  }
-}
-
 class CodeModeCell {
   status: CodeModeCellStatus = "running";
   lastDrivenAt = Date.now();
   private readonly worker = createWorker();
-  private readonly gate = new NestedToolGate();
   private readonly queue: PendingToolCall[] = [];
   private readonly inFlight = new Map<number, { controller: AbortController; settled: Promise<void> }>();
   private texts: string[] = [];
   private images: ImageBlock[] = [];
   private nestedCalls: CodeModeNestedCallRecord[] = [];
   private error: string | undefined;
-  private driver: ActiveDriver | undefined;
+  private dispatcher: Dispatcher | undefined;
+  private awaited = false;
   private yieldRequested = false;
   private wake: (() => void) | undefined;
 
@@ -134,47 +113,47 @@ class CodeModeCell {
     code: string,
     tools: CodeModeToolBinding[],
     private readonly store: Map<string, string>,
+    private readonly gate: ToolGate,
   ) {
     this.worker.onmessage = (event: MessageEvent<CodeModeWorkerMessage>) => this.handleMessage(event.data);
     this.worker.onerror = (event) => this.finish("failed", event.message || "exec worker crashed");
     this.post({ type: "start", code, tools, store: Object.fromEntries(store) });
   }
 
-  get isDriven(): boolean {
-    return this.driver !== undefined;
+  /** True while an `exec`/`exec_wait` call is waiting on this cell. */
+  get isAwaited(): boolean {
+    return this.awaited;
   }
 
   /**
-   * Runs the cell under `driver` until it finishes, yields (`yield_control()` or `yieldTimeMs`), or the
-   * driver aborts. On yield, in-flight nested calls finish under this driver; later calls queue for the next one.
+   * Waits on the cell under `driver` until it finishes, yields (`yield_control()` or `yieldTimeMs`), or the
+   * driver aborts. A yield returns at once: the driver stays attached and the script keeps dispatching nested
+   * calls until the driver's run closes; their records reach the next driving call's result.
    */
   async drive(driver: CodeModeDriver, yieldTimeMs: number): Promise<CodeModeCellSnapshot> {
-    const active: ActiveDriver = { ...driver, dispatching: true, nextNestedIndex: 0 };
-    this.driver = active;
+    this.awaited = true;
     this.lastDrivenAt = Date.now();
     this.yieldRequested = false;
     const onAbort = () => this.terminate();
     driver.ctx.signal.addEventListener("abort", onAbort, { once: true });
     if (driver.ctx.signal.aborted) this.terminate();
     try {
-      for (const call of this.queue.splice(0)) this.dispatch(call, active);
+      if (this.status === "running") this.attach(driver);
       const deadline = Date.now() + yieldTimeMs;
       while (this.status === "running" && !this.yieldRequested && Date.now() < deadline) {
         await this.waitForChange(deadline - Date.now());
       }
-      active.dispatching = false;
-      const settling = [...this.inFlight.values()];
-      if (this.status === "completed" || this.status === "failed") {
-        // Like an ended isolate, a finished script discards its unawaited nested calls.
-        for (const call of settling) call.controller.abort();
-      }
-      if (this.status !== "terminated") await Promise.all(settling.map((call) => call.settled));
-      if (this.status === "running" && !this.yieldRequested && settling.length > 0) {
-        await this.waitForChange(POST_NESTED_CALL_GRACE_MS);
+      if (this.status === "running" && !driver.ctx.runScope) {
+        // Without a run scope nothing bounds background work: hold later calls for the next driver.
+        this.detach();
+        await this.settleInFlight();
+      } else if (this.status === "completed" || this.status === "failed") {
+        // finish() aborted the unawaited calls; their records still belong to this result.
+        await this.settleInFlight();
       }
     } finally {
       driver.ctx.signal.removeEventListener("abort", onAbort);
-      this.driver = undefined;
+      this.awaited = false;
       this.lastDrivenAt = Date.now();
     }
     return this.takeSnapshot();
@@ -182,6 +161,37 @@ class CodeModeCell {
 
   terminate(): void {
     this.finish("terminated");
+  }
+
+  private attach(driver: CodeModeDriver): void {
+    this.detach();
+    const dispatcher: Dispatcher = { ...driver, nextNestedIndex: 0, release: () => {} };
+    const runScope = driver.ctx.runScope;
+    if (runScope) {
+      // A closing run accepts no new work: later calls wait for the next driver. Aborting the run stops the
+      // script, as aborting its driving call does.
+      const onClosing = () => {
+        if (this.dispatcher === dispatcher) this.detach();
+      };
+      const onRunAbort = () => this.terminate();
+      runScope.closing.addEventListener("abort", onClosing, { once: true });
+      runScope.signal.addEventListener("abort", onRunAbort, { once: true });
+      dispatcher.release = () => {
+        runScope.closing.removeEventListener("abort", onClosing);
+        runScope.signal.removeEventListener("abort", onRunAbort);
+      };
+    }
+    this.dispatcher = dispatcher;
+    for (const call of this.queue.splice(0)) this.dispatch(call, dispatcher);
+  }
+
+  private detach(): void {
+    this.dispatcher?.release();
+    this.dispatcher = undefined;
+  }
+
+  private async settleInFlight(): Promise<void> {
+    await Promise.allSettled([...this.inFlight.values()].map((call) => call.settled));
   }
 
   private takeSnapshot(): CodeModeCellSnapshot {
@@ -220,6 +230,11 @@ class CodeModeCell {
     this.status = status;
     this.error = error;
     this.worker.terminate();
+    this.detach();
+    if (status !== "terminated") {
+      // Like an ended isolate, a finished script discards its unawaited nested calls.
+      for (const call of this.inFlight.values()) call.controller.abort();
+    }
     this.notify();
   }
 
@@ -231,7 +246,7 @@ class CodeModeCell {
     if (this.status !== "running") return;
     switch (message.type) {
       case "tool_call":
-        if (this.driver?.dispatching) this.dispatch(message, this.driver);
+        if (this.dispatcher) this.dispatch(message, this.dispatcher);
         else this.queue.push(message);
         return;
       case "text":
@@ -259,20 +274,29 @@ class CodeModeCell {
     }
   }
 
-  private dispatch(call: PendingToolCall, driver: ActiveDriver): void {
+  private dispatch(call: PendingToolCall, dispatcher: Dispatcher): void {
     const controller = new AbortController();
-    const settled = this.runNestedCall(call, driver, controller.signal).finally(() => {
+    const settled = this.runNestedCall(call, dispatcher, controller.signal).finally(() => {
       this.inFlight.delete(call.id);
       this.notify();
     });
     this.inFlight.set(call.id, { controller, settled });
+    // The run stays open until the call settles, so its events never follow agent_end.
+    dispatcher.ctx.runScope?.track(settled);
   }
 
-  private async runNestedCall(call: PendingToolCall, driver: ActiveDriver, cancel: AbortSignal): Promise<void> {
-    const { ctx, registry } = driver;
-    const toolCallId = `${ctx.toolCallId}#${++driver.nextNestedIndex}`;
+  private async runNestedCall(call: PendingToolCall, dispatcher: Dispatcher, cancel: AbortSignal): Promise<void> {
+    const { ctx, registry } = dispatcher;
+    const signal = AbortSignal.any([ctx.signal, cancel]);
+    const toolCallId = `${ctx.toolCallId}#${++dispatcher.nextNestedIndex}`;
     const itemId = `tool:${toolCallId}`;
-    const release = await this.gate.acquire(registry.get(call.name)?.supportParallel === true);
+    let release: () => void;
+    try {
+      release = await this.gate.acquire(registry.get(call.name)?.supportParallel === true, signal);
+    } catch {
+      this.post({ type: "tool_result", id: call.id, ok: false, error: `${call.name} failed: aborted` });
+      return;
+    }
     const startedAt = Date.now();
     try {
       ctx.emitNestedToolEvent?.({ type: "tool_start", itemId, toolCallId, toolName: call.name, input: call.input });
@@ -282,16 +306,16 @@ class CodeModeCell {
         {
           toolCallId,
           sessionId: ctx.sessionId,
-          signal: AbortSignal.any([ctx.signal, cancel]),
+          signal,
           // Rejected approvals end the whole turn, exactly as for a direct call.
           abort: ctx.abort,
           onUpdate: (partialResult) =>
             ctx.emitNestedToolEvent?.({ type: "tool_update", itemId, toolCallId, toolName: call.name, partialResult }),
         },
-        { outputStore: driver.outputStore, maxOutputBytes: MAX_GUEST_TOOL_OUTPUT_BYTES },
+        { outputStore: dispatcher.outputStore, maxOutputBytes: MAX_GUEST_TOOL_OUTPUT_BYTES },
       );
       const isError = !!result.metadata?.error;
-      const history = await capNestedOutputForHistory(result.output, result.metadata, driver.outputStore);
+      const history = await capNestedOutputForHistory(result.output, result.metadata, dispatcher.outputStore);
       // Live clients get the same capped copy as history so a large script result never floods the UI.
       ctx.emitNestedToolEvent?.({
         type: "tool_end",
@@ -308,6 +332,7 @@ class CodeModeCell {
       });
       this.nestedCalls.push({
         toolCallId,
+        parentToolCallId: ctx.toolCallId,
         toolName: call.name,
         input: call.input,
         ...history,
@@ -364,6 +389,8 @@ function parseImageDataUrl(imageUrl: string): ImageBlock | undefined {
  * `exec_wait`), and `store()` values persist across cells for the agent's lifetime.
  */
 export class CodeModeSession {
+  /** Shared by nested calls of every cell and the agent's direct calls of nestable tools. */
+  readonly gate = new ToolGate();
   private readonly cells = new Map<string, CodeModeCell>();
   private readonly store = new Map<string, string>();
   private nextCellId = 1;
@@ -375,7 +402,7 @@ export class CodeModeSession {
     yieldTimeMs: number,
   ): Promise<CodeModeCellSnapshot> {
     this.evictIdleCells();
-    const cell = new CodeModeCell(String(this.nextCellId++), code, tools, this.store);
+    const cell = new CodeModeCell(String(this.nextCellId++), code, tools, this.store, this.gate);
     this.cells.set(cell.id, cell);
     return this.settle(cell, await cell.drive(driver, yieldTimeMs));
   }
@@ -388,7 +415,7 @@ export class CodeModeSession {
   ): Promise<CodeModeCellSnapshot | undefined> {
     const cell = this.cells.get(cellId);
     if (!cell) return undefined;
-    if (cell.isDriven) throw new Error(`exec cell ${cellId} is already being awaited by another call`);
+    if (cell.isAwaited) throw new Error(`exec cell ${cellId} is already being awaited by another call`);
     if (options.terminate) cell.terminate();
     return this.settle(cell, await cell.drive(driver, options.terminate ? 0 : options.yieldTimeMs));
   }
@@ -406,7 +433,7 @@ export class CodeModeSession {
 
   private evictIdleCells(): void {
     const idle = [...this.cells.values()]
-      .filter((cell) => !cell.isDriven)
+      .filter((cell) => !cell.isAwaited)
       .sort((left, right) => left.lastDrivenAt - right.lastDrivenAt);
     while (this.cells.size >= MAX_LIVE_CELLS && idle.length > 0) {
       const cell = idle.shift()!;

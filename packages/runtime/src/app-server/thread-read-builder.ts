@@ -233,38 +233,52 @@ export function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): T
         render: mergeToolRenderPayload(startRender, message.render ?? derivedRender),
         ...(message.metadata ? { metadata: message.metadata } : {}),
       });
-      items.push(...buildNestedCodeModeItems(message));
+      insertNestedCodeModeItems(items, message);
     }
   }
 
   return items;
 }
 
-/** Code mode nested calls are not conversation messages; their parent result metadata carries them. */
-function buildNestedCodeModeItems(message: ToolResultMessage): ThreadItem[] {
+/**
+ * Code mode nested calls are not conversation messages; a later `exec`/`exec_wait` result carries their records.
+ * Each call is placed with its parent: the call that dispatched it, which differs from the carrier when a
+ * yielded cell ran it in the background. Records without a parent (older sessions) stay with the carrier.
+ */
+function insertNestedCodeModeItems(items: ThreadItem[], message: ToolResultMessage): void {
   const codeMode = message.metadata?.[CODE_MODE_METADATA_KEY] as Partial<CodeModeResultMetadata> | undefined;
-  if (!codeMode || !Array.isArray(codeMode.nestedCalls)) return [];
-  return codeMode.nestedCalls.map((call) => ({
-    type: "toolCall",
-    itemId: `tool:${call.toolCallId}`,
-    toolCallId: call.toolCallId,
-    toolName: call.toolName,
-    input: call.input,
-    timestamp: call.startedAt + call.durationMs,
-    startedAt: call.startedAt,
-    durationMs: call.durationMs,
-    output: call.output,
-    isError: call.isError,
-    render: mergeToolRenderPayload(
-      createToolStartRenderPayload(call.toolName, call.input),
-      createToolEndRenderPayloadFromInput({
-        toolName: call.toolName,
-        input: call.input,
-        output: call.output,
-        isError: call.isError,
-      }),
-    ),
-    ...(call.fullOutputPath ? { metadata: { fullOutputPath: call.fullOutputPath } } : {}),
-    parentToolCallId: message.toolCallId,
-  }));
+  if (!codeMode || !Array.isArray(codeMode.nestedCalls)) return;
+  for (const call of codeMode.nestedCalls) {
+    const requestedParent = call.parentToolCallId ?? message.toolCallId;
+    const parentIndex = items.findLastIndex(
+      (item) =>
+        item.type === "toolCall" && (item.toolCallId === requestedParent || item.parentToolCallId === requestedParent),
+    );
+    const parentToolCallId = parentIndex >= 0 ? requestedParent : message.toolCallId;
+    const item: ThreadItem = {
+      type: "toolCall",
+      itemId: `tool:${call.toolCallId}`,
+      toolCallId: call.toolCallId,
+      toolName: call.toolName,
+      input: call.input,
+      timestamp: call.startedAt + call.durationMs,
+      startedAt: call.startedAt,
+      durationMs: call.durationMs,
+      output: call.output,
+      isError: call.isError,
+      render: mergeToolRenderPayload(
+        createToolStartRenderPayload(call.toolName, call.input),
+        createToolEndRenderPayloadFromInput({
+          toolName: call.toolName,
+          input: call.input,
+          output: call.output,
+          isError: call.isError,
+        }),
+      ),
+      ...(call.fullOutputPath ? { metadata: { fullOutputPath: call.fullOutputPath } } : {}),
+      parentToolCallId,
+    };
+    if (parentIndex >= 0) items.splice(parentIndex + 1, 0, item);
+    else items.push(item);
+  }
 }

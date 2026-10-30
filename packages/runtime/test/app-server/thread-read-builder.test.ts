@@ -102,4 +102,74 @@ describe("buildThreadReadItems", () => {
       },
     });
   });
+
+  test("places code mode nested calls with the call that dispatched them, not the result that carried them", () => {
+    const usage = { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 };
+    const model = { provider: "anthropic" as const, modelId: "claude-sonnet-5" };
+    const nested = (toolCallId: string, parentToolCallId?: string) => ({
+      toolCallId,
+      ...(parentToolCallId ? { parentToolCallId } : {}),
+      toolName: "read",
+      input: {},
+      output: toolCallId,
+      isError: false,
+      startedAt: 100,
+      durationMs: 1,
+    });
+    const assistant = (id: string, toolCallId: string, name: string, timestamp: number) => ({
+      type: "message" as const,
+      id,
+      timestamp: "2026-10-29T00:00:00.000Z",
+      message: {
+        role: "assistant" as const,
+        content: [{ type: "tool_call" as const, id: toolCallId, name, input: {} }],
+        model,
+        usage,
+        stopReason: "tool_use" as const,
+        timestamp,
+      },
+    });
+    const result = (id: string, toolCallId: string, toolName: string, nestedCalls: unknown[], timestamp: number) => ({
+      type: "message" as const,
+      id,
+      timestamp: "2026-10-29T00:00:00.000Z",
+      message: {
+        role: "tool_result" as const,
+        toolCallId,
+        toolName,
+        output: "",
+        isError: false,
+        timestamp,
+        metadata: { codeMode: { cellId: "1", status: "running", nestedCalls } },
+      },
+    });
+
+    const items = buildThreadReadItems([
+      assistant("a-1", "tc-exec", "exec", 100),
+      result("r-1", "tc-exec", "exec", [nested("tc-exec#1", "tc-exec")], 110),
+      assistant("a-2", "tc-wait", "exec_wait", 120),
+      // The cell ran tc-exec#2 in the background after tc-exec yielded; tc-wait carries its record.
+      result(
+        "r-2",
+        "tc-wait",
+        "exec_wait",
+        [nested("tc-exec#2", "tc-exec"), nested("tc-wait#1", "tc-wait"), nested("legacy")],
+        130,
+      ),
+    ]);
+
+    const tools = items.flatMap((item) =>
+      item.type === "toolCall" ? [`${item.toolCallId}<${item.parentToolCallId ?? ""}`] : [],
+    );
+    expect(tools).toEqual([
+      "tc-exec<",
+      "tc-exec<",
+      "tc-exec#1<tc-exec",
+      "tc-exec#2<tc-exec",
+      "tc-wait<",
+      "tc-wait<",
+      "tc-wait#1<tc-wait",
+      "legacy<tc-wait",
+    ]);
+  });
 });
