@@ -10,13 +10,19 @@ const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
 const anthropicCalls: unknown[] = [];
 const anthropicConstructorOptions: unknown[] = [];
 const anthropicRequestOptions: unknown[] = [];
+const anthropicFileUploads: unknown[] = [];
+/** Decides per request whether Messages rejects it; unset means every request succeeds. */
+let rejectMessagesRequest: ((params: unknown) => Error | undefined) | undefined;
 
 class MockAnthropicStream {
+  constructor(private readonly rejection?: Error) {}
+
   on() {
     return this;
   }
 
   async finalMessage() {
+    if (this.rejection) throw this.rejection;
     return {
       id: "msg_123",
       role: "assistant",
@@ -41,7 +47,16 @@ class MockAnthropicClient {
     stream: (params: unknown, options: unknown) => {
       anthropicCalls.push(params);
       anthropicRequestOptions.push(options);
-      return new MockAnthropicStream();
+      return new MockAnthropicStream(rejectMessagesRequest?.(params));
+    },
+  };
+
+  beta = {
+    files: {
+      upload: async (params: unknown) => {
+        anthropicFileUploads.push(params);
+        return { id: `file_${anthropicFileUploads.length}` };
+      },
     },
   };
 }
@@ -111,6 +126,110 @@ describe("createAnthropicStream", () => {
       baseURL: "https://example.anthropic.local",
       timeout: PROVIDER_RESPONSE_HEADER_TIMEOUT_MS,
       maxRetries: 0,
+    });
+  });
+
+  test("sends images by file_id with the Files beta on the official endpoint", async () => {
+    anthropicCalls.length = 0;
+    anthropicRequestOptions.length = 0;
+    anthropicFileUploads.length = 0;
+    const imageContext: StreamContext = {
+      ...EMPTY_CONTEXT,
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "b2ZmaWNpYWw=" } }],
+          timestamp: 1,
+        },
+      ],
+    };
+
+    await createAnthropicStream("files-key")(baseModel({}), imageContext, { effort: "medium" }).result();
+
+    const request = anthropicCalls[0] as { messages: Array<{ content: Array<{ source: unknown }> }> };
+    expect(anthropicFileUploads).toHaveLength(1);
+    expect(request.messages[0]?.content[0]?.source).toEqual({ type: "file", file_id: "file_1" });
+    expect(anthropicRequestOptions[0]).toMatchObject({ headers: { "anthropic-beta": "files-api-2025-04-14" } });
+  });
+
+  test("keeps images inline behind a custom base URL", async () => {
+    anthropicCalls.length = 0;
+    anthropicFileUploads.length = 0;
+    const imageContext: StreamContext = {
+      ...EMPTY_CONTEXT,
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "cHJveHk=" } }],
+          timestamp: 1,
+        },
+      ],
+    };
+
+    await createAnthropicStream("proxy-key", "https://gateway.example.com")(baseModel({}), imageContext, {
+      effort: "medium",
+    }).result();
+
+    const request = anthropicCalls[0] as { messages: Array<{ content: Array<{ source: unknown }> }> };
+    expect(anthropicFileUploads).toHaveLength(0);
+    expect(request.messages[0]?.content[0]?.source).toEqual({
+      type: "base64",
+      media_type: "image/png",
+      data: "cHJveHk=",
+    });
+  });
+
+  describe("when Messages rejects file image sources", () => {
+    const imageSource = (request: unknown) =>
+      (request as { messages: Array<{ content: Array<{ source: { type: string } }> }> }).messages[0]?.content[0]
+        ?.source;
+    const imageContext = (data: string): StreamContext => ({
+      ...EMPTY_CONTEXT,
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "image", source: { type: "base64", media_type: "image/png", data } }],
+          timestamp: 1,
+        },
+      ],
+    });
+    const fileRejection = () => new APIError(400, undefined, "file source not supported", new Headers());
+
+    test("retries the same request inline and sends later images inline without uploading", async () => {
+      anthropicCalls.length = 0;
+      anthropicRequestOptions.length = 0;
+      anthropicFileUploads.length = 0;
+      rejectMessagesRequest = (params) => (imageSource(params)?.type === "file" ? fileRejection() : undefined);
+      try {
+        const streamFn = createAnthropicStream("rejected-files-key");
+        const first = await streamFn(baseModel({}), imageContext("Zmlyc3Q="), { effort: "medium" }).result();
+        const second = await streamFn(baseModel({}), imageContext("c2Vjb25k"), { effort: "medium" }).result();
+
+        expect(first.message.stopReason).toBe("end_turn");
+        expect(second.message.stopReason).toBe("end_turn");
+        expect(anthropicCalls.map((call) => imageSource(call)?.type)).toEqual(["file", "base64", "base64"]);
+        expect(anthropicRequestOptions[1]).not.toMatchObject({ headers: { "anthropic-beta": expect.anything() } });
+        expect(anthropicFileUploads).toHaveLength(1);
+      } finally {
+        rejectMessagesRequest = undefined;
+      }
+    });
+
+    test("keeps file references when the inline retry fails too", async () => {
+      anthropicCalls.length = 0;
+      rejectMessagesRequest = () => fileRejection();
+      const streamFn = createAnthropicStream("unrelated-rejection-key");
+      try {
+        await expect(
+          streamFn(baseModel({}), imageContext("dW5yZWxhdGVk"), { effort: "medium" }).result(),
+        ).rejects.toThrow();
+      } finally {
+        rejectMessagesRequest = undefined;
+      }
+
+      await streamFn(baseModel({}), imageContext("dW5yZWxhdGVk"), { effort: "medium" }).result();
+
+      expect(anthropicCalls.map((call) => imageSource(call)?.type)).toEqual(["file", "base64", "file"]);
     });
   });
 

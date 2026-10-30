@@ -1,5 +1,6 @@
 // @summary Anthropic native compaction request and response handling
 import type { NativeCompactFn } from "../native-compaction";
+import { ANTHROPIC_FILES_BETA, getAnthropicImageFiles, isFileSourceRejection } from "./image-files";
 import { convertMessages, ensureAnthropicCompactionConversationEndsWithUser } from "./messages";
 import { toAnthropicBlocks } from "./request";
 
@@ -25,37 +26,51 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function createAnthropicNativeCompaction(apiKey: string, baseUrl?: string): NativeCompactFn {
-  const endpoint = `${resolveAnthropicBaseUrl(baseUrl)}/messages`;
+  const baseUrlWithVersion = resolveAnthropicBaseUrl(baseUrl);
+  const endpoint = `${baseUrlWithVersion}/messages`;
+  const imageFiles = getAnthropicImageFiles(apiKey, baseUrlWithVersion);
   return async (input) => {
     const rawMessages = await convertMessages(input.messages, input.compactionSummary, input.localImageLoader);
     const normalizedMessages = ensureAnthropicCompactionConversationEndsWithUser(rawMessages);
-    const body: Record<string, unknown> = {
-      model: input.model.modelId,
-      max_tokens: Math.max(256, Math.min(input.model.maxOutputTokens, 4_096)),
-      messages: normalizedMessages,
-      context_management: {
-        edits: [
-          {
-            type: "compact_20260112",
-            trigger: { type: "input_tokens", value: 50_000 },
-            pause_after_compaction: true,
-          },
-        ],
-      },
+    const referenced = imageFiles
+      ? await imageFiles.reference(normalizedMessages)
+      : { messages: normalizedMessages, usesFiles: false };
+    const send = (messages: unknown[], usesFiles: boolean): Promise<Response> => {
+      const body: Record<string, unknown> = {
+        model: input.model.modelId,
+        max_tokens: Math.max(256, Math.min(input.model.maxOutputTokens, 4_096)),
+        messages,
+        context_management: {
+          edits: [
+            {
+              type: "compact_20260112",
+              trigger: { type: "input_tokens", value: 50_000 },
+              pause_after_compaction: true,
+            },
+          ],
+        },
+      };
+      if (input.systemPrompt.length > 0) body.system = toAnthropicBlocks(input.systemPrompt);
+      return fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": usesFiles ? `compact-2026-01-12,${ANTHROPIC_FILES_BETA}` : "compact-2026-01-12",
+        },
+        body: JSON.stringify(body),
+        signal: input.signal,
+      });
     };
-    if (input.systemPrompt.length > 0) body.system = toAnthropicBlocks(input.systemPrompt);
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "compact-2026-01-12",
-      },
-      body: JSON.stringify(body),
-      signal: input.signal,
-    });
+    let response = await send(referenced.messages, referenced.usesFiles);
+    if (imageFiles && referenced.usesFiles && isFileSourceRejection(response.status)) {
+      const rejected = response;
+      response = await send(normalizedMessages, false);
+      // Only an inline success proves the file references caused the rejection.
+      if (response.ok) imageFiles.disable((await readErrorBody(rejected)) ?? `status_${rejected.status}`);
+    }
 
     if (!response.ok) {
       const errorDetails = await readErrorBody(response);

@@ -232,6 +232,25 @@ bound as the stream idle timeout.
 Set `DILIGENT_DEBUG_CHATGPT_WEBSOCKET=1` to log content-safe frame summaries, including
 `inputItems=` counts that show whether a request was chained.
 
+## Anthropic image uploads
+
+The Anthropic Messages API keeps no conversation state, so every request resends the whole history,
+and the request body is limited to 32 MB. Base64 images make up most of that body in long sessions.
+
+- On the official endpoint (`https://api.anthropic.com`), the provider uploads each distinct image once
+  through the Files API and sends `{ "type": "file", "file_id": ... }` instead of base64. Streaming and
+  native compaction share the uploads per API key for the life of the process.
+- Requests that reference files add the `files-api-2025-04-14` beta header.
+- A custom `provider.anthropic.baseUrl` keeps sending base64, because a proxy may not serve `/v1/files`.
+- After the first upload failure, the provider stops uploading and sends images inline for the rest of
+  the process.
+- If Messages answers a file-referencing request with 400, 403, or 404 before any output, the provider
+  resends the same request with base64 images. When that inline request succeeds, the file references
+  were the cause, so later requests send base64 for the rest of the process. When it also fails, the
+  error is unrelated to files and file references stay on.
+- Uploaded files are not deleted. They stay in the API key's workspace, visible to every key with access
+  to that workspace. The Files API is not eligible for Zero Data Retention.
+
 ## Refresh and runtime binding
 
 Runtime binds external auth into `ProviderManager` and refreshes ChatGPT OAuth tokens automatically before provider use when needed.
