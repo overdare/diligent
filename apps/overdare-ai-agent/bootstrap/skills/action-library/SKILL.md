@@ -9,7 +9,7 @@ ActionGameLibrary connects action sequences and combat rules to a game. Use `Act
 
 ## Getting the library
 
-Import `ovdrassetid://52222100` with `studiorpc_asset_drawer_import` (`assetType: "MODEL"`). It places every component listed under "Components and locations" at the paths shown there, including the presets and the runnable examples. Then require `ServerStorage/CombatLibrary` (or `ServerStorage/ActionCore` for core-only actions) and follow "Connecting combat". If `ServerStorage/ActionGameLibrary` already exists, use it instead of importing again.
+Import `ovdrassetid://52222100` with `studiorpc_asset_drawer_import` (`assetType: "MODEL"`). It places every component listed under "Components and locations" at the paths shown there, including the presets and the runnable examples. Then require `ServerStorage/ActionGameLibrary/Combat/CombatLibrary` (or `ServerStorage/ActionGameLibrary/Core/ActionCore` for core-only actions) and follow "Connecting combat". If `ServerStorage/ActionGameLibrary` already exists, use it instead of importing again.
 
 ## Design principles
 
