@@ -80,6 +80,30 @@ export const ANTHROPIC_MODELS = defineProviderModels("anthropic", [
     aliases: ["claude-sonnet", "sonnet", "sonnet-5"],
   },
   {
+    modelId: "claude-haiku-5-5",
+    display: "Claude Haiku 5.5",
+    // Keep the operational context budget aligned with the other Claude cards (official limit: 1M).
+    contextWindow: 500_000,
+    maxOutputTokens: 128_000,
+    // Standard rates for prompts up to 100K tokens. Longer prompts cost 5x these rates.
+    // The shared cost estimator currently represents only a single price tier.
+    inputCostPer1M: 0.1,
+    outputCostPer1M: 0.5,
+    cacheReadCostPer1M: 0.01,
+    cacheWriteCostPer1M: 0.125,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+    supportsVision: true,
+    supportsAdaptiveThinking: true,
+    supportsXhighEffort: true,
+    aliases: ["haiku-5-5"],
+    provenance: {
+      source: "Anthropic Claude Haiku 5.5 model documentation",
+      sourceUrl: "https://platform.claude.com/docs/en/models/haiku-5-5/overview",
+      updatedAt: "2026-10-30",
+    },
+  },
+  {
     modelId: "claude-haiku-4-5-20251001",
     display: "Claude Haiku 4.5",
     contextWindow: 500_000,

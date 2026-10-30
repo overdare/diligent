@@ -2,10 +2,13 @@
 import { expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 
-test("Sonnet 5.5 reaches /v1/messages with adaptive thinking, binding controls, tools, and images", async () => {
+test.each([
+  "claude-sonnet-5-5",
+  "claude-haiku-5-5",
+])("%s reaches /v1/messages with adaptive thinking, binding controls, tools, and images", async (modelId) => {
   // Other provider tests mock @anthropic-ai/sdk process-wide. Use a fresh process to exercise the real SDK.
   const child = Bun.spawn(
-    [process.execPath, fileURLToPath(new URL("../../../helpers/sonnet-5-5-wire.ts", import.meta.url))],
+    [process.execPath, fileURLToPath(new URL("../../../helpers/sonnet-5-5-wire.ts", import.meta.url)), modelId],
     {
       stdout: "pipe",
       stderr: "pipe",
@@ -19,7 +22,7 @@ test("Sonnet 5.5 reaches /v1/messages with adaptive thinking, binding controls, 
       new Response(child.stderr).text(),
     ]);
     expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
-    expect(stdout.trim()).toBe("Sonnet 5.5 loopback wire contract: 5 efforts verified");
+    expect(stdout.trim()).toBe(`${modelId} loopback wire contract: 5 efforts verified`);
   } finally {
     child.kill();
   }

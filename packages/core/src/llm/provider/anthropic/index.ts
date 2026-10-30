@@ -65,7 +65,9 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
         const maxTokens = options.maxTokens ?? model.maxOutputTokens;
         const effort = options.effort ?? "medium";
         const usesThinkingBindingControls =
-          model.modelId === "claude-opus-5-5" || model.modelId === "claude-sonnet-5-5";
+          model.modelId === "claude-opus-5-5" ||
+          model.modelId === "claude-sonnet-5-5" ||
+          model.modelId === "claude-haiku-5-5";
 
         let thinkingConfig: Record<string, unknown>;
         if (!model.supportsThinking) {

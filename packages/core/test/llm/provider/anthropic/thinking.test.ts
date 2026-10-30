@@ -135,8 +135,11 @@ describe("createAnthropicStream", () => {
     }
   });
 
-  test("serializes Sonnet 5.5 Messages requests with all documented efforts and image input", async () => {
-    const model = resolveModel({ provider: "anthropic", modelId: "claude-sonnet-5-5" });
+  test.each([
+    "claude-sonnet-5-5",
+    "claude-haiku-5-5",
+  ])("serializes %s Messages requests with all documented efforts and image input", async (modelId) => {
+    const model = resolveModel({ provider: "anthropic", modelId });
     for (const effort of ["low", "medium", "high", "xhigh", "max"] as const) {
       const context: StreamContext = {
         ...EMPTY_CONTEXT,
@@ -151,7 +154,7 @@ describe("createAnthropicStream", () => {
       };
       await createAnthropicStream("test-key")(model, context, { effort, temperature: 0.5 }).result();
       const request = anthropicCalls.at(-1) as Record<string, unknown>;
-      expect(request.model).toBe("claude-sonnet-5-5");
+      expect(request.model).toBe(modelId);
       expect(request.max_tokens).toBe(128_000);
       expect(request.output_config).toEqual({ effort });
       expect(request.thinking).toMatchObject({ type: "adaptive", display: "summarized" });
@@ -188,6 +191,7 @@ describe("createAnthropicStream", () => {
   test.each([
     "claude-opus-5-5",
     "claude-sonnet-5-5",
+    "claude-haiku-5-5",
   ])("requests stale-block dropping for %s when a replayed conversation prefix changes", async (modelId) => {
     const model = resolveModel({ provider: "anthropic", modelId });
     const context: StreamContext = {
