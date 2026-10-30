@@ -61,11 +61,13 @@ function splitIntoLines(content: string): { lines: string[]; hasTrailingNewline:
 
 function findExactMatches(content: string, search: string): Array<{ start: number; end: number }> {
   if (search.length === 0) return [];
+  const pattern = search
+    .split(/\r\n|\r|\n/)
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("(?:\\r\\n|\\r|\\n)");
   const matches: Array<{ start: number; end: number }> = [];
-  let pos = 0;
-  while ((pos = content.indexOf(search, pos)) !== -1) {
-    matches.push({ start: pos, end: pos + search.length });
-    pos += search.length;
+  for (const match of content.matchAll(new RegExp(pattern, "g"))) {
+    matches.push({ start: match.index, end: match.index + match[0].length });
   }
   return matches;
 }
@@ -96,7 +98,7 @@ function findLineMatches(contentLines: string[], searchLines: string[]): Array<{
  * the number of replacements made. Throws on validation failure.
  *
  * Two matching strategies:
- *   1. Character-level exact substring (handles within-line edits).
+ *   1. Character-level substring with equivalent line endings (handles within-line edits).
  *   2. Line-level fuzzy match (whitespace / Unicode tolerant). Operates on
  *      pure-line arrays so replacements can never accidentally eat a line
  *      terminator.

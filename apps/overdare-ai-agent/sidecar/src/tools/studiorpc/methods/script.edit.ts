@@ -6,8 +6,8 @@ export const description = `Edit an instance's string Source via focused replace
 
 For Lua script classes, use tabs: leading 4-space groups are auto-converted to tabs. Other Source languages retain their indentation.
 
-Matching first tries exact text, then falls back to line-based matching that tolerates trailing whitespace,
-leading/trailing whitespace, and common Unicode quote/dash/space variants.
+Matching first tries exact text with CRLF, CR, and LF treated as equivalent, then falls back to line-based
+matching that tolerates trailing whitespace, leading/trailing whitespace, and common Unicode quote/dash/space variants.
 
 The edit will FAIL if old_string is not unique in the script source.
 Provide more surrounding context to make it unique, or set replace_all to true.
