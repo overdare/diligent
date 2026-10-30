@@ -42,6 +42,13 @@ The existing native build, inspect and export operations remain available. Movin
 instructions does not bypass source preservation, publication dependencies,
 stale-source rejection, commit evidence or rollback checks.
 
+`character.build(mode=apply)` changes the in-memory Workspace and marks the map
+dirty. The agent tool uses the existing shared write lock and captures the
+pre-edit rollback baseline; that capture may save the map before apply. Apply
+does not save the resulting world. Call `studiorpc_level_save_file` explicitly
+after a successful apply to persist it. Draft builds, commit and publication do
+not acquire the map write lock or capture/save the world through this policy.
+
 ## Local source verification
 
 The `custom-character` skill owns `scripts/character-source-proof.py`. Supply an

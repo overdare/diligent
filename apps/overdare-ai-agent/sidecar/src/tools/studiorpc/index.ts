@@ -466,7 +466,6 @@ export async function createStudioRpcTools(ctx: {
   for (const mod of methodModules) {
     const { method, description, params } = mod;
     const toolName = toToolName(method);
-    const capturesBeforeRun = mutatingMethods.has(method);
 
     tools.push({
       name: toolName,
@@ -474,8 +473,12 @@ export async function createStudioRpcTools(ctx: {
       parameters: params,
       inputSchema: mod.inputSchema,
       async execute(args, toolCtx) {
+        const capturesBeforeRun =
+          mutatingMethods.has(method) ||
+          (method === "character.build" && (args as Record<string, unknown>).mode === "apply");
+        const isDryRun = method === "animation.write" && (args as Record<string, unknown>).dryRun === true;
         const ts = getTurnState(toolCtx);
-        const warning = capturesBeforeRun ? await ensureSnapshot(ts, toolCtx.signal) : undefined;
+        const warning = capturesBeforeRun && !isDryRun ? await ensureSnapshot(ts, toolCtx.signal) : undefined;
         toolCtx.signal.throwIfAborted();
         const bundledToolCtx = withApproval(toolCtx, ctx.host);
         const toolCallRpc = withSignal(callRpc, toolCtx.signal);
@@ -497,7 +500,7 @@ export async function createStudioRpcTools(ctx: {
           }
         }
 
-        const isMutating = mutatingMethods.has(method) || mod.serialize === true;
+        const isMutating = (capturesBeforeRun && !isDryRun) || mod.serialize === true;
         const release = isMutating ? await writeLock.acquire() : undefined;
         try {
           try {
@@ -526,7 +529,7 @@ export async function createStudioRpcTools(ctx: {
             }
             // Persist editor-state changes to file immediately on success.
             let failed = isRecord(result) && result.success === false;
-            if (!failed && savingMethods.has(method)) {
+            if (!failed && savingMethods.has(method) && !isDryRun) {
               try {
                 checkResult("level.save.file", await toolCallRpc("level.save.file", {}));
               } catch (error) {

@@ -1,12 +1,15 @@
 // @summary Verifies generic custom character tools are discoverable and cannot accept ODA costume requests.
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { callRegistryTool } from "../../../../src/mcp-server";
 import { createStudioRpcTools } from "../../../../src/tools/studiorpc";
 import * as character from "../../../../src/tools/studiorpc/methods/character";
 import { StudioRpcError } from "../../../../src/tools/studiorpc/rpc";
 import { methodModules, mutatingMethods, savingMethods } from "../../../../src/tools/studiorpc/tool-registry";
+import { listSnapshots } from "../../../../src/tools/studiorpc/tools/snapshot";
+import { createWriteLock } from "../../../../src/tools/studiorpc/write-lock";
 
 describe("non-ODA character authoring", () => {
   test("combines live Studio capabilities with Diligent-owned authoring guidance", async () => {
@@ -349,6 +352,105 @@ describe("non-ODA character authoring", () => {
     await tool.execute(request, { toolCallId: "native-apply", signal: new AbortController().signal, abort: () => {} });
     expect(calls).toEqual([{ method: character.build.method, params: request }]);
   });
+  test("apply waits for the shared write lock and captures only a pre-apply baseline", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "character-apply-"));
+    try {
+      writeFileSync(join(cwd, "world.umap"), "world");
+      const map = join(cwd, "world.ovdrjm");
+      writeFileSync(map, "before apply");
+      const lock = createWriteLock();
+      const unblock = await lock.acquire();
+      const events: string[] = [];
+      let held = false;
+      const tools = await createStudioRpcTools({
+        cwd,
+        getTurnState: () => ({ sessionId: "apply-session" }),
+        writeLock: {
+          async acquire() {
+            events.push("acquire");
+            const release = await lock.acquire();
+            held = true;
+            return () => {
+              held = false;
+              events.push("release");
+              release();
+            };
+          },
+        },
+        callRpc: async (method) => {
+          expect(held).toBe(true);
+          events.push(method);
+          if (method === "character.build") writeFileSync(map, "after apply");
+          return { success: true, applied: true };
+        },
+      });
+      const apply = tools.find((tool) => tool.name === "studiorpc_character_build")!;
+      const pending = apply.execute(
+        {
+          mode: "apply",
+          buildId: "A".repeat(32),
+          publicationId: "F".repeat(32),
+          expectedRevision: {
+            sourceRevision: "B".repeat(40),
+            geometryHash: "C".repeat(40),
+            rigRevision: "D".repeat(40),
+            animationRevision: "E".repeat(40),
+          },
+          expectedSourceGraphRevision: "F".repeat(40),
+        },
+        { toolCallId: "apply", signal: new AbortController().signal, abort() {} },
+      );
+      expect(events).toEqual(["acquire"]);
+      unblock();
+      await pending;
+      expect(events).toEqual(["acquire", "level.save.file", "release", "acquire", "character.build", "release"]);
+      const snapshots = listSnapshots(cwd);
+      expect(snapshots).toHaveLength(1);
+      expect(readFileSync(snapshots[0].path, "utf8")).toBe("before apply");
+      expect(readFileSync(map, "utf8")).toBe("after apply");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+  test("draft, commit and publication do not acquire map locks, snapshots or level saves", async () => {
+    const expectedRevision = {
+      sourceRevision: "B".repeat(40),
+      geometryHash: "C".repeat(40),
+      rigRevision: "D".repeat(40),
+      animationRevision: "E".repeat(40),
+    };
+    const calls: string[] = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      getTurnState: () => ({ sessionId: "private-draft-session" }),
+      writeLock: {
+        async acquire() {
+          calls.push("write-lock");
+          throw new Error("Private character work must not acquire the map write lock");
+        },
+      },
+      callRpc: async (method) => {
+        calls.push(method);
+        return { success: true };
+      },
+    });
+    const context = { toolCallId: "private", signal: new AbortController().signal, abort() {} };
+    const build = tools.find((tool) => tool.name === "studiorpc_character_build")!;
+    const request = {
+      requestId: "private-character",
+      source: { kind: "existing_rig", guid: "A".repeat(32), rigRevision: "C".repeat(40) },
+      target: { kind: "animation_only", name: "Walk" },
+      rigProfile: "authored_v1",
+      motion: { preset: "authored_v1", speedCmPerSec: 0, document: { poses: [] } },
+      commit: false,
+    };
+    await build.execute(request, context);
+    await build.execute({ ...request, commit: true, expectedRevision }, context);
+    await tools
+      .find((tool) => tool.name === "studiorpc_character_export")!
+      .execute({ mode: "publish", buildId: "A".repeat(32), expectedRevision }, context);
+    expect(calls).toEqual(["character.build", "character.build", "character.export"]);
+  });
   test("forwards native publication on the existing export tool and retains issued IDs", async () => {
     const request = {
       mode: "publish",
@@ -387,6 +489,54 @@ describe("non-ODA character authoring", () => {
     expect(character.exportAsset.params.safeParse({ ...request, mode: "native_parts" }).success).toBe(false);
     expect(character.exportAsset.params.safeParse({ ...request, expectedRevision: undefined }).success).toBe(false);
     expect(savingMethods.has(character.exportAsset.method)).toBe(false);
+  });
+  test("exposes partial publication IDs and diagnostics through the MCP error without retrying", async () => {
+    const request = {
+      mode: "publish",
+      buildId: "A".repeat(32),
+      expectedRevision: {
+        sourceRevision: "B".repeat(40),
+        geometryHash: "C".repeat(40),
+        rigRevision: "D".repeat(40),
+        animationRevision: "E".repeat(40),
+      },
+    };
+    const data = {
+      publicationId: "F".repeat(32),
+      reportPath: "C:/Studio/Saved/publication.json",
+      uploaded: false,
+      assets: [{ role: "skeleton", state: "uploaded", assetId: "ovdrassetid://123" }],
+      diagnostics: [{ code: "UPLOAD_FAILED", message: "Mesh upload failed after issuing the Skeleton ID" }],
+    };
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const failure = new StudioRpcError(
+      "Native publication failed; inspect issued IDs and the saved report.",
+      -32602,
+      data,
+    );
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        throw failure;
+      },
+    });
+    const result = await callRegistryTool(
+      { tools: new Map(tools.map((tool) => [tool.name, tool])), prompts: new Map() },
+      "studiorpc_character_export",
+      request,
+    );
+    expect(result.isError).toBe(true);
+    const text = JSON.stringify(result.content);
+    expect(text).toContain(data.publicationId);
+    expect(text).toContain(data.reportPath);
+    expect(text).toContain("ovdrassetid://123");
+    expect(text).toContain("UPLOAD_FAILED");
+    expect(text).toContain(data.diagnostics[0].message);
+    expect(calls).toEqual([{ method: "character.export", params: request }]);
+    const recovered = await character.exportAsset.recover(failure).catch((error: StudioRpcError) => error);
+    expect(recovered.code).toBe(-32602);
+    expect(recovered.data).toBe(data);
   });
   test("keeps external interchange on the existing FBX export contract", () => {
     const request = {
