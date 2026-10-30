@@ -1,6 +1,11 @@
 // @summary Tests that restart really stops first, and that Studio never sees the flag.
 import { describe, expect, test } from "bun:test";
-import { normalizeArgs, preCall } from "../../../../src/tools/studiorpc/methods/game.play";
+import { normalizeArgs, params, preCall } from "../../../../src/tools/studiorpc/methods/game.play";
+
+test("accepts the Studio PIE player limit and rejects counts above it", () => {
+  expect(params.safeParse({ numberOfPlayer: 8 }).success).toBe(true);
+  expect(params.safeParse({ numberOfPlayer: 9, restart: true }).success).toBe(false);
+});
 
 describe("game.play restart", () => {
   test("stops the running session before starting one", async () => {

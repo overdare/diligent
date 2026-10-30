@@ -59,6 +59,9 @@ uses cm/s, and gravity uses cm/s². These defaults configure subsequent play ses
 change existing live PIE characters. A save failure preserves the successful update's result and
 reports that persistence failed; retry the save rather than the update.
 
+`studiorpc_game_play` accepts `numberOfPlayer` from 1 to 8 when starting PIE. This limit is
+separate from the world's `maxPlayers` setting and does not prove deployed server capacity.
+
 `studiorpc_game_play` accepts `{ "addClient": true }` to queue one additional client in the running
 PIE session without restarting it. Do not combine this with `numberOfPlayer` or `restart: true`.
 Use `studiorpc_game_pie_status` to wait for the new client and retrieve its ID. Do not repeat an
