@@ -22,6 +22,12 @@ settings, aim the camera, start or stop play, write draft recipes (`proceduralmo
 `studiorpc_script_read`, `studiorpc_script_grep`) never prompt; custom write tools request their own
 `write` or `execute` approval.
 
+## Schema-guided instance editing
+
+`studiorpc_instance_schema_search` annotates inherited `Mobility` properties with the Editor Luau
+enum type: use `Enum.MobilityMode.Static` or `Enum.MobilityMode.Movable` on direct Workspace children.
+The Studio schema lists enum values but does not supply the enum type name.
+
 ## Unified asset import
 
 Use `studiorpc_asset_manager_import` for image, model, and audio files. Studio selects the importer
