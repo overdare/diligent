@@ -24,7 +24,10 @@ Studio into a successful capability query. Native limits are never replaced by
 values from the guide.
 
 The native `apiVersion: 2` envelope separates capabilities from documentation.
-The authored input contract remains `character-authoring/v15`. Native callers that
+The current native operation contract is `character-authoring/v16`; the
+`authored_v1` input documents and saved storage identities are unchanged. A v15
+Studio keeps its native facts but receives an unavailable guide marker, because
+its capture/proof requirements differ. Native callers that
 previously read workflow text or `verificationRunner` should use the Diligent
 skill or the enriched agent tool instead.
 
@@ -35,12 +38,21 @@ skill or the enriched agent tool instead.
 | Anatomy, rig/weight/motion writing instructions and examples | Actual geometry, bone, bind, material and skin reads |
 | Tool selection and draft/review/publish/apply sequencing | Native Skeleton, SkeletalMesh and AnimSequence construction |
 | Image attachment and quality interpretation | Pose, surface and contact measurements and rendering |
-| External fresh-process runner and local RPC diagnostics client | Saved-source replay and revision-bound proof validation |
+| Optional fresh-process runner and local RPC diagnostics client | Native source replay and source/revision/asset integrity validation |
 | Agent convenience validation | Authoritative input, source revision and mutation guards |
 
 The existing native build, inspect and export operations remain available. Moving
 instructions does not bypass source preservation, publication dependencies,
-stale-source rejection, commit evidence or rollback checks.
+stale-source rejection, revision/asset integrity or rollback checks.
+
+Draft build does not render review captures automatically. The caller selects
+an observation preset relevant to the task; inspection renders that preset when
+its revision-bound capture is missing, and `refresh:true` recaptures any preset.
+Bone probes use persisted explicit `observationBones`/`bendTestRegions`, without
+anatomy guesses. Available presets are operations, not a required checklist.
+Commit, publication and apply do not require captures or fresh-process proof.
+Their native source/revision/asset integrity checks remain authoritative. Raw
+measurements and source-replay integrity success do not certify motion quality.
 
 `character.build(mode=apply)` changes the in-memory Workspace and marks the map
 dirty. The agent tool uses the existing shared write lock and captures the
@@ -49,7 +61,7 @@ does not save the resulting world. Call `studiorpc_level_save_file` explicitly
 after a successful apply to persist it. Draft builds, commit and publication do
 not acquire the map write lock or capture/save the world through this policy.
 
-## Local source verification
+## Optional local source replay
 
 The `custom-character` skill owns `scripts/character-source-proof.py`. Supply an
 explicit Studio checkout with `--studio-root`; the script no longer infers a
@@ -57,6 +69,10 @@ Studio root from its installation directory. It can drive build/observe or verif
 an existing draft in a separate process. Verification copies the saved draft into
 an isolated user directory and installs proof only when the original files remain
 unchanged. A failed native verification never installs its proof file.
+The runner does not automatically replay a build. Invoke `verify-source`
+explicitly when useful; its output is external diagnostic evidence and does not
+gate commit, publication or apply. An explicit observe request can render its
+selected capture and requires rendering support.
 
 The optional `scripts/character-tools.py` is an explicit-port native RPC diagnostic
 client. Normal agent execution uses the bundled Studio tools. Both scripts ship

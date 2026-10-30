@@ -143,7 +143,7 @@ export function dropBlank(args: Record<string, unknown>, keys: string[]): Record
 /**
  * `true` is a wrapper-side alias for the contract's `{}` (default capture). It exists because
  * the tool loops drop an empty object on an optional parameter as "not given", so `{}` would
- * never reach Studio — and on animation.read "not given" means no capture at all.
+ * never reach Studio — and on animation.read/write "not given" means no capture at all.
  */
 export const previewSchema = z.union([z.boolean(), previewOptions]);
 
@@ -226,8 +226,8 @@ export function formatWriteResult(result: unknown): unknown {
 }
 
 /**
- * animation.write dryRun answers with a pose per frame (every joint, the lowest skin points, penetrations). Pretty-printed
- * that is one number per line; here each frame is one line (0.1 cm), after the clip-wide floor, clearance and pins.
+ * animation.write dryRun answers with original bone positions, axes and lowest skin points per frame. Pretty-printed
+ * that is one number per line; here each frame is one line (0.1 cm), after clip-wide floor measurements and pins.
  */
 export function formatCheckResult(result: unknown): unknown {
   if (!isRecord(result) || !Array.isArray(result.frames)) return result;

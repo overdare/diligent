@@ -14,7 +14,7 @@ import { createWriteLock } from "../../../../src/tools/studiorpc/write-lock";
 describe("non-ODA character authoring", () => {
   test("combines live Studio capabilities with Diligent-owned authoring guidance", async () => {
     const native = {
-      version: "character-authoring/v15",
+      version: "character-authoring/v16",
       apiVersion: 2,
       limits: { maxBones: 73 },
       workspaceApplyAvailable: false,
@@ -51,6 +51,69 @@ describe("non-ODA character authoring", () => {
     expect(result.limits).toEqual(native.limits);
     expect(result.authoringGuide.status).toBe("unavailable");
     expect(result.authoringGuide).not.toHaveProperty("workflow");
+  });
+
+  test("does not present v16 commit and capture guidance for a v15 Studio through MCP", async () => {
+    const native = { version: "character-authoring/v15", apiVersion: 2, limits: { maxBones: 73 } };
+    const tools = await createStudioRpcTools({ cwd: tmpdir(), callRpc: async () => native });
+    const result = await callRegistryTool(
+      { tools: new Map(tools.map((tool) => [tool.name, tool])), prompts: new Map() },
+      "studiorpc_character_api",
+      {},
+    );
+    expect(result.isError).not.toBe(true);
+    const output = JSON.parse((result.content[0] as { text: string }).text);
+    expect(output.version).toBe(native.version);
+    expect(output.limits).toEqual(native.limits);
+    expect(output.authoringGuide).toEqual({
+      status: "unavailable",
+      supportedStudioContract: "character-authoring/v16",
+    });
+  });
+
+  test("forwards only the caller-selected observation and commit without a wrapper review checklist", async () => {
+    const expectedRevision = {
+      sourceRevision: "B".repeat(40),
+      geometryHash: "C".repeat(40),
+      rigRevision: "D".repeat(40),
+      animationRevision: "E".repeat(40),
+    };
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { state: "completed", captureStatus: "unavailable" };
+      },
+    });
+    const registries = { tools: new Map(tools.map((tool) => [tool.name, tool])), prompts: new Map() };
+    const observation = {
+      mode: "observation",
+      buildId: "A".repeat(32),
+      scenario: "knee_bend_45",
+      refresh: true,
+      expectedRevision,
+    };
+    const captured = await callRegistryTool(registries, "studiorpc_character_inspect", {
+      ...observation,
+      images: false,
+    });
+    expect(captured.isError).not.toBe(true);
+    const commit = {
+      requestId: "caller-reviewed",
+      source: { kind: "existing_rig", guid: "A".repeat(32), rigRevision: "C".repeat(40) },
+      target: { kind: "animation_only", name: "Action" },
+      rigProfile: "authored_v1",
+      motion: { preset: "authored_v1", speedCmPerSec: 0, document: { poses: [] } },
+      commit: true,
+      expectedRevision,
+    };
+    const committed = await callRegistryTool(registries, "studiorpc_character_build", commit);
+    expect(committed.isError).not.toBe(true);
+    expect(calls).toEqual([
+      { method: "character.inspect", params: observation },
+      { method: "character.build", params: commit },
+    ]);
   });
 
   test("does not replace a failed capability read with local authoring documentation", async () => {

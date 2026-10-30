@@ -1,5 +1,5 @@
 # Copyright OVERDARE, Inc. All Rights Reserved.
-"""Local semantic build/observe runner; owned fresh processes verify saved authoring source.
+"""Local build/observe diagnostics and optional fresh-process replay of saved source.
 
 Example: python character-source-proof.py --studio-root STUDIO_CHECKOUT verify-source --build-id BUILD_ID
 Commit uses the same requestId/input plus commit=true and expectedRevision from the inspected draft.
@@ -133,11 +133,7 @@ def main():
         succeeded, result = verify_isolated(studio_root, args.target, directory, args.build_id, args.source_user_dir)
     else:
         succeeded, result = invoke(studio_root, mode, args.target, directory, request=args.request, build_id=args.build_id,
-                                   render=args.action == "build")
-    if succeeded and args.action == "build" and result.get("state") == "preview_ready":
-        passed, proof = verify_isolated(studio_root, args.target, directory, result["buildId"])
-        result["reloadValidation"] = proof
-        succeeded = passed
+                                   render=args.action in ("build", "observe"))
     result["runnerEvidencePath"] = str(directory)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if succeeded else 1

@@ -23,20 +23,16 @@ export const timeoutMs = ANIMATION_TIMEOUT_MS;
 export const description =
   "For a general rig, first read with modelGuid (a Workspace Model containing one skeletal MeshPart), then create with that same modelGuid. " +
   "An existing assetPath infers the clip's original Skeleton and preview skin; edits preserve bone hierarchy, bind pose and weights. " +
-  "General-rig dryRun reports original bone names and skin heights. The ODA anatomical directions, pins, ground and clearance solver described below are ODA-only; use original bone keys for general rigs. " +
+  "General-rig dryRun reports original bone names, component axes and skin heights. The pins and ground solver described below are ODA-only; use original bone keys for general rigs. " +
   "Downloaded general clips with animated scale, events, additive poses, root-motion extraction or other unsupported data are rejected rather than silently simplified.\n" +
-  "Create or replace a character animation clip from JSON, save it as a local .uasset, and return a preview " +
-  "contact sheet. Get bone names and axes first from studiorpc_animation_read with no assetPath. To try poses " +
-  "without saving or rendering (joint positions, penetrations, IK solves), set dryRun: true.\n" +
+  "Create or replace a character animation clip from JSON and save it as a local .uasset. Request a preview " +
+  "contact sheet when useful. Get bone names and axes first from studiorpc_animation_read with no assetPath. To try poses " +
+  "without saving or rendering (joint positions, skin heights, requested IK solves), set dryRun: true.\n" +
   "Per frame (frames: up to 24; default: up to 12 of the keyed frames and pin edges; ask for the few frames you are " +
-  "working on): joints = hips (LowerTorso), head, elbows (LowerArm), hands, knees (LowerLeg) and feet; " +
-  "lowestPointCm = the lowest skin point of each hand, foot, LowerTorso and thigh (where the sole, toe or heel, the " +
-  "fist and the seat really are, not the bone); penetrations = up to 3 deepest places where a hand, forearm, shin " +
-  "or foot sinks into the head, torso or a thigh, with depthCm, deepestPointCm and pushOutCm (the shortest move " +
-  "that gets that point out); directions = unit vectors of each hand (fingers: wrist toward fist; palm: the side " +
-  "that faces the thigh when standing) and foot (toes: heel toward toes; sole: out of the sole, [0, 0, -1] when " +
-  "flat). Positions are component space in cm: x = the character's left, y = forward, z = up, " +
-  "floor at z = 0. For the whole clip: floor and clearance, as in the write preview.\n" +
+  "working on): joints maps original editable bone names to component positions; lowestPointCm maps original " +
+  "dominant skin-influence bone names to their lowest vertex positions. directions[bone] contains that editable " +
+  "bone's component-space unit axes { x, y, z }, without inferred anatomical roles. Positions are component space " +
+  "in cm, Z up, floor at z = 0; use the selected rig's axes. For the whole clip: raw floor measurements as in the write preview.\n" +
   "pins work as in this tool. A pin of up to 5 frames also reports keys: the solved rotations of " +
   "the limb's three bones. A pin over one frame, frames: [f, f], with a position is an IK solve: it returns the UpperArm/LowerArm/Hand " +
   "(or UpperLeg/LowerLeg/Foot) rotations that put the hand or foot there, bending the elbow or knee only the way it hinges, " +
@@ -46,8 +42,8 @@ export const description =
   "ground works as in this tool; result.ground lists which body part touches the floor on which " +
   "frames, the contact order of a roll or fall.\n" +
   "Workflow: write without assetPath to create a clip under /Temp/AnimationAssets/<name> (a suffix is added if " +
-  "the name is taken; use the returned assetPath and animation.name). Look at the image, preview.floor, " +
-  "preview.clearance and preview.poseSamples, edit the JSON, then write again with assetPath and the revision " +
+  "the name is taken; use the returned assetPath and animation.name). Review requested images, preview.floor " +
+  "and preview.poseSamples as needed for the task, edit the JSON, then write again with assetPath and the revision " +
   "from your last read/write. A replace rewrites the whole clip: tracks and keys you leave out are removed. revision is " +
   "required on replace; REVISION_CONFLICT means the clip changed since you read it — call studiorpc_animation_read, " +
   "reapply your edit to the returned animation, and write with the new revision. After a timeout, do not repeat " +
@@ -79,7 +75,7 @@ export const description =
   "frames just outside the range, or start and end the pin where the limb already is. flat: true (feet " +
   "only) plants the foot flat with the sole on the floor at its heading on `from` (walking, standing, squats); " +
   "without it the foot keeps the tilt and height it has at `from`. For a hand on the floor, set position z from " +
-  "preview.floor (raise it by the reported maxDepthCm when the hand sinks). " +
+  "the raw preview.floor samples and the intended contact pose. " +
   "pole: [x, y, z] bends the elbow or knee toward that point instead of the way it hinges (a guard with the elbows " +
   "down, a knee turned out); againstHingeFrames counts frames where that bends the joint backwards. " +
   "path: [{ frame, position }] instead of position moves the hand or foot through those points (eased between " +
@@ -93,16 +89,14 @@ export const description =
   "maxShiftCm, entryShiftCm / exitShiftCm (how far the hips move in the one frame where the range takes over from your " +
   "keys and hands back; key the hips near that height just outside the range) and contacts: which body part touches " +
   "the floor on which frames, in order.\n" +
-  "preview: omitted or true = default contact sheet (frames 0%, 20%, 40%, 60%, 80%, 100%, rounded to distinct integer frames; both views; MOTION column), " +
-  'false = none, { frames: [up to 22], views: ["front", "side"], motion: true | false } = those. The PNG comes ' +
+  "preview: Omit or false for no capture; true = default contact sheet (frames 0%, 20%, 40%, 60%, 80%, 100%, rounded to distinct integer frames; both views; MOTION column), " +
+  '{ frames: [up to 22], views: ["front", "side"], motion: true | false } = those, with motion defaulting to true. The PNG comes ' +
   "back as an image: blocks = up to six frames in order, each with front/side rows; columns = frames in order, then MOTION (the clip " +
-  "onion-skinned, earlier = fainter, with paths: right hand red, left hand blue, right foot orange, left foot " +
-  "cyan, head yellow). preview.floor checks the skinned mesh against the floor (z = 0) on every frame: " +
-  "belowFloor (sinking, with depth and bone), airborne, contacts (bone -> frame ranges on the floor). " +
-  "preview.clearance lists frame ranges where a hand, forearm, shin or foot sinks into the head, torso or a " +
-  "thigh (part, into, maxDepthCm, deepestFrame; a shin or foot is not checked against its own thigh). " +
-  "preview.poseSamples gives animated bones' component-space translation (cm), rotationQuat [x,y,z,w], lowestCm " +
-  "and touchingFloor per sampled frame. A failed preview does not undo the save; re-capture with " +
+  "onion-skinned, earlier = fainter). preview.floor reports raw skinned-mesh heights against component z = 0: " +
+  "status, method, referenceLowestCm and samples [{ frame, lowestCm, bone, lowestByBoneCm }]. Bone groups use " +
+  "the original dominant skin influence. preview.poseSamples gives bones' componentTranslationCm and " +
+  "rotationQuat [x,y,z,w], plus the sample's lowestCm. These measurements do not classify contact or artistic quality. " +
+  "A failed preview does not undo the save; re-capture with " +
   "studiorpc_animation_read.\n" +
   "Result: { assetPath, filePath, revision, animation (name, fps, durationFrames and track/key counts; the " +
   "saved keys come from studiorpc_animation_read), applied, saved, created, pins?, preview, " +
@@ -137,7 +131,7 @@ export const params = z
       .describe("Required with assetPath: the revision from the last read or write of that clip."),
     preview: previewSchema
       .optional()
-      .describe("Omit or true for the default contact sheet, false for none, or { frames, views, motion }."),
+      .describe("Omit or false for no capture, true for the default contact sheet, or { frames, views, motion }."),
     pins: pinsSchema
       .optional()
       .describe("Hands/feet held at a fixed point over a frame range; baked into keys. Omit for none."),

@@ -28,15 +28,19 @@ Authoring data uses Unreal Z-up centimetres and quaternion parent-local poses.
 Lua uses Y-up coordinates. `animation.read/write` uses a different Euler delta-key
 format; read that tool's contract before editing a clip through it.
 
-## Review and verify a draft
+## Choose review for the task
 
-Build with `commit=false`, then inspect observation images and actual skin metrics.
-Review silhouette, joint deformation, contacts, loop boundaries and the requested
-action. Revise with a new requestId; retries reuse the frozen source and documents.
-The reference describes source selection, weight representations, observation
-scenarios and the meaning of measured versus unavailable contact evidence.
+Build with `commit=false`; it saves a draft without automatically rendering review
+captures. Choose the observations useful for the requested action and its risks:
+silhouette, a selected joint deformation, contact, a loop boundary or travel.
+Each `mode=observation` call captures only the selected preset if missing, or reads
+its saved evidence. `refresh=true` recaptures any selected preset. Probe operations
+use explicitly authored `observationBones` or `bendTestRegions`; missing selection
+is unavailable, never inferred anatomy. There is no mandatory seven-capture or
+fresh-process checklist. Revise with a new requestId; retries reuse frozen inputs.
 
-For a local Studio checkout, use the Diligent-owned
+When independent saved-source replay is useful and a local Studio checkout is
+available, optionally use the Diligent-owned
 [source proof runner](scripts/character-source-proof.py):
 
 ```sh
@@ -45,8 +49,10 @@ python character-source-proof.py --studio-root STUDIO_CHECKOUT verify-source --b
 
 The runner copies the saved draft into an isolated user directory, starts the
 Studio binary and installs proof only if the original draft is unchanged. Pass
-`--source-user-dir` when the source Studio uses a custom user directory. Commit
-the exact four reviewed revisions after the native proof and observations pass.
+`--source-user-dir` when the source Studio uses a custom user directory. This is
+optional external evidence, not a native commit, publication or apply requirement.
+Commit the exact four draft revisions; Studio checks source and native asset
+integrity. The caller decides the relevant review and acceptable visual quality.
 
 ## Publish and connect existing gameplay
 
@@ -65,8 +71,9 @@ Inspect client and authority runtime samples plus actual images. Track time,
 evaluated bone/skin updates, visible heading and actor displacement establish
 different facts. Compare matching mesh/LOD/vertex IDs during declared stance;
 discard repeated bone-transform revisions. Missing contact samples are unmeasured.
-Review `motionQuality` separately from playback `passed`. Deployed client and
-remote-world publishing require their own evidence when part of the request.
+Native measurements and optional source-replay `passed` do not approve artistic
+quality, foot contact or loop continuity. Review those facts against the task.
+Deployed client and remote-world publishing need evidence when requested.
 
 The optional [native RPC client](scripts/character-tools.py) is for local transport
 diagnostics with an explicitly selected Studio port; normal agent work uses the

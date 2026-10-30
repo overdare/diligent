@@ -1,7 +1,7 @@
 // @summary Tests the animation.read / animation.write wrappers: params, preview images, and error data passthrough.
 
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dropEmptyOptionals } from "@diligent/core/tool-contract";
@@ -244,6 +244,61 @@ describe("animation tools over the generic Studio RPC path", () => {
     return tools.find((tool) => tool.name === name)!;
   }
 
+  test("advertise raw measurements and caller-requested capture without anatomy classifiers", async () => {
+    const read = await toolFor("studiorpc_animation_read", async () => ({}));
+    const write = await toolFor("studiorpc_animation_write", async () => ({}));
+    for (const tool of [read, write]) {
+      expect(tool.description).toContain("referenceLowestCm");
+      expect(tool.description).toContain("lowestByBoneCm");
+      expect(tool.description).not.toMatch(/preview\.clearance|belowFloor|airborne|touchingFloor|paths of right hand/);
+    }
+    expect(write.description).toContain("directions[bone]");
+    expect(write.description).toContain("Omit or false for no capture");
+    expect(write.description).not.toMatch(/pushOutCm|palm:|sole:|maxDepthCm/);
+    const skill = readFileSync(
+      new URL("../../../../../bootstrap/skills/character-animation/SKILL.md", import.meta.url),
+      "utf8",
+    );
+    expect(skill).toContain("lowestByBoneCm");
+    expect(skill).not.toMatch(
+      /preview\.clearance|`airborne`|any limb sunk into the body with the move|`directions` in the check says where each palm/,
+    );
+  });
+
+  test("preserve raw floor samples and axes without adding capture or review operations", async () => {
+    const floor = {
+      status: "completed",
+      method: "evaluated_skin_vertices",
+      referenceLowestCm: -0.25,
+      samples: [{ frame: 0, lowestCm: 2, bone: "ItemTail", lowestByBoneCm: { ItemTail: 2 } }],
+    };
+    const frames = [
+      {
+        frame: 0,
+        joints: { ItemTail: [0, 0, 8] },
+        lowestPointCm: { ItemTail: [0, 0, 2] },
+        directions: { ItemTail: { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] } },
+      },
+    ];
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const callRpc = async (method: string, params: unknown) => {
+      calls.push({ method, params });
+      return { dryRun: true, saved: false, floor, frames };
+    };
+    const tool = await toolFor("studiorpc_animation_write", callRpc);
+    const args = { animation: CONTRACT_ANIMATION, dryRun: true, frames: [0] };
+    const result = await tool.execute(tool.parameters.parse(args), toolContext());
+    expect(JSON.parse(result.output)).toEqual({ dryRun: true, saved: false, floor, frames });
+    expect(calls).toEqual([{ method: "animation.write", params: args }]);
+    const write = { animation: CONTRACT_ANIMATION };
+    await tool.execute(tool.parameters.parse(write), toolContext());
+    expect(calls[1]).toEqual({ method: "animation.write", params: write });
+    const read = await toolFor("studiorpc_animation_read", callRpc);
+    await read.execute(read.parameters.parse({ assetPath: ASSET }), toolContext());
+    expect(calls[2]).toEqual({ method: "animation.read", params: { assetPath: ASSET } });
+    expect(calls).toHaveLength(3);
+  });
+
   test("select an existing Model rig through read and write without adding tools", async () => {
     const modelGuid = "C658A7934AF02FED0C38ED8533F6505E";
     const calls: Array<{ method: string; params: unknown }> = [];
@@ -402,10 +457,10 @@ describe("animation.write dryRun", () => {
       status: "completed",
       saved: false,
       dryRun: true,
-      floor: { status: "completed", belowFloor: [] },
+      floor: { status: "completed", referenceLowestCm: 0, samples: [] },
       frames: [
-        { frame: 0, joints: { RightHand: [-35.61234, 4.3456, 75.2] }, penetrations: [] },
-        { frame: 10, joints: { RightHand: [-20.04, 25.01, 119.96] }, penetrations: [] },
+        { frame: 0, joints: { RightHand: [-35.61234, 4.3456, 75.2] } },
+        { frame: 10, joints: { RightHand: [-20.04, 25.01, 119.96] } },
       ],
     };
     const text = animationWrite.postProcess(result) as string;
@@ -457,7 +512,6 @@ describe("animation result text", () => {
         ]),
       ),
       lowestCm: 0.5,
-      touchingFloor: ["LeftFoot"],
     }));
     const baked = Array.from({ length: 76 }, (_, frame) => ({
       frame,
@@ -472,7 +526,12 @@ describe("animation result text", () => {
       animation: { ...CONTRACT_ANIMATION, tracks: { LeftUpperLeg: baked, LeftLowerLeg: baked, LeftFoot: baked } },
       saved: true,
       pins: [{ bone: "LeftFoot", frames: [0, 75], maxErrorCm: 0, outOfReachFrames: 0 }],
-      preview: { status: "completed", imagePath: png, poseSamples, floor: { status: "completed", belowFloor: [] } },
+      preview: {
+        status: "completed",
+        imagePath: png,
+        poseSamples,
+        floor: { status: "completed", referenceLowestCm: 0, samples: [] },
+      },
     };
     const text = animationWrite.postProcess(result) as string;
     expect(typeof text).toBe("string");
@@ -494,7 +553,7 @@ describe("animation result text", () => {
         status: "completed",
         cameras: [{ view: "front", componentPosition: [0, 500, 90] }],
         compression,
-        clearance: { status: "completed", penetrations: [] },
+        floor: { status: "completed", referenceLowestCm: 0, samples: [] },
       },
     });
     const small = { status: "completed", maxTranslationErrorCm: 0.02, maxRotationErrorDeg: 0.3 };
@@ -504,7 +563,7 @@ describe("animation result text", () => {
       JSON.parse(animationRead.postProcess(preview(compression)) as string).preview;
     expect(shown(small)).toEqual({
       status: "completed",
-      clearance: { status: "completed", penetrations: [] },
+      floor: { status: "completed", referenceLowestCm: 0, samples: [] },
     });
     expect(shown(large).compression).toEqual(large);
     expect(shown(failed).compression).toEqual(failed);

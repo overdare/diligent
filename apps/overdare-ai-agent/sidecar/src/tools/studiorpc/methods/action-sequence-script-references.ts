@@ -97,6 +97,175 @@ function grepTree(node: OvdrjmNode): OvdrjmNode {
   };
 }
 
+function executableSource(source: string): string {
+  return maskLongText(source).replace(/--[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, (token) =>
+    token.startsWith("--") ? " ".repeat(token.length) : token,
+  );
+}
+
+/** Recognize the existing TPA wiring, not a module name elsewhere in the level. */
+function tpaAdvice(root: OvdrjmNode, targetGuid: string, proposed?: RecordValue): RecordValue[] {
+  let target: OvdrjmNode | undefined;
+  let storage: OvdrjmNode | undefined;
+  walk(root, (node) => {
+    if (node.ActorGuid === targetGuid && node.InstanceType === "ActionSequence") target = node;
+    if (node.InstanceType === "ServerStorage") storage = node;
+  });
+  if (!target || !storage || !Array.isArray(target.LuaChildren)) return [];
+  let controller: OvdrjmNode | undefined = storage;
+  for (const name of ["Module", "Controller", "SequenceController"]) {
+    controller = Array.isArray(controller?.LuaChildren)
+      ? controller.LuaChildren.find((node) => isRecord(node) && node.Name === name)
+      : undefined;
+  }
+  if (controller?.InstanceType !== "ModuleScript" || typeof controller.Source !== "string") return [];
+  const source = executableSource(controller.Source);
+  const codeOnly = source.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, (token) => " ".repeat(token.length));
+  const controllerAlias = /^[ \t]*function\s+(\w+)\.Bind\s*\(\s*runtimeScript\b/m.exec(codeOnly)?.[1];
+  if (!controllerAlias) return [];
+  const called = (method: string) => new RegExp(`^[ \\t]*${controllerAlias}\\.${method}\\s*\\(`, "m").test(codeOnly);
+  const callsMethod = (method: string) => new RegExp(`:\\s*${method}\\s*\\(`).test(codeOnly);
+  const subscriptions = source
+    .split("\n")
+    .flatMap((line, index) => literals(line).map((reference) => ({ ...reference, line: index + 1 })));
+  const codeLines = codeOnly.split("\n");
+  const subscription = (helper: string, method: string, name: string) => {
+    const start = codeLines.findIndex((line) =>
+      new RegExp(`^[ \\t]*function\\s+${controllerAlias}\\.${helper}\\s*\\(`).test(line),
+    );
+    if (start < 0) return undefined;
+    const next = codeLines.findIndex((line, index) => index > start && /^[ \t]*function\s/.test(line));
+    return subscriptions.find(
+      (ref) => ref.method === method && ref.name === name && ref.line > start + 1 && (next < 0 || ref.line <= next),
+    );
+  };
+  const sequenceEnd = subscription("_bindSequenceEnd", "TriggerEnded", "Sequence");
+  if (!called("_bindSequenceEnd") || !sequenceEnd || !callsMethod("OnSequenceEnd")) return [];
+  const expectedPath =
+    'game:GetService("ServerStorage"):WaitForChild("Module"):WaitForChild("Controller"):WaitForChild("SequenceController")';
+  let binding: { script: RecordValue; line: number } | undefined;
+  for (const child of target.LuaChildren) {
+    if (!isRecord(child) || child.InstanceType !== "Script" || typeof child.Source !== "string") continue;
+    const code = executableSource(child.Source);
+    for (const match of code.matchAll(/^[ \t]*local\s+(\w+)\s*=\s*require\s*\((.*)\)[ \t]*;?[ \t]*$/gm)) {
+      const requiredPath = match[2].replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\s+/g, (token) =>
+        token.startsWith("'") ? `"${token.slice(1, -1)}"` : token.startsWith('"') ? token : "",
+      );
+      if (requiredPath !== expectedPath) continue;
+      const call = new RegExp(`^[ \\t]*${match[1]}\\.Bind\\s*\\(\\s*script\\s*\\)[ \\t]*;?[ \\t]*$`, "m").exec(code);
+      if (call) binding = { script: child, line: code.slice(0, call.index).split("\n").length };
+    }
+  }
+  if (!binding) return [];
+  let data: RecordValue;
+  try {
+    data = proposed ?? JSON.parse(String(target.Data));
+  } catch {
+    return [];
+  }
+  if (!isRecord(data) || !Array.isArray(data.Tracks) || typeof data.Length !== "number") return [];
+  const rows: RecordValue[] = data.Tracks.flatMap((row, trackIndex) => (isRecord(row) ? [{ ...row, trackIndex }] : []));
+  const targetName = target.Name;
+  const triggers = (name: string) =>
+    rows.filter(
+      (row) =>
+        typeof row.Class === "string" &&
+        row.Class.endsWith("TriggerTrack") &&
+        row.TriggerName === name &&
+        row.IsEnable !== false,
+    );
+  const sequence = triggers("Sequence"),
+    input = triggers("KeyInput"),
+    cancel = triggers("CancelWindow");
+  const issues: RecordValue[] = [];
+  const add = (kind: string, message: string, row?: RecordValue, reference = sequenceEnd) =>
+    issues.push({
+      kind,
+      severity: "info",
+      trackIndex: row?.trackIndex ?? -1,
+      TrackID: row?.TrackID,
+      message: `${message} TPA configuration and runtime flow are not evaluated; verify the intended binding.`,
+      evidence: {
+        convention: "TPA",
+        targetGuid,
+        configuration: "notEvaluated",
+        bindingScriptGuid: binding.script.ActorGuid,
+        bindingScriptName: binding.script.Name,
+        bindingPath: `${targetName}.${binding.script.Name}`,
+        bindingLine: binding.line,
+        controllerGuid: controller.ActorGuid,
+        controllerPath: "ServerStorage.Module.Controller.SequenceController",
+        controllerLine: reference.line,
+        controllerMethod: reference.method,
+        controllerSignal: reference.name,
+      },
+    });
+  if (!sequence.length)
+    add(
+      "missingSequenceTrigger",
+      "The detected controller subscribes to Sequence end, but this asset has no enabled Sequence interval.",
+    );
+  for (const row of sequence) {
+    const end = row.EndTime;
+    if (
+      typeof end === "number" &&
+      rows.some((other) => other.IsEnable !== false && typeof other.EndTime === "number" && other.EndTime > end + 1e-5)
+    )
+      add("sequenceEndsEarly", "Sequence end can run controller cleanup before other tracks finish.", row);
+  }
+  const cancelStart = subscription("_bindCancelWindow", "TriggerStarted", "CancelWindow");
+  const cancelEnd = subscription("_bindCancelWindow", "TriggerEnded", "CancelWindow");
+  const inputStart = subscription("_bindCombo", "TriggerStarted", "KeyInput");
+  const inputEnd = subscription("_bindCombo", "TriggerEnded", "KeyInput");
+  const hasCancel = called("_bindCancelWindow") && cancelStart && cancelEnd && callsMethod("ClearCancelable");
+  if (hasCancel)
+    for (const row of cancel) {
+      if (typeof row.EndTime === "number" && Math.abs(row.EndTime - data.Length) > 1e-5)
+        add(
+          "cancelWindowNotAtEnd",
+          "CancelWindow closes before the asset ends; this may be intentional for general cancellation.",
+          row,
+          cancelEnd,
+        );
+    }
+  const hasCombo =
+    called("_bindCombo") &&
+    inputStart &&
+    inputEnd &&
+    callsMethod("ClearComboReady") &&
+    callsMethod("AdvanceComboImmediate");
+  if (hasCancel && hasCombo) {
+    if (Boolean(input.length) !== Boolean(cancel.length))
+      add(
+        "cancelInputPair",
+        "Only one TPA input/cancel interval is present; sequence-end combos or general cancel may use this deliberately.",
+        undefined,
+        inputEnd,
+      );
+    if (input.length)
+      for (const row of cancel) {
+        const start = row.StartTime;
+        if (
+          typeof start === "number" &&
+          !input.some(
+            (key) =>
+              typeof key.StartTime === "number" &&
+              typeof key.EndTime === "number" &&
+              key.StartTime <= start &&
+              key.EndTime > start,
+          )
+        )
+          add(
+            "cancelInputTiming",
+            "No KeyInput interval is active when CancelWindow opens; an intended combo buffer may already be cleared.",
+            row,
+            cancelStart,
+          );
+      }
+  }
+  return issues;
+}
+
 export function checkScriptReferences(root: OvdrjmNode, targetGuid: string, proposed?: RecordValue) {
   const names = new Set<string>();
   const signals = new Set<string>();
@@ -145,12 +314,12 @@ export function checkScriptReferences(root: OvdrjmNode, targetGuid: string, prop
       });
     }
   return {
-    issues,
+    issues: [...issues, ...tpaAdvice(root, targetGuid, proposed)],
     status: complete && total <= MAX_MATCHES ? "completed" : "partial",
     scriptsSearched: countScripts(root),
     literalReferences: references,
     limitations:
-      "Static literal references only. Play receivers must contain 'runner'; aliases, computed names, runtime-created sequences and flow-dependent subscriptions need review.",
+      "Static literal references only. Play receivers must contain 'runner'; aliases, computed names, runtime-created sequences and flow-dependent subscriptions need review. TPA advice requires a direct target Script's recognized require/Bind and resolved controller source; configuration is not evaluated. Incomplete or undetected wiring does not establish missing conventions.",
   };
 }
 
@@ -176,10 +345,9 @@ export async function enrichScriptReferences(
       }
       root = { InstanceType: "DataModel", LuaChildren: children };
     }
-    const { issues, ...status } = checkScriptReferences(root, targetGuid, proposed);
+    const status = checkScriptReferences(root, targetGuid, proposed);
     return {
       ...result,
-      issues: [...(Array.isArray(result.issues) ? result.issues : []), ...issues],
       scriptReferenceCheck: status,
     };
   } catch (error) {

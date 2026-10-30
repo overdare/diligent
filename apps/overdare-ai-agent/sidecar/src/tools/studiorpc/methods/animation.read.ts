@@ -23,7 +23,7 @@ export const description =
   "Read an existing character rig, or an animation clip as editable JSON. Downloaded clips are opened as editable copies; the original rig and animation are preserved.\n" +
   "Pass modelGuid to select a Workspace Model's existing single skeletal MeshPart. Omit it for the default ODA rig; with assetPath, the clip's own original rig is inferred. " +
   "The same read/write/preview/publish tools work on general rigs. Bone names are the original names, including names containing IK, Camera or Item; the naming filter below applies only to ODA. " +
-  "General-rig captures use the original materials and +X/+Y component views. ODA anatomical clearance checks may be unavailable; an unavailable check does not prove a clean pose.\n" +
+  "General-rig captures use the original materials and +X/+Y component views. Measurements use original bone names and component space; review their meaning for the selected rig.\n" +
   "With a clip, openEditor:true also opens the existing Studio AnimationEditor and reports its actual preview clip, mesh and bone count. A different already-open clip is preserved and returns an error; close it first. " +
   "The selected editor refreshes when the same clip is changed through animation.write. Omit openEditor for a data-only read.\n" +
   "With openEditor:true and a requested preview, the images also include a screenshot of the actual AnimationEditor window. Its capture status and path are in editor; a frame sheet alone does not prove the editor UI.\n" +
@@ -47,14 +47,12 @@ export const description =
   'and a MOTION column; or { frames: [up to 22 integer frames], views: ["front", "side"], motion: false } to ' +
   "look closely at specific frames. Leave optional fields out when you do not use them (blank strings and " +
   "preview false count as not given). The PNG comes back as an image: blocks = up to six frames in order, each with front/side rows; " +
-  "columns = frames in order (each labeled), then MOTION: the clip onion-skinned (earlier = fainter) with the " +
-  "paths of right hand (red), left hand (blue), right foot (orange), left foot (cyan), head (yellow). " +
-  "preview.floor checks the skinned mesh against the floor (z = 0) on every frame: belowFloor ranges (sinking), " +
-  "airborne ranges, and contacts = which bones touch the floor on which frames. " +
-  "preview.clearance lists frame ranges where a hand, forearm, shin or foot sinks into the head, torso or a " +
-  "thigh (part, into, maxDepthCm, deepestFrame; a shin or foot is not checked against its own thigh). " +
+  "columns = frames in order (each labeled), then requested MOTION: the clip onion-skinned (earlier = fainter). " +
+  "preview.floor reports raw skinned-mesh heights against component z = 0: status, method, referenceLowestCm " +
+  "and samples [{ frame, lowestCm, bone, lowestByBoneCm }]. Bone groups use the original dominant skin influence. " +
   "preview.poseSamples lists, per " +
-  "sampled frame, animated bones' componentTranslationCm, rotationQuat [x,y,z,w], lowestCm and touchingFloor. " +
+  "sampled frame, bones' componentTranslationCm and rotationQuat [x,y,z,w], plus the sample's lowestCm. " +
+  "Use these measurements and requested images for task-specific review; they do not classify contact or artistic quality. " +
   "preview.status is completed, skipped or failed (see preview.diagnostic).";
 
 export const params = z

@@ -85,6 +85,9 @@ export const methodModules: MethodModule[] = [
   characterInspect,
   characterExport,
   actionSequenceRead,
+  animationRead,
+  animationWrite,
+  animationPublish,
   proceduralModelApi,
   proceduralModelValidate,
   proceduralModelSet,
@@ -106,13 +109,7 @@ export const methodModules: MethodModule[] = [
   viewportCameraRead,
   viewportCameraSet,
   hubTokenRead,
-  animationRead,
-  animationWrite,
-  animationPublish,
 ];
-// animation.write and animation.publish are in neither set on purpose: they save the clip's own .uasset (publish
-// also uploads a copy), not the level, so a level rollback snapshot would not cover them and a level.save.file
-// afterwards would save unrelated edits.
 export const mutatingMethods = new Set([
   proceduralModelSet.method,
   assetDrawerImport.method,

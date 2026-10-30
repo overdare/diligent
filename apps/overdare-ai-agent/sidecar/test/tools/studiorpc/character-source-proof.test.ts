@@ -40,6 +40,32 @@ with tempfile.TemporaryDirectory() as temp:
 }
 
 describe("Diligent character source proof", () => {
+  test.each(["build", "observe"])("%s permits explicit rendering without automatically replaying source", (action) => {
+    const script = `
+import importlib.util, json, pathlib, sys, tempfile
+from unittest.mock import patch
+spec = importlib.util.spec_from_file_location("character_proof", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+with tempfile.TemporaryDirectory() as temp:
+    studio = pathlib.Path(temp)
+    (studio / "Sandbox").mkdir()
+    (studio / "Sandbox/Sandbox.uproject").write_text("{}")
+    calls = []
+    def invoke(*args, **kwargs):
+        calls.append({"mode": args[1], "render": kwargs.get("render")})
+        return True, {"state": "preview_ready", "buildId": "A" * 32}
+    with patch.object(module, "invoke", invoke), patch.object(module, "verify_isolated", side_effect=AssertionError("Source replay must be explicitly requested")), patch.object(sys, "argv", [sys.argv[1], "--studio-root", str(studio), "${action}", "--request", "authored.json"]):
+        code = module.main()
+    print(json.dumps({"exitCode": code, "calls": calls}))
+`;
+    const interpreter = process.platform === "win32" ? "python" : "python3";
+    const child = Bun.spawnSync([interpreter, "-B", "-c", script, runner]);
+    expect(child.exitCode).toBe(0);
+    const output = JSON.parse(child.stdout.toString().trim().split("\n").at(-1)!);
+    expect(output).toEqual({ exitCode: 0, calls: [{ mode: action, render: true }] });
+  });
+
   test("copies an arbitrary Studio root and installs proof for unchanged source", () => {
     const result = verifyFixture("return True, {'passed': True}");
     expect(result.passed).toBe(true);

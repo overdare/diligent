@@ -26,8 +26,22 @@ async function withTools<T>(callRpc: typeof call, run: (tools: Tool[]) => Promis
 }
 
 describe("asset_manager.import", () => {
-  test("accepts supported model and image files with absolute Studio paths", () => {
-    for (const extension of ["fbx", "obj", "glb", "gltf", "png", "jpg", "jpeg", "tga", "bmp", "exr"]) {
+  test("accepts supported model, image, and audio files with absolute Studio paths", () => {
+    for (const extension of [
+      "fbx",
+      "obj",
+      "glb",
+      "gltf",
+      "png",
+      "jpg",
+      "jpeg",
+      "tga",
+      "bmp",
+      "exr",
+      "wav",
+      "mp3",
+      "ogg",
+    ]) {
       expect(params.parse({ file: `C:/assets/prop.${extension}` }).file).toBe(`C:/assets/prop.${extension}`);
     }
     expect(params.parse({ file: "/shared/Prop.FBX", assetName: "Prop" })).toEqual({
@@ -54,9 +68,10 @@ describe("asset_manager.import", () => {
         const args = { file: "C:/assets/prop.fbx", assetName: "Prop" };
         const result = await tool.execute(tool.parameters.parse(args), context);
         expect(seen).toEqual([
-          { method: "asset_manager.import", params: args, sessionId: "agent-session", timeoutMs: 120_000 },
+          { method: "asset_manager.import", params: args, sessionId: "agent-session", timeoutMs: expect.any(Number) },
           { method: "level.save.file", params: {}, sessionId: "agent-session", timeoutMs: undefined },
         ]);
+        expect(seen[0]?.timeoutMs).toBeGreaterThanOrEqual(120_000);
         expect(JSON.parse(result.output)).toMatchObject({ success: true, asset: { assetid: "ovdrassetid://3528427" } });
         expect(result.render?.blocks).toContainEqual(
           expect.objectContaining({
@@ -71,7 +86,7 @@ describe("asset_manager.import", () => {
     );
   });
 
-  test("leaves the default asset name to Studio and retains the image import alias", async () => {
+  test("leaves the default asset name to Studio without advertising another import tool", async () => {
     const seen: Array<{ method: string; params: unknown }> = [];
     await withTools(
       async (method, args) => {
@@ -81,11 +96,9 @@ describe("asset_manager.import", () => {
       async (tools) => {
         const tool = tools.find((tool) => tool.name === "studiorpc_asset_manager_import")!;
         await tool.execute(tool.parameters.parse({ file: "C:/assets/prop.glb" }), context);
-        const imageTool = tools.find((tool) => tool.name === "studiorpc_asset_manager_image_import")!;
-        await imageTool.execute(imageTool.parameters.parse({ file: "C:/assets/icon.png" }), context);
+        expect(tools.some((tool) => tool.name === "studiorpc_asset_manager_image_import")).toBe(false);
         expect(seen.filter((call) => call.method !== "level.save.file")).toEqual([
           { method: "asset_manager.import", params: { file: "C:/assets/prop.glb" } },
-          { method: "asset_manager.image.import", params: { file: "C:/assets/icon.png" } },
         ]);
       },
     );
