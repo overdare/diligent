@@ -122,10 +122,15 @@ uses a new VM with the active world's game/workspace; world edits persist but
 Lua globals/references do not. Return values are first-value strings, not captured
 print logs: no return/nil gives `"nil"`, supported tables give a JSON string.
 
-Use the provided `workspace` or `game.Workspace`. The tested Editor build rejects
-`game:GetService`; gameplay API familiarity is not evidence of Editor support.
-The gameplay `isnil` helper is also unavailable in the Editor VM. Use ordinary
-nil checks on lookup results and discard references after destroying instances.
+Use the provided `workspace`, `game.Workspace`, or direct service children. Current
+native Editor builds also expose `game:GetService`, the `os` table, and `isnil`;
+service-specific members remain limited by the Editor API. `task` and `GetDebugId`
+remain unavailable. `GetPivot`/`PivotTo` support BasePart/Model receivers only,
+excluding world roots. Older builds may differ: verify method/global support on
+the connected build rather than assuming gameplay API parity. Use the live schema
+for unfamiliar classes/properties; it does not enumerate methods or globals. Use
+ordinary nil checks on lookup results and discard references after destroying
+instances.
 For example, the following command uses the documented instance creation path:
 
 ```json
