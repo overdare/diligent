@@ -9,6 +9,12 @@ Players run worlds on mobile devices, where frame time, memory, and network budg
 
 Fix the actual bottleneck rather than changing settings across the board. You cannot read frame time, memory, or network usage yourself, so when the user reports a problem, ask which device, where in the world, and under what load (player count, NPCs, effects) it happens, and target what that points to. Ask the user to confirm the result on a representative mobile device.
 
+## Measure before optimizing
+
+- Reproduce the reported workload with a representative, repeatable fixture and record a baseline before changing the implementation. Keep the load and measurement interval comparable across runs.
+- When the slow work is in scripts you can instrument, measure the total time and major phases separately before choosing an optimization. For navigation, these might include endpoint connection, graph search, path shortening, and collision checks. Note overlapping timings and instrumentation overhead; call counts alone do not establish CPU cost.
+- Change one thing at a time, repeat the same measurement, and check gameplay correctness as well as performance. If a change regresses the goal or has no demonstrated benefit, revert it unless another measured requirement justifies keeping it. Repeat noisy measurements before drawing conclusions, and remove temporary instrumentation when finished.
+
 ## Scripts
 
 - Connect to `RunService.Heartbeat`, `Stepped`, or `RenderStepped` only for work that must follow every frame, such as a camera follow or smoothing a visual. Drive everything else from events, or from a `task.wait(interval)` loop at the rate the gameplay needs, such as a 0.2-second AI tick.
