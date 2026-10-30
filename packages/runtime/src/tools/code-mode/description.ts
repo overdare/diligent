@@ -56,9 +56,18 @@ export function toCodeModeIdentifier(name: string): string {
  * Builds the `exec` description. In `only` mode the nested tools are hidden from the model's tool
  * list, so their descriptions and TypeScript declarations move into this description.
  */
-export function buildExecDescription(codeMode: "on" | "only", nestedTools: Tool[]): string {
+export function buildExecDescription(codeMode: "on" | "only", nestedTools: Tool[], directOnlyTools: Tool[]): string {
+  const directOnly = directOnlyTools.length
+    ? `These tools must be called directly, not through \`tools\`: ${directOnlyTools.map((tool) => `\`${tool.name}\``).join(", ")}.`
+    : "";
   if (codeMode === "on") {
-    return `${EXEC_DESCRIPTION}\n\nEvery direct tool listed beside \`${EXEC_TOOL_NAME}\` that is not a code mode control tool is also callable from \`tools\`, with the same input object.`;
+    return [
+      EXEC_DESCRIPTION,
+      "Only tools listed in `ALL_TOOLS` are callable through `tools`, with the same input object as their direct calls.",
+      directOnly,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
   }
   const sections = nestedTools.map((tool) => {
     const globalName = toCodeModeIdentifier(tool.name);
@@ -66,7 +75,7 @@ export function buildExecDescription(codeMode: "on" | "only", nestedTools: Tool[
     const declaration = `declare const tools: { ${globalName}(args: ${renderJsonSchemaType(toToolInputSchema(tool), 1)}): Promise<string>; };`;
     return `${heading}\n${tool.description.trim()}\n\n\`\`\`ts\n${declaration}\n\`\`\``;
   });
-  return [EXEC_DESCRIPTION, "## Nested tools", ...sections].join("\n\n");
+  return [EXEC_DESCRIPTION, directOnly, "## Nested tools", ...sections].filter(Boolean).join("\n\n");
 }
 
 /** Renders a JSON Schema as a TypeScript type expression for model-facing declarations. */
