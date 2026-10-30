@@ -27,6 +27,10 @@ Native GUI means editable instances: bind artwork with `ImageButton`/`ImageLabel
 
 Preserve typography for unrelated edits. Use project context for routine design choices, briefly state the direction, and implement it without a generic HUD/style questionnaire. Ask only about unresolved scope or behavior choices; retain answers already given.
 
+When a supplied design specifies layout, states, or visual motion, treat those as acceptance criteria, not interchangeable styling. Before expanding a multi-screen or multi-state build, compare a representative rendered screen with the applicable reference and its default data: check specified bounds, typography, visible items, and behavior. Preserve explicitly requested motion; do not substitute a different interaction without approval. A style-only reference does not imply exact geometry.
+
+For each comparison, verify the actual screen, state, viewport dimensions, orientation, and scale against the intended case; a filename or a successful capture does not establish those conditions. If they cannot be observed, report the comparison as unverified.
+
 Keep Studio writes in one editing session. Reuse existing parents and controllers, create parents before children, and batch sibling edits where supported. Add only the requested behavior.
 
 Match verification to the change: read back edited properties and inspect the affected area at the actual viewport and, for world GUI, relevant viewing distances and angles; exercise changed interactions and validate changed scripts. Broaden or repeat checks only after another change, a failure, or an unresolved concern.
