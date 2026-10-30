@@ -8,11 +8,12 @@ export const description =
   "Publish the world currently being edited to the OVERDARE platform. On success, Studio returns " +
   '{ success: true, hubEndpoint, publishResult: { mode: "CREATE" | "UPDATE", worldId, mainPlaceId, version, worldName, ' +
   "buildFileUrl, sourceFileUrl, mainThumbnailUrl, screenshotUrls } }; mode CREATE means a new world, UPDATE a new version " +
-  "of an existing one. " +
+  "of an existing one. Success and version indicate the Studio upload result, not confirmation of the Creator Hub " +
+  "published version, approval, access status, or test availability. Check Creator Hub before claiming those states. " +
   "By default, Studio also opens the web approval page in a browser. " +
   "This can take longer than ordinary Studio RPC calls because the user may need to review the browser/Studio UI " +
   "and click confirmation buttons before Studio returns the publish result. " +
-  "Set skipCreatorHubLaunch to true only for fully automated end-to-end publishing that must not open the browser. " +
+  "Set skipCreatorHubLaunch to true only when the browser must not open; this does not confirm publication. " +
   "Omitting skipCreatorHubLaunch, or setting it to false, preserves the existing browser flow. " +
   "All params are optional — calling with empty params is valid. " +
   "On the FIRST publish, worldName/description/category/keyword (if provided) are persisted as the world's metadata. " +
