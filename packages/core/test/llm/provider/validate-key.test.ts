@@ -1,6 +1,7 @@
 // @summary API-key validation request and error-classification contracts
 import { afterEach, describe, expect, it } from "bun:test";
 import { validateProviderApiKey } from "../../../src/llm/provider/validate-key";
+import { getDefaultModelRef } from "../../../src/llm/provider-model-policy";
 import { ProviderError, ProviderErrorReason, ProviderErrorType } from "../../../src/llm/types";
 
 const realFetch = globalThis.fetch;
@@ -37,6 +38,38 @@ describe("validateProviderApiKey", () => {
     expect(request?.url).toBe(expectedUrl);
     expect(new Headers(request?.init?.headers).get(expectedHeader[0])).toBe(expectedHeader[1]);
     expect(request?.init?.method).toBeUndefined();
+  });
+
+  it("uses the provider policy for z.ai validation while preserving an explicit model", async () => {
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      requests.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await validateProviderApiKey("zai-coding-plan", "test-key");
+    await validateProviderApiKey("zai-coding-plan", "test-key", "https://example.com/v4/", "custom-model");
+
+    expect(requests).toEqual([
+      {
+        url: "https://api.z.ai/api/coding/paas/v4/chat/completions",
+        body: {
+          model: getDefaultModelRef("zai-coding-plan").modelId,
+          messages: [{ role: "user", content: "hi" }],
+          max_tokens: 1,
+          stream: false,
+        },
+      },
+      {
+        url: "https://example.com/v4/chat/completions",
+        body: {
+          model: "custom-model",
+          messages: [{ role: "user", content: "hi" }],
+          max_tokens: 1,
+          stream: false,
+        },
+      },
+    ]);
   });
 
   it("classifies a z.ai 401 without adding user-facing provider copy", async () => {

@@ -1,5 +1,7 @@
 // @summary Provider-neutral API-key validation using cheap authenticated HTTP requests
+
 import { isAuthenticationStatus } from "../provider-errors";
+import { getDefaultModelRef } from "../provider-model-policy";
 import { ProviderError, ProviderErrorReason, ProviderErrorType, type ProviderName } from "../types";
 import { resolveZaiCodingPlanBaseUrl } from "./zai-coding-plan";
 
@@ -77,7 +79,7 @@ async function validateZaiCodingPlanKey(apiKey: string, baseUrl?: string, model?
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: model ?? "glm-5.2",
+      model: model ?? getDefaultModelRef("zai-coding-plan").modelId,
       messages: [{ role: "user", content: "hi" }],
       max_tokens: 1,
       stream: false,

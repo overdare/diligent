@@ -11,7 +11,7 @@ export const PROVIDER_MODEL_POLICIES: Readonly<Record<ProviderName, ProviderMode
   chatgpt: { defaultModel: "gpt-6.1-sol" },
   gemini: { defaultModel: "gemini-3.6-flash" },
   vertex: { defaultModel: "vertex-gemma-4-26b-it" },
-  "zai-coding-plan": { defaultModel: "glm-5.2" },
+  "zai-coding-plan": { defaultModel: "glm-5.3" },
 };
 
 export function getDefaultModelRef(provider: ProviderName): ModelRef {

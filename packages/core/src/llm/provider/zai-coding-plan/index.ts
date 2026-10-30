@@ -2,6 +2,7 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { isNetworkError } from "../../errors";
 import { classifyProviderHttpError } from "../../provider-errors";
+import { normalizeThinkingEffort } from "../../thinking-effort";
 import type { Model, StreamFunction, StreamOptions } from "../../types";
 import { CONTEXT_OVERFLOW_ERROR_MESSAGE, ProviderError, ProviderErrorReason, ProviderErrorType } from "../../types";
 import { createAISDKStream } from "../ai-sdk";
@@ -30,7 +31,9 @@ export function createZaiCodingPlanStream(apiKey?: string, baseUrl?: string): St
 
 export function buildZaiCodingPlanProviderOptions(model: Model, options: StreamOptions) {
   if (!model.supportsThinking || options.effort === undefined) return undefined;
-  return { zaiCodingPlan: { reasoningEffort: options.effort } };
+  // Resumed sessions and direct callers can retain efforts unsupported by the resolved card.
+  // Apply the same normalization used by model selection before serializing the request.
+  return { zaiCodingPlan: { reasoningEffort: normalizeThinkingEffort(model, options.effort) } };
 }
 
 export function transformZaiCodingPlanRequest(body: Record<string, unknown>): Record<string, unknown> {

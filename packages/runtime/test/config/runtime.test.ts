@@ -44,6 +44,20 @@ describe("loadRuntimeConfig", () => {
     );
   });
 
+  it("resumes historical Coding Plan selections using the served GLM-5.3 capabilities", () => {
+    for (const modelId of ["glm-5.1", "glm-5.2", "glm", "glm-5", "glm5.1", "glm5.2"]) {
+      const resumed = resolveRuntimeModel({ provider: "zai-coding-plan", modelId }, ["zai-coding-plan"]);
+      expect(resumed).toMatchObject({
+        provider: "zai-coding-plan",
+        modelId: "glm-5.3",
+        contextWindow: 1_000_000,
+        supportsThinking: true,
+        supportedEfforts: ["low", "high", "max"],
+        supportsVision: false,
+      });
+    }
+  });
+
   it("uses the configured provider default when there is no last selected model", () => {
     expect(resolveRuntimeModel(undefined, ["openai"])).toMatchObject(getDefaultModelRef("openai"));
   });
