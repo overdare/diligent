@@ -7,6 +7,7 @@ import {
   resolveZaiCodingPlanBaseUrl,
   transformZaiCodingPlanRequest,
 } from "../../../src/llm/provider/zai-coding-plan";
+import { normalizeThinkingEffort } from "../../../src/llm/thinking-effort";
 import type { Model } from "../../../src/llm/types";
 
 const model: Model = {
@@ -19,10 +20,22 @@ const model: Model = {
 
 // A loopback response tests Diligent's wire contract, not live model behavior.
 describe("GLM-5.3 Coding Plan Chat Completions contract", () => {
-  for (const modelId of ["glm-5.3", "glm-5.3-flash"]) {
-    it(`serializes ${modelId} with its documented effort and input capabilities`, async () => {
-      const card = resolveModel({ provider: "zai-coding-plan", modelId });
-      const info = getModelInfoList().find((entry) => entry.provider === card.provider && entry.modelId === modelId);
+  // Coding Plan routes both historical generations to GLM-5.3, not Flash.
+  for (const [selector, modelId] of [
+    ["glm-5.3", "glm-5.3"],
+    ["glm-5.3-flash", "glm-5.3-flash"],
+    ["glm-5.2", "glm-5.3"],
+    ["glm-5.1", "glm-5.3"],
+    ["glm", "glm-5.3"],
+    ["glm-5", "glm-5.3"],
+    ["glm5.2", "glm-5.3"],
+    ["glm5.1", "glm-5.3"],
+  ]) {
+    it(`serializes ${selector} as ${modelId} with the served model's capabilities`, async () => {
+      const card = resolveModel({ provider: "zai-coding-plan", modelId: selector });
+      const info = getModelInfoList().find(
+        (entry) => entry.provider === card.provider && entry.modelId === card.modelId,
+      );
       expect(info).toMatchObject({
         supportedEfforts: ["low", "high", "max"],
         supportsThinking: true,
@@ -49,7 +62,10 @@ describe("GLM-5.3 Coding Plan Chat Completions contract", () => {
       });
       try {
         const stream = createZaiCodingPlanStream("local-test-key", `${server.url}api/coding/paas/v4`);
-        for (const effort of card.supportedEfforts ?? []) {
+        const efforts = ["low", "medium", "high", "xhigh", "max"] as const;
+        for (const requestedEffort of efforts) {
+          const effort = normalizeThinkingEffort(card, requestedEffort);
+          expect(effort).toBe(requestedEffort === "medium" || requestedEffort === "xhigh" ? "low" : requestedEffort);
           await stream(
             card,
             {
@@ -65,7 +81,7 @@ describe("GLM-5.3 Coding Plan Chat Completions contract", () => {
               ],
               tools: [],
             },
-            { effort },
+            { effort: requestedEffort },
           ).result();
           const captured = requests.at(-1);
           expect(captured?.path).toBe("/api/coding/paas/v4/chat/completions");
@@ -82,7 +98,7 @@ describe("GLM-5.3 Coding Plan Chat Completions contract", () => {
             });
           }
         }
-        expect(requests).toHaveLength(card.supportedEfforts?.length ?? 0);
+        expect(requests).toHaveLength(efforts.length);
       } finally {
         await server.stop(true);
       }

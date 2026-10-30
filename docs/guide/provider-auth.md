@@ -91,7 +91,12 @@ Practical notes:
 
 - configure with `auth/set` or `~/.diligent/auth.jsonc`
 - runtime stores the plain API key in the same auth store as other API-key providers
-- the default built-in model for this provider is `glm-5.2`
+- the default built-in model for this provider is `glm-5.3`
+- Pro and General model classes both select `glm-5.3`. `glm-5.3-flash` remains opt-in for image input.
+- Coding Plan [routes GLM-5.1 and GLM-5.2 to GLM-5.3](https://docs.z.ai/devpack/overview). Diligent resolves saved `glm-5.1` / `glm-5.2` selections and the existing `glm`, `glm-5`, `glm5.1`, and `glm5.2` aliases to the GLM-5.3 card instead of exposing stale capabilities.
+- GLM-5.3 is text-only, with a 1,000,000-token context, 128,000-token maximum output, and always-on reasoning. Its effort choices are `low`, `high`, and `max`. The shared effort normalization maps unsupported saved `medium` or `xhigh` values to `low`; choose `high` or `max` explicitly for deeper reasoning.
+- Historical transcript entries are not rewritten. A resumed session may retain its saved model reference and effort. Provider resolution uses the canonical GLM-5.3 card, and the adapter normalizes effort before serialization.
+- Subscription token and cache prices are not inferred from standard API prices or credit multipliers. Z.ai's [supported-tool policy](https://docs.z.ai/devpack/tool/others) does not name Diligent. Confirm subscription-use eligibility before live usage.
 - the default base URL is `https://api.z.ai/api/coding/paas/v4`
 - environment fallback is supported through `ZAI_CODING_PLAN_API_KEY`
 
