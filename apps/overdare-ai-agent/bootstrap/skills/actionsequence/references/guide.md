@@ -29,7 +29,7 @@
 
 ### 5) Inject and Verify JSON
 
-- Apply the JSON using `studiorpc_action_sequencer_service_apply_json` with the target `instanceGuid` and absolute `jsonFilePath`; require `success: true`.
+- Apply the JSON using `studiorpc_action_sequence_write` with the target `instanceGuid` and absolute `jsonFilePath`; require `success: true`.
 - Call `studiorpc_level_save_file` after successful application and verify the sequence's `Data` in the saved `.ovdrjm` file. Application alone does not persist the level.
 - For `Invalid ActionSequence JSON structure`, follow the diagnostics in [json-format.md](json-format.md). Optional-property warnings also cause validation failure.
 - Verify hit detection ↔ VFX/SFX sync, section transitions, total play duration, loop/end behavior

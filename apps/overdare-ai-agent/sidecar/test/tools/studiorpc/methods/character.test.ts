@@ -1,0 +1,893 @@
+// @summary Verifies generic custom character tools are discoverable and cannot accept ODA costume requests.
+import { describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { callRegistryTool } from "../../../../src/mcp-server";
+import { createStudioRpcTools } from "../../../../src/tools/studiorpc";
+import * as character from "../../../../src/tools/studiorpc/methods/character";
+import { StudioRpcError } from "../../../../src/tools/studiorpc/rpc";
+import { methodModules, mutatingMethods, savingMethods } from "../../../../src/tools/studiorpc/tool-registry";
+import { listSnapshots } from "../../../../src/tools/studiorpc/tools/snapshot";
+import { createWriteLock } from "../../../../src/tools/studiorpc/write-lock";
+
+describe("non-ODA character authoring", () => {
+  test("combines live Studio capabilities with Diligent-owned authoring guidance", async () => {
+    const native = {
+      version: "character-authoring/v16",
+      apiVersion: 2,
+      limits: { maxBones: 73 },
+      workspaceApplyAvailable: false,
+      futureCapability: { enabled: true },
+    };
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return native;
+      },
+    });
+    const out = await tools
+      .find((tool) => tool.name === "studiorpc_character_api")!
+      .execute({}, { toolCallId: "character-capabilities", signal: new AbortController().signal, abort: () => {} });
+    const result = JSON.parse(out.output);
+    const { authoringGuide, ...capabilities } = result;
+    expect(calls).toEqual([{ method: "character.api", params: {} }]);
+    expect(capabilities).toEqual(native);
+    expect(authoringGuide.methods["character.build"].params.rig).toBeString();
+    expect(authoringGuide.workflow.length).toBeGreaterThan(0);
+    expect(native).not.toHaveProperty("authoringGuide");
+  });
+
+  test("preserves unknown Studio versions without presenting a guide for another contract", async () => {
+    const native = { version: "future-character-contract", apiVersion: 3, limits: { maxBones: 11 } };
+    const tools = await createStudioRpcTools({ cwd: tmpdir(), callRpc: async () => native });
+    const out = await tools
+      .find((tool) => tool.name === "studiorpc_character_api")!
+      .execute({}, { toolCallId: "future-character", signal: new AbortController().signal, abort: () => {} });
+    const result = JSON.parse(out.output);
+    expect(result.version).toBe(native.version);
+    expect(result.limits).toEqual(native.limits);
+    expect(result.authoringGuide.status).toBe("unavailable");
+    expect(result.authoringGuide).not.toHaveProperty("workflow");
+  });
+
+  test("does not present v16 commit and capture guidance for a v15 Studio through MCP", async () => {
+    const native = { version: "character-authoring/v15", apiVersion: 2, limits: { maxBones: 73 } };
+    const tools = await createStudioRpcTools({ cwd: tmpdir(), callRpc: async () => native });
+    const result = await callRegistryTool(
+      { tools: new Map(tools.map((tool) => [tool.name, tool])), prompts: new Map() },
+      "studiorpc_character_api",
+      {},
+    );
+    expect(result.isError).not.toBe(true);
+    const output = JSON.parse((result.content[0] as { text: string }).text);
+    expect(output.version).toBe(native.version);
+    expect(output.limits).toEqual(native.limits);
+    expect(output.authoringGuide).toEqual({
+      status: "unavailable",
+      supportedStudioContract: "character-authoring/v16",
+    });
+  });
+
+  test("forwards only the caller-selected observation and commit without a wrapper review checklist", async () => {
+    const expectedRevision = {
+      sourceRevision: "B".repeat(40),
+      geometryHash: "C".repeat(40),
+      rigRevision: "D".repeat(40),
+      animationRevision: "E".repeat(40),
+    };
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { state: "completed", captureStatus: "unavailable" };
+      },
+    });
+    const registries = { tools: new Map(tools.map((tool) => [tool.name, tool])), prompts: new Map() };
+    const observation = {
+      mode: "observation",
+      buildId: "A".repeat(32),
+      scenario: "knee_bend_45",
+      refresh: true,
+      expectedRevision,
+    };
+    const captured = await callRegistryTool(registries, "studiorpc_character_inspect", {
+      ...observation,
+      images: false,
+    });
+    expect(captured.isError).not.toBe(true);
+    const commit = {
+      requestId: "caller-reviewed",
+      source: { kind: "existing_rig", guid: "A".repeat(32), rigRevision: "C".repeat(40) },
+      target: { kind: "animation_only", name: "Action" },
+      rigProfile: "authored_v1",
+      motion: { preset: "authored_v1", speedCmPerSec: 0, document: { poses: [] } },
+      commit: true,
+      expectedRevision,
+    };
+    const committed = await callRegistryTool(registries, "studiorpc_character_build", commit);
+    expect(committed.isError).not.toBe(true);
+    expect(calls).toEqual([
+      { method: "character.inspect", params: observation },
+      { method: "character.build", params: commit },
+    ]);
+  });
+
+  test("does not replace a failed capability read with local authoring documentation", async () => {
+    const failure = new StudioRpcError("Studio disconnected", -32000);
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async () => {
+        throw failure;
+      },
+    });
+    await expect(
+      tools
+        .find((tool) => tool.name === "studiorpc_character_api")!
+        .execute({}, { toolCallId: "missing-studio", signal: new AbortController().signal, abort: () => {} }),
+    ).rejects.toBe(failure);
+  });
+
+  test("keeps the measured contact failure and saved draft identity when a build fails", async () => {
+    const data = {
+      buildId: "A".repeat(32),
+      state: "failed",
+      stage: "observations",
+      diagnostics: [{ code: "FOOT_SLIDE", bone: "paw", frame: 17, message: "slide=12 cm" }],
+      staticInput: { sourceGraphJson: "frozen source graph".repeat(15000) },
+    };
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async () => {
+        throw new StudioRpcError("Character operation failed; inspect diagnostics.", -32602, data);
+      },
+    });
+    const request = {
+      requestId: "failed-contact-observation",
+      source: { kind: "existing_rig", guid: "B".repeat(32), rigRevision: "C".repeat(40) },
+      target: { kind: "animation_only", name: "Walk" },
+      rigProfile: "authored_v1",
+      motion: { preset: "authored_v1", speedCmPerSec: 25, document: { fps: 30, poses: [] } },
+      commit: false,
+    };
+    const error = await tools
+      .find((entry) => entry.name === "studiorpc_character_build")!
+      .execute(request, { toolCallId: "failed-build", signal: new AbortController().signal, abort: () => {} })
+      .catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(StudioRpcError);
+    expect((error as Error).message).toContain("FOOT_SLIDE");
+    expect((error as Error).message).toContain("slide=12 cm");
+    expect((error as Error).message).toContain(data.buildId);
+    expect((error as Error).message).not.toContain("frozen source graph");
+    expect((error as Error).message.length).toBeLessThan(2000);
+    expect((error as StudioRpcError).data).toEqual(data);
+  });
+  test("keeps revision and skin diagnostics visible when native remeasurement fails", async () => {
+    const data = { state: "failed", diagnostics: [{ code: "REVISION_MISMATCH", message: "Actual keys changed" }] };
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async () => {
+        throw new StudioRpcError("Character operation failed; inspect diagnostics.", -32602, data);
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_inspect")!;
+    const error = await tool
+      .execute(
+        { mode: "build", buildId: "A".repeat(32) },
+        { toolCallId: "inspect-error", signal: new AbortController().signal, abort: () => {} },
+      )
+      .catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(StudioRpcError);
+    expect((error as Error).message).toContain("REVISION_MISMATCH");
+    expect((error as Error).message).toContain("Actual keys changed");
+  });
+  test("returns selected observation images with unchanged measured and unmeasured quality evidence", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "character-observation-"));
+    try {
+      const rgbPath = join(directory, "rgb.png"),
+        weightsPath = join(directory, "weights.png");
+      writeFileSync(rgbPath, "rgb-bytes");
+      writeFileSync(weightsPath, "weights-bytes");
+      const native = {
+        captureStatus: "completed",
+        rgbPath,
+        weightsPath,
+        contactValidation: { status: "unmeasured", reason: "No contact intervals" },
+        maximumStanceSlideCm: null,
+        motionQuality: { status: "incomplete", visualReviewRequired: true },
+        skinValidation: { maximumEdgeRatio: 3.2 },
+      };
+      const calls: Array<{ method: string; params: unknown }> = [];
+      const tools = await createStudioRpcTools({
+        cwd: directory,
+        callRpc: async (method, params) => {
+          calls.push({ method, params });
+          return native;
+        },
+      });
+      const tool = tools.find((entry) => entry.name === "studiorpc_character_inspect")!;
+      const request = {
+        mode: "observation",
+        buildId: "A".repeat(32),
+        scenario: "walk_contact_sheet",
+        expectedRevision: {
+          sourceRevision: "A".repeat(40),
+          geometryHash: "B".repeat(40),
+          rigRevision: "C".repeat(40),
+          animationRevision: "D".repeat(40),
+        },
+        images: ["weights", "rgb"],
+      };
+      const context = { toolCallId: "observation-images", signal: new AbortController().signal, abort: () => {} };
+      const out = await tool.execute(tool.parameters.parse(request), context);
+      const { images: _images, ...rpcRequest } = request;
+      expect(calls).toEqual([{ method: "character.inspect", params: rpcRequest }]);
+      expect(JSON.parse(out.output)).toEqual(native);
+      expect(out.outputImages?.map((image) => image.source)).toEqual([
+        { type: "base64", media_type: "image/png", data: Buffer.from("weights-bytes").toString("base64") },
+        { type: "base64", media_type: "image/png", data: Buffer.from("rgb-bytes").toString("base64") },
+      ]);
+      const defaultOut = await tool.execute(tool.parameters.parse(rpcRequest), context);
+      expect(defaultOut.outputImages).toHaveLength(1);
+      const noImages = await tool.execute(tool.parameters.parse({ ...request, images: false }), context);
+      expect(noImages.outputImages).toBeUndefined();
+      const refreshed = { ...rpcRequest, scenario: "world_travel", refresh: true };
+      await tool.execute(tool.parameters.parse(refreshed), context);
+      expect(calls.at(-1)).toEqual({ method: "character.inspect", params: refreshed });
+      expect(character.inspect.params.safeParse({ ...request, images: ["rgb", "rgb"] }).success).toBe(false);
+      expect(
+        character.inspect.params.safeParse({ mode: "runtime", modelName: "Creature", images: ["rgb"] }).success,
+      ).toBe(false);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects separate skinned regions while forwarding one skin with static bone props", async () => {
+    const request = {
+      requestId: "single-skin-with-props",
+      source: { kind: "static_model", guid: "A".repeat(32), geometryRevision: "B".repeat(40) },
+      target: { kind: "new_custom_character", name: "CreatureWithProps" },
+      rigProfile: "authored_v1",
+      rig: {
+        space: "mesh_component_ue_z_up_cm",
+        bones: [],
+        regions: { body: { allowedBones: ["root"], bindMode: "rigid", bone: "root" } },
+        boneAttachments: { hat: "root", bag: "root" },
+      },
+      motion: { preset: "authored_v1", speedCmPerSec: 0, document: { fps: 30, poses: [] } },
+      commit: false,
+    };
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { state: "preview_ready" };
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_build")!;
+    const context = { toolCallId: "single-skin", signal: new AbortController().signal, abort: () => {} };
+    await tool.execute(character.build.params.parse(request), context);
+    expect(calls).toEqual([{ method: character.build.method, params: request }]);
+    expect(() =>
+      character.build.params.parse({
+        ...request,
+        rig: { ...request.rig, regions: { ...request.rig.regions, secondBody: request.rig.regions.body } },
+      }),
+    ).toThrow("exactly one skinned region");
+    for (const regions of [{}, [], null]) {
+      expect(character.build.params.safeParse({ ...request, rig: { ...request.rig, regions } }).success).toBe(false);
+    }
+  });
+  test("lets Studio resolve historical recipe bindings without rewriting their frozen inputs", async () => {
+    const request = {
+      requestId: "previously-bound-recipe-request",
+      source: { kind: "procedural_model", guid: "A".repeat(32) },
+      target: { kind: "new_custom_character", name: "HistoricalCharacter" },
+      rigProfile: "authored_v1",
+      motion: { preset: "authored_v1", speedCmPerSec: 20 },
+      commit: false,
+    };
+    expect(character.build.params.parse(request)).toEqual(request);
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        throw new Error("AUTHORING_DOCUMENTS_REQUIRED: no historical request binding");
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_build")!;
+    await expect(
+      tool.execute(request, { toolCallId: "historical-recipe", signal: new AbortController().signal, abort: () => {} }),
+    ).rejects.toThrow("AUTHORING_DOCUMENTS_REQUIRED");
+    expect(calls).toEqual([{ method: character.build.method, params: request }]);
+  });
+  test("keeps procedural geometry executable while forwarding rig and clip as independent data", async () => {
+    const request = {
+      requestId: "geometry-with-structured-authoring",
+      source: {
+        kind: "procedural_recipe",
+        recipeId: "geometry-only",
+        recipeSource: "def on_generate(model, size, attributes):\n    pass\n",
+        recipeRevision: "A".repeat(40),
+      },
+      target: { kind: "new_custom_character", name: "StructuredCharacter" },
+      rigProfile: "authored_v1",
+      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: { body: {} } },
+      motion: { preset: "authored_v1", speedCmPerSec: 20, document: { fps: 30, poses: [] } },
+      commit: false,
+    };
+    expect(character.build.params.parse(request)).toEqual(request);
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { state: "preview_ready" };
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_build")!;
+    await tool.execute(request, {
+      toolCallId: "structured-recipe",
+      signal: new AbortController().signal,
+      abort: () => {},
+    });
+    expect(calls).toEqual([{ method: character.build.method, params: request }]);
+    expect(character.build.params.safeParse({ ...request, rig: undefined }).success).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, motion: { preset: "authored_v1", speedCmPerSec: 20 } }).success,
+    ).toBe(false);
+  });
+  test("adds motion to an inspected original rig without accepting replacement rig or recipe controls", async () => {
+    const request = {
+      requestId: "original-rig-new-clip",
+      source: { kind: "existing_rig", guid: "A".repeat(32), rigRevision: "B".repeat(40) },
+      target: { kind: "animation_only", name: "NewClip" },
+      rigProfile: "authored_v1",
+      motion: { preset: "authored_v1", speedCmPerSec: 20, document: { fps: 30, poses: [] } },
+      commit: false,
+    };
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { state: "preview_ready" };
+      },
+    });
+    await tools
+      .find((tool) => tool.name === "studiorpc_character_build")!
+      .execute(request, { toolCallId: "preserved-rig", signal: new AbortController().signal, abort: () => {} });
+    expect(calls).toEqual([{ method: character.build.method, params: request }]);
+    expect(character.build.params.safeParse({ ...request, rig: {} }).success).toBe(false);
+    expect(character.build.params.safeParse({ ...request, overrides: { size: 2 } }).success).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, motion: { preset: "authored_v1", speedCmPerSec: 20 } }).success,
+    ).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, source: { ...request.source, rigRevision: "stale" } }).success,
+    ).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, target: { kind: "new_custom_character", name: "Replacement" } })
+        .success,
+    ).toBe(false);
+    expect(
+      character.build.params.safeParse({
+        ...request,
+        source: { kind: "static_model", guid: "A".repeat(32), geometryRevision: "B".repeat(40) },
+      }).success,
+    ).toBe(false);
+  });
+  test("requires the reviewed publication and hierarchy for explicit apply on the existing build tool", async () => {
+    const request = {
+      mode: "apply",
+      buildId: "A".repeat(32),
+      publicationId: "F".repeat(32),
+      expectedRevision: {
+        sourceRevision: "B".repeat(40),
+        geometryHash: "C".repeat(40),
+        rigRevision: "D".repeat(40),
+        animationRevision: "E".repeat(40),
+      },
+      expectedSourceGraphRevision: "F".repeat(40),
+    };
+    expect(character.build.params.parse(request)).toEqual(request);
+    for (const field of ["publicationId", "expectedRevision", "expectedSourceGraphRevision"] as const) {
+      const missing: Record<string, unknown> = { ...request };
+      delete missing[field];
+      expect(character.build.params.safeParse(missing).success).toBe(false);
+    }
+    expect(character.build.params.safeParse({ ...request, targetName: "Unreviewed" }).success).toBe(false);
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { applied: true, modelGuid: "1".repeat(32) };
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_build")!;
+    await tool.execute(request, { toolCallId: "native-apply", signal: new AbortController().signal, abort: () => {} });
+    expect(calls).toEqual([{ method: character.build.method, params: request }]);
+  });
+  test("apply waits for the shared write lock and captures only a pre-apply baseline", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "character-apply-"));
+    try {
+      writeFileSync(join(cwd, "world.umap"), "world");
+      const map = join(cwd, "world.ovdrjm");
+      writeFileSync(map, "before apply");
+      const lock = createWriteLock();
+      const unblock = await lock.acquire();
+      const events: string[] = [];
+      let held = false;
+      const tools = await createStudioRpcTools({
+        cwd,
+        getTurnState: () => ({ sessionId: "apply-session" }),
+        writeLock: {
+          async acquire() {
+            events.push("acquire");
+            const release = await lock.acquire();
+            held = true;
+            return () => {
+              held = false;
+              events.push("release");
+              release();
+            };
+          },
+        },
+        callRpc: async (method) => {
+          expect(held).toBe(true);
+          events.push(method);
+          if (method === "character.build") writeFileSync(map, "after apply");
+          return { success: true, applied: true };
+        },
+      });
+      const apply = tools.find((tool) => tool.name === "studiorpc_character_build")!;
+      const pending = apply.execute(
+        {
+          mode: "apply",
+          buildId: "A".repeat(32),
+          publicationId: "F".repeat(32),
+          expectedRevision: {
+            sourceRevision: "B".repeat(40),
+            geometryHash: "C".repeat(40),
+            rigRevision: "D".repeat(40),
+            animationRevision: "E".repeat(40),
+          },
+          expectedSourceGraphRevision: "F".repeat(40),
+        },
+        { toolCallId: "apply", signal: new AbortController().signal, abort() {} },
+      );
+      expect(events).toEqual(["acquire"]);
+      unblock();
+      await pending;
+      expect(events).toEqual(["acquire", "level.save.file", "release", "acquire", "character.build", "release"]);
+      const snapshots = listSnapshots(cwd);
+      expect(snapshots).toHaveLength(1);
+      expect(readFileSync(snapshots[0].path, "utf8")).toBe("before apply");
+      expect(readFileSync(map, "utf8")).toBe("after apply");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+  test("draft, commit and publication do not acquire map locks, snapshots or level saves", async () => {
+    const expectedRevision = {
+      sourceRevision: "B".repeat(40),
+      geometryHash: "C".repeat(40),
+      rigRevision: "D".repeat(40),
+      animationRevision: "E".repeat(40),
+    };
+    const calls: string[] = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      getTurnState: () => ({ sessionId: "private-draft-session" }),
+      writeLock: {
+        async acquire() {
+          calls.push("write-lock");
+          throw new Error("Private character work must not acquire the map write lock");
+        },
+      },
+      callRpc: async (method) => {
+        calls.push(method);
+        return { success: true };
+      },
+    });
+    const context = { toolCallId: "private", signal: new AbortController().signal, abort() {} };
+    const build = tools.find((tool) => tool.name === "studiorpc_character_build")!;
+    const request = {
+      requestId: "private-character",
+      source: { kind: "existing_rig", guid: "A".repeat(32), rigRevision: "C".repeat(40) },
+      target: { kind: "animation_only", name: "Walk" },
+      rigProfile: "authored_v1",
+      motion: { preset: "authored_v1", speedCmPerSec: 0, document: { poses: [] } },
+      commit: false,
+    };
+    await build.execute(request, context);
+    await build.execute({ ...request, commit: true, expectedRevision }, context);
+    await tools
+      .find((tool) => tool.name === "studiorpc_character_export")!
+      .execute({ mode: "publish", buildId: "A".repeat(32), expectedRevision }, context);
+    expect(calls).toEqual(["character.build", "character.build", "character.export"]);
+  });
+  test("forwards native publication on the existing export tool and retains issued IDs", async () => {
+    const request = {
+      mode: "publish",
+      buildId: "A".repeat(32),
+      expectedRevision: {
+        sourceRevision: "B".repeat(40),
+        geometryHash: "C".repeat(40),
+        rigRevision: "D".repeat(40),
+        animationRevision: "E".repeat(40),
+      },
+    };
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const issued = {
+      uploaded: true,
+      assets: [
+        { role: "skeleton", assetId: "ovdrassetid://123" },
+        { role: "mesh", assetId: "ovdrassetid://124" },
+      ],
+    };
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return issued;
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_export")!;
+    const result = await tool.execute(tool.parameters.parse(request), {
+      toolCallId: "native-publish",
+      signal: new AbortController().signal,
+      abort: () => {},
+    });
+    expect(calls).toEqual([{ method: character.exportAsset.method, params: request }]);
+    expect(JSON.stringify(result)).toContain("ovdrassetid://123");
+    expect(JSON.stringify(result)).toContain("ovdrassetid://124");
+    expect(character.exportAsset.params.safeParse({ ...request, mode: "native_parts" }).success).toBe(false);
+    expect(character.exportAsset.params.safeParse({ ...request, expectedRevision: undefined }).success).toBe(false);
+    expect(savingMethods.has(character.exportAsset.method)).toBe(false);
+  });
+  test("exposes partial publication IDs and diagnostics through the MCP error without retrying", async () => {
+    const request = {
+      mode: "publish",
+      buildId: "A".repeat(32),
+      expectedRevision: {
+        sourceRevision: "B".repeat(40),
+        geometryHash: "C".repeat(40),
+        rigRevision: "D".repeat(40),
+        animationRevision: "E".repeat(40),
+      },
+    };
+    const data = {
+      publicationId: "F".repeat(32),
+      reportPath: "C:/Studio/Saved/publication.json",
+      uploaded: false,
+      assets: [{ role: "skeleton", state: "uploaded", assetId: "ovdrassetid://123" }],
+      diagnostics: [{ code: "UPLOAD_FAILED", message: "Mesh upload failed after issuing the Skeleton ID" }],
+    };
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const failure = new StudioRpcError(
+      "Native publication failed; inspect issued IDs and the saved report.",
+      -32602,
+      data,
+    );
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        throw failure;
+      },
+    });
+    const result = await callRegistryTool(
+      { tools: new Map(tools.map((tool) => [tool.name, tool])), prompts: new Map() },
+      "studiorpc_character_export",
+      request,
+    );
+    expect(result.isError).toBe(true);
+    const text = JSON.stringify(result.content);
+    expect(text).toContain(data.publicationId);
+    expect(text).toContain(data.reportPath);
+    expect(text).toContain("ovdrassetid://123");
+    expect(text).toContain("UPLOAD_FAILED");
+    expect(text).toContain(data.diagnostics[0].message);
+    expect(calls).toEqual([{ method: "character.export", params: request }]);
+    const recovered = await character.exportAsset.recover(failure).catch((error: StudioRpcError) => error);
+    expect(recovered.code).toBe(-32602);
+    expect(recovered.data).toBe(data);
+  });
+  test("keeps external interchange on the existing FBX export contract", () => {
+    const request = {
+      buildId: "A".repeat(32),
+      expectedRevision: {
+        sourceRevision: "B".repeat(40),
+        geometryHash: "C".repeat(40),
+        rigRevision: "D".repeat(40),
+        animationRevision: "E".repeat(40),
+      },
+    };
+    expect(character.exportAsset.params.parse(request)).toEqual(request);
+    expect(character.exportAsset.params.safeParse({ ...request, format: "native_parts" }).success).toBe(false);
+  });
+  test("forwards inspected static geometry and direct authored rig and motion through the existing build tool", async () => {
+    const request = {
+      requestId: "imported-panel-rig",
+      source: { kind: "static_model", guid: "B".repeat(32), geometryRevision: "A".repeat(40) },
+      target: { kind: "new_custom_character", name: "ImportedPanel" },
+      rigProfile: "authored_v1",
+      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: { body: {} } },
+      motion: { preset: "authored_v1", speedCmPerSec: 20, document: { fps: 30, poses: [] } },
+      commit: false,
+    };
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { state: "preview_ready" };
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_build")!;
+    await tool.execute(request, { toolCallId: "static-build", signal: new AbortController().signal, abort: () => {} });
+    expect(calls).toEqual([{ method: character.build.method, params: request }]);
+    const baked = { ...request, source: { ...request.source, kind: "procedural_model" } };
+    await tool.execute(baked, {
+      toolCallId: "baked-model-build",
+      signal: new AbortController().signal,
+      abort: () => {},
+    });
+    expect(calls[1]).toEqual({ method: character.build.method, params: baked });
+    expect(character.build.params.safeParse({ ...baked, rig: undefined }).success).toBe(false);
+    expect(character.build.params.safeParse({ ...baked, overrides: { size: 2 } }).success).toBe(false);
+    expect(character.build.params.safeParse({ ...request, rig: undefined }).success).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, motion: { preset: "authored_v1", speedCmPerSec: 20 } }).success,
+    ).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, source: { ...request.source, geometryRevision: "stale" } })
+        .success,
+    ).toBe(false);
+    expect(character.build.params.safeParse({ ...request, overrides: { size: 2 } }).success).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, source: { kind: "procedural_model", guid: "B".repeat(32) } })
+        .success,
+    ).toBe(true);
+    expect(savingMethods.has(character.build.method)).toBe(false);
+  });
+  test("build forwards a procedural model GUID and preserves native ownership of its frozen inputs", async () => {
+    const request = {
+      requestId: "model-source-draft",
+      source: { kind: "procedural_model", guid: "ABCDEF0123456789ABCDEF0123456789" },
+      target: { kind: "new_custom_character", name: "ModelSourceCharacter" },
+      rigProfile: "authored_v1",
+      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: { body: {} } },
+      motion: { preset: "authored_v1", speedCmPerSec: 20, document: { fps: 30, poses: [] } },
+      overrides: { jointWidth: 4 },
+      commit: false,
+    };
+    expect(character.build.params.parse(request)).toEqual(request);
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { buildId: "A".repeat(32), state: "preview_ready" };
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_build")!;
+    await tool.execute(request, { toolCallId: "model-build", signal: new AbortController().signal, abort: () => {} });
+    expect(calls).toEqual([{ method: character.build.method, params: request }]);
+    expect(
+      character.build.params.safeParse({ ...request, source: { ...request.source, guid: "unknown" } }).success,
+    ).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, source: { ...request.source, recipeSource: "ignored" } }).success,
+    ).toBe(false);
+    expect(character.build.params.safeParse({ ...request, commit: true }).success).toBe(false);
+    expect(savingMethods.has(character.build.method)).toBe(false);
+  });
+  test("exports the reviewed authored data without installing an alternate runtime in the map", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "nonoda-tools-"));
+    const calls: string[] = [];
+    let fail = false;
+    try {
+      const tools = await createStudioRpcTools({
+        cwd,
+        callRpc: async (method) => {
+          calls.push(method);
+          if (fail && method === character.exportAsset.method) throw new Error("Revision conflict");
+          return { success: true };
+        },
+      });
+      const exportTool = tools.find((tool) => tool.name === "studiorpc_character_export")!;
+      expect(exportTool).toBeDefined();
+      const context = { toolCallId: "export", signal: new AbortController().signal, abort: () => {} };
+      const args = {
+        buildId: "C01720384F323DA56E74F6B61AF0A57A",
+        expectedRevision: {
+          sourceRevision: "A".repeat(40),
+          geometryHash: "B".repeat(40),
+          rigRevision: "C".repeat(40),
+          animationRevision: "D".repeat(40),
+        },
+      };
+      await exportTool.execute(args, context);
+      expect(calls).toEqual([character.exportAsset.method]);
+      fail = true;
+      calls.length = 0;
+      await expect(exportTool.execute(args, context)).rejects.toThrow("Revision conflict");
+      expect(calls).toEqual([character.exportAsset.method]);
+      expect(tools.find((tool) => tool.name === "studiorpc_asset_manager_import")).toBeDefined();
+      expect(tools.find((tool) => tool.name === "studiorpc_asset_drawer_import")).toBeDefined();
+      expect(tools.find((tool) => tool.name === "studiorpc_character_install")).toBeUndefined();
+      expect(tools.find((tool) => tool.name === "studiorpc_character_cook")).toBeUndefined();
+      expect(tools.filter((tool) => tool.name.startsWith("studiorpc_character_"))).toHaveLength(4);
+      expect(tools.some((tool) => tool.name.startsWith("studiorpc_proceduralcharacter_"))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+  test("registers authoring, export and actual Lua runtime inspection together", () => {
+    for (const tool of Object.values(character)) {
+      if (typeof tool !== "object" || !("method" in tool)) continue;
+      expect(methodModules.find((entry) => entry.method === tool.method)).toBe(tool);
+    }
+    expect(mutatingMethods.has(character.exportAsset.method)).toBe(false);
+    expect(savingMethods.has(character.exportAsset.method)).toBe(false);
+    expect(mutatingMethods.has(character.build.method)).toBe(false);
+  });
+  test("forwards live skin contact samples through runtime inspection and rejects ambiguous contact selection", async () => {
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { skin: { status: "measured", contacts: { sole: { vertexIds: [7], pointsWorldCm: [[1, 2, 0]] } } } };
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_inspect")!;
+    const request = {
+      mode: "runtime",
+      modelName: "Creature",
+      world: "client",
+      skin: { contacts: ["sole"], groundHeightCm: 0 },
+    };
+    expect(character.inspect.params.safeParse(request).success).toBe(true);
+    const result = await tool.execute(request, {
+      toolCallId: "runtime-skin",
+      signal: new AbortController().signal,
+      abort: () => {},
+    });
+    expect(calls).toEqual([{ method: "character.inspect", params: request }]);
+    expect(JSON.parse(result.output).skin.contacts.sole.pointsWorldCm).toEqual([[1, 2, 0]]);
+    for (const skin of [
+      { contacts: [] },
+      { contacts: ["sole", "sole"] },
+      { contacts: ["sole", "SOLE"] },
+      { contacts: [""] },
+      { contacts: ["sole"], groundHeightCm: Infinity },
+      { contacts: ["sole"], advanceWorld: true },
+    ]) {
+      expect(character.inspect.params.safeParse({ ...request, skin }).success).toBe(false);
+    }
+    expect(
+      character.inspect.params.safeParse({ mode: "source", guid: "B".repeat(32), skin: request.skin }).success,
+    ).toBe(false);
+  });
+  test("routes all inspection modes through one read-only tool without saving the map", async () => {
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { inspected: true };
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_inspect")!;
+    const context = { toolCallId: "inspect", signal: new AbortController().signal, abort: () => {} };
+    const requests = [
+      { mode: "build", buildId: "A".repeat(32) },
+      { mode: "source", guid: "B".repeat(32) },
+      { mode: "source", guid: "B".repeat(32), region: "C".repeat(32), vertexOffset: 7, vertexCount: 128 },
+      { mode: "runtime", modelName: "Creature", world: "authority" },
+      {
+        mode: "observation",
+        buildId: "A".repeat(32),
+        scenario: "rest_views",
+        expectedRevision: {
+          sourceRevision: "A".repeat(40),
+          geometryHash: "B".repeat(40),
+          rigRevision: "C".repeat(40),
+          animationRevision: "D".repeat(40),
+        },
+      },
+    ];
+    for (const request of requests) await tool.execute(request, context);
+    expect(calls).toEqual(requests.map((params) => ({ method: "character.inspect", params })));
+    expect(mutatingMethods.has(character.inspect.method)).toBe(false);
+    expect(savingMethods.has(character.inspect.method)).toBe(false);
+    expect(character.inspect.params.safeParse({ mode: "source", guid: "unknown" }).success).toBe(false);
+    expect(character.inspect.params.safeParse({ mode: "source", guid: "B".repeat(32), vertexOffset: -1 }).success).toBe(
+      false,
+    );
+    expect(
+      character.inspect.params.safeParse({ mode: "source", guid: "B".repeat(32), vertexCount: 2048 }).success,
+    ).toBe(false);
+  });
+  test("accepts authored geometry, arbitrary rig and motion and rejects ODA body profiles", () => {
+    const request = {
+      requestId: "custom-creature",
+      source: {
+        kind: "procedural_recipe",
+        recipeId: "my-creature",
+        recipeSource: "def on_generate(model, size, attributes): pass",
+        recipeRevision: "A".repeat(40),
+      },
+      target: { kind: "new_custom_character", name: "Creature" },
+      rigProfile: "authored_v1",
+      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: { body: {} } },
+      motion: { preset: "authored_v1", speedCmPerSec: 20, document: { fps: 30, poses: [] } },
+      commit: false,
+    };
+    expect(character.build.params.parse(request)).toEqual(request);
+    expect(
+      character.build.params.safeParse({ ...request, target: { ...request.target, name: "A".repeat(64) } }).success,
+    ).toBe(true);
+    expect(
+      character.build.params.safeParse({ ...request, target: { ...request.target, name: "A".repeat(65) } }).success,
+    ).toBe(false);
+    expect(
+      character.build.params.parse({ ...request, source: { ...request.source, recipeRevision: "a".repeat(40) } }),
+    ).toMatchObject({ source: { recipeRevision: "A".repeat(40) } });
+    expect(character.build.params.safeParse({ ...request, bodyProfile: "oda.default.v1" }).success).toBe(false);
+    expect(character.build.params.safeParse({ ...request, commit: true }).success).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, motion: { ...request.motion, speedCmPerSec: 0 } }).success,
+    ).toBe(true);
+    expect(
+      character.build.params.safeParse({ ...request, motion: { ...request.motion, speedCmPerSec: -1 } }).success,
+    ).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, motion: { ...request.motion, speedCmPerSec: 1001 } }).success,
+    ).toBe(false);
+  });
+  test("requires exact reviewed revisions for observations and commit", () => {
+    const expectedRevision = {
+      sourceRevision: "A".repeat(40),
+      geometryHash: "B".repeat(40),
+      rigRevision: "C".repeat(40),
+      animationRevision: "D".repeat(40),
+    };
+    const request = {
+      mode: "observation",
+      buildId: "C01720384F323DA56E74F6B61AF0A57A",
+      scenario: "walk_contact_sheet",
+      expectedRevision,
+    };
+    expect(character.inspect.params.parse(request)).toEqual(request);
+    expect(
+      character.inspect.params.safeParse({
+        ...request,
+        expectedRevision: { ...expectedRevision, animationRevision: "stale" },
+      }).success,
+    ).toBe(false);
+    expect(character.inspect.params.parse({ mode: "build", buildId: request.buildId })).toEqual({
+      mode: "build",
+      buildId: request.buildId,
+    });
+    expect(character.inspect.params.parse({ mode: "runtime", modelName: "Creature", world: "client" })).toEqual({
+      mode: "runtime",
+      modelName: "Creature",
+      world: "client",
+    });
+    expect(
+      character.inspect.params.safeParse({ mode: "runtime", modelName: "Creature", world: "editor" }).success,
+    ).toBe(false);
+    expect(character.inspect.params.safeParse({ mode: "runtime", buildId: request.buildId }).success).toBe(false);
+  });
+});

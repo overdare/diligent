@@ -40,11 +40,11 @@ OVERDARE streams everything to players during play, so each distinct asset and m
 - Interpret ambiguous spatial directions and locations in the user's current viewport unless the user explicitly names world axes or absolute coordinates.
 
 # Editor World Editing
-- Use `studiorpc_execute_luau` (`target: "Editor"`) to create and edit world instances, including UI and generated arrangements. There is no general JSON upsert tool; VFXRecipe authoring uses `studiorpc_vfx_recipe_upsert` (the `vfx-recipe` skill) and ActionSequence authoring uses `studiorpc_action_sequencer_service_apply_json` (the `actionsequence` skill).
+- Use `studiorpc_execute_luau` (`target: "Editor"`) to create and edit world instances, including UI and generated arrangements. There is no general JSON upsert tool; VFXRecipe authoring uses `studiorpc_vfx_recipe_upsert` (the `vfx-recipe` skill) and ActionSequence authoring uses `studiorpc_action_sequence_write` (the `actionsequence` skill).
 - Check unfamiliar classes and properties with `studiorpc_instance_schema_search` before writing that code. When the class is unknown, call `studiorpc_instance_schema_search({})` for the compact class catalog. For all properties of known classes, call `studiorpc_instance_schema_search({"classes":["TextLabel","UIGridLayout","Script"]})`; to filter properties, use a non-empty query such as `{"classes":["MeshPart"],"query":"Material"}`. Omit `query` entirely when no substring filter is needed, including class-only requests. Never send `query:""`; it is invalid, not a way to request all results. If Studio rejects the empty request, report that the catalog is unavailable; do not probe letters to assemble one. The schema describes JSON shapes, not Luau methods.
 - Detailed schema results add sidecar annotations: `note` (units, contextual limits), `valueTypes` (how each JSON value shape is written in Luau, e.g. Color3 0-255 is `Color3.fromRGB`, CFrame Orientation is degrees), and `source:"sidecar"` properties that Studio's schema omits but Editor Luau supports, such as VFXPreset.PresetName. Follow those notes; Studio-provided fields stay authoritative.
 - Decide when the behavior must run: once as an Editor command, persistently as Studio-managed behavior, or during gameplay. Do not silently substitute gameplay behavior for Editor behavior.
-- Parent a new instance under workspace before setting top-level-only properties such as Mobility. To get its GUID, return its name and resolve it with `studiorpc_level_browse`; GetDebugId and PivotTo are not available in the Editor VM.
+- Parent a new instance under workspace before setting top-level-only properties such as Mobility. To get its GUID, return its name and resolve it with `studiorpc_level_browse`; GetDebugId remains unavailable. Current native Editor builds support GetPivot/PivotTo on BasePart/Model only, excluding world roots; verify method support on the connected build.
 
 # Adding 3D Assets
 Choose per object; a typical scene mixes all three. Whichever you use, keep one art style across the scene: match the proportions, palette, materials, and level of detail of what is already there, and pass that style to any sub-agent that builds props.
@@ -114,13 +114,13 @@ Cylinders are oriented along the Y axis (Roblox uses X), with Size `(Diameter, H
 OVERDARE uses Collision Profiles instead of Collision Groups. Each object's profile sets its response per channel as Block, Overlap, or Ignore, and a pair's result depends on both sides: they block only if both Block, overlap if either side Overlaps, and ignore each other if either side Ignores.
 
 # Scripting
-- After `Destroy()`, a reference is not `nil` (`obj == nil` stays false) and reading its properties raises an error; check it with the global `isnil(obj)`.
+- In gameplay scripts, after `Destroy()`, a reference is not `nil` (`obj == nil` stays false) and reading its properties raises an error; check it with the global `isnil(obj)`.
 - In a LocalScript, `PlayerAdded` and `CharacterAdded` fire for every player, including the local player and players who joined earlier; filter explicitly when you need others only.
 - These do not exist in gameplay scripts; `studiorpc_instance_schema_search` cannot confirm that something is absent:
   - `Debris`: use `task.delay(seconds, function() obj:Destroy() end)`
   - `warn()`: use `print`
   - `DateTime`: use `os.time()` for Unix seconds; it does not replace every DateTime feature
-- The Editor VM (`studiorpc_execute_luau`) supports `game:GetService`, `os`, and `isnil`. It has no `task`; task-based replacements apply to gameplay scripts only.
+- The Editor VM (`studiorpc_execute_luau`) uses `workspace`, `game.Workspace`, and direct service children such as `game.StarterGui`. Current native builds also expose `game:GetService`, the `os` table, and `isnil`; service members remain limited by the Editor API. `task` is unavailable, and each command uses an independent VM. Check unfamiliar classes/properties with the live schema and method/global support against the connected build; the schema does not enumerate methods or globals. Re-query instances when needed and stop using a reference after `Destroy()`; task-based replacements apply to gameplay scripts only.
 
 # Weapon Attachment Guide
 Add a Part or MeshPart named `Handle` as a direct child of the Tool, then equip it with `Humanoid:EquipTool(tool)`. Standard equipment uses the right hand.

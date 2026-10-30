@@ -7,7 +7,7 @@ description: "Handles Action Sequence asset creation/editing, track layout (Anim
 
 > **Naming rule**: Asset/system = **Action Sequence**, editor = **Action Sequencer** (editor only).
 
-Author ActionSequence assets and tracks with `studiorpc_action_sequencer_service_apply_json`; do not substitute `execute_luau` instance creation or property writes for this authoring path. Read `references/json-format.md` before building the payload.
+Author ActionSequence assets and tracks with `studiorpc_action_sequence_write`; do not substitute `execute_luau` instance creation or property writes for this authoring path. Read `references/json-format.md` before building the payload.
 
 ### Lifecycle
 
@@ -42,6 +42,8 @@ Read this first when authoring assets. Contains production workflow, layout/dire
 ### Animation Catalog — `references/animations/`
 
 Category-based list of Overdare animation assets. Read `references/animations/00_INDEX.md` first, then only the category files relevant to your task. Do not read all at once.
+
+When no catalog animation fits, author a clip with `studiorpc_animation_write` and get its id with `studiorpc_animation_publish` (private, not listed on the store). Put the returned `ovdrassetid://N` in the AnimationTrack's `OvdrAssetId`. A local `/Temp/AnimationAssets/...` path does not work in a track.
 
 ### JSON Reference — `references/json/`
 
