@@ -34,15 +34,22 @@ export const OPENAI_MODELS = defineProviderModels("openai", [
     display: "GPT-6 Astra",
     contextWindow: 500_000,
     maxOutputTokens: 128_000,
+    // Standard rates for prompts up to 272K input tokens, with 30-minute cache writes.
+    // Longer prompts and Fast mode cost more. The estimator represents only one price tier.
     inputCostPer1M: 10,
     outputCostPer1M: 50,
     cacheReadCostPer1M: 1,
-    cacheWriteCostPer1M: 0,
+    cacheWriteCostPer1M: 12.5,
     supportsThinking: true,
     supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
     supportsVision: true,
     supportsFastMode: true,
     aliases: ["gpt-6", "astra"],
+    provenance: {
+      source: "OpenAI API Standard short-context pricing (30-minute cache writes)",
+      sourceUrl: "https://developers.openai.com/api/docs/pricing",
+      updatedAt: "2026-11-01",
+    },
   },
   {
     modelId: "gpt-6.1-sol",
