@@ -176,7 +176,7 @@ export const exportAsset = {
   timeoutMs: 900_000,
   recover: async (error: unknown) => withErrorData(error),
   description:
-    "Export a committed reviewed character. mode=publish uploads one native skeletal mesh and animation through the existing asset publisher, with its Skeleton first, and returns real ovdrassetid:// references. Inspect the build's nativePublication for partial issued IDs if upload fails. Existing-rig publication uploads only a new clip referencing the original numeric Skeleton. Publication does not place a model in Workspace. Default mode=fbx uses the existing FBX exporter for external interchange, for the single skinned result and its static props; use the returned file with asset_manager.import. Stop PIE first.",
+    "Export a committed reviewed character. mode=publish uploads one native skeletal mesh and animation through the existing asset publisher, with its Skeleton first, and returns real ovdrassetid:// references. It automatically publishes independent copies of retained local static props and TextureId overrides, uploads each repeated image reference once, and reuses existing numeric IDs. Apply remaps only the result clone; source data stays intact. Inspect the build's nativePublication for partial issued IDs if upload fails. Existing-rig publication uploads only a new clip referencing the original numeric Skeleton. Publication does not place a model in Workspace. Default mode=fbx uses the existing FBX exporter for external interchange, for the single skinned result and its static props; use the returned file with asset_manager.import. Stop PIE first.",
   params: z.object({ buildId, expectedRevision: revisions, mode: z.enum(["fbx", "publish"]).optional() }).strict(),
 };
 export const inspect = {

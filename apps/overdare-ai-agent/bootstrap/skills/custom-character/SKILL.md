@@ -61,6 +61,9 @@ explicit `studiorpc_character_build(mode=apply)` with the reviewed publication a
 source graph revision. Recipe-only drafts lack inspected Workspace part identities
 for apply. Use FBX export when external interchange is needed. Inspect partial
 publication reports before retrying; an error may still contain issued IDs.
+Publication also uploads retained local static props and TextureId overrides,
+reuses existing numeric IDs and maps only the result clone to issued IDs.
+Do not manually publish each dependency or rewrite the source model.
 
 Use the existing Model, Skeleton/Bone, MeshPart, Humanoid, Animator and Animation
 instances. A server Script loads the saved Animation and starts its AnimationTrack.
