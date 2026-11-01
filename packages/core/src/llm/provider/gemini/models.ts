@@ -50,9 +50,15 @@ export const GEMINI_MODELS = defineProviderModels("gemini", [
     maxOutputTokens: 65_536,
     inputCostPer1M: 0.3,
     outputCostPer1M: 2.5,
+    cacheReadCostPer1M: 0.03,
     supportsThinking: true,
     supportedEfforts: ["low", "medium", "high"],
     supportsVision: true,
     aliases: ["gemini-flash-lite"],
+    provenance: {
+      source: "Gemini Developer API Standard paid pricing",
+      sourceUrl: "https://ai.google.dev/gemini-api/docs/pricing#gemini-3.5-flash-lite",
+      updatedAt: "2026-11-02",
+    },
   },
 ]);
