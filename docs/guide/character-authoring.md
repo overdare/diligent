@@ -23,13 +23,10 @@ marker. Transport errors propagate; local documentation cannot turn an unavailab
 Studio into a successful capability query. Native limits are never replaced by
 values from the guide.
 
-The native `apiVersion: 2` envelope separates capabilities from documentation.
-The current native operation contract is `character-authoring/v16`; the
-`authored_v1` input documents and saved storage identities are unchanged. A v15
-Studio keeps its native facts but receives an unavailable guide marker, because
-its capture/proof requirements differ. Native callers that
-previously read workflow text or `verificationRunner` should use the Diligent
-skill or the enriched agent tool instead.
+The native `apiVersion: 1` envelope separates capabilities from documentation.
+The initial public operation contract is `character-authoring/v1`, with
+`authored_v1` input documents. Workflow guidance and optional fresh-process
+verification belong to the Diligent skill and enriched agent tool.
 
 ## Ownership
 

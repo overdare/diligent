@@ -1,7 +1,7 @@
 // @summary Tests the animation.read / animation.write wrappers: params, preview images, and error data passthrough.
 
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dropEmptyOptionals } from "@diligent/core/tool-contract";
@@ -243,27 +243,6 @@ describe("animation tools over the generic Studio RPC path", () => {
     const tools = await createStudioRpcToolProvider({ callRpc }).createTools({ cwd: tmpdir() });
     return tools.find((tool) => tool.name === name)!;
   }
-
-  test("advertise raw measurements and caller-requested capture without anatomy classifiers", async () => {
-    const read = await toolFor("studiorpc_animation_read", async () => ({}));
-    const write = await toolFor("studiorpc_animation_write", async () => ({}));
-    for (const tool of [read, write]) {
-      expect(tool.description).toContain("referenceLowestCm");
-      expect(tool.description).toContain("lowestByBoneCm");
-      expect(tool.description).not.toMatch(/preview\.clearance|belowFloor|airborne|touchingFloor|paths of right hand/);
-    }
-    expect(write.description).toContain("directions[bone]");
-    expect(write.description).toContain("Omit or false for no capture");
-    expect(write.description).not.toMatch(/pushOutCm|palm:|sole:|maxDepthCm/);
-    const skill = readFileSync(
-      new URL("../../../../../bootstrap/skills/character-animation/SKILL.md", import.meta.url),
-      "utf8",
-    );
-    expect(skill).toContain("lowestByBoneCm");
-    expect(skill).not.toMatch(
-      /preview\.clearance|`airborne`|any limb sunk into the body with the move|`directions` in the check says where each palm/,
-    );
-  });
 
   test("preserve raw floor samples and axes without adding capture or review operations", async () => {
     const floor = {

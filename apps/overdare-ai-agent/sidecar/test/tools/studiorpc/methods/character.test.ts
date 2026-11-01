@@ -14,8 +14,8 @@ import { createWriteLock } from "../../../../src/tools/studiorpc/write-lock";
 describe("non-ODA character authoring", () => {
   test("combines live Studio capabilities with Diligent-owned authoring guidance", async () => {
     const native = {
-      version: "character-authoring/v16",
-      apiVersion: 2,
+      version: "character-authoring/v1",
+      apiVersion: 1,
       limits: { maxBones: 73 },
       workspaceApplyAvailable: false,
       futureCapability: { enabled: true },
@@ -51,24 +51,6 @@ describe("non-ODA character authoring", () => {
     expect(result.limits).toEqual(native.limits);
     expect(result.authoringGuide.status).toBe("unavailable");
     expect(result.authoringGuide).not.toHaveProperty("workflow");
-  });
-
-  test("does not present v16 commit and capture guidance for a v15 Studio through MCP", async () => {
-    const native = { version: "character-authoring/v15", apiVersion: 2, limits: { maxBones: 73 } };
-    const tools = await createStudioRpcTools({ cwd: tmpdir(), callRpc: async () => native });
-    const result = await callRegistryTool(
-      { tools: new Map(tools.map((tool) => [tool.name, tool])), prompts: new Map() },
-      "studiorpc_character_api",
-      {},
-    );
-    expect(result.isError).not.toBe(true);
-    const output = JSON.parse((result.content[0] as { text: string }).text);
-    expect(output.version).toBe(native.version);
-    expect(output.limits).toEqual(native.limits);
-    expect(output.authoringGuide).toEqual({
-      status: "unavailable",
-      supportedStudioContract: "character-authoring/v16",
-    });
   });
 
   test("forwards only the caller-selected observation and commit without a wrapper review checklist", async () => {

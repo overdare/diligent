@@ -152,5 +152,5 @@
     "refresh": "Stop PIE before revision-bound observation capture. Each explicit scenario request reads saved evidence or captures only that preset if missing; refresh=true recaptures any selected preset. Workspace and authored keys remain unchanged. Saved historical captures retain their original measurement version and may include legacy verdict fields; interpret the measured values and current task rather than treating those fields as current quality approval.",
     "agentImages": "The existing agent character.inspect observation mode attaches RGB by default. Agent-only images selects rgb, bones, regions and weights in order, or false for measurements only; this option is consumed by the agent adapter, not forwarded as a native RPC parameter."
   },
-  "studioContract": "character-authoring/v16"
+  "studioContract": "character-authoring/v1"
 }
