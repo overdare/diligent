@@ -28,7 +28,13 @@ export const description =
   "through occluders. Camera axes include horizontal groundForward and groundRight for view-relative edits. " +
   "`instanceId` switches to a different picture entirely: that one instance and its children rendered on " +
   "their own, off the viewport, under fixed light — the way to look at a prop you are iterating on, since " +
-  "two such shots are comparable and nothing around the prop can crowd or light the frame.";
+  "two such shots are comparable and nothing around the prop can crowd or light the frame. " +
+  "`guiPath` captures only a rendered GUI component and all its descendants in the selected PIE client, " +
+  "without the scene, ancestors or siblings. Use an exact path from studiorpc_game_observe with ui. The image is cropped " +
+  "to the visible subtree, retaining its current layout and ancestor clipping. `background` defaults to " +
+  "transparent; pass {r,g,b} byte values for an opaque solid background. Coordinates in this cropped image " +
+  "are image-relative; viewportRect maps the crop to viewport-normalized coordinates. Use studiorpc_game_observe with ui " +
+  "for named input targets.";
 
 const worldPoint = z.object({
   x: z.number(),
@@ -38,6 +44,27 @@ const worldPoint = z.object({
 
 export const params = z
   .object({
+    guiPath: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Exact GUI path from studiorpc_game_observe with ui, including its descendants. Requires a running PIE client; " +
+          "captures the currently visible portion without the scene or other GUI components.",
+      ),
+    background: z
+      .union([
+        z.literal("transparent"),
+        z
+          .object({
+            r: z.number().int().min(0).max(255),
+            g: z.number().int().min(0).max(255),
+            b: z.number().int().min(0).max(255),
+          })
+          .strict(),
+      ])
+      .optional()
+      .describe("With guiPath only: transparent (default), or an opaque RGB background with byte values 0..255."),
     pieSessionId: z
       .string()
       .min(1)
@@ -101,12 +128,26 @@ export const params = z
   .strict()
   .refine((args) => (args.pieSessionId === undefined) === (args.clientId === undefined), {
     message: "pieSessionId and clientId must be supplied together.",
-  });
+  })
+  .refine((args) => args.background === undefined || args.guiPath !== undefined, {
+    message: "background requires guiPath.",
+  })
+  .refine(
+    (args) =>
+      args.guiPath === undefined ||
+      [args.instanceId, args.camera, args.includeGui, args.locate, args.yaws, args.pitch].every(
+        (value) => value === undefined,
+      ),
+    {
+      message: "guiPath cannot be combined with instanceId, camera, includeGui, locate, yaws or pitch.",
+    },
+  );
 // Default at the RPC boundary (not via zod .default) so every call path —
 // agent runtime and MCP server — sends an explicit includeGui to Studio.
 /** locate is computed here from the returned camera; Studio does not know it. */
 export function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
   const { locate: _l, camera, ...rest } = args;
+  if (typeof rest.guiPath === "string") return { background: "transparent", ...rest };
   if (isRecord(camera)) {
     Object.assign(rest, { cameraPosition: camera.position, lookAt: camera.lookAt });
   }
