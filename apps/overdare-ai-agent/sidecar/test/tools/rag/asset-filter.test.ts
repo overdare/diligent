@@ -1,4 +1,4 @@
-// @summary Tests the required asset type contract across catalog discovery and pack enumeration.
+// @summary Tests the required asset type contract across catalog discovery and pack search.
 import { afterEach, expect, test } from "bun:test";
 import { executeTool, toToolInputSchema } from "@diligent/core/tool-contract";
 import { createRagToolProvider } from "../../../src/tools/rag";
@@ -16,7 +16,7 @@ async function getTool(name: string) {
 
 for (const [name, input] of [
   ["overdaresearch", { source: "assets", query: "footstep", topK: 4 }],
-  ["overdaresearch_deep", { action: "asset-pack", packKeyword: "pack_metro" }],
+  ["overdaresearch_deep", { action: "asset-pack", query: "footsteps", packKeyword: "pack_metro" }],
 ] as const) {
   test(`${name} rejects missing and invalid asset types before fetching`, async () => {
     const tool = await getTool(name);
@@ -108,7 +108,7 @@ test("asset discovery normalizes every supported type and forwards all filters t
   }
 });
 
-test("pack enumeration forwards the selected type instead of defaulting to models", async () => {
+test("pack search forwards the selected type instead of defaulting to models", async () => {
   const tool = await getTool("overdaresearch_deep");
   let body: unknown;
   globalThis.fetch = (async (_url, init) => {
@@ -121,7 +121,12 @@ test("pack enumeration forwards the selected type instead of defaulting to model
       type: "tool_call",
       id: "typed-pack",
       name: tool.name,
-      input: { action: "asset-pack", packKeyword: "pack_audio", assetFilter: { assetType: "audio" } },
+      input: {
+        action: "asset-pack",
+        query: "footsteps",
+        packKeyword: "pack_audio",
+        assetFilter: { assetType: "audio" },
+      },
     },
     ctx,
   );
@@ -129,6 +134,9 @@ test("pack enumeration forwards the selected type instead of defaulting to model
   expect(body).toEqual({
     version: "3",
     source: "assets",
+    query: "footsteps",
+    topK: 8,
+    threshold: 0.5,
     assetFilter: { assetType: "AUDIO", keywords: ["pack_audio"] },
   });
 });
@@ -187,6 +195,9 @@ test("choosing a pack retains the discovery type and category on the second requ
   expect(bodies[1]).toEqual({
     version: "3",
     source: "assets",
+    query: "footsteps",
+    topK: 4,
+    threshold: 0.5,
     assetFilter: { assetType: "AUDIO", categoryId: "FOOTSTEP", keywords: ["pack_audio"] },
   });
 });

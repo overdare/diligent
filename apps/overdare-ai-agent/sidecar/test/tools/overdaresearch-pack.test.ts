@@ -1,5 +1,5 @@
 // @summary Tests overdaresearch pack detection: includePacks request flag, synthetic
-// pack picker option, and pack-selection enumeration returning the full member list.
+// pack picker option, and query-scoped pack-selection results.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import type { UserInputRequest, UserInputResponse } from "@diligent/protocol";
@@ -119,7 +119,7 @@ describe("overdaresearch pack detection", () => {
     expect(result.output).toContain("1");
   });
 
-  test("choosing the pack enumerates members via assetFilter and returns the list", async () => {
+  test("choosing the pack searches members using the discovery query and limit", async () => {
     const recorded = mockRagFetchSequence([
       {
         results: [asset("1", "Prop_Subway_001"), asset("2", "Car 01", ["pack_metro", "car"])],
@@ -145,12 +145,14 @@ describe("overdaresearch pack detection", () => {
       ctx,
     );
 
-    // Second request is the enumeration call: assetFilter only, no query.
+    // The second request searches within the pack using the discovery query and limit.
     const enumBody = recorded.bodies[1];
     expect(enumBody.assetFilter).toEqual({ assetType: "MODEL", keywords: ["pack_metro"] });
-    expect(enumBody.query ?? "").toBe("");
+    expect(enumBody.query).toBe("subway");
+    expect(enumBody.topK).toBe(8);
+    expect(enumBody.threshold).toBe(0.5);
 
-    // Output carries the whole member list for the model to compose from.
+    // Output carries the returned matching members for the model to compose from.
     expect(result.output).toContain("pack_metro");
     for (const id of ["2", "3", "4"]) expect(result.output).toContain(id);
     expect(result.metadata?.packKeyword).toBe("pack_metro");
@@ -259,7 +261,7 @@ describe("overdaresearch pack detection", () => {
   });
 });
 
-test("user-selected and autonomous pack reads return the same complete palette", async () => {
+test("user-selected and autonomous pack searches return the same matching members", async () => {
   const member = { ...asset("2", "Car 01", ["pack_metro"]), text: "A subway car. Category: ENVIRONMENT" };
   mockRagFetchSequence([
     { results: [asset("1", "Subway A")], totalCount: 1, packs: [{ keyword: "pack_metro", memberCount: 1 }] },
@@ -286,7 +288,12 @@ test("user-selected and autonomous pack reads return the same complete palette",
     ctx,
   );
   const autonomous = await deep.execute(
-    deep.parameters.parse({ action: "asset-pack", packKeyword: "pack_metro", assetFilter: { assetType: "MODEL" } }),
+    deep.parameters.parse({
+      action: "asset-pack",
+      query: "subway",
+      packKeyword: "pack_metro",
+      assetFilter: { assetType: "MODEL" },
+    }),
     ctx,
   );
   expect(JSON.parse(selected.output)).toEqual(JSON.parse(autonomous.output));

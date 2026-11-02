@@ -5,11 +5,11 @@ import { type RuntimeToolHost, requestToolApproval, requestToolUserInput } from 
 import { z } from "zod";
 import {
   buildPackResult,
-  enumeratePack,
   isCatalogAsset,
   normalizeAssetCandidate,
   RAG_BASE_URL,
   RAG_TIMEOUT_MS,
+  searchPackMembers,
 } from "./asset-catalog";
 import { assetFilterSchema } from "./asset-filter";
 import { buildSearchRender, normalizeAssetForRender } from "./render";
@@ -60,8 +60,8 @@ When to use each source:
     Supply assetFilter.assetType: MODEL, AUDIO, ANIMATION, or ACTION_SEQUENCE (case-insensitive).
     Choose suitable assets yourself using descriptions. If appearance matters, inspect imageUrl with
     overdaresearch_deep(action="asset-preview") before judging the image.
-    A pack may be more suitable for a themed scene: use overdaresearch_deep(action="asset-pack", packKeyword=..., assetFilter=...)
-    to read its palette, then import only the members you need using the existing import tools.
+    A pack may be more suitable for a themed scene: use overdaresearch_deep(action="asset-pack", packKeyword=..., query=..., assetFilter=...)
+    to search for relevant members within the pack, then import only the members you need using the existing import tools.
     Set requestUserInput=true only when you want to offer the user a choice; otherwise continue autonomously.
     If nothing fits, refine the search or use another approach. A pack is a palette, not a prefab.
 
@@ -73,7 +73,7 @@ Query tips:
 
 export const parameters = z
   .object({
-    query: z.string().describe("Search query for OVERDARE (English only)"),
+    query: z.string().trim().min(1).describe("Search query for OVERDARE (English only)"),
     source: z
       .enum(["docs", "assets"])
       .describe("docs = API references and guides. assets = asset catalog search with asset metadata fields."),
@@ -237,7 +237,13 @@ export async function execute(args: Params, ctx: ToolContext, host?: RuntimeTool
         if (selection.packKeyword) {
           const result = buildPackResult(
             selection.packKeyword,
-            await enumeratePack(selection.packKeyword, args.assetFilter!, ctx.signal),
+            args.query,
+            await searchPackMembers(
+              selection.packKeyword,
+              args.assetFilter!,
+              { query: args.query, topK: args.topK },
+              ctx.signal,
+            ),
           );
           return { ...result, metadata: { ...result.metadata, selectionStatus: "selected" } };
         }

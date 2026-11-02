@@ -85,14 +85,21 @@ replaced by `requestUserInput`.
 The result metadata distinguishes `selectionStatus` values `selected`, `none`,
 `cancelled`, and `custom`. Only an offered asset or pack selection carries a
 selected ID or keyword. Free-text feedback is not an asset ID. Picking a pack
-returns its member palette; it does not import the entire collection.
+returns query-matched members; it does not import the collection.
 
-`overdaresearch_deep(action="asset-pack", packKeyword=..., assetFilter={assetType: "MODEL"})`
-reads a pack palette without a picker. Reuse the type from discovery; pack reads
-also require `assetFilter.assetType`. Picking a pack automatically retains the
-discovery filters and adds the exact pack keyword. Each member has a description
-and optional image URL. The agent selects only the members needed for the scene.
-Origin-file and asset-preview reads accept an omitted or null `assetFilter`.
+`overdaresearch_deep(action="asset-pack", packKeyword=..., query="subway chair", assetFilter={assetType: "MODEL"})`
+searches relevant members within the pack without a picker. Pack searches require
+a non-empty English `query` and `assetFilter.assetType`. `topK` accepts 1-10 and
+defaults to 8; the request uses a score threshold of 0.5. Picking a pack automatically
+reuses the discovery query, `topK`, and filters, replacing keywords with the exact
+pack keyword. The API applies hybrid ranking within that filtered pack rather than
+enumerating its full palette.
+
+The tool returns `{pack, query, memberCount, members}`. `memberCount` is the returned
+match count, not the pack's total size shown during discovery. Each member has a
+description and optional image URL. The agent selects the members needed for the
+scene and can run another targeted pack query for a missing category. Origin-file
+and asset-preview reads accept omitted or null `query`, `topK`, and `assetFilter`.
 
 A displayed thumbnail does not enter model image context. For visual judgment,
 `overdaresearch_deep(action="asset-preview", urls=[...])` reads one to four
