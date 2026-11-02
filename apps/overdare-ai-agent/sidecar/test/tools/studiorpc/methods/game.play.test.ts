@@ -7,6 +7,18 @@ test("accepts the Studio PIE player limit and rejects counts above it", () => {
   expect(params.safeParse({ numberOfPlayer: 9, restart: true }).success).toBe(false);
 });
 
+test("accepts an explicit per-session server process choice and preserves omission", () => {
+  expect(params.parse({ separateServer: true })).toEqual({ separateServer: true });
+  expect(params.parse({ separateServer: false })).toEqual({ separateServer: false });
+  expect(params.parse({})).toEqual({});
+  expect(params.safeParse({ separateServer: "true" }).success).toBe(false);
+  expect(params.safeParse({ addClient: true, separateServer: false }).success).toBe(false);
+  expect(normalizeArgs({ restart: true, separateServer: true, numberOfPlayer: 1 })).toEqual({
+    separateServer: true,
+    numberOfPlayer: 1,
+  });
+});
+
 describe("game.play restart", () => {
   test("stops the running session before starting one", async () => {
     const calls: string[] = [];
@@ -44,6 +56,22 @@ describe("game.play restart", () => {
 });
 
 describe("game.play mobile simulator selection", () => {
+  test.each([
+    { mobileSimulator: true, separateServer: true },
+    { mobileSimulator: true, separateServer: false },
+    { mobileSimulator: false, separateServer: true },
+    { mobileSimulator: false, separateServer: false },
+  ])("preserves both per-session choices through a restart: %j", async (choices) => {
+    const args = params.parse({ ...choices, restart: true });
+    const calls: string[] = [];
+    await preCall(args, async (method) => {
+      calls.push(method);
+      return {};
+    });
+    expect(calls).toEqual(["game.stop"]);
+    expect(normalizeArgs(args)).toEqual(choices);
+  });
+
   test.each([true, false])("preserves the explicit %s choice across restart normalization", async (mobileSimulator) => {
     const args = params.parse({ mobileSimulator, restart: true });
     const calls: string[] = [];

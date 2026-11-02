@@ -63,6 +63,16 @@ Omit `target` to capture the connected Studio. A PIE selection supplies both
 stale client identities and currently supports these selections only in
 single-process PIE.
 
+For controlled precision performance measurements only, start PIE through
+`studiorpc_game_play` with `{"restart":true,"numberOfPlayer":1,"separateServer":true}`.
+Omit this option for ordinary playtesting. It uses a separate headless dedicated
+server for that request; `false` forces one-process PIE, and omission keeps Studio
+configuration. It does not persist the topology/player override. The native
+handler rejects the option for a running/queued session or with `addClient:true`.
+`restart:true` stops first in the sidecar. No Studio restart is needed. Existing
+input/observation restrictions and OS-only external server metrics still apply.
+Separation changes topology, not the precision of the existing measurements.
+
 Optional `serverPids` adds up to four local server processes. Each must have an
 explicit server command-line switch and verified Studio ancestry. Names alone
 are insufficient. To measure an independently launched local server, supply

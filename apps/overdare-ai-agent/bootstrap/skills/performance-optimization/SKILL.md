@@ -54,7 +54,9 @@ Use the existing script validation report and actual capture evidence before cla
 
 ## PIE and external server scope
 
-Metrics belong to the measured process. Selecting a PIE client does not isolate its Lua, Slate or CPU cost. One-process PIE can put dedicated-server and client worlds on the same Studio game thread; inspect topology metadata and use server/client label prefixes. Changing process separation requires restarting PIE, and no existing public play option exposes that setting yet.
+Metrics belong to the measured process. Selecting a PIE client does not isolate its Lua, Slate or CPU cost. One-process PIE can put dedicated-server and client worlds on the same Studio game thread; inspect topology metadata and use server/client label prefixes.
+
+Omit `separateServer` during ordinary playtesting. Use `studiorpc_game_play` with `{"restart":true,"numberOfPlayer":1,"separateServer":true}` only for controlled precision performance measurements that need the server in another process. It starts a headless dedicated server for that session without persisting the topology or player override. It changes the measurement topology, not the statistical precision of the existing counters; do not claim a speedup from uncontrolled comparisons. `false` forces one-process PIE for that request; omission preserves configured settings. A running or queued session rejects the option unless the sidecar first stops it through `restart:true`; do not combine it with `addClient:true`. No Studio restart is required.
 
 For separate-server PIE, optional `serverPids` adds verified local descendant server CPU/memory. An explicit `{pid,startTimeUtc,role:"dedicated_server"}` target measures an independently launched local server using OS counters only. External Lua labels and server tick time are unavailable through this path. Do not infer them from CPU usage. Existing input/observation tools also restrict separate-process PIE, even for its first local client.
 

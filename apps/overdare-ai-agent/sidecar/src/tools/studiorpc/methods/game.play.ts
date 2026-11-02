@@ -6,7 +6,8 @@ export const method = "game.play";
 
 export const description =
   "Start the OVERDARE Studio play test. Calling it while PIE is already running keeps that session; pass " +
-  "restart: true to stop it first and start clean. Choose mobileSimulator when starting a stopped session.";
+  "restart: true to stop it first and start clean. Choose mobileSimulator when starting a stopped session. " +
+  "Omit separateServer for ordinary playtesting; process separation is only for controlled precision performance measurements.";
 
 export const params = z
   .object({
@@ -36,6 +37,14 @@ export const params = z
           "Input and move tools can target another injectable client by " +
           "clientId. game.observe can read that client when pieSessionId and clientId are supplied together.",
       ),
+    separateServer: z
+      .boolean()
+      .optional()
+      .describe(
+        "Use only for controlled precision performance measurements, not ordinary playtesting. true starts a separate headless dedicated server for this PIE session; false forces one-process PIE; omission preserves Studio configuration. " +
+          "Choose it only when starting stopped PIE, or combine with restart: true. Cannot be combined with addClient: true. " +
+          "Separate-process PIE restricts existing input/observation tools; external server performance currently includes OS CPU/memory only, not Lua scopes or server tick timing.",
+      ),
     restart: z
       .boolean()
       .optional()
@@ -45,9 +54,12 @@ export const params = z
   .refine(
     (args) =>
       args.addClient !== true ||
-      (args.numberOfPlayer === undefined && args.restart !== true && args.mobileSimulator === undefined),
+      (args.numberOfPlayer === undefined &&
+        args.mobileSimulator === undefined &&
+        args.separateServer === undefined &&
+        args.restart !== true),
     {
-      message: "addClient: true cannot be combined with numberOfPlayer, restart: true, or mobileSimulator.",
+      message: "addClient: true cannot be combined with numberOfPlayer, mobileSimulator, separateServer, or restart: true.",
     },
   );
 export async function preCall(args: Record<string, unknown>, callRpc: CallRpc): Promise<void> {
