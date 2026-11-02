@@ -134,6 +134,7 @@ test("a restarted sidecar refuses to reattach a pending job to another process",
 test.each([
   "completed",
   "partial",
+  "capturing",
 ] as const)("recovery preserves raw artifacts when a %s manifest has no summary", async (state) => {
   const directory = await mkdtemp(join(tmpdir(), "performance-"));
   directories.push(directory);

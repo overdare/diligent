@@ -109,8 +109,8 @@ cannot select a filesystem path. Reports contain at most five longest frames and
 are bounded to 16 KiB; raw arrays remain in the artifacts. Finished jobs can be
 read without Studio. Interrupted jobs are reattached only after the original
 process identity is verified. A host crash does not recover native-only frames.
-If a terminal manifest exists without a summary after an interrupted artifact
-write, report/stop return `ARTIFACT_INCOMPLETE` with retained artifact paths.
+If a terminal manifest or raw files exist without a summary after an interrupted
+artifact write, report/stop return `ARTIFACT_INCOMPLETE` with retained artifact paths.
 Existing raw files are preserved instead of being replaced with an empty capture.
 
 ## Explicit Lua regions

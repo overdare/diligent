@@ -501,14 +501,18 @@ export class PerformanceService {
     } catch {
       performanceError("JOB_NOT_FOUND", "Performance capture not found", { jobId });
     }
-    if (isTerminal(manifest.state)) {
+    if (isTerminal(manifest.state) || (await this.store.hasRawArtifacts(jobId))) {
       // report()/stop() already looked for a durable summary. Re-finalizing a
       // terminal manifest here would replace retained CSVs with empty arrays.
-      performanceError("ARTIFACT_INCOMPLETE", "Terminal capture has no summary; retained artifacts were preserved", {
-        jobId,
-        state: manifest.state,
-        artifacts: this.store.paths(jobId),
-      });
+      performanceError(
+        "ARTIFACT_INCOMPLETE",
+        "Capture finalization was interrupted; retained artifacts were preserved",
+        {
+          jobId,
+          state: manifest.state,
+          artifacts: this.store.paths(jobId),
+        },
+      );
     }
     const job: Job = {
       manifest,

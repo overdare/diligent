@@ -1,6 +1,6 @@
 // @summary Stores opaque capture jobs and post-capture raw artifacts in the project's resolved namespace.
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { resolvePaths } from "@diligent/runtime";
 import type { FrameRecord, LuaScopeRecord, Manifest, PerformanceReport, ProcessSample } from "./performance-types";
@@ -61,6 +61,19 @@ export class PerformanceStore {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
     }
+  }
+
+  async hasRawArtifacts(jobId: string): Promise<boolean> {
+    const paths = this.paths(jobId);
+    for (const path of [paths.frames, paths.process, paths.luaScopes]) {
+      try {
+        await access(path);
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    return false;
   }
 
   async finish(
