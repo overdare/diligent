@@ -14,6 +14,12 @@ export interface PieStatusSnapshot {
   running: boolean;
   pieSessionId?: string;
   clients: PieClientSnapshot[];
+  server?: {
+    state: "serverStarting" | "clientStarting" | "ready" | "stopping" | "failed";
+    pid: number;
+    startTimeUtc: string;
+    reason?: string;
+  };
 }
 
 export interface PieTarget {

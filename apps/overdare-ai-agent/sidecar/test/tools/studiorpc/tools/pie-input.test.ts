@@ -83,6 +83,20 @@ const walkForward = [
 ];
 
 describe("play-test input tools", () => {
+  test("preserves asynchronous server readiness and failure identity without a PIE client", async () => {
+    for (const state of ["serverStarting", "failed"]) {
+      const server = {
+        state,
+        pid: 42,
+        startTimeUtc: "2026-11-03T00:00:00.000Z",
+        ...(state === "failed" ? { reason: "SERVER_STARTUP_TIMEOUT" } : {}),
+      };
+      const { byName } = toolsFor(() => runningStatus({ running: false, clients: [], server }));
+      const result = await run(byName.get("studiorpc_game_pie_status"), {});
+      expect(JSON.parse(result.output).server).toEqual(server);
+    }
+  });
+
   test("normalizes waited move status to the measured outcome", () => {
     expect(normalizeWaitedMoveStatus("arrived")).toBe("reached");
     expect(normalizeWaitedMoveStatus("navigationGaveUp")).toBe("navigationGaveUp");
