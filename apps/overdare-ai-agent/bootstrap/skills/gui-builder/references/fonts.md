@@ -4,9 +4,10 @@ Choose a supported face for native GUI text. Source: the supplied internal Studi
 
 ## Selection rules
 
-- Preserve verified existing FontFace choices unless the request changes them. For new text with no typography direction, use `NotoSans Regular Normal` for body text and `NotoSans SemiBold Normal` for headings or buttons.
-- Prefer one or two families for a cohesive screen; preserve an established or explicitly requested typography system.
-- NotoSans, Roboto, Nunito, and VarelaRound are useful body-text defaults. Prefer decorative faces for short headings or callouts, but honor requested supported faces and verify readability at the actual viewport.
+- Preserve verified existing FontFace choices unless the request changes them.
+- Split faces by role. A display face carries HUD values, titles, button labels, and short callouts; a readable face carries descriptions, dialogue, tooltips, and settings. For new text with no typography direction, use OverWacky as the display face; it is the safest display choice on OVERDARE. Use NotoSans or Nunito for body text.
+- Prefer one display and one body family for a cohesive screen, and use at most four families across a whole game; reuse the game's existing families before adding another. Preserve an established or explicitly requested typography system.
+- NotoSans, Roboto, Nunito, and VarelaRound are useful body-text defaults. Keep decorative faces to short text, but honor requested supported faces and verify readability at the actual viewport.
 - For Korean, non-Latin, or mixed-language text, prefer NotoSans until actual glyph coverage is available or the result can be checked visually. The catalog lists files and faces, but does not prove script coverage.
 - Select a Weight and Style explicitly listed for the family. Studio can substitute a nearby face, but authored UI should not depend on that substitution. If a requested face is not listed, verify it against an updated catalog or Studio rather than inventing an ID or weight.
 - Assign the complete `FontFace` value. Do not mutate `label.FontFace.Weight` or another nested member in isolation.
@@ -32,7 +33,7 @@ Choose a supported face for native GUI text. Source: the supplied internal Studi
 | NotoSans | 900004166 | Thin, ExtraLight, Light, Regular, Medium, SemiBold, Bold, ExtraBold, Black | Normal, Italic | Default neutral UI, body text, buttons, and mixed-language fallback choice |
 | Nunito | 900006066 | ExtraLight, Light, Regular, Medium, SemiBold, Bold, ExtraBold, Black | Normal, Italic | Friendly rounded body text and approachable UI |
 | Orbitron | 900007766 | Regular, Medium, SemiBold, Bold, ExtraBold, Black | Normal | Science-fiction HUDs, headings, counters, and numbers |
-| OverWacky | 900008466 | Black | Normal, Italic | Highly decorative comic or chaotic callouts |
+| OverWacky | 900008466 | Black | Normal, Italic | Safest default display face on OVERDARE for HUD values, titles, buttons, and callouts in almost any genre |
 | PatrickHand | 900008766 | Regular | Normal | Casual hand-drawn dialogue and notes |
 | PermanentMarker | 900008966 | Regular | Normal | Marker-style titles, graffiti, and emphatic callouts |
 | PlayfairDisplay | 900009166 | Regular, Medium, SemiBold, Bold, ExtraBold, Black | Normal, Italic | Elegant serif titles, premium panels, and editorial headings |
@@ -56,7 +57,8 @@ Choose a supported face for native GUI text. Source: the supplied internal Studi
 | Retro, pixel, arcade | PressStart2P, VT323 |
 | Horror | Creepster, Eater, Nosifer |
 | Gothic fantasy | GrenzeGotisch |
-| Comic or deliberately chaotic | OverWacky |
+| Casual, comic, playful | Baloo2 |
+| No specific direction, any genre (default display) | OverWacky |
 
 ## Editor Luau assignment
 

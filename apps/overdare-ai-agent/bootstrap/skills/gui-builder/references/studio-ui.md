@@ -1,53 +1,54 @@
 # Studio UI Implementation
 
-## Ownership and tools
+## Building in Studio
 
-- Browse the relevant hierarchy with `studiorpc_level_browse` and read target GUIDs with `studiorpc_instance_read`: `StarterGui` for authored screen UI, or the world target and existing owner for attached GUI. Inspect runtime `PlayerGui` and controller-created instances when relevant. Preserve unrelated GUI and the existing controller's responsibilities. Use [gui-types.md](gui-types.md) to select the root and attachment behavior.
-- Build static UI with `studiorpc_execute_luau` targeting `Editor`, not with a script that recreates the entire GUI at runtime. Reuse or create the appropriate `ScreenGui`, `BillboardGui`, or `SurfaceGui`, then create and parent containers before their sibling controls. Preserve controller-owned spawning when the target is a dynamic character or object. Query unfamiliar classes or properties with `studiorpc_instance_schema_search` first.
-- Change existing `Position`/`Size` through a focused Editor Luau command; `studiorpc_instance_move` only changes parent hierarchy. Delete only an explicitly replaced target or your own temporary objects.
-- For a local image not yet imported, pass its verified absolute path to `studiorpc_asset_manager_import` and use the returned `asset.assetid`. Import each reusable image once. In cross-host dev setups, let the existing import bridge map the path.
-- Bind verified image asset IDs to Image properties, not local file paths. Reuse the same frame asset across sibling buttons, with separate glyph images where appropriate. A resizing panel/frame should use `ScaleType = "Slice"` and a `SliceCenter` measured in source-image pixels when its artwork supports nine-slicing.
-- Use `ImageButton` for a clickable generated image or a native hit target with `ImageLabel`/text children. `TextButton` is for text controls; it is not a replacement for planned button artwork. Keep parent-relative placement separate from viewport-relative observation rectangles.
-- Validate properties for the target class. `BorderColor3`, `BorderMode`, and `BorderPixelSize` belong to `Frame`, not `TextButton` or `ImageButton`. For button decoration use the imported artwork, or a supported `UIStroke` when appropriate; do not repeat a rejected property on another button.
+- Build static UI with `studiorpc_execute_luau` (`target: "Editor"`), not with a script that recreates the GUI at runtime. Edit existing GUI in place, and leave controller-owned spawning, such as character labels, to its controller. For root and attachment choices, see [gui-types.md](gui-types.md).
+- `studiorpc_instance_move` only changes the parent; change `Position`/`Size` with Editor Luau.
+- Import a local image once with `studiorpc_asset_manager_import` and bind the returned `asset.assetid`, never a file path. Reuse one frame asset across sibling buttons. A resizing panel should use `ScaleType = "Slice"` with a `SliceCenter` in source-image pixels.
+- Use `ImageButton` for clickable artwork. `TextButton` is for text controls, not a substitute for planned button artwork.
 
 ## Mobile layout
 
-This section governs screen-space HUDs and menus. For a world label or surface panel, use the distance, angle, and interaction checks in [gui-types.md](gui-types.md); do not add a screen HUD or replace jump merely to style world GUI.
+This section covers screen HUDs and menus; world GUI does not need a screen HUD or a jump replacement.
 
-Start with touch-only play, not a desktop HUD scaled down. Identify the game's required actions and map each to an existing system control, a custom button, or a touch gesture. Separate these inputs from information displays such as HP, ammo, score, and the crosshair.
+Design for touch-only landscape play from the start, not a desktop HUD scaled down. Map each required action to a system control, a custom button, or a gesture; an icon, counter, or reticle alone is not an input. Distinguish tap actions from held ones, including release and cancel.
 
-For a manual-fire FPS/TPS, include a clearly visible fire button, movement control, and a usable camera/aim drag region. Include reload, weapon switching, and jump when those actions exist; include ADS, crouch, grenades, or other abilities only when supported or requested. Preserve an established auto-fire design instead of inventing manual fire. A gun icon, ammo counter, or reticle alone is not a firing input.
+The screen is never empty. At runtime CoreGui supplies a top-left system menu, a lower-left joystick, and a lower-right jump button, even when `StarterGui` is empty, and screenshots can omit them. For a new or rearranged HUD, open [default-mobile-controls.png](default-mobile-controls.png) with `read_image` to see where they sit; verified runtime state takes precedence. For inventory or equipment, read [core-gui.md](core-gui.md) and [backpack.md](backpack.md) first: Backpack Tools already have a native selector at the bottom of the screen.
 
-Use reachable thumb zones and plan simultaneous movement, aiming, and firing. Keep a camera-drag region clear of panels that capture touch; size and separate hit targets for fingers, not a mouse pointer. Distinguish a tap action from a held action such as automatic fire, including release/cancel behavior. Do not rely on hover, right-click, keyboard shortcuts, or tiny text links.
+Decide how the HUD coexists with the default controls, and carry the decision and the occupied regions into the guide prompt:
 
-Plan against the actual mobile viewport, including system controls, before generating a HUD guide or placing panels. An empty `StarterGui` does not mean the screen is empty: runtime CoreGui still supplies movement, jump, and system-menu controls.
+- **Retain** (default): keep them accessible and place the HUD outside their touch areas.
+- **Replace jump:** in a new or fully redesigned HUD, when the default jump crowds the action buttons, move jump into the action group with [custom-jump.md](custom-jump.md). Say so briefly, and connect the replacement before hiding the default.
+- A font, color, or spacing edit never justifies replacing jump or disabling CoreGui.
 
-For inventory or equipment HUDs, read [core-gui.md](core-gui.md) and [backpack.md](backpack.md) first. Tools in the player's Backpack already have a native bottom-of-screen selector. Inspect that selector with representative equipment before adding duplicate slots or placing panels in its touch area. An unsupported visibility-control enum does not prove the corresponding native widget is absent.
+Other layout rules:
 
-For a new or rearranged mobile gameplay HUD, open the bundled [default mobile controls reference](default-mobile-controls.png) with `read_image`. Resolve its path from this skill's base directory: `references/default-mobile-controls.png`. This viewport-focused edit of the supplied screenshot shows the top-left system controls, lower-left movement input, and lower-right default jump without the phone frame or editor chrome. Gameplay screenshots and UI observations can omit these controls; their absence in a capture does not establish that they are disabled.
+- Position top-level groups with Scale and AnchorPoint, and use Offset for concrete touch-target sizes.
+- Important mobile labels usually need at least 24px at the reference viewport. Keep text live in `TextLabel`/`TextButton`; read [fonts.md](fonts.md) when choosing faces.
+- Keep normal HUDs in ZIndex 0–99, overlays and modals in 100–199, and debug layers in 200+. Runtime overlap checks compare within a band, so do not move ordinary buttons into overlay bands to hide warnings. Order screen roots with `DisplayOrder`.
 
-Combine this reference with the supplied/current gameplay screenshot and available runtime observations. Verified current control state and bounds take precedence over the baseline. For other screenshots, distinguish the playable viewport from any phone bezel or editor chrome; the baseline's character, ground, and sky are not an art direction. Map control touch/drag space, safe edges, and existing HUD using viewport-relative positions rather than copying screenshot pixels. A small joystick thumb at rest does not show its full movement area.
+## Layout tools
 
-Choose how the requested HUD coexists with these controls:
+Let Studio solve placement instead of computing each child's Position and Size; a solved layout keeps working when content, item count, or viewport changes. The list below is a starting point, not the full set: check the class catalog (`studiorpc_instance_schema_search({})`) for other UI layouts, constraints, and modifiers, then read the chosen classes' properties before using them. Pick the tool that matches the structure:
 
-- **Retain:** Keep the system menu and joystick accessible. Place health, weapon/ammo panels, and action buttons outside active controls and their gesture space. Keep aim/camera interaction space and the gameplay center usable. Prefer this when the layout remains readable and reachable.
-- **Replace jump:** For a new or fully redesigned gameplay HUD, if retaining the default jump crowds the right-side combat controls or obscures required information, integrate a custom jump into the action group using [custom-jump.md](custom-jump.md). This can be a layout decision within the requested HUD build; the user need not name the API or separately ask to hide the default. Explain the choice briefly, preserve jump behavior, and connect the replacement before hiding the default.
-- **Keep scope:** Honor a request to retain default controls. A font, color, or small spacing edit does not authorize replacing jump. Move the affected custom UI instead; do not disable the joystick or unrelated CoreGui to make room.
+- `UIListLayout` for rows and columns of items. `HorizontalFlex`/`VerticalFlex` (Fill, SpaceBetween, SpaceAround, SpaceEvenly) distribute free space, `Wraps` flows items onto new lines, and `ItemLineAlignment` sets cross-axis placement. Add a `UIFlexItem` to a child that should grow, shrink, or align differently from its siblings.
+- `UIGridLayout` for uniform cells such as inventory and shop slots; `FillDirectionMaxCells` caps cells per line.
+- `UITableLayout` for aligned columns of differing widths, such as leaderboards and stat sheets. Each direct child is a row (or column) and its children are the cells.
+- `UIPageLayout` for swipeable pages such as tutorials, shop tabs, or character select, with built-in animated transitions and `Next`/`Previous`/`JumpTo`.
+- `AutomaticSize` fits a frame, label, or button to its content; `AutomaticCanvasSize` does the same for a `ScrollingFrame` canvas.
+- `UIPadding` insets content. `UIAspectRatioConstraint` keeps icons and cards in proportion, `UISizeConstraint` clamps a size, `TextScaled` with `UITextSizeConstraint` fits text within a readable range, and `UIScale` scales a whole subtree without changing authored values.
 
-Carry this retain/replace decision and occupied regions into the guide prompt. A design reference without default controls is incomplete layout evidence, not proof that its corners are available. If the runtime viewport cannot be inspected, use available screenshots conservatively and leave actual fit explicitly unverified.
+## Visual finish
 
-- Position groups primarily with Scale and AnchorPoint; use Offset for padding and concrete touch-target sizes. Preserve icon aspect ratios.
-- Use legible text with strong backing contrast. Important mobile labels usually need at least 24px at the reference viewport. Prefer short English text unless the user requests localization; use image glyphs instead of emoji.
-- When selecting or changing font faces, read [fonts.md](fonts.md). Keep text live in `TextLabel` / `TextButton`; validate wrapping and glyphs at the actual viewport.
-- Keep normal HUDs in ZIndex 0–99, intentional overlays/modals in 100–199, and debug layers in 200+. Runtime overlap checks compare the same band; do not move ordinary buttons into overlay bands to hide warnings.
-- Use `DisplayOrder` to order screen roots and ZIndex for elements within them. Handle overflow and tool warnings rather than clipping away a layout error.
+Native GUI should read as game UI, not default flat rectangles. Keep one treatment consistent across a screen and fit it to the concept.
 
-## Behavior and evidence
+- **Strokes:** White text with a black `UIStroke` is the default; vary it by concept. Frames and buttons also benefit from strokes or shadows.
+- **Shape and depth:** Rounded or accented corners (`UICorner`) and subtle `UIGradient` fills keep panels and buttons from looking flat.
+- **Motion:** Consider animation for state changes such as presses, panel open/close, and value changes, but keep it short and restrained. Tweening a `UIScale` animates a press or pop without fighting the layout. Run UI tweens in a `LocalScript`.
 
-Read the existing owning script before adding another. Touch events and local UI belong in a `LocalScript`; game-rule validation belongs on the server. Scripts must use `studiorpc_script_read`, `_add`, `_edit`, or `_delete`, never filesystem editing of Luau sources.
+## Behavior
 
-For GUI authored in `StarterGui`, bind the runtime copy in each player's `PlayerGui`. For world GUI, preserve its actual owner and attachment; run client presentation logic from a valid client execution location instead of assuming a `LocalScript` under a world Part runs. Use `Activated` for tap actions. For held actions, use the project's input controller and supported touch start/end/cancel APIs, ensuring release or interrupted input stops the action. Keep live values and text native so they can update independently of art.
-
-Connect buttons to existing gameplay actions rather than only changing colors or printing a preview message. If the required combat/controller API is missing, identify the missing integration and report the affected controls as unconnected; do not invent a combat system or claim the HUD is playable from appearance alone.
-
-For visual-only edits, read back the changed properties and inspect the affected GUI in context, including the world-space checks in [gui-types.md](gui-types.md) when applicable. For a new or rearranged gameplay HUD, verify the mapped touch actions with active system UI and no keyboard or mouse-only shortcuts. For shooters this includes movement, aiming, firing, and the applicable reload/weapon/jump controls. Test hold/release and concurrent touches where supported; sequential injected clicks alone do not establish multi-touch usability. Check that fingers and controls do not obscure critical health or ammo information. For interaction or script changes, read the Luau validation report appended to each dedicated script write; resolve SUMMARY errors, then play-test the affected behavior. A successful import or an empty `Play.log` alone does not verify an interaction. Editor execution already saves successful world edits; report any remaining checks.
+- Touch input and local UI belong in a `LocalScript`; game rules stay on the server. Read the existing controller before adding another.
+- GUI authored in `StarterGui` runs as a copy in each player's `PlayerGui`; bind that copy. Use `Activated` for taps, and make sure release or interruption stops a held action.
+- Connect buttons to existing gameplay actions. If the needed API is missing, report the affected controls as unconnected rather than inventing a system.
+- Injected play-test clicks run one at a time, so they cannot show that simultaneous touches work; report that as unverified.

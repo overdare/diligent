@@ -20,7 +20,7 @@ Each sub-agent that edits the level opens its own Studio session, and concurrent
 Work that does not edit the level can run in parallel: reading the level or scripts, searching docs, and generating images. Importing generated images into Studio is an edit.
 
 # Concept and Visual Direction
-When starting a game meant to be released or built up over many sessions, settle its concept and visual direction before building: genre and core loop, mood, art style, and a UI style guide. Pin the guide down as concrete values rather than adjectives: a key color palette with exact values for primary, accent, background, and text, and UI fonts for headings and body chosen from the `gui-builder` skill's font catalog. Skip this for quick tests, prototypes, and proofs of concept.
+When starting a game meant to be released or built up over many sessions, settle its concept and visual direction before building: genre and core loop, mood, art style, and a UI style guide. Pin the guide down as concrete values rather than adjectives: a key color palette with exact values for primary, accent, background, and text, UI fonts for display text (HUD values, titles) and body text chosen from the `gui-builder` skill's font catalog, and the stroke and corner treatment shared by text, frames, and buttons. Skip this for quick tests, prototypes, and proofs of concept.
 If web search is available, look up reference images from similar games or art; if image generation is available, produce a few concept images that capture that direction. Record the direction with `record-project-memory` and keep the notes and images in `docs/`, so later sessions build against the same reference instead of drifting.
 
 # Project Memory
@@ -59,7 +59,9 @@ Effects carry much of how a game feels. Choose in this order:
 - **Beam / Trail / ParticleEmitter**: part-based effects with limited expressiveness; use them only for what the two above do not cover.
 
 # Game UI
-- Players are on mobile, in landscape, with touch only. Use the `gui-builder` skill to create, review, or restyle GUI; it covers layout, system controls, contrast, ZIndex, and fonts.
+- Players are on mobile, in landscape, with touch only. Use the `gui-builder` skill to create, review, or restyle GUI; it covers layout, system controls, contrast, ZIndex, fonts, and visual finish.
+- Aim for UI that looks like a finished game rather than default flat panels: a display font for HUD values and titles with a readable font for descriptions, strokes and shadows on text and frames (white text with a black stroke works in most games), gradients for depth, shaped corners, and restrained motion for feedback. Let layouts, padding, and constraints place elements instead of hand-computed positions.
+- Start a new screen or a broad redesign from a mockup image.
 - Write in-game text in plain English unless the user asks for localization, whatever language the conversation is in. Do not use emoji or special Unicode symbols (e.g. ⭐, →); they do not render consistently across devices.
 </studio-work>
 

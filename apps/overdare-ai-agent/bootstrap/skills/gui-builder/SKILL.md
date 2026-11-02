@@ -14,12 +14,16 @@ For review-only requests, inspect the supplied GUI and relevant references, then
 - **GUI type and scope:** Read [references/gui-types.md](references/gui-types.md) when selecting a root, working with world-space GUI, gauges, or proximity prompts. `ScreenGui`, `BillboardGui`, and `SurfaceGui` are all in scope; preserve an existing root type unless the requested behavior requires changing it.
 
 - **Fonts:** Read [references/fonts.md](references/fonts.md) when selecting or changing a font family, weight, or style. Reusing a verified existing `FontFace` on a new screen does not require another catalog lookup.
-- **Visual design and artwork:** Read [references/image-assets.md](references/image-assets.md) when the requested design needs generated artwork, including new assets for an existing GUI. Use an existing approved design or establish a guide when needed, then generate missing assets, import and bind them, and verify the result. A guide alone does not satisfy a request for usable artwork.
-- **Studio implementation:** Read [references/studio-ui.md](references/studio-ui.md) for hierarchy, layout, image binding, or controller changes. For screen-space gameplay HUDs, map required actions to touch inputs, then resolve active system-control space and whether to retain or replace jump before generating the guide. A font-only property edit can use the assignment and verification instructions in the font reference.
+- **Visual design and artwork:** Read [references/image-assets.md](references/image-assets.md) when making a mockup or when the requested design needs generated artwork, including new assets for an existing GUI. Use an existing approved design or establish a guide when needed, then generate missing assets, import and bind them, and verify the result. A guide alone does not satisfy a request for usable artwork.
+- **Studio implementation:** Read [references/studio-ui.md](references/studio-ui.md) for hierarchy, layout, styling (strokes, gradients, corners, shadows, motion), image binding, or controller changes. For screen-space gameplay HUDs, map required actions to touch inputs, then resolve active system-control space and whether to retain or replace jump before generating the guide. A font-only property edit can use the assignment and verification instructions in the font reference.
 - **Custom jump:** Read [references/custom-jump.md](references/custom-jump.md) when replacing the default jump button or wiring a custom button to character jumping.
 - **Built-in GUI:** Read [references/core-gui.md](references/core-gui.md) when planning around native controls, checking default GUI support, or changing CoreGui visibility. For inventory, equipment selection, or a hotbar, also read [references/backpack.md](references/backpack.md) and check the native Tool inventory before building a replacement.
 
-Do not load all references up front. Focused text, font, color, spacing, or behavior edits need only their relevant references. A new GUI that matches an established plain native UI can use native controls directly; it does not require image generation merely because it is new. Choose artwork when the requested visual direction needs it, even if the user does not name image generation. Honor existing-assets-only or no-generation requests, and do not replace requested artwork with plain controls.
+Do not load all references up front. Focused text, font, color, spacing, or behavior edits need only their relevant references.
+
+Start a new screen or a broad redesign from a mockup image ([references/image-assets.md](references/image-assets.md)); small edits do not need one.
+
+Choose artwork when the requested visual direction needs it, even if the user does not name image generation. Honor existing-assets-only or no-generation requests, and do not replace requested artwork with plain controls.
 
 ## Implement the requested change
 

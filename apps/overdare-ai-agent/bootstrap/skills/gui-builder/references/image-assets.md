@@ -14,7 +14,7 @@ Use the actual scene and user art direction for the game's mood. When generating
 
 Check that every reference is readable on the agent host before calling `generate_image`. In Mac-to-Windows dev, a Studio screenshot's `C:/...` path is not a Mac path: use the configured shared roots to locate and verify its local counterpart. Do not prepend the working directory to a foreign-host path or discard a required reference to bypass an error. Accept up to five PNG, JPEG, or WebP references per call.
 
-Reuse an approved design or suitable current screenshot as the guide. When the visual direction or layout needs establishing, generate a guide with `background: "opaque"` for the requested GUI type:
+Reuse an approved design as the guide; otherwise generate one with `background: "opaque"`, attaching a current game screenshot in `referenceImages`:
 
 - **ScreenGui:** Use a flat design at the target viewport/orientation, defaulting to mobile landscape. Keep the backdrop subdued and show required touch controls and gesture space. A manual-fire shooter needs a fire button; include planned custom jump or retained default-control space.
 - **BillboardGui:** Use the nameplate, marker, or badge aspect ratio and a scene reference showing its target. Design for its apparent size at the intended viewing distance.
