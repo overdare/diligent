@@ -26,6 +26,7 @@ import { createHubWorldCategoriesListTool } from "./tools/hub-world-categories-l
 import { createInstanceDeleteTool } from "./tools/instance-delete-tool";
 import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
+import { createPerformanceTools } from "./tools/performance-tools";
 import { createPieInputTools } from "./tools/pie-input";
 import { createRollbackTool } from "./tools/rollback-tool";
 import { createScriptAddTool } from "./tools/script-add-tool";
@@ -461,6 +462,7 @@ export async function createStudioRpcTools(ctx: {
     // Play-test input drives a running PIE session, not the map, so it takes no
     // write lock and no rollback snapshot.
     ...createPieInputTools(callRpc),
+    ...createPerformanceTools(ctx.cwd, callRpc),
   ];
 
   for (const mod of methodModules) {

@@ -113,6 +113,7 @@ Current guides:
 - File links and previews: `docs/guide/file-links.md`
 - Studio snapshots: `docs/guide/studio-snapshots.md`
 - Character authoring ownership: `docs/guide/character-authoring.md`
+- Performance captures: `docs/guide/performance-captures.md`
 - AgentNativeBridge: `docs/guide/agent-native-bridge.md`
 - Product experiments: `docs/guide/experiments.md`
 - Model-backed eval suites: `docs/guide/evals.md`
