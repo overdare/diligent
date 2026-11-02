@@ -1,5 +1,5 @@
 // @summary Tests overdaresearch pack detection: includePacks request flag, synthetic
-// pack picker option, and pack-selection enumeration returning the full member list.
+// pack picker option, and query-scoped pack-selection results.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import type { UserInputRequest, UserInputResponse } from "@diligent/protocol";
@@ -69,7 +69,10 @@ describe("overdaresearch pack detection", () => {
       ask: async (r) => ({ answers: { [r.questions[0].id]: "1" } }),
     });
 
-    await tool.execute({ query: "subway", source: "assets", topK: 8, requestUserInput: true }, ctx);
+    await tool.execute(
+      { query: "subway", source: "assets", assetFilter: { assetType: "MODEL" }, topK: 8, requestUserInput: true },
+      ctx,
+    );
 
     expect(recorded.bodies[0].includePacks).toBe(true);
   });
@@ -100,7 +103,10 @@ describe("overdaresearch pack detection", () => {
       },
     });
 
-    const result = await tool.execute({ query: "subway", source: "assets", topK: 8, requestUserInput: true }, ctx);
+    const result = await tool.execute(
+      { query: "subway", source: "assets", assetFilter: { assetType: "MODEL" }, topK: 8, requestUserInput: true },
+      ctx,
+    );
 
     const values = seen?.questions[0].options.map((o) => o.value) ?? [];
     // Pack options lead the list so they don't drown at the end of the grid.
@@ -113,7 +119,7 @@ describe("overdaresearch pack detection", () => {
     expect(result.output).toContain("1");
   });
 
-  test("choosing the pack enumerates members via assetFilter and returns the list", async () => {
+  test("choosing the pack searches members using the discovery query and limit", async () => {
     const recorded = mockRagFetchSequence([
       {
         results: [asset("1", "Prop_Subway_001"), asset("2", "Car 01", ["pack_metro", "car"])],
@@ -134,14 +140,19 @@ describe("overdaresearch pack detection", () => {
       ask: async (r) => ({ answers: { [r.questions[0].id]: "pack:pack_metro" } }),
     });
 
-    const result = await tool.execute({ query: "subway", source: "assets", topK: 8, requestUserInput: true }, ctx);
+    const result = await tool.execute(
+      { query: "subway", source: "assets", assetFilter: { assetType: "MODEL" }, topK: 8, requestUserInput: true },
+      ctx,
+    );
 
-    // Second request is the enumeration call: assetFilter only, no query.
+    // The second request searches within the pack using the discovery query and limit.
     const enumBody = recorded.bodies[1];
-    expect(enumBody.assetFilter).toEqual({ keywords: ["pack_metro"] });
-    expect(enumBody.query ?? "").toBe("");
+    expect(enumBody.assetFilter).toEqual({ assetType: "MODEL", keywords: ["pack_metro"] });
+    expect(enumBody.query).toBe("subway");
+    expect(enumBody.topK).toBe(8);
+    expect(enumBody.threshold).toBe(0.5);
 
-    // Output carries the whole member list for the model to compose from.
+    // Output carries the returned matching members for the model to compose from.
     expect(result.output).toContain("pack_metro");
     for (const id of ["2", "3", "4"]) expect(result.output).toContain(id);
     expect(result.metadata?.packKeyword).toBe("pack_metro");
@@ -164,7 +175,10 @@ describe("overdaresearch pack detection", () => {
       },
     });
 
-    const result = await tool.execute({ query: "metro car", source: "assets", topK: 8, requestUserInput: true }, ctx);
+    const result = await tool.execute(
+      { query: "metro car", source: "assets", assetFilter: { assetType: "MODEL" }, topK: 8, requestUserInput: true },
+      ctx,
+    );
 
     const values = seen?.questions[0].options.map((o) => o.value) ?? [];
     expect(values).toEqual(["pack:pack_metro", "2", "none"]);
@@ -191,12 +205,18 @@ describe("overdaresearch pack detection", () => {
     });
 
     const result = await tool.execute(
-      { query: "underground station", source: "assets", topK: 8, requestUserInput: true },
+      {
+        query: "underground station",
+        source: "assets",
+        assetFilter: { assetType: "MODEL" },
+        topK: 8,
+        requestUserInput: true,
+      },
       ctx,
     );
 
     expect(seen?.questions[0].options.map((o) => o.value)).toEqual(["pack:pack_metro", "none"]);
-    expect(recorded.bodies[1].assetFilter).toEqual({ keywords: ["pack_metro"] });
+    expect(recorded.bodies[1].assetFilter).toEqual({ assetType: "MODEL", keywords: ["pack_metro"] });
     expect(result.metadata?.packKeyword).toBe("pack_metro");
   });
 
@@ -211,7 +231,10 @@ describe("overdaresearch pack detection", () => {
       },
     });
 
-    const result = await tool.execute({ query: "nothing", source: "assets", topK: 8, requestUserInput: true }, ctx);
+    const result = await tool.execute(
+      { query: "nothing", source: "assets", assetFilter: { assetType: "MODEL" }, topK: 8, requestUserInput: true },
+      ctx,
+    );
 
     expect(asked).toBe(false);
     expect(result.output).toBe("No results found.");
@@ -228,14 +251,17 @@ describe("overdaresearch pack detection", () => {
       },
     });
 
-    const result = await tool.execute({ query: "metro car", source: "assets", topK: 8, requestUserInput: true }, ctx);
+    const result = await tool.execute(
+      { query: "metro car", source: "assets", assetFilter: { assetType: "MODEL" }, topK: 8, requestUserInput: true },
+      ctx,
+    );
 
     expect(asked).toBe(true);
     expect(result.metadata?.selectionStatus).toBe("cancelled");
   });
 });
 
-test("user-selected and autonomous pack reads return the same complete palette", async () => {
+test("user-selected and autonomous pack searches return the same matching members", async () => {
   const member = { ...asset("2", "Car 01", ["pack_metro"]), text: "A subway car. Category: ENVIRONMENT" };
   mockRagFetchSequence([
     { results: [asset("1", "Subway A")], totalCount: 1, packs: [{ keyword: "pack_metro", memberCount: 1 }] },
@@ -252,11 +278,22 @@ test("user-selected and autonomous pack reads return the same complete palette",
   const search = tools.find((t) => t.name === "overdaresearch")!;
   const deep = tools.find((t) => t.name === "overdaresearch_deep")!;
   const selected = await search.execute(
-    search.parameters.parse({ query: "subway", source: "assets", topK: 8, requestUserInput: true }),
+    search.parameters.parse({
+      query: "subway",
+      source: "assets",
+      assetFilter: { assetType: "MODEL" },
+      topK: 8,
+      requestUserInput: true,
+    }),
     ctx,
   );
   const autonomous = await deep.execute(
-    deep.parameters.parse({ action: "asset-pack", packKeyword: "pack_metro" }),
+    deep.parameters.parse({
+      action: "asset-pack",
+      query: "subway",
+      packKeyword: "pack_metro",
+      assetFilter: { assetType: "MODEL" },
+    }),
     ctx,
   );
   expect(JSON.parse(selected.output)).toEqual(JSON.parse(autonomous.output));

@@ -69,6 +69,12 @@ without selecting the top result or opening a picker. The agent chooses IDs for
 the existing import tools. Single matches and Audio/Animation/Effects/UI assets
 follow the same behavior. A pack-only response still returns its detected packs.
 
+Asset searches require `assetFilter.assetType`: `MODEL`, `AUDIO`, `ANIMATION`, or
+`ACTION_SEQUENCE`. Values are case-insensitive and normalized to uppercase before
+calling RAG. `assetFilter.keywords` and `assetFilter.categoryId` optionally narrow
+the search. Missing or invalid types fail tool argument validation before any
+network request. Docs searches accept an omitted or null `assetFilter`.
+
 Set `requestUserInput=true` to offer the user an asset or pack choice through the
 shared `request_user_input` channel. The picker uses
 `UserInputQuestion.display: "asset"`; asset options carry a `value` (asset ID) and
@@ -79,11 +85,21 @@ replaced by `requestUserInput`.
 The result metadata distinguishes `selectionStatus` values `selected`, `none`,
 `cancelled`, and `custom`. Only an offered asset or pack selection carries a
 selected ID or keyword. Free-text feedback is not an asset ID. Picking a pack
-returns its member palette; it does not import the entire collection.
+returns query-matched members; it does not import the collection.
 
-`overdaresearch_deep(action="asset-pack", packKeyword=...)` reads a pack palette
-without a picker. Each member has a description and optional image URL. The
-agent selects only the members needed for the scene.
+`overdaresearch_deep(action="asset-pack", packKeyword=..., query="subway chair", assetFilter={assetType: "MODEL"})`
+searches relevant members within the pack without a picker. Pack searches require
+a non-empty English `query` and `assetFilter.assetType`. `topK` accepts 1-10 and
+defaults to 8; the request uses a score threshold of 0.5. Picking a pack automatically
+reuses the discovery query, `topK`, and filters, replacing keywords with the exact
+pack keyword. The API applies hybrid ranking within that filtered pack rather than
+enumerating its full palette.
+
+The tool returns `{pack, query, memberCount, members}`. `memberCount` is the returned
+match count, not the pack's total size shown during discovery. Each member has a
+description and optional image URL. The agent selects the members needed for the
+scene and can run another targeted pack query for a missing category. Origin-file
+and asset-preview reads accept omitted or null `query`, `topK`, and `assetFilter`.
 
 A displayed thumbnail does not enter model image context. For visual judgment,
 `overdaresearch_deep(action="asset-preview", urls=[...])` reads one to four

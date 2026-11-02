@@ -20,11 +20,13 @@ describe("createRagToolProvider", () => {
     expect(searchTool!.supportParallel).toBe(true);
     expect(deepTool!.supportParallel).toBe(true);
     expect(() => searchTool!.parameters.parse({ query: "spawn location", source: "docs", topK: 3 })).not.toThrow();
-    expect(() => searchTool!.parameters.parse({ query: "tree", source: "assets", topK: 3 })).not.toThrow();
+    expect(() =>
+      searchTool!.parameters.parse({ query: "tree", source: "assets", assetFilter: { assetType: "MODEL" }, topK: 3 }),
+    ).not.toThrow();
     for (const source of ["code", "debug"]) {
       expect(() => searchTool!.parameters.parse({ query: "spawn location", source, topK: 3 })).toThrow();
     }
-    expect(parameters.shape).not.toHaveProperty("debugCaseFilter");
+    expect(parameters.innerType().shape).not.toHaveProperty("debugCaseFilter");
     expect(() =>
       deepTool!.parameters.parse({
         action: "origin-file",

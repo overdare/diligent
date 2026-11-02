@@ -5,12 +5,13 @@ import { type RuntimeToolHost, requestToolApproval, requestToolUserInput } from 
 import { z } from "zod";
 import {
   buildPackResult,
-  enumeratePack,
   isCatalogAsset,
   normalizeAssetCandidate,
   RAG_BASE_URL,
   RAG_TIMEOUT_MS,
+  searchPackMembers,
 } from "./asset-catalog";
+import { assetFilterSchema } from "./asset-filter";
 import { buildSearchRender, normalizeAssetForRender } from "./render";
 
 interface RagResult {
@@ -56,10 +57,11 @@ When to use each source:
   - Default topK by source: docs=4, assets=8; only increase if results are insufficient
   - "docs": API references, conceptual guides, configuration details, service descriptions
   - "assets": Returns candidates with assetId, title, description, imageUrl, classifications, and detected packs.
+    Supply assetFilter.assetType: MODEL, AUDIO, ANIMATION, or ACTION_SEQUENCE (case-insensitive).
     Choose suitable assets yourself using descriptions. If appearance matters, inspect imageUrl with
     overdaresearch_deep(action="asset-preview") before judging the image.
-    A pack may be more suitable for a themed scene: use overdaresearch_deep(action="asset-pack", packKeyword=...)
-    to read its palette, then import only the members you need using the existing import tools.
+    A pack may be more suitable for a themed scene: use overdaresearch_deep(action="asset-pack", packKeyword=..., query=..., assetFilter=...)
+    to search for relevant members within the pack, then import only the members you need using the existing import tools.
     Set requestUserInput=true only when you want to offer the user a choice; otherwise continue autonomously.
     If nothing fits, refine the search or use another approach. A pack is a palette, not a prefab.
 
@@ -69,20 +71,36 @@ Query tips:
   - When querying for docs, do not include keywords like "doc" or "documentation" in the query — the source already targets the documentation store
   - When querying for assets, use short noun-based queries such as item names, themes, categories, or use cases`;
 
-export const parameters = z.object({
-  query: z.string().describe("Search query for OVERDARE (English only)"),
-  source: z
-    .enum(["docs", "assets"])
-    .describe("docs = API references and guides. assets = asset catalog search with asset metadata fields."),
-  topK: z.number().int().min(1).max(10).describe("Number of results to return"),
-  requestUserInput: z
-    .boolean()
-    .default(false)
-    .describe(
-      "Assets only. Set true to offer the user an asset or pack picker, including a none option. " +
-        "Otherwise read the candidates and choose suitable assets yourself without waiting for user input.",
-    ),
-});
+export const parameters = z
+  .object({
+    query: z.string().trim().min(1).describe("Search query for OVERDARE (English only)"),
+    source: z
+      .enum(["docs", "assets"])
+      .describe("docs = API references and guides. assets = asset catalog search with asset metadata fields."),
+    topK: z.number().int().min(1).max(10).describe("Number of results to return"),
+    assetFilter: assetFilterSchema
+      .nullable()
+      .optional()
+      .describe(
+        "Required for assets: include assetType. Optional keywords and categoryId further narrow the search. Use null or omit for docs.",
+      ),
+    requestUserInput: z
+      .boolean()
+      .default(false)
+      .describe(
+        "Assets only. Set true to offer the user an asset or pack picker, including a none option. " +
+          "Otherwise read the candidates and choose suitable assets yourself without waiting for user input.",
+      ),
+  })
+  .superRefine((args, ctx) => {
+    if (args.source === "assets" && !args.assetFilter) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["assetFilter", "assetType"],
+        message: "assetFilter.assetType is required for assets searches",
+      });
+    }
+  });
 
 type Params = z.infer<typeof parameters>;
 
@@ -164,7 +182,7 @@ export async function execute(args: Params, ctx: ToolContext, host?: RuntimeTool
     permission: "execute",
     toolName: name,
     description: `OVERDARE RAG search [${args.source}]: ${args.query}`,
-    details: { query: args.query, source: args.source, topK: args.topK },
+    details: { query: args.query, source: args.source, topK: args.topK, assetFilter: args.assetFilter },
   });
   if (approval === "reject") {
     return { output: "[Rejected by user]", metadata: { error: true } };
@@ -185,7 +203,7 @@ export async function execute(args: Params, ctx: ToolContext, host?: RuntimeTool
         source: args.source,
         topK: args.topK ?? 4,
         threshold: 0.5,
-        ...(args.source === "assets" ? { includePacks: true } : {}),
+        ...(args.source === "assets" ? { includePacks: true, assetFilter: args.assetFilter } : {}),
       }),
       signal: AbortSignal.any([ctx.signal, controller.signal]),
     });
@@ -217,7 +235,16 @@ export async function execute(args: Params, ctx: ToolContext, host?: RuntimeTool
       if (args.requestUserInput) {
         const selection = await selectAsset(host, args.query, rawAssets, packs);
         if (selection.packKeyword) {
-          const result = buildPackResult(selection.packKeyword, await enumeratePack(selection.packKeyword, ctx.signal));
+          const result = buildPackResult(
+            selection.packKeyword,
+            args.query,
+            await searchPackMembers(
+              selection.packKeyword,
+              args.assetFilter!,
+              { query: args.query, topK: args.topK },
+              ctx.signal,
+            ),
+          );
           return { ...result, metadata: { ...result.metadata, selectionStatus: "selected" } };
         }
         return {

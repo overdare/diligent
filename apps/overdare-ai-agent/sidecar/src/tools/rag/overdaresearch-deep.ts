@@ -1,9 +1,10 @@
-// @summary Read original documents or an entire asset pack after catalog discovery.
+// @summary Read original documents or search relevant pack members after catalog discovery.
 
 import type { ToolContext, ToolResult } from "@diligent/core/tool-contract";
 import { type RuntimeToolHost, requestToolApproval } from "@diligent/runtime";
 import { z } from "zod";
-import { buildPackResult, enumeratePack, RAG_BASE_URL } from "./asset-catalog";
+import { buildPackResult, RAG_BASE_URL, searchPackMembers } from "./asset-catalog";
+import { assetFilterSchema } from "./asset-filter";
 import { inspectAssetPreviews } from "./asset-preview";
 import { buildOriginFileRender } from "./render";
 
@@ -26,10 +27,12 @@ export const name = "overdaresearch_deep";
 
 export const description = `Read deeper information after overdaresearch:
 - "origin-file": Read full documents from lua-script-bucket or ovdr-docs-bucket. Supply urls (1-10).
-- "asset-pack": Read all members of a detected pack with their descriptions and imageUrl. Supply packKeyword; urls must be null or omitted.
-  Use this when a pack is suitable for the scene. Choose only the members you need, then use the existing import tools.
-  Pack enumeration never imports assets or asks the user for selection.
-- "asset-preview": Inspect actual thumbnails from imageUrl values returned by catalog search or pack enumeration.
+- "asset-pack": Search relevant members of a detected pack with their descriptions and imageUrl. Supply query, packKeyword, and assetFilter.assetType
+  (MODEL, AUDIO, ANIMATION, or ACTION_SEQUENCE, case-insensitive); urls must be null or omitted.
+  Use a specific English query describing the needed members. topK defaults to 8 and accepts 1-10.
+  Returns ranked matches within the pack, not its full member list. memberCount is the returned match count.
+  Choose only the members you need, then use the existing import tools. Pack search never imports assets or asks for selection.
+- "asset-preview": Inspect actual thumbnails from imageUrl values returned by catalog or pack search.
   Supply urls (1-4) on HTTPS asset-prod.cdn.overdare.com; packKeyword must be null or omitted.
   Returns image content and zero-based URL-to-image indices. Use only when visual inspection helps choose an asset.
   A URL or displayed gallery alone does not let you see the image. Failed previews leave descriptions available.`;
@@ -55,11 +58,42 @@ export const parameters = z
       .describe(
         "asset-pack: exact keyword from the detected packs, e.g. pack_metro. Use null or omit for origin-file and asset-preview.",
       ),
+    assetFilter: assetFilterSchema
+      .nullable()
+      .optional()
+      .describe(
+        "Required for asset-pack: reuse the assetType from catalog search. Use null or omit for origin-file and asset-preview.",
+      ),
+    query: z
+      .string()
+      .trim()
+      .min(1)
+      .nullable()
+      .optional()
+      .describe(
+        "Required for asset-pack: specific English search query for members within the pack. Use null or omit for origin-file and asset-preview.",
+      ),
+    topK: z
+      .number()
+      .int()
+      .min(1)
+      .max(10)
+      .nullable()
+      .optional()
+      .describe("asset-pack result limit (1-10, default 8). Use null or omit for origin-file and asset-preview."),
   })
   .superRefine((args, ctx) => {
     if (args.action === "asset-pack") {
       if (!args.packKeyword || args.urls != null)
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "asset-pack requires packKeyword only" });
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "asset-pack requires packKeyword without urls" });
+      if (!args.assetFilter)
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["assetFilter", "assetType"],
+          message: "assetFilter.assetType is required for asset-pack",
+        });
+      if (!args.query)
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["query"], message: "query is required for asset-pack" });
     } else if (!args.urls || args.packKeyword != null) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${args.action} requires urls only` });
     }
@@ -111,14 +145,30 @@ export async function execute(args: Params, ctx: ToolContext, host?: RuntimeTool
     permission: "execute",
     toolName: name,
     description: `OVERDARE deep search [${args.action}]: ${args.packKeyword ?? `${args.urls?.length ?? 0} URL(s)`}`,
-    details: { action: args.action, urls: args.urls, packKeyword: args.packKeyword },
+    details: {
+      action: args.action,
+      urls: args.urls,
+      packKeyword: args.packKeyword,
+      assetFilter: args.assetFilter,
+      query: args.query,
+      topK: args.topK,
+    },
   });
   if (approval === "reject") {
     return { output: "[Rejected by user]", metadata: { error: true } };
   }
 
   if (args.action === "asset-pack") {
-    return buildPackResult(args.packKeyword!, await enumeratePack(args.packKeyword!, ctx.signal));
+    return buildPackResult(
+      args.packKeyword!,
+      args.query!,
+      await searchPackMembers(
+        args.packKeyword!,
+        args.assetFilter!,
+        { query: args.query!, topK: args.topK ?? 8 },
+        ctx.signal,
+      ),
+    );
   }
   if (args.action === "asset-preview") return inspectAssetPreviews(args.urls!, ctx.signal);
   try {

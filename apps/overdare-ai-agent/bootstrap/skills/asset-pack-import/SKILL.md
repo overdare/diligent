@@ -9,11 +9,17 @@ Workflow for turning a themed request into imported, placed Asset Store content.
 
 ## 1. Discover and choose a palette
 
-Search with `overdaresearch(source="assets")`. By default, it returns asset
-candidates with descriptions and image URLs, plus detected packs. Choose suitable
+Search with `overdaresearch(source="assets", query="subway station", topK=8, assetFilter={assetType: "MODEL"})`.
+By default, it returns asset candidates with descriptions and image URLs, plus
+detected packs. Choose suitable
 assets yourself. A themed pack may fit a scene better than the individual search
-matches. Read its entire palette with
-`overdaresearch_deep(action="asset-pack", packKeyword="pack_...")`.
+matches. Use a keyword from the returned `packs` to search within that pack:
+`overdaresearch_deep(action="asset-pack", packKeyword="pack_metro", query="subway walls and floors", topK=8, assetFilter={assetType: "MODEL"})`.
+Pack searches require a non-empty English query and an asset type (`MODEL`, `AUDIO`,
+`ANIMATION`, or `ACTION_SEQUENCE`). Reuse the discovery type and any category filter.
+The API returns ranked matches for that query, with a default of 8 results and a
+maximum `topK` of 10. The result's `memberCount` counts returned matches, not the
+pack's total size.
 
 Use descriptions to compare members. If appearance matters, inspect one to four
 candidate `imageUrl` values with
@@ -22,20 +28,22 @@ images; an image URL or a gallery alone does not mean you have seen the image.
 If a preview fails, use the descriptions or try another candidate.
 
 Set `requestUserInput=true` on asset search only when you want to offer the user
-a choice. A user-selected pack returns the same palette. None, cancellation, or
-free-text feedback does not select an importable asset; use that feedback to
+a choice. A user-selected pack searches using the original query, result limit,
+and filters. None, cancellation, or free-text feedback does not select an
+importable asset; use that feedback to
 choose the next approach. If no candidates fit, refine the search or build from
 other content without requiring a picker.
 
-**The member list is your palette — do not re-search per item.**
+**Reuse the returned matches.** If a needed category is missing, run another
+targeted query within the same pack, such as `"subway signs and benches"`.
 
 ## 2. Select a subset; a pack is a palette, not a prefab
 
 A pack is a themed collection (walls, floors, props, vehicles…), not a pre-assembled
 scene. Composition is your job:
 
-- Pick only the members the request actually needs. "Build a subway platform" might
-  need 15 of 145 metro assets; never blind-import the whole pack just because it exists.
+- Pick only the returned members the request actually needs; never import every
+  search result just because it belongs to a suitable pack.
 - Balance categories: structure first (floors, walls, pillars), then fixtures
   (machines, signs), then scatter props (cans, posters).
 - Match the subset to the requested scale. Choose a modest, relevant subset when

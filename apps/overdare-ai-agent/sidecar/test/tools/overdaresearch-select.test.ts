@@ -65,7 +65,12 @@ describe("overdaresearch asset selection", () => {
         return { answers: {} };
       },
     });
-    const args = tool.parameters.parse({ query: "katana", source: "assets", topK: 8 });
+    const args = tool.parameters.parse({
+      query: "katana",
+      source: "assets",
+      assetFilter: { assetType: "MODEL" },
+      topK: 8,
+    });
     const result = await tool.execute(args, ctx);
     expect(asked).toBe(false);
     expect(body.includePacks).toBe(true);
@@ -93,6 +98,7 @@ describe("overdaresearch asset selection", () => {
       tool.parameters.parse({
         query: "katana",
         source: "assets",
+        assetFilter: { assetType: "MODEL" },
         topK: 8,
         requestUserInput: false,
       }),
@@ -121,7 +127,10 @@ describe("overdaresearch asset selection", () => {
         return { answers: {} };
       },
     });
-    const result = await tool.execute(tool.parameters.parse({ query: "subway", source: "assets", topK: 8 }), ctx);
+    const result = await tool.execute(
+      tool.parameters.parse({ query: "subway", source: "assets", assetFilter: { assetType: "MODEL" }, topK: 8 }),
+      ctx,
+    );
     expect(asked).toBe(false);
     expect(JSON.parse(result.output)).toEqual({
       results: [],
@@ -146,6 +155,7 @@ describe("overdaresearch asset selection", () => {
       tool.parameters.parse({
         query: "katana",
         source: "assets",
+        assetFilter: { assetType: "MODEL" },
         topK: 8,
         requestUserInput: true,
       }),
@@ -168,7 +178,13 @@ describe("overdaresearch asset selection", () => {
       },
     });
     await tool.execute(
-      tool.parameters.parse({ query: "katana", source: "assets", topK: 8, requestUserInput: true }),
+      tool.parameters.parse({
+        query: "katana",
+        source: "assets",
+        assetFilter: { assetType: "MODEL" },
+        topK: 8,
+        requestUserInput: true,
+      }),
       ctx,
     );
     expect(asked).toBe(true);
@@ -193,13 +209,17 @@ describe("overdaresearch asset selection", () => {
           return { answers: { asset: "bbb" } };
         },
       });
-      const discovery = await tool.execute(tool.parameters.parse({ query: "effect", source: "assets", topK: 8 }), ctx);
+      const discovery = await tool.execute(
+        tool.parameters.parse({ query: "effect", source: "assets", assetFilter: { assetType: "MODEL" }, topK: 8 }),
+        ctx,
+      );
       expect(asked).toBe(0);
       expect(JSON.parse(discovery.output).results.map((a: { assetId: string }) => a.assetId)).toEqual(["aaa", "bbb"]);
       const selection = await tool.execute(
         tool.parameters.parse({
           query: "effect",
           source: "assets",
+          assetFilter: { assetType: "MODEL" },
           topK: 8,
           requestUserInput: true,
         }),
@@ -224,6 +244,7 @@ describe("overdaresearch asset selection", () => {
         tool.parameters.parse({
           query: "katana",
           source: "assets",
+          assetFilter: { assetType: "MODEL" },
           topK: 8,
           requestUserInput: true,
         }),
@@ -249,6 +270,7 @@ describe("overdaresearch asset selection", () => {
       tool.parameters.parse({
         query: "katana",
         source: "assets",
+        assetFilter: { assetType: "MODEL" },
         topK: 8,
         requestUserInput: true,
       }),
