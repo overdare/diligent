@@ -40,8 +40,15 @@ test("asset-pack enumerates all members with descriptions and images without ran
     return Response.json({ results: members, totalCount: members.length });
   }) as typeof fetch;
   const tool = await deepTool();
-  const result = await tool.execute(tool.parameters.parse({ action: "asset-pack", packKeyword: "pack_metro" }), ctx);
-  expect(body).toEqual({ version: "3", source: "assets", assetFilter: { keywords: ["pack_metro"] } });
+  const result = await tool.execute(
+    tool.parameters.parse({ action: "asset-pack", assetFilter: { assetType: "MODEL" }, packKeyword: "pack_metro" }),
+    ctx,
+  );
+  expect(body).toEqual({
+    version: "3",
+    source: "assets",
+    assetFilter: { assetType: "MODEL", keywords: ["pack_metro"] },
+  });
   const palette = JSON.parse(result.output);
   expect(palette.pack).toBe("pack_metro");
   expect(palette.memberCount).toBe(25);
@@ -57,13 +64,20 @@ test("asset-pack returns an empty palette when the catalog contains no valid mem
   globalThis.fetch = (async () =>
     Response.json({ results: [{ text: "not an asset" }, { assetId: "" }], totalCount: 2 })) as typeof fetch;
   const tool = await deepTool();
-  const result = await tool.execute(tool.parameters.parse({ action: "asset-pack", packKeyword: "pack_empty" }), ctx);
+  const result = await tool.execute(
+    tool.parameters.parse({ action: "asset-pack", assetFilter: { assetType: "MODEL" }, packKeyword: "pack_empty" }),
+    ctx,
+  );
   expect(JSON.parse(result.output)).toEqual({ pack: "pack_empty", memberCount: 0, members: [] });
 });
 
 test("asset-pack surfaces HTTP and timeout failures", async () => {
   const tool = await deepTool();
-  const args = tool.parameters.parse({ action: "asset-pack", packKeyword: "pack_metro" });
+  const args = tool.parameters.parse({
+    action: "asset-pack",
+    assetFilter: { assetType: "MODEL" },
+    packKeyword: "pack_metro",
+  });
   globalThis.fetch = (async () => new Response("unavailable", { status: 503 })) as typeof fetch;
   await expect(tool.execute(args, ctx)).rejects.toThrow("HTTP 503");
   globalThis.fetch = (async () => {
@@ -74,7 +88,11 @@ test("asset-pack surfaces HTTP and timeout failures", async () => {
 
 test("asset-pack does not fetch after cancellation and forwards cancellation during a read", async () => {
   const tool = await deepTool();
-  const args = tool.parameters.parse({ action: "asset-pack", packKeyword: "pack_metro" });
+  const args = tool.parameters.parse({
+    action: "asset-pack",
+    assetFilter: { assetType: "MODEL" },
+    packKeyword: "pack_metro",
+  });
   let fetched = false;
   globalThis.fetch = (async () => {
     fetched = true;
@@ -97,8 +115,13 @@ test("deep reads validate their action-specific inputs", async () => {
   const tool = await deepTool();
   for (const args of [
     { action: "asset-pack" },
-    { action: "asset-pack", packKeyword: " " },
-    { action: "asset-pack", packKeyword: "pack_metro", urls: ["https://example.com"] },
+    { action: "asset-pack", assetFilter: { assetType: "MODEL" }, packKeyword: " " },
+    {
+      action: "asset-pack",
+      assetFilter: { assetType: "MODEL" },
+      packKeyword: "pack_metro",
+      urls: ["https://example.com"],
+    },
     { action: "origin-file", urls: [] },
     { action: "origin-file", urls: ["x"], packKeyword: "pack_metro" },
   ])
@@ -143,7 +166,7 @@ test("large palettes remain complete JSON through the real tool executor", async
       type: "tool_call",
       id: "large-pack",
       name: tool.name,
-      input: { action: "asset-pack", packKeyword: "pack_metro" },
+      input: { action: "asset-pack", assetFilter: { assetType: "MODEL" }, packKeyword: "pack_metro" },
     },
     ctx,
   );
@@ -155,7 +178,14 @@ test("large palettes remain complete JSON through the real tool executor", async
 
 test("deep action schema accepts null for unused fields advertised to strict providers", async () => {
   const tool = await deepTool();
-  expect(tool.parameters.safeParse({ action: "asset-pack", packKeyword: "pack_metro", urls: null }).success).toBe(true);
+  expect(
+    tool.parameters.safeParse({
+      action: "asset-pack",
+      assetFilter: { assetType: "MODEL" },
+      packKeyword: "pack_metro",
+      urls: null,
+    }).success,
+  ).toBe(true);
   expect(
     tool.parameters.safeParse({
       action: "asset-preview",

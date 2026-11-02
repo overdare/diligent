@@ -1,5 +1,6 @@
 // @summary Shared model-readable catalog metadata and exact pack enumeration.
 import type { ToolResult } from "@diligent/core/tool-contract";
+import type { AssetFilter } from "./asset-filter";
 import { normalizeAssetForRender } from "./render";
 
 export const RAG_BASE_URL = process.env.DILIGENT_RAG_BASE_URL?.trim() || "https://aiguide.overdare.com";
@@ -41,13 +42,17 @@ export function normalizeAssetCandidate(raw: CatalogAsset) {
 export type AssetCandidate = ReturnType<typeof normalizeAssetCandidate>;
 export type PackMember = Omit<AssetCandidate, "text" | "score">;
 
-export async function enumeratePack(keyword: string, signal: AbortSignal): Promise<PackMember[]> {
+export async function enumeratePack(
+  keyword: string,
+  assetFilter: AssetFilter,
+  signal: AbortSignal,
+): Promise<PackMember[]> {
   signal.throwIfAborted();
   try {
     const response = await fetch(`${RAG_BASE_URL}/api/chat/rag`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ version: "3", source: "assets", assetFilter: { keywords: [keyword] } }),
+      body: JSON.stringify({ version: "3", source: "assets", assetFilter: { ...assetFilter, keywords: [keyword] } }),
       signal: AbortSignal.any([signal, AbortSignal.timeout(RAG_TIMEOUT_MS)]),
     });
     if (!response.ok) throw new Error(`Pack enumeration failed (HTTP ${response.status})`);

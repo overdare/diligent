@@ -69,6 +69,12 @@ without selecting the top result or opening a picker. The agent chooses IDs for
 the existing import tools. Single matches and Audio/Animation/Effects/UI assets
 follow the same behavior. A pack-only response still returns its detected packs.
 
+Asset searches require `assetFilter.assetType`: `MODEL`, `AUDIO`, `ANIMATION`, or
+`ACTION_SEQUENCE`. Values are case-insensitive and normalized to uppercase before
+calling RAG. `assetFilter.keywords` and `assetFilter.categoryId` optionally narrow
+the search. Missing or invalid types fail tool argument validation before any
+network request. Docs searches accept an omitted or null `assetFilter`.
+
 Set `requestUserInput=true` to offer the user an asset or pack choice through the
 shared `request_user_input` channel. The picker uses
 `UserInputQuestion.display: "asset"`; asset options carry a `value` (asset ID) and
@@ -81,9 +87,12 @@ The result metadata distinguishes `selectionStatus` values `selected`, `none`,
 selected ID or keyword. Free-text feedback is not an asset ID. Picking a pack
 returns its member palette; it does not import the entire collection.
 
-`overdaresearch_deep(action="asset-pack", packKeyword=...)` reads a pack palette
-without a picker. Each member has a description and optional image URL. The
-agent selects only the members needed for the scene.
+`overdaresearch_deep(action="asset-pack", packKeyword=..., assetFilter={assetType: "MODEL"})`
+reads a pack palette without a picker. Reuse the type from discovery; pack reads
+also require `assetFilter.assetType`. Picking a pack automatically retains the
+discovery filters and adds the exact pack keyword. Each member has a description
+and optional image URL. The agent selects only the members needed for the scene.
+Origin-file and asset-preview reads accept an omitted or null `assetFilter`.
 
 A displayed thumbnail does not enter model image context. For visual judgment,
 `overdaresearch_deep(action="asset-preview", urls=[...])` reads one to four
