@@ -33,11 +33,14 @@ test("unified import rejects files outside the configured mount before calling S
 
 test("screenshot paths inside the remote root are returned as their mounted local paths", async () => {
   const rpc = createDevStudioRpc(
-    { enabled: true, localFileRoot: "/Volumes/downloads", remoteFileRoot: "C:/Users/jjss/Downloads" },
-    async () => ({ path: "C:/Users/jjss/Downloads/Party/Screenshots/Agent/shot.png", image: { width: 2, height: 1 } }),
+    { enabled: true, localFileRoot: "/Volumes/downloads", remoteFileRoot: "C:/Users/example/Downloads" },
+    async () => ({
+      path: "C:/Users/example/Downloads/Project/Screenshots/Agent/shot.png",
+      image: { width: 2, height: 1 },
+    }),
   );
   expect(await rpc("game.screenshot", {})).toEqual({
-    path: "/Volumes/downloads/Party/Screenshots/Agent/shot.png",
+    path: "/Volumes/downloads/Project/Screenshots/Agent/shot.png",
     image: { width: 2, height: 1 },
   });
 });
@@ -45,7 +48,7 @@ test("screenshot paths inside the remote root are returned as their mounted loca
 test("screenshot paths outside the remote root are left as Studio reported them", async () => {
   const result = { path: "D:/Captures/shot.png" };
   const rpc = createDevStudioRpc(
-    { enabled: true, localFileRoot: "/Volumes/downloads", remoteFileRoot: "C:/Users/jjss/Downloads" },
+    { enabled: true, localFileRoot: "/Volumes/downloads", remoteFileRoot: "C:/Users/example/Downloads" },
     async () => result,
   );
   expect(await rpc("game.screenshot", {})).toEqual({ path: "D:/Captures/shot.png" });
