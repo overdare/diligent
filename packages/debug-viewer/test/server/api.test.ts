@@ -1,5 +1,7 @@
 // @summary Tests for REST API endpoint handlers
+
 import { beforeAll, describe, expect, test } from "bun:test";
+import { resolveModel } from "@diligent/core/model-registry";
 import { resolve } from "path";
 import { createApiHandler } from "../../src/server/api.js";
 
@@ -156,14 +158,22 @@ describe("GET /api/usage/summary", () => {
     expect(data.summary.totals.cacheReadTokens).toBe(1060);
     expect(data.summary.totals.cacheWriteTokens).toBe(450);
     expect(data.summary.totals.totalTokens).toBe(5135);
-    expect(data.summary.totalCost).toBeCloseTo(0.0269505, 10);
+    // The viewer maps the historical Sonnet 4 fixture to the current Sonnet 5 card.
+    const model = resolveModel({ provider: "anthropic", modelId: "claude-sonnet-5" });
+    const expectedCost =
+      (4340 * model.inputCostPer1M! +
+        795 * model.outputCostPer1M! +
+        1060 * model.cacheReadCostPer1M! +
+        450 * model.cacheWriteCostPer1M!) /
+      1_000_000;
+    expect(data.summary.totalCost).toBeCloseTo(expectedCost, 10);
 
     expect(data.summary.modelBreakdown).toBeArray();
     expect(data.summary.modelBreakdown.length).toBe(1);
     expect(data.summary.modelBreakdown[0].model).toBe("claude-sonnet-4-20250514");
     expect(data.summary.modelBreakdown[0].messageCount).toBe(13);
     expect(data.summary.modelBreakdown[0].pricedMessageCount).toBe(13);
-    expect(data.summary.modelBreakdown[0].totalCost).toBeCloseTo(0.0269505, 10);
+    expect(data.summary.modelBreakdown[0].totalCost).toBeCloseTo(expectedCost, 10);
   });
 });
 
