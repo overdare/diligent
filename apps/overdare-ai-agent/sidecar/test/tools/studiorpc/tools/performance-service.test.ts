@@ -1,10 +1,11 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { call } from "../../../../src/tools/studiorpc/rpc";
 import { StudioRpcError } from "../../../../src/tools/studiorpc/rpc";
 import { PerformanceService } from "../../../../src/tools/studiorpc/tools/performance-service";
+import { PerformanceStore } from "../../../../src/tools/studiorpc/tools/performance-store";
 import { captureParameters } from "../../../../src/tools/studiorpc/tools/performance-tools";
 
 const directories: string[] = [];
@@ -128,6 +129,49 @@ test("a restarted sidecar refuses to reattach a pending job to another process",
   expect(report.state).toBe("failed");
   expect(report.stopReason).toContain("TARGET_STALE");
   expect((report.summaries as Record<string, { p50: null }>).frame_ms!.p50).toBeNull();
+});
+
+test.each([
+  "completed",
+  "partial",
+] as const)("recovery preserves raw artifacts when a %s manifest has no summary", async (state) => {
+  const directory = await mkdtemp(join(tmpdir(), "performance-"));
+  directories.push(directory);
+  const rpc = (async (method: string) =>
+    method === "performance.capabilities"
+      ? {
+          resolvedTarget: { pid: 7, startTimeUtc: "2026-11-01T00:00:00Z", hostName: "remote" },
+          metrics: { frame_ms: { status: "ok" } },
+          conditions: {},
+        }
+      : { nativeJobId: "native-1", state: "capturing" }) as typeof call;
+  const first = new PerformanceService(directory, rpc, { autoPoll: false });
+  const jobId = (await first.start({ case: "interrupted-write" })).jobId as string;
+  const store = new PerformanceStore(directory);
+  const manifest = { ...(await store.readManifest(jobId)), state };
+  await store.writeManifest(manifest);
+  const paths = store.paths(jobId);
+  const raw = "frameId,frame_ms\n123,27\n";
+  for (const path of [paths.frames, paths.process, paths.luaScopes]) await writeFile(path, raw);
+  const restarted = new PerformanceService(
+    directory,
+    (async () => {
+      throw new Error("must not call Studio");
+    }) as typeof call,
+    { autoPoll: false },
+  );
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await expect(restarted.report(jobId)).rejects.toMatchObject({
+      code: -32070,
+      data: { reason: "ARTIFACT_INCOMPLETE", jobId, artifacts: paths },
+    });
+  }
+  await expect(restarted.stop({ action: "stop", jobId, outcome: "completed" })).rejects.toMatchObject({
+    data: { reason: "ARTIFACT_INCOMPLETE" },
+  });
+  for (const path of [paths.frames, paths.process, paths.luaScopes]) expect(await readFile(path, "utf8")).toBe(raw);
+  expect((await store.readManifest(jobId)).state).toBe(state);
+  expect(await store.readReport(jobId)).toBeUndefined();
 });
 
 test("an OS-only server reports resources without manufacturing engine metrics", async () => {

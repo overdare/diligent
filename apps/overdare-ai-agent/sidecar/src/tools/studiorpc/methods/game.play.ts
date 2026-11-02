@@ -42,6 +42,7 @@ export const params = z
       .optional()
       .describe(
         "Use only for controlled precision performance measurements, not ordinary playtesting. true starts a separate headless dedicated server for this PIE session; false forces one-process PIE; omission preserves Studio configuration. " +
+          "The external server loads the saved world: save intended changes first; this tool does not save them automatically. An accepted request still requires waiting for PIE readiness. " +
           "Choose it only when starting stopped PIE, or combine with restart: true. Cannot be combined with addClient: true. " +
           "Separate-process PIE restricts existing input/observation tools; external server performance currently includes OS CPU/memory only, not Lua scopes or server tick timing.",
       ),

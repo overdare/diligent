@@ -72,6 +72,10 @@ handler rejects the option for a running/queued session or with `addClient:true`
 `restart:true` stops first in the sidecar. No Studio restart is needed. Existing
 input/observation restrictions and OS-only external server metrics still apply.
 Separation changes topology, not the precision of the existing measurements.
+The external server loads the saved world. Save intended changes first; play does
+not save automatically. Dirty package prompts can cancel an unattended launch.
+Wait for client readiness and verify the external PID and join/presentation;
+accepting the start request alone does not establish a working session.
 
 Optional `serverPids` adds up to four local server processes. Each must have an
 explicit server command-line switch and verified Studio ancestry. Names alone
@@ -105,6 +109,9 @@ cannot select a filesystem path. Reports contain at most five longest frames and
 are bounded to 16 KiB; raw arrays remain in the artifacts. Finished jobs can be
 read without Studio. Interrupted jobs are reattached only after the original
 process identity is verified. A host crash does not recover native-only frames.
+If a terminal manifest exists without a summary after an interrupted artifact
+write, report/stop return `ARTIFACT_INCOMPLETE` with retained artifact paths.
+Existing raw files are preserved instead of being replaced with an empty capture.
 
 ## Explicit Lua regions
 

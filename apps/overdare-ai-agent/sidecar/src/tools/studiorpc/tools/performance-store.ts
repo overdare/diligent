@@ -120,7 +120,7 @@ export class PerformanceStore {
         "status",
       ]),
     );
-    await this.writeManifest(manifest);
     await this.save(paths.summary, report);
+    await this.writeManifest(manifest);
   }
 }

@@ -20,10 +20,27 @@ test("process rates use actual wall time and reject PID reuse and counter resets
 
 test("server identity requires an explicit server switch and the Studio ancestry for associated servers", () => {
   const identities = [
-    { pid: 12, parentPid: 11, commandLine: '"Sandbox.exe" map -server', startTimeUtc: "2026-11-01T00:00:00Z" },
+    { pid: 12, parentPid: 11, commandLine: '"Sandbox.exe" map -server', startTimeUtc: "2026-11-03T00:00:00Z" },
     { pid: 11, parentPid: 10, commandLine: "launcher", startTimeUtc: "2026-11-01T00:00:00Z" },
+    { pid: 10, startTimeUtc: "2026-11-01T00:00:00Z" },
   ];
   expect(verifyServer(identities[0]!, identities, 10)).toBe(true);
   expect(verifyServer({ ...identities[0]!, commandLine: "SandboxServer.exe -client" }, identities, 10)).toBe(false);
   expect(verifyServer(identities[0]!, identities, 99)).toBe(false);
+  expect(verifyServer(identities[0]!, identities.slice(0, 2), 10)).toBe(false);
+  // A reused PID can have the expected numeric ID but be younger than its alleged child.
+  expect(
+    verifyServer(identities[0]!, [...identities.slice(0, 2), { pid: 10, startTimeUtc: "2026-11-02T00:00:00Z" }], 10),
+  ).toBe(false);
+  expect(
+    verifyServer(
+      identities[0]!,
+      [identities[0]!, { ...identities[1]!, startTimeUtc: "2026-11-04T00:00:00Z" }, identities[2]!],
+      10,
+    ),
+  ).toBe(false);
+  expect(verifyServer(identities[0]!, [...identities.slice(0, 2), { pid: 10, startTimeUtc: "invalid" }], 10)).toBe(
+    false,
+  );
+  expect(verifyServer({ ...identities[0]!, startTimeUtc: "invalid" }, identities, 10)).toBe(false);
 });

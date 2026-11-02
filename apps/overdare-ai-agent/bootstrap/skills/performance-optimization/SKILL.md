@@ -58,6 +58,10 @@ Metrics belong to the measured process. Selecting a PIE client does not isolate 
 
 Omit `separateServer` during ordinary playtesting. Use `studiorpc_game_play` with `{"restart":true,"numberOfPlayer":1,"separateServer":true}` only for controlled precision performance measurements that need the server in another process. It starts a headless dedicated server for that session without persisting the topology or player override. It changes the measurement topology, not the statistical precision of the existing counters; do not claim a speedup from uncontrolled comparisons. `false` forces one-process PIE for that request; omission preserves configured settings. A running or queued session rejects the option unless the sidecar first stops it through `restart:true`; do not combine it with `addClient:true`. No Studio restart is required.
 
+The external server reads the saved world. Save intended changes through the existing level-save tool when that is within the user's authorized scope, before starting separation; game.play does not save them automatically. Dirty map/package prompts can cancel startup in unattended runs. An accepted start is not proof of readiness: wait for a running session with the expected client, verify the separate PID, and confirm join/presentation before capturing. If a world was just copied or exported, save it in Studio so native packages and authored data agree.
+
+Cold external-server startup can exceed the engine's existing connection timeout. Treat a timeout as a failed start; inspect it and stop the failed session before a deliberate retry. Do not capture an unconnected client or automatically retry an accepted request.
+
 For separate-server PIE, optional `serverPids` adds verified local descendant server CPU/memory. An explicit `{pid,startTimeUtc,role:"dedicated_server"}` target measures an independently launched local server using OS counters only. External Lua labels and server tick time are unavailable through this path. Do not infer them from CPU usage. Existing input/observation tools also restrict separate-process PIE, even for its first local client.
 
 ## Scripts

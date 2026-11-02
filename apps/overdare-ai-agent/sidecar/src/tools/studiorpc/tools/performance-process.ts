@@ -26,13 +26,23 @@ export function processInterval(previous: ProcessSample | undefined, current: Pr
 
 export function verifyServer(identity: ProcessIdentity, identities: ProcessIdentity[], studioPid?: number): boolean {
   if (!/(?:^|\s)-(?:server|dedicatedserver)(?=\s|$)/i.test(identity.commandLine ?? "")) return false;
+  if (!Number.isFinite(Date.parse(identity.startTimeUtc))) return false;
   if (studioPid === undefined) return true;
-  let ancestor = identity.parentPid;
+  let child = identity;
   const visited = new Set<number>([identity.pid]);
-  while (ancestor && !visited.has(ancestor)) {
-    if (ancestor === studioPid) return true;
-    visited.add(ancestor);
-    ancestor = identities.find((item) => item.pid === ancestor)?.parentPid;
+  while (child.parentPid && !visited.has(child.parentPid)) {
+    const parent = identities.find((item) => item.pid === child.parentPid);
+    // ParentProcessId alone survives parent exit/PID reuse. Every edge must
+    // have a verifiable parent that existed when its child was created.
+    if (
+      !parent ||
+      !Number.isFinite(Date.parse(parent.startTimeUtc)) ||
+      Date.parse(parent.startTimeUtc) > Date.parse(child.startTimeUtc)
+    )
+      return false;
+    if (parent.pid === studioPid) return true;
+    visited.add(parent.pid);
+    child = parent;
   }
   return false;
 }
