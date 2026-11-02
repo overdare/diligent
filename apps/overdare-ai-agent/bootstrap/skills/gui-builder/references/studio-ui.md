@@ -39,6 +39,7 @@ Carry this retain/replace decision and occupied regions into the guide prompt. A
 - Position groups primarily with Scale and AnchorPoint; use Offset for padding and concrete touch-target sizes. Preserve icon aspect ratios.
 - Use legible text with strong backing contrast. Important mobile labels usually need at least 24px at the reference viewport. Prefer short English text unless the user requests localization; use image glyphs instead of emoji.
 - When selecting or changing font faces, read [fonts.md](fonts.md). Keep text live in `TextLabel` / `TextButton`; validate wrapping and glyphs at the actual viewport.
+- For mobile readability, inspect representative affected states at the intended mobile viewport, including its width, height, and render-to-logical scale when available. Check text and controls for clipping and overlap in the rendered result, not only property values or desktop captures. If the target viewport or state is unavailable, report that coverage as unverified.
 - Keep normal HUDs in ZIndex 0–99, intentional overlays/modals in 100–199, and debug layers in 200+. Runtime overlap checks compare the same band; do not move ordinary buttons into overlay bands to hide warnings.
 - Use `DisplayOrder` to order screen roots and ZIndex for elements within them. Handle overflow and tool warnings rather than clipping away a layout error.
 
