@@ -8,18 +8,9 @@ export const method = "animation.publish";
 export const timeoutMs = 180_000;
 
 export const description =
-  "General-rig clips keep their original Skeleton when uploaded; no ODA Skeleton substitution is performed. " +
-  "Upload a saved animation clip to OVERDARE, like the AnimationEditor's Get Asset Id button, and return its " +
-  "asset id. Use the returned assetId (ovdrassetid://N) wherever an animation id is needed: an Action Sequence " +
-  "AnimationTrack's OvdrAssetId, an Animation instance's AnimationId in scripts.\n" +
-  "This only issues the id: the clip goes to the user's own asset list (MY ASSETS), private. It is not listed on " +
-  "the asset store and no Creator Hub page is opened (the button opens one for listing details; skip it).\n" +
-  "assetPath is a clip from studiorpc_animation_write or studiorpc_animation_read. Pass the revision you last " +
-  "looked at to publish exactly that version (REVISION_CONFLICT if the clip changed since); unsaved AnimationEditor " +
-  "edits are saved first. Every call uploads a new copy with a new id; the clip itself stays editable, and an " +
-  "edit needs another publish to reach the id. Studio must be logged in.\n" +
-  "Result: { assetPath, revision (the published version), assetId, worldAssetId, name }. Errors carry data.kind " +
-  "(INVALID_PARAMS, ASSET_NOT_FOUND, REVISION_CONFLICT, SAVE_FAILED, PUBLISH_FAILED) and the message.";
+  "Upload a saved animation as a new private MY ASSETS entry and return its numeric ovdrassetid://N. General clips retain their original Skeleton. Requires Studio login; no store listing or Creator Hub page is created. " +
+  "Pass the last read/write revision to publish that version; unsaved AnimationEditor edits are saved first and a conflict rejects a stale revision. Every call uploads a new copy and ID; existing published IDs remain unchanged. " +
+  "Result: assetPath, revision, assetId, worldAssetId and name. Use assetId for Animation.AnimationId or an Action Sequence AnimationTrack.OvdrAssetId.";
 
 export const params = z
   .object({

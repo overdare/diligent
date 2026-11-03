@@ -1,28 +1,34 @@
 ---
 name: texture-authoring
-description: Use OVERDARE's existing published-image, MaterialVariant and MeshPart TextureId paths for surface artwork. Read before generating or applying a texture to a Part or ProceduralModel.
+description: Generate or apply surface artwork using existing OVERDARE material and MeshPart texture paths.
 ---
 
 # Existing texture paths
 
-Use existing Studio tools and supported properties. Basic Part and MeshPart have different texture paths; inspect the actual target class and current material before choosing one.
+The target class and current material determine the supported image path.
 
 | Target | Existing path | Constraint |
 |---|---|---|
 | Basic Part | MaterialVariant under MaterialService; set ColorMap and the Part's Material/MaterialVariant | Repeating material; MetersPerTile scaling requires a supported non-Unlit BaseMaterial. It does not provide independent images on six faces. ColorMap alpha is ignored. |
-| MeshPart | Set its TextureId to a published image | Placement follows the mesh UVs. Inspect the UV layout and actual rendering. |
-| ProceduralModel | Generate geometry/UVs with the current recipe API, then use its baked MeshParts' existing TextureId | Re-read baked children after rebuilds; match stable recipe part names and verify/reapply supported properties when needed. |
+| MeshPart | Set its TextureId to a published image | Placement follows the mesh UVs. |
+| ProceduralModel | Generate geometry/UVs with the current recipe API, then use its baked MeshParts' existing TextureId | Rebuilds can replace children or properties; resolve current children by stable recipe part name. |
 
-ProceduralModel supports an ordinary UV atlas through this same path. Read the live procedural geometry API, map each group into its intended image rectangle with `fit_uvs_to_rect`, leave gutters, then merge groups sharing the atlas into one mesh and assign one published TextureId. Judge orientation, stretching and mip bleed from rendered pixels. This needs no native atlas service and does not give basic Part independent face images.
+ProceduralModel supports a UV atlas through this same path: map each geometry group into its image
+rectangle with `fit_uvs_to_rect`, leave gutters, then merge groups sharing the atlas and assign one
+published TextureId. This is mesh UV mapping, not an independent face-image path for basic Part.
 
-1. Read the target, related material and existing recipe. Query unfamiliar fields and types through the live instance schema; do not invent a TextureId field on basic Part or a Decal/Texture class.
-2. Choose existing material/color for simple surfaces. Generate source artwork only when the task needs a new image, using the configured GPT image tool and appropriate references. For repeating materials, request a seamless texture without perspective, baked shadows or unwanted text. Choose source dimensions for the task; source dimensions do not guarantee the rendered, cooked or resident resolution.
-3. Import a generated file through studiorpc_asset_manager_import. The absolute path must be accessible to Studio. Retain the returned asset.assetid and require a real numeric ovdrassetid URI. A local PNG, an accepted request or an upload timeout does not establish publication. Inspect unknown outcomes before retrying.
-4. Apply the published image through the appropriate existing property path above. Use studiorpc_execute_luau for supported Editor edits; current native builds expose workspace/game.Workspace, direct service children, game:GetService, os and isnil, while task remains unavailable. Service members remain limited by the Editor API. Check unfamiliar properties with the live schema and method/global support against the connected build. Successful mutation tools already save; recover a save failure without replaying successful execution.
-5. Read back the asset reference and material assignment. Inspect the actual editor and play images for UV placement, tile scale, orientation, seams and visual quality. Save/reopen and rebake where relevant. Image reuse should preserve the same published reference where the task calls for it.
+Use material/color for simple surfaces and the configured image generator when new artwork is needed.
+Repeating artwork should be seamless and free of perspective or baked lighting. Keep image and recipe
+sources for future edits. UV orientation, tile scale, stretching and mip bleed depend on the rendered result.
 
-If the requested face placement or nonrepeating decoration has no supported existing path on a basic Part, report that limitation and continue the supported work. Do not add geometry letters, decorative MeshParts, SurfaceGui, a new renderer or a custom storage/binding system to emulate it. Do not convert a primitive into a mesh solely to bypass this limit. A real custom 3D object may use the existing procedural geometry workflow when its shape calls for it.
+Import artwork with `studiorpc_asset_manager_import` using an absolute path accessible to Studio.
+The returned `asset.assetid` must be a numeric `ovdrassetid://N` before it is used by these properties;
+a local file or timed-out request is not a published asset. Resolve an unknown upload outcome before retrying.
+Apply through supported Editor properties with `studiorpc_execute_luau`; its API and save behavior are
+described by that tool. Reuse the same published image when the artwork is shared.
 
-Keep original artwork and recipe sources in the task's files for future edits. No native painting document, per-face atlas service or automatic binding restoration is implied. Other material channels, alpha behavior and resolution limits remain subject to the existing material and importer; verify them rather than assuming support.
+If basic Part cannot support the requested nonrepeating decoration, explain the limit. Keep the
+existing material/mesh workflow rather than emulating surface artwork with small geometry, SurfaceGui
+or a new renderer/binding system. Use procedural geometry when the requested object needs custom 3D shape.
 
 Texture resolution/LOD quality is a known issue for the team to fix. Existing engine profiles, mips and streaming determine the actual result; there is no guaranteed native 1024 override. Report observed resolution limits and their visual impact. Do not resize/reimport artwork, change engine settings or add rendering workarounds to conceal this issue.

@@ -65,8 +65,7 @@ def on_generate(model, size, attributes):
 ## Coordinate spaces
 
 Native geometry operations and spatial inputs to the recipe use model-local Unreal coordinates:
-centimetres, Z up. Choose the facing direction and origin for the asset's intended use, and record
-its model-local front axis when it has one. The preview camera does not determine the model's front.
+centimetres, Z up; this does not impose a front axis or origin.
 For rigged characters, follow the facing and runtime-frame guidance in
 [custom-character](../custom-character/SKILL.md#facing-and-runtime-frame).
 
@@ -116,8 +115,8 @@ stay inside that object's recipe.
 For non-ODA rigging and animation, read `studiorpc_character_api` and the
 `custom-character` skill. The existing `character.build` accepts this
 ProceduralModel's GUID and freezes its Source, Size and typed attributes for a
-separate character draft. Its recipe must explicitly emit the requested rig,
-weights and motion; the bridge does not infer them. It leaves the source model
+separate character draft. The recipe emits geometry; supply rig, weights and
+motion as separate structured data. It leaves the source model
 unchanged and retains the normal FBX import/upload and Lua playback workflow.
 
 ## Judge on the numbers before the picture

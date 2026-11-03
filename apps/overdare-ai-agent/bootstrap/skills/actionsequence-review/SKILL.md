@@ -1,6 +1,6 @@
 ---
 name: actionsequence-review
-description: Review OVERDARE Action Sequence assets for track timing, collision and pose alignment, child references, signal names and gameplay naming conventions. Use for diagnosing or checking existing sequences; use actionsequence for authoring guidance.
+description: Review saved OVERDARE Action Sequences for timing, collision/pose alignment and script signal references.
 ---
 
 # Action Sequence review
@@ -9,11 +9,15 @@ Review saved assets and report reproducible mismatches with a track and time in 
 
 ## Read and measure
 
-Complete these steps in order. Finish and interpret the saved-data preview before validating a proposal with `write` + `dryRun`; the measured saved state is the baseline for comparing proposed changes.
+Read the relevant GUID with `studiorpc_action_sequence_read`; omit arguments when the sequence needs
+to be located. Saved data is the baseline for a proposed repair. Runtime `ActionRunner:Play(name)`
+uses the instance `Name`, not JSON `ActionSequenceID`.
 
-1. Call `studiorpc_action_sequence_read` without arguments to identify instance GUIDs, instance names and duplicate names. The runtime `ActionRunner:Play(name)` uses the instance `Name`, not JSON `ActionSequenceID`.
-2. Read each relevant GUID. Inspect the saved timeline, issues, resolved Control targets and nested VFX enabled keys. Clip durations come from loaded assets or the offline catalog; unknown means unknown. Informational repetition/cropping is not automatically a defect.
-3. For a suspected pose/timing mismatch, read the GUID with `preview: { times: [...] }`. Choose the collision key time and nearby animation/VFX boundaries, at most 22 distinct times in `[0, Length]`. Use `preview: true` or `preview: {}` for the default six times at 0%, 20%, 40%, 60%, 80% and 100% of Length. The image groups up to six requested times per block, with front/side rows in each block. Red outlines are collision bounds at exact key times; cyan crosses mark evaluated control roots. Use the numerical collision distances and enabled states as evidence, alongside the image.
+The timeline includes issues, resolved Control targets and nested VFX enabled keys. Clip durations
+come from loaded assets or the offline catalog; unavailable durations remain unknown. For pose/timing
+questions, select preview times near collision keys and animation/VFX boundaries. Red outlines show
+collisions at exact key times; cyan crosses show evaluated control roots. Informational repetition
+or cropping is not automatically a defect.
 
 Preview uses an isolated editor pose, not live gameplay. World positions and distances are in cm. A negative signed distance puts the joint inside the shape; a positive value puts it outside. A joint outside a box alone does not prove a bad hit: weapons, extended reach and the intended target area can explain it. Arc/frustum distances, unavailable resources and failed previews remain unknown. `StartOffsetTime > 0` can shift editor blend weights relative to gameplay. Niagara randomness can differ between captures.
 
@@ -31,17 +35,18 @@ Treat sub-frame timing differences as informational unless a binding explicitly 
 | Structure | Unique TrackIDs, reciprocal parent/child links, sorted unique keys, asset ID format |
 | Gameplay references | Duplicate instance names and literal `Play`/signal subscriptions against actual names and runtimeSignals |
 
-The TPA SequenceController convention uses `Sequence` for sequence lifetime, `KeyInput` for combo input and `CancelWindow` for immediate combo/general cancel. Apply this advice only when the target's actual runtime script binds the corresponding controller and its source implements those callbacks. Names alone, a controller elsewhere in the level or examples in comments do not establish that dependency. Hit and marker names are configurable in game code.
-
-External findings are under `scriptReferenceCheck.issues`; top-level `issues` retain timeline diagnostics, including any catalog-derived timing facts. The checker recognizes a direct child Script's explicit TPA require/Bind and the resolved controller source, and reports binding/controller paths and lines. Its five naming/timing suggestions are informational and configuration-dependent. A missing `Sequence`, early cleanup, an off-tail cancel interval or a cleared combo buffer warrants inspecting the binding and skill configuration, rather than applying a universal naming rule. `KeyInput` alone can support sequence-end combos, and `CancelWindow` alone can support general cancellation.
-
-Script-reference checks cover literal calls at level scope. Inspect the relevant script when it uses aliases, computed names, runtime-created sequences or conditional subscriptions. TPA configuration and runtime flow are not evaluated. Do not infer missing signals or required template conventions from an unavailable/partial scan or undetected wiring. Custom signal names are valid when their producer and consumer agree.
+`scriptReferenceCheck.issues` contains external literal script-reference findings; top-level
+`issues` contains timeline diagnostics. Custom signal names are valid when producer and consumer
+agree. For partial scans or detected TPA controller bindings, use the
+[script-reference interpretation](references/script-references.md); template conventions apply
+only to the controller actually bound by the target's scripts.
 
 Runtime clones are parented under the `ActionRunner`, with their child scripts under the cloned sequence. If the runner is under the character's Humanoid, a sequence child script reaches that Humanoid through `script.Parent.Parent.Parent`. The saved service hierarchy alone cannot establish a gameplay parent-lookup bug.
 
 ## Report and optional repair
 
-For each finding give the instance name/GUID, original `trackIndex` and TrackID/name, time or interval, severity, measured values and expected relationship. Distinguish an observed mismatch from a convention-dependent suspicion. Report a clean review when there is no supported defect; do not invent one to fill a quota.
+For each finding give the instance name/GUID, original `trackIndex` and TrackID/name, time or interval,
+measured values and expected relationship. Distinguish observed mismatches from convention-dependent suspicions.
 
 For structured review output, use records such as:
 
@@ -49,4 +54,6 @@ For structured review output, use records such as:
 {"sequence":"Attack","instanceGuid":"...","findings":[{"trackIndex":3,"startTime":0.2,"endTime":0.2,"kind":"collisionTiming","severity":"warning","evidence":{"rightHandSignedDistanceCm":40,"vfxEnabled":false},"reason":"The hit key precedes the documented contact and VFX window."}]}
 ```
 
-Repair only within the user's requested scope. Read with `raw: true`, copy the returned `rawJsonPath` to an editable local file, preserve unrelated fields and children, and call `studiorpc_action_sequence_write` with `instanceGuid`, `jsonFilePath` and `dryRun: true`. The dry run does not change the level. Compare its issues/timeline, then apply the same file if the edit is authorized and reread to verify. Applied `warnings` are diagnostics; `success` alone does not prove the sequence is correct. This write tool replaces the older agent tool name `apply_json`.
+For a requested repair, `raw: true` provides saved JSON to copy and edit while preserving unrelated
+fields and children. `studiorpc_action_sequence_write` with `dryRun: true` evaluates that proposal
+without mutation; ordinary application changes the sequence and requires a separate level save.

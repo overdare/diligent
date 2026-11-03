@@ -48,6 +48,8 @@ and StarterPlayer.
 | `numberOfPlayer` | Positive integer selecting the client count when starting a stopped session; Studio enforces its build's PIE client limit |
 | `restart` | `true` makes the adapter call `game.stop` before `game.play` |
 | `addClient` | `true` requests one additional client in an existing ready session |
+| `mobileSimulator` | Enables/disables the Galaxy A04e simulator at Actual Resolution for the next session; omission preserves Studio selection |
+| `separateServer` | For controlled performance measurement: `true` starts a headless dedicated server, `false` forces one-process PIE, omission preserves configuration |
 
 Calling play with `{}` preserves an already running session. Without restart,
 `numberOfPlayer` does not resize a running session. Omit it when starting to keep
@@ -63,7 +65,8 @@ To request one extra client without restarting, pass:
 {"addClient":true}
 ```
 
-`addClient:true` cannot be combined with `numberOfPlayer` or `restart:true`.
+`addClient:true` cannot be combined with `numberOfPlayer`, `mobileSimulator`,
+`separateServer` or `restart:true`.
 Studio rejects it when no session is running, the session is not ready, an
 addition is already pending, or the current mode/client limit disallows it.
 An accepted response includes `action:"addClient"`, `state:"clientStarting"`
@@ -73,6 +76,13 @@ until the new client appears and is injectable. Inspect an unknown timeout
 outcome before deciding whether another addition is needed.
 
 ## Observe readiness and select a client
+
+`separateServer` uses the saved map and does not save pending edits. Start from stopped PIE or use
+`restart:true`. The accepted request is asynchronous: `server.state` advances through
+`serverStarting`, `clientStarting` and `ready`, or reports `failed` with a reason. Stop also cancels
+pending startup. Server readiness is checked before client launch; an accepted request is not a
+joined-player count. Input/observation support is restricted in separate-process PIE. See
+[performance captures](performance-captures.md) for measured process scope and server targets.
 
 Call `studiorpc_game_pie_status` with `{}` after starting, restarting or adding a
 client. Its public response contains `running`, an available `pieSessionId`, and
