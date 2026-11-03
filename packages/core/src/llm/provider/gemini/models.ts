@@ -19,17 +19,13 @@ export const GEMINI_MODELS = defineProviderModels("gemini", [
     supportsThinking: true,
     supportedEfforts: ["low", "medium", "high"],
     supportsVision: true,
-  },
-  {
-    modelId: "gemini-3.7-flash",
-    display: "Gemini 3.7 Flash",
-    contextWindow: 1_048_576,
-    maxOutputTokens: 65_536,
-    inputCostPer1M: 1.5,
-    outputCostPer1M: 7.5,
-    supportsThinking: true,
-    supportedEfforts: ["low", "medium", "high"],
-    supportsVision: true,
+    // Google keeps this deprecated endpoint available but serves Gemini 3.8 Flash for it.
+    aliases: ["gemini-3.7-flash"],
+    provenance: {
+      source: "Gemini 3.8 Flash model documentation and routed Gemini 3.7 deprecation",
+      sourceUrl: "https://ai.google.dev/gemini-api/docs/deprecations#gemini-3-models",
+      updatedAt: "2026-11-03",
+    },
   },
   {
     modelId: "gemini-3.6-flash",

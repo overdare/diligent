@@ -99,7 +99,6 @@ describe("provider-scoped model catalog", () => {
       { provider: "openai", modelId: "gpt-6-astra" },
       { provider: "chatgpt", modelId: "gpt-6-astra" },
       { provider: "gemini", modelId: "gemini-3.8-flash" },
-      { provider: "gemini", modelId: "gemini-3.7-flash" },
     ] as const;
 
     for (const ref of refs) {
@@ -128,12 +127,16 @@ describe("provider-scoped model catalog", () => {
   });
 
   it("exposes the current Gemini models and defaults to Gemini 3.6 Flash", () => {
-    expect(listModels("gemini").map((model) => model.modelId)).toEqual([
-      "gemini-3.8-flash",
-      "gemini-3.7-flash",
-      "gemini-3.6-flash",
-      "gemini-3.5-flash-lite",
-    ]);
+    expect(listModels("gemini").map((model) => model.modelId)).not.toContain("gemini-3.7-flash");
+    expect(
+      getModelInfoList()
+        .filter((model) => model.provider === "gemini")
+        .map((model) => model.modelId),
+    ).not.toContain("gemini-3.7-flash");
+    const replacement = resolveModel({ provider: "gemini", modelId: "gemini-3.8-flash" });
+    expect(resolveModel({ provider: "gemini", modelId: "gemini-3.7-flash" })).toBe(replacement);
+    expect(resolveModelSelector("gemini/gemini-3.7-flash")).toBe(replacement);
+    expect(resolveModelSelector("gemini-3.7-flash")).toBe(replacement);
     expect(getDefaultModelRef("gemini")).toEqual({ provider: "gemini", modelId: "gemini-3.6-flash" });
     expect(resolveModel({ provider: "gemini", modelId: "gemini" }).modelId).toBe("gemini-3.6-flash");
 
