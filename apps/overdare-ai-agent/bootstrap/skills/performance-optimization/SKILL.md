@@ -19,6 +19,8 @@ Fix the measured bottleneck rather than changing settings across the board. Use 
 
 Reports integrate frame, coarse LuaMachine, Slate, process CPU/memory and explicit Lua regions. Use count, mean, p50, p95 and max together. Frame distributions are per completed frame interval; `luaScopes` distributions are per completed invocation and also have `total_ms`. Read missing-data reasons; null is not zero. Draw/thread/GPU snapshots are latest observations with unknown freshness, not spike-aligned distributions. CPU `usedCores` is CPU-seconds/wall-seconds; do not invent an effective CPU percentage.
 
+In the agent Web UI, the performance result's **View performance capture** entry opens saved frame bars, selected-frame Lua label intervals, full label distributions and separate OS CPU/memory charts. Read an old job again to obtain the entry. The viewer reads artifacts only, with no live capture polling or game instrumentation. Its optional baseline shows both distributions; automatic differences require known matching conditions including topology and player count. Local PIE world counts do not prove joined player count. Lua labels compare by name, not capture-local ID. A label timeline is not an automatic function sampler or engine/GPU task trace.
+
 ## Profile selected Lua functions or regions
 
 There is no automatic function sampler. For a user's function-level question, read the relevant gameplay script and insert paired `debug.profilebegin("label")` / `debug.profileend()` using `studiorpc_script_edit` (or `studiorpc_script_add` for a new script). Make these edits before PIE and inspect the returned validation report. Do not write gameplay .lua files with filesystem tools or instrument unrelated functions.

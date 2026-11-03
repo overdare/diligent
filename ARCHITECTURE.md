@@ -130,7 +130,7 @@ Diligent uses **one backend protocol with multiple transports**.
 
 The same rule applies to any additional generic clients such as a VS Code extension/plugin: they may add a client-local transport bridge or UI reducer, but they must still consume the existing shared protocol rather than inventing a client-specific Diligent protocol surface.
 
-Product hosts may expose product-owned RPC methods at their transport boundary when the behavior is intentionally outside Diligent. The Web host intercepts these explicitly registered methods before forwarding unmatched traffic to `DiligentAppServer`; product methods must not shadow shared protocol names. OVERDARE consent is the current explicit exception: its Web-local contract and request handling live in `apps/overdare-ai-agent/sidecar/src/web`, while gateway state and transmission policy live in the rest of the OVERDARE sidecar. Runtime and the shared protocol remain consent-unaware, and the TUI does not expose this product UI.
+Product hosts may expose product-owned RPC methods at their transport boundary when the behavior is intentionally outside Diligent. The Web host intercepts these explicitly registered methods before forwarding unmatched traffic to `DiligentAppServer`; product methods must not shadow shared protocol names. OVERDARE consent is one explicit example: its Web-local contract and request handling live in `apps/overdare-ai-agent/sidecar/src/web`, while gateway state and transmission policy live in the rest of the OVERDARE sidecar. Runtime and the shared protocol remain consent-unaware, and the TUI does not expose this product UI.
 
 Practical consequences:
 
@@ -574,7 +574,7 @@ The pattern for extending the protocol with a new request/response pair has four
 
 5. **Add client-side calls** — if the method is a shared Diligent user-facing capability, implement the client call in `apps/overdare-ai-agent/sidecar/src/web/client` (React) and `packages/cli` (TUI). Frontends should call the method through the shared protocol; they must not implement the behavior locally.
 
-Product-host methods are not added through this flow. They are intercepted by the owning host before core dispatch and use contracts owned by that product surface.
+Product-host methods are not added through this flow. They are intercepted by the owning host before core dispatch and use contracts owned by that product surface. The OVERDARE offline performance viewer follows this boundary: its read method loads saved artifacts in the sidecar, while a generic protocol `resource` render block supplies the same opaque reference to Web and TUI. Hosts may resolve a known thread project through `DiligentAppServer.resolveProjectCwd` without resuming a runtime or changing capture state.
 
 ## OVERDARE consent and gateway transmission
 

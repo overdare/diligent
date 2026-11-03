@@ -48,6 +48,8 @@ describe("performance summaries", () => {
         load: "1 player",
         scope: "process",
         coverage: "v1",
+        topology: { effectiveRunUnderOneProcess: true, localWorldCounts: { client: 1, dedicatedServer: 1 } },
+        playerCount: 1,
       },
       summaries: { frame_ms: { ...summarize([0]), unit: "ms", scope: "process", status: "ok" } },
     };
@@ -59,5 +61,41 @@ describe("performance summaries", () => {
       compareReports({ ...report, conditions: { ...report.conditions, load: "2 players" } }, report, "base").status,
     ).toBe("conditions_differ");
     expect(compareReports({ ...report, conditions: {} }, report, "base").status).toBe("insufficient_metadata");
+    expect(
+      compareReports(
+        {
+          ...report,
+          conditions: {
+            ...report.conditions,
+            topology: {
+              effectiveRunUnderOneProcess: false,
+              localWorldCounts: { client: 1, dedicatedServer: 0 },
+            },
+          },
+        },
+        report,
+        "base",
+      ).status,
+    ).toBe("conditions_differ");
+    expect(
+      compareReports(
+        {
+          ...report,
+          conditions: {
+            ...report.conditions,
+            topology: {
+              localWorldCounts: { dedicatedServer: 1, client: 1 },
+              effectiveRunUnderOneProcess: true,
+            },
+          },
+        },
+        report,
+        "base",
+      ).status,
+    ).toBe("numeric_only");
+    expect(
+      compareReports({ ...report, conditions: { ...report.conditions, topology: undefined } }, report, "base")
+        .missingConditions,
+    ).toContain("topology");
   });
 });

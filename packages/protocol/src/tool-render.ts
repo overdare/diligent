@@ -125,6 +125,15 @@ export const DiffBlockSchema = z.object({
 });
 export type DiffBlock = z.infer<typeof DiffBlockSchema>;
 
+/** Opaque host-owned resource. Clients render a reference even when its viewer is unavailable. */
+export const ResourceBlockSchema = z.object({
+  type: z.literal("resource"),
+  resourceType: z.string().min(1).max(80),
+  resourceId: z.string().min(1).max(256),
+  title: z.string(),
+});
+export type ResourceBlock = z.infer<typeof ResourceBlockSchema>;
+
 export const ToolRenderBlockSchema = z.discriminatedUnion("type", [
   SummaryBlockSchema,
   ToolRenderTextBlockSchema,
@@ -137,6 +146,7 @@ export const ToolRenderBlockSchema = z.discriminatedUnion("type", [
   FileBlockSchema,
   CommandBlockSchema,
   DiffBlockSchema,
+  ResourceBlockSchema,
 ]);
 export type ToolRenderBlock = z.infer<typeof ToolRenderBlockSchema>;
 

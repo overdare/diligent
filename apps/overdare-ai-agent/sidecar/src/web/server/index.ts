@@ -22,6 +22,7 @@ import type { WebFeedbackBackend } from "../shared/feedback-protocol";
 import { decodeWebImageRelativePath, toWebImageUrl, WEB_IMAGE_ROUTE_PREFIX } from "../shared/image-routes";
 import { injectSentryConfig } from "../shared/sentry-config";
 import { migrateLegacyConsentConfig } from "./legacy-consent-config";
+import { readPerformanceView } from "./performance-reader";
 import { routeWebRpcRequest } from "./product-rpc";
 
 function createStreamLogger(
@@ -257,6 +258,9 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
         void routeWebRpcRequest(raw, {
           consentBackend: options.consentBackend,
           feedbackBackend: options.feedbackBackend,
+          performanceBackend: {
+            read: async (params) => readPerformanceView(await appServer.resolveProjectCwd(params.threadId), params),
+          },
           send: (message) => ws.send(JSON.stringify(message)),
           forward,
         });

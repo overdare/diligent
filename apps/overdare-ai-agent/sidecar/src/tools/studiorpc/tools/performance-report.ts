@@ -123,25 +123,61 @@ export function summarizeProcesses(samples: ProcessSample[]) {
 
 type Comparable = Pick<PerformanceReport, "case" | "conditions" | "summaries">;
 export function compareReports(candidate: Comparable, baseline: Comparable, baselineId: string) {
-  const required = ["build", "resolution", "quality", "frameCap", "load", "scope", "coverage"];
+  const required = [
+    "build",
+    "resolution",
+    "quality",
+    "frameCap",
+    "load",
+    "scope",
+    "coverage",
+    "topology",
+    "playerCount",
+  ];
+  const canonical = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(canonical)
+      : value && typeof value === "object"
+        ? Object.fromEntries(
+            Object.entries(value)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([k, v]) => [k, canonical(v)]),
+          )
+        : value;
+  const unknown = (value: unknown): boolean =>
+    value == null || value === "unknown" || (typeof value === "object" && Object.values(value).some(unknown));
+  const topologyKnown = (value: unknown): boolean => {
+    const topology = value as
+      | { effectiveRunUnderOneProcess?: unknown; localWorldCounts?: Record<string, unknown> }
+      | undefined;
+    return (
+      typeof topology?.effectiveRunUnderOneProcess === "boolean" &&
+      topology.localWorldCounts != null &&
+      Object.keys(topology.localWorldCounts).length > 0 &&
+      Object.values(topology.localWorldCounts).every(
+        (count) => typeof count === "number" && Number.isInteger(count) && count >= 0,
+      )
+    );
+  };
   const missingConditions = required.filter(
     (key) =>
-      candidate.conditions[key] == null ||
-      baseline.conditions[key] == null ||
-      candidate.conditions[key] === "unknown" ||
-      baseline.conditions[key] === "unknown",
+      unknown(candidate.conditions[key]) ||
+      unknown(baseline.conditions[key]) ||
+      (key === "topology" && (!topologyKnown(candidate.conditions[key]) || !topologyKnown(baseline.conditions[key]))),
   );
   const conditionDifferences = ["case", ...required].filter(
     (key) =>
-      JSON.stringify(key === "case" ? candidate.case : candidate.conditions[key]) !==
-      JSON.stringify(key === "case" ? baseline.case : baseline.conditions[key]),
+      JSON.stringify(canonical(key === "case" ? candidate.case : candidate.conditions[key])) !==
+      JSON.stringify(canonical(key === "case" ? baseline.case : baseline.conditions[key])),
   );
   const status = missingConditions.length
     ? "insufficient_metadata"
     : conditionDifferences.length
       ? "conditions_differ"
       : "numeric_only";
-  const deltas: Record<string, Record<string, { absolute: number | null; percent: number | null }>> = {};
+  const deltas: Record<string, Record<string, { absolute: number | null; percent: number | null }>> = Object.create(
+    null,
+  );
   if (status === "numeric_only") {
     for (const [key, value] of Object.entries(candidate.summaries)) {
       const base = baseline.summaries[key];

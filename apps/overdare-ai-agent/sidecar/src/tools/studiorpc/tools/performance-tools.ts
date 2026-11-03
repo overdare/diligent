@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { type call, StudioRpcError } from "../rpc";
 import type { Tool, ToolResult } from "../types";
+import { renderPerformanceResult } from "./performance-render";
 import { getPerformanceService } from "./performance-service";
 
 const target = z.union([
@@ -57,7 +58,7 @@ function result(value: Record<string, unknown>): ToolResult {
   const output = JSON.stringify(value);
   if (Buffer.byteLength(output) > 16 * 1024)
     throw new Error("RESOURCE_LIMIT: Performance report exceeds 16 KiB; inspect its saved artifacts");
-  return { output, metadata: { result: value } };
+  return { output, metadata: { result: value }, render: renderPerformanceResult(value) };
 }
 
 async function execute(operation: () => Promise<Record<string, unknown>>): Promise<ToolResult> {

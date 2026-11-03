@@ -169,8 +169,54 @@ Baseline comparison returns `numeric_only`, `conditions_differ` or
 `insufficient_metadata`. Unknown gameplay load, quality or effective cap can make
 an automatic comparison unavailable even for the same case name. Current native
 metadata does not verify those conditions; the agent can inspect raw reports and
-apply its own explicitly justified comparison. The tool never returns a
+apply its own explicitly justified comparison. Topology and verified player count
+are also required for automatic deltas. Local world counts do not verify joined
+players, so current captures normally leave player count unknown. The tool never returns a
 performance pass/fail or a regression verdict.
+
+## Offline Web viewer
+
+Expand a performance tool result and choose **View performance capture**. The
+viewer loads the saved job on demand. It shows frame-time bars in windows of up
+to 200 exact frames, selection by index or slowest frame, explicit Lua label
+intervals for the selected frame, every saved label's invocation distribution,
+and separate process CPU/memory charts. Tables always include n, mean, p50,
+p95 and max. Memory is displayed in MiB. LuaMachine and Slate remain per-frame
+totals; they are not drawn as task intervals or an additive frame breakdown.
+
+The optional baseline input accepts a job ID from the same project. Each
+statistic shows its baseline and, when metadata permits, its numeric difference.
+Lua labels are matched by name and compatible measurement coverage, never by
+capture-local label ID. Unknown or differing conditions withhold differences
+while keeping both distributions visible. The viewer makes no budget decisions.
+
+Frames and Lua events share native integer timestamps. The viewer subtracts an
+integer origin before converting to milliseconds. OS observations use their own
+worker clock; CPU bars cover the preceding sampled interval, memory shows valid
+observations, and missing samples leave gaps. These charts cannot identify which
+native frame caused an OS sample. GPU/thread/draw observations retain their
+unknown-freshness metadata and do not become frame-aligned timelines.
+
+The tool render payload contains a generic `resource` block with
+`resourceType: "overdare.performance_capture"` and the opaque job ID. It embeds no
+raw frames. Web opens an on-demand viewer; TUI shows the same summary and resource
+reference. The two public MCP tools and their JSON outputs remain unchanged.
+
+The product-owned WebSocket method `overdare/performance/read` accepts
+`{jobId, baseline?, threadId?}`. The host resolves a known thread's project using
+the runtime's read-only project resolver; without a thread it uses the host's
+project. Browser-supplied paths or cwd are rejected. The response has versioned
+report, frames, Lua records/full summaries, OS records/summaries, quality, and
+optional baseline distributions/comparisons. Zod validates both boundaries.
+
+`performance-reader` reads only manifest, summary and raw CSV artifacts. It does
+not call `PerformanceService.report`, reconnect to Studio, recover a capture,
+start timers, sample a process or write files. Missing/incomplete artifacts and
+unsupported versions produce an explicit error; refresh is manual. Reads are
+bounded to 8 MiB per file and existing record limits (10,000 frames, 8,192 Lua
+calls, 32 labels, 2,000 OS records). This adds no instrumentation to the game or
+engine and no polling during capture. Old results can acquire the viewer entry
+by reading their job again through the existing report tool.
 
 ## Native integration
 

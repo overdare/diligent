@@ -7,6 +7,21 @@ import type { Component } from "../../src/tui/framework/types";
 import { renderToolPayload } from "../../src/tui/render-blocks";
 
 describe("renderToolPayload", () => {
+  test("preserves an opaque viewer resource reference without a browser", () => {
+    const lines = renderToolPayload({
+      blocks: [
+        {
+          type: "resource",
+          resourceType: "overdare.performance_capture",
+          resourceId: "perf-job",
+          title: "View performance capture",
+        },
+      ],
+    });
+    expect(lines.join("\n")).toContain("perf-job");
+    expect(lines.join("\n")).toContain("View performance capture");
+    expect(lines.join("\n")).not.toContain("unsupported block");
+  });
   test("renders file block header and content", () => {
     const payload: ToolRenderPayload = {
       blocks: [

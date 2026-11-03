@@ -1,5 +1,6 @@
 // @summary Verifies CLI argument parsing for web sidecar startup options
 import { describe, expect, test } from "bun:test";
+import { resolve } from "node:path";
 import { parseArgs, resolveServerVersionOverride, resolveWebClientDistDir } from "../../../src/web/server/index";
 
 describe("web server parseArgs", () => {
@@ -48,6 +49,6 @@ describe("web server parseArgs", () => {
         sourceDir: "/repo/apps/overdare-ai-agent/sidecar/src/web/server",
         exists: () => false,
       }),
-    ).toBe("/repo/apps/overdare-ai-agent/sidecar/dist/client");
+    ).toBe(resolve("/repo/apps/overdare-ai-agent/sidecar/dist/client"));
   });
 });
