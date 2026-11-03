@@ -23,6 +23,7 @@ import { cn } from "../lib/cn";
 import { AssetThumbnail } from "./AssetThumbnail";
 import { CopyButton } from "./CopyButton";
 import { ExpandButton } from "./ExpandButton";
+import { ToolResource } from "./ToolResource";
 import {
   diffStackClasses,
   microLabelClasses,
@@ -543,6 +544,8 @@ function RenderBlock({ block }: { block: ToolRenderBlock }) {
       return <RenderCommand block={block} />;
     case "diff":
       return <RenderDiff block={block} />;
+    case "resource":
+      return <ToolResource block={block} />;
     default:
       // Unknown block kind — graceful fallback
       return null;

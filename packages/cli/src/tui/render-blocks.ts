@@ -301,6 +301,12 @@ function renderBlock(block: ToolRenderBlock): string[] {
       return renderCommand(block);
     case "diff":
       return renderDiff(block);
+    case "resource":
+      return [
+        `${block.title} [${block.resourceType}]`,
+        block.resourceId,
+        `${t.dim}Open this resource in the product Web viewer.${t.reset}`,
+      ];
     default:
       return renderUnknownBlock(block);
   }

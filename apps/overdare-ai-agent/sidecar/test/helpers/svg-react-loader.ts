@@ -6,7 +6,7 @@ plugin({
   name: "svg-react-test-loader",
   setup(build) {
     build.onLoad({ filter: /\.svg\?react$/ }, ({ path }) => {
-      const iconName = path.match(/\/([^/?]+)\.svg(?:\?react)?$/)?.[1] ?? "svg-icon";
+      const iconName = path.replaceAll("\\", "/").match(/\/([^/?]+)\.svg(?:\?react)?$/)?.[1] ?? "svg-icon";
 
       return {
         loader: "js",

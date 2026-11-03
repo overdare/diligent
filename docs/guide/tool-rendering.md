@@ -12,7 +12,7 @@ Structured tool rendering is part of the shared protocol contract.
 - `outputSummary?`
 - `blocks`
 
-The protocol package also defines the supported block types, including `summary`, `text`, `key_value`, `list`, `table`, `asset_gallery`, `tree`, `status_badges`, `file`, `command`, and `diff`.
+The protocol package also defines the supported block types, including `summary`, `text`, `key_value`, `list`, `table`, `asset_gallery`, `tree`, `status_badges`, `file`, `command`, `diff`, and `resource`.
 
 Tool render payloads can appear on tool events and on `tool_result` messages.
 
@@ -60,6 +60,17 @@ That means shared meaning should normally be introduced through runtime and prot
 - `apps/overdare-ai-agent/sidecar/src/web/client/components/ToolRenderBlocks.tsx`
 - `packages/cli/src/tui/components/thread-store-utils.ts`
 - `packages/cli/src/tui/render-blocks.ts`
+
+## Host-owned resources
+
+A `resource` block carries `resourceType`, `resourceId` and `title`. Identity is
+opaque: the shared protocol does not encode disk paths, large viewer datasets or
+an arbitrary navigation URL. The product host owns lookup and validation. Web
+opens a supported viewer on demand and otherwise displays the reference; TUI
+always displays its title and reference. Neither client derives a resource by
+parsing human-readable tool output. The OVERDARE performance viewer uses this
+block; its read contract and measurement limits are described in
+`performance-captures.md`.
 
 ## Asset discovery and optional selection
 

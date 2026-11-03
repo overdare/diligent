@@ -351,7 +351,10 @@ function createPieStatusTool(callRpc: CallRpc): Tool {
       "index. After each play or restart, identify each client's actual local player from game state before " +
       "running player-specific scenarios. Input, move, and studiorpc_game_character_read accept another " +
       "injectable clientId; studiorpc_game_observe and studiorpc_game_screenshot accept pieSessionId with " +
-      "clientId; the camera uses the targeted client.",
+      "clientId; the camera uses the targeted client. Optional server reports separate-server startup state " +
+      "(serverStarting, clientStarting, ready, stopping, failed), PID, startTimeUtc and failure reason. " +
+      "ready confirms the server and first local PIE client; this list does not enumerate every external client process. " +
+      "Confirm intended players have joined before measuring; game.stop cancels a pending start.",
     parameters: z.object({}),
     supportParallel: true,
     async execute(_args, ctx): Promise<ToolResult> {

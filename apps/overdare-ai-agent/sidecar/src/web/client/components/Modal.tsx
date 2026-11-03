@@ -7,6 +7,7 @@ interface ModalProps {
   title: string;
   description?: string;
   children: ReactNode;
+  wide?: boolean;
   onConfirm?: () => void | Promise<void>;
   onCancel?: () => void | Promise<void>;
 }
@@ -26,7 +27,7 @@ function isButtonLikeTarget(target: EventTarget | null): boolean {
   return role === "button" || role === "link";
 }
 
-export function Modal({ title, description, children, onConfirm, onCancel }: ModalProps) {
+export function Modal({ title, description, children, wide, onConfirm, onCancel }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,7 +61,7 @@ export function Modal({ title, description, children, onConfirm, onCancel }: Mod
         aria-label={title}
         tabIndex={-1}
         onKeyDown={handleKeyDown}
-        className={`w-full max-w-lg p-5 ${elevatedCardClasses}`}
+        className={`w-full ${wide ? "max-w-6xl max-h-[90vh] overflow-y-auto" : "max-w-lg"} p-5 ${elevatedCardClasses}`}
       >
         <h2 className="text-lg font-semibold text-text">{title}</h2>
         {description ? <p className="mt-1 text-sm text-muted">{description}</p> : null}

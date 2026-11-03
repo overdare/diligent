@@ -1,6 +1,7 @@
 // @summary Tests Web-owned product request interception before DiligentAppServer dispatch
 
 import { describe, expect, test } from "bun:test";
+import type { JSONRPCResponse } from "@diligent/protocol";
 import { routeWebRpcRequest } from "../../../src/web/server/product-rpc";
 import type { WebConsentBackend } from "../../../src/web/shared/consent-protocol";
 import type {
@@ -28,6 +29,38 @@ function feedbackBackend(submit: (input: FeedbackReportInput) => Promise<Feedbac
 }
 
 describe("routeWebRpcRequest", () => {
+  test("validates offline performance reads before invoking their backend and never forwards them", async () => {
+    const sent: JSONRPCResponse[] = [];
+    let calls = 0;
+    const options = {
+      performanceBackend: {
+        read: async () => {
+          calls++;
+          throw new Error("artifacts unavailable");
+        },
+      },
+      send: (message: JSONRPCResponse) => sent.push(message),
+      forward: () => {
+        throw new Error("Unexpected runtime dispatch");
+      },
+    };
+    await routeWebRpcRequest(
+      JSON.stringify({ id: 1, method: "overdare/performance/read", params: { jobId: "../../secret" } }),
+      options,
+    );
+    expect(sent[0]).toMatchObject({ error: { code: -32602 } });
+    expect(calls).toBe(0);
+    await routeWebRpcRequest(
+      JSON.stringify({
+        id: 2,
+        method: "overdare/performance/read",
+        params: { jobId: "perf-00000000-0000-0000-0000-000000000001" },
+      }),
+      options,
+    );
+    expect(sent[1]).toMatchObject({ error: { message: "artifacts unavailable" } });
+    expect(calls).toBe(1);
+  });
   test("intercepts consent/set and returns the backend result without forwarding", async () => {
     const sent: unknown[] = [];
     const forwarded: unknown[] = [];

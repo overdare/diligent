@@ -25,6 +25,24 @@ afterEach(async () => {
 });
 
 describe("Studio RPC cancellation", () => {
+  test("background captures can pin an endpoint when the configured endpoint changes", async () => {
+    server = createServer((socket) => {
+      accepted = socket;
+      const lines = readline.createInterface({ input: socket });
+      lines.on("line", (line) => {
+        const request = JSON.parse(line);
+        socket.write(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { pinned: true } })}\n`);
+      });
+    });
+    await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("no TCP port");
+    process.env.STUDIO_PORT = "1";
+    await expect(call("performance.capture.status", {}, { host: "127.0.0.1", port: address.port })).resolves.toEqual({
+      pinned: true,
+    });
+  });
+
   test("direct RPCs isolate overlapping roots and children without leaking identity after the run", async () => {
     const requests: Array<{ params: { label: string }; meta?: { sessionId: string } }> = [];
     server = createServer((socket) => {

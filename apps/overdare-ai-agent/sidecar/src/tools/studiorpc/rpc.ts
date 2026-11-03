@@ -8,6 +8,9 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const logger = createLogger({ scope: "sidecar/studiorpc", context: { component: "rpc" } });
 
 export interface StudioRpcCallOptions {
+  /** Pin a background job to the endpoint it started against. */
+  host?: string;
+  port?: number;
   timeoutMs?: number;
   signal?: AbortSignal;
   sessionId?: string;
@@ -61,8 +64,8 @@ export async function call(
   options: StudioRpcCallOptions = {},
 ): Promise<unknown> {
   options = studioRpcCallOptions(options);
-  const host = resolveStudioHost();
-  const port = resolveStudioPort();
+  const host = options.host ?? resolveStudioHost();
+  const port = options.port ?? resolveStudioPort();
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   options.signal?.throwIfAborted();
 

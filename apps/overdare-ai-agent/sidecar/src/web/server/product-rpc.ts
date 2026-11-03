@@ -13,10 +13,17 @@ import {
   WEB_FEEDBACK_REPORT_METHOD,
   type WebFeedbackBackend,
 } from "../shared/feedback-protocol";
+import {
+  PerformanceReadParamsSchema,
+  PerformanceViewSchema,
+  WEB_PERFORMANCE_READ_METHOD,
+  type WebPerformanceBackend,
+} from "../shared/performance-protocol";
 
 interface WebRequestRouterOptions {
   consentBackend?: WebConsentBackend;
   feedbackBackend?: WebFeedbackBackend;
+  performanceBackend?: WebPerformanceBackend;
   send(message: JSONRPCResponse): void;
   forward(raw: string | Buffer): void;
 }
@@ -41,6 +48,20 @@ export async function routeWebRpcRequest(raw: string | Buffer, options: WebReque
     return;
   }
   try {
+    if (value.method === WEB_PERFORMANCE_READ_METHOD) {
+      if (!options.performanceBackend) {
+        options.send({ id, error: { code: -32601, message: "Performance viewer not available" } });
+        return;
+      }
+      const params = PerformanceReadParamsSchema.safeParse(value.params ?? {});
+      if (!params.success) {
+        options.send({ id, error: { code: -32602, message: "Invalid performance viewer params" } });
+        return;
+      }
+      const result = PerformanceViewSchema.parse(await options.performanceBackend.read(params.data));
+      options.send({ id, result });
+      return;
+    }
     if (value.method === WEB_CONSENT_GET_METHOD) {
       if (!options.consentBackend) {
         options.send({ id, error: { code: -32601, message: "Consent backend not available" } });
@@ -99,6 +120,7 @@ function isProductRequest(value: unknown): value is { id: unknown; method: strin
     "method" in value &&
     ((value as { method?: unknown }).method === WEB_CONSENT_GET_METHOD ||
       (value as { method?: unknown }).method === WEB_CONSENT_SET_METHOD ||
-      (value as { method?: unknown }).method === WEB_FEEDBACK_REPORT_METHOD)
+      (value as { method?: unknown }).method === WEB_FEEDBACK_REPORT_METHOD ||
+      (value as { method?: unknown }).method === WEB_PERFORMANCE_READ_METHOD)
   );
 }

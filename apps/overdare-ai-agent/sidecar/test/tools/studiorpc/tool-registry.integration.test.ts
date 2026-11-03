@@ -230,9 +230,22 @@ describe("native Studio method contracts", () => {
     ]);
   });
 
+  test("precision performance server separation stops first and reaches native play without saving", async () => {
+    const ctx = await setup();
+    expect(
+      (await ctx.invoke("studiorpc_game_play", { restart: true, separateServer: true, numberOfPlayer: 1 })).isError,
+    ).not.toBe(true);
+    expect(ctx.calls.map(({ method, params }) => ({ method, params }))).toEqual([
+      { method: "game.stop", params: {} },
+      { method: "game.play", params: { separateServer: true, numberOfPlayer: 1 } },
+    ]);
+  });
+
   test.each([
     { addClient: true, restart: true },
     { addClient: true, numberOfPlayer: 2 },
+    { addClient: true, separateServer: true },
+    { addClient: true, separateServer: false, restart: false },
   ])("conflicting addClient request is rejected before stopping PIE: %j", async (args) => {
     const ctx = await setup();
     expect((await ctx.invoke("studiorpc_game_play", args)).isError).toBe(true);

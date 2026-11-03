@@ -62,6 +62,7 @@ import { collectPluginHooks, type PluginDiscoveryMode } from "../tools/plugin-lo
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
 import type { ConfigReloadResult } from "./config-handlers";
 import type { ExperimentConfigManager } from "./experiment-handlers";
+import { resolveFilePreviewCwd } from "./file-handlers";
 import { HistoryPriority } from "./history-priority";
 import { createKeyedSerializer } from "./keyed-serializer";
 import {
@@ -223,6 +224,15 @@ export class DiligentAppServer {
   }
 
   // ─── New multi-connection API ───────────────────────────────────────────────
+
+  /** Resolve a host-owned read against a known thread project without creating or resuming a runtime. */
+  async resolveProjectCwd(threadId?: string): Promise<string> {
+    return resolveFilePreviewCwd(
+      { threads: this.threads, knownCwds: this.knownCwds, resolvePaths: this.config.resolvePaths },
+      threadId,
+      this.config.cwd ?? process.cwd(),
+    );
+  }
 
   connect(connectionId: string, peer: RpcPeer, options?: { cwd?: string; mode?: Mode; userId?: string }): () => void {
     const conn: ConnectedPeer = {
