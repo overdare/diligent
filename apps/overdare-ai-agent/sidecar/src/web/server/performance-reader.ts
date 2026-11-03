@@ -34,7 +34,7 @@ async function boundedRead(path: string): Promise<string> {
 }
 
 // The store quotes every data field. Parse quoted commas/newlines and doubled quotes without lossy coercion.
-function csv(text: string): Record<string, string>[] {
+function csv(text: string, required: string[]): Record<string, string>[] {
   const rows: string[][] = [];
   let row: string[] = [],
     field = "",
@@ -70,7 +70,8 @@ function csv(text: string): Record<string, string>[] {
     rows.push(row);
   }
   const headers = rows.shift();
-  if (!headers?.length || new Set(headers).size !== headers.length) throw new Error("Invalid capture artifact header");
+  if (!headers?.length || new Set(headers).size !== headers.length || required.some((key) => !headers.includes(key)))
+    throw new Error("Invalid capture artifact header");
   return rows.map((values) => {
     if (values.length !== headers.length) throw new Error("Truncated capture artifact row");
     return Object.fromEntries(headers.map((name, i) => [name, values[i]!]));
@@ -103,7 +104,15 @@ async function load(cwd: string, jobId: string) {
       .array(PerformanceFrameSchema)
       .max(10000)
       .parse(
-        csv(framesText).map((row) => ({
+        csv(framesText, [
+          "frameId",
+          "beginMonotonicNs",
+          "endMonotonicNs",
+          "frame_ms",
+          "lua_machine_ms",
+          "slate_gt_ms",
+          "validity",
+        ]).map((row) => ({
           ...row,
           frame_ms: number(row.frame_ms),
           lua_machine_ms: number(row.lua_machine_ms),
@@ -115,7 +124,7 @@ async function load(cwd: string, jobId: string) {
       .array(PerformanceLuaScopeSchema)
       .max(8192)
       .parse(
-        csv(luaText).map((row) => ({
+        csv(luaText, ["labelId", "frameId", "beginMonotonicNs", "endMonotonicNs", "elapsed_ms"]).map((row) => ({
           ...row,
           labelId: number(row.labelId),
           elapsed_ms: number(row.elapsed_ms),
@@ -125,7 +134,15 @@ async function load(cwd: string, jobId: string) {
       .array(PerformanceProcessSampleSchema)
       .max(2000)
       .parse(
-        csv(processText).map((row) => ({
+        csv(processText, [
+          "pid",
+          "startTimeUtc",
+          "monotonicMs",
+          "cpuSeconds",
+          "residentBytes",
+          "privateBytes",
+          "status",
+        ]).map((row) => ({
           ...row,
           pid: number(row.pid),
           monotonicMs: number(row.monotonicMs),

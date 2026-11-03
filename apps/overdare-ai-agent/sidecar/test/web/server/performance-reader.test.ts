@@ -116,6 +116,8 @@ test("loads every label and preserves integer clocks, zero and null from quoted 
     await expect(readPerformanceView(cwd, { jobId })).rejects.toThrow("not ready");
     await writeFile(store.paths(jobId).frames, 'frameId\n"truncated');
     await expect(readPerformanceView(cwd, { jobId })).rejects.toThrow("artifact");
+    await writeFile(store.paths(jobId).frames, "unexpected_header\n");
+    await expect(readPerformanceView(cwd, { jobId })).rejects.toThrow("header");
     await expect(readPerformanceView(cwd, { jobId: "../../outside" })).rejects.toThrow();
     await writeFile(store.paths(jobId).manifest, JSON.stringify({ ...manifest, state: "finalizing" }));
     await expect(readPerformanceView(cwd, { jobId })).rejects.toThrow("not ready");
