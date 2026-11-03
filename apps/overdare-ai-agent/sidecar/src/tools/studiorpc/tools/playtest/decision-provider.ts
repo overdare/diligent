@@ -1,4 +1,7 @@
 // @summary Normalizes Laya and OpenAI Decisions without coupling providers to Studio input or capture.
+import { loadAuthStore, loadDiligentConfig } from "@diligent/runtime";
+import { z } from "zod";
+import { type OverdareConfigFile, readOverdareConfigFile } from "../../config";
 import type { PlaytestDecisionCandidate, PlaytestDecisionContext, PlaytestFrame } from "./frame";
 import { createLayaChooser } from "./model";
 import type { PlaytestChoice } from "./runtime";
@@ -10,12 +13,16 @@ export interface DecisionProviderConfig {
   provider: DecisionProviderId;
   goal: string;
   model?: string;
-  url?: string;
   observationMode?: ObservationMode;
 }
 export interface DecisionProviderOptions {
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
+  /** Overrides the OpenAI API key lookup (Diligent auth store, then config `provider.openai.apiKey`). */
   resolveApiKey?: () => Promise<string | undefined>;
+  /** Overrides the fresh `overdare.jsonc` `playtest` section read. */
+  readSettings?: () => PlaytestDecisionSettings;
+  /** Project directory used to load Diligent config for the OpenAI key lookup. */
+  cwd?: string;
 }
 export interface DecisionProvider {
   metadata: { provider: DecisionProviderId; model: string; endpoint: string; observationMode: ObservationMode };
@@ -28,17 +35,72 @@ export interface DecisionProvider {
     visual?: PlaytestVisual,
   ): Promise<PlaytestChoice>;
 }
+/** A user-fixable decision provider configuration problem, reported as a tool error result. */
+export class DecisionProviderConfigError extends Error {}
+
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/decisions";
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Provider used when the caller omits one: DILIGENT_DECISION_PROVIDER on the sidecar host, else Laya. */
-export function defaultDecisionProvider(): DecisionProviderId {
-  const configured = process.env.DILIGENT_DECISION_PROVIDER?.trim();
-  if (!configured) return "laya";
-  if (configured === "laya" || configured === "openai-decisions") return configured;
-  throw new Error(`DILIGENT_DECISION_PROVIDER must be "laya" or "openai-decisions", got "${configured}"`);
+export const DEFAULT_DECISION_PROVIDER: DecisionProviderId = "openai-decisions";
+const DEFAULT_LAYA_MODEL = "laya:en";
+export const LAYA_CONFIG_EXAMPLE =
+  '{ "playtest": { "decisionProvider": "laya", "laya": { "url": "http://127.0.0.1:11435/api/decide", "model": "laya:en" } } }';
+
+const httpUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => /^https?:$/.test(new URL(value).protocol), "must be an http or https URL");
+const playtestSettingsSchema = z.object({
+  decisionProvider: z.enum(["openai-decisions", "laya"]).optional(),
+  laya: z.object({ url: httpUrlSchema, model: z.string().min(1).optional() }).optional(),
+});
+
+/** The `playtest` section of overdare.jsonc plus the file it came from. */
+export interface PlaytestDecisionSettings {
+  path?: string;
+  decisionProvider?: DecisionProviderId;
+  laya?: { url: string; model?: string };
+}
+
+/** Validates the `playtest` section of an overdare.jsonc read; invalid values name the file and key. */
+export function parsePlaytestDecisionSettings(file: OverdareConfigFile | undefined): PlaytestDecisionSettings {
+  if (!file) return {};
+  if (file.error !== undefined) throw new DecisionProviderConfigError(`Cannot read ${file.path}: ${file.error}`);
+  const root = file.value;
+  const section = record(root) ? root.playtest : undefined;
+  if (section === undefined) return { path: file.path };
+  const parsed = playtestSettingsSchema.safeParse(section);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const key = ["playtest", ...(issue?.path ?? [])].join(".");
+    throw new DecisionProviderConfigError(`Invalid ${key} in ${file.path}: ${issue?.message ?? "invalid value"}`);
+  }
+  return { path: file.path, ...parsed.data };
+}
+
+/** Reads the playtest settings freshly on every call so config edits apply without a restart. */
+export function readPlaytestDecisionSettings(): PlaytestDecisionSettings {
+  return parsePlaytestDecisionSettings(readOverdareConfigFile());
+}
+
+/** Provider used when the caller omits one: overdare.jsonc `playtest.decisionProvider`, else OpenAI Decisions. */
+export function defaultDecisionProvider(settings: PlaytestDecisionSettings = readPlaytestDecisionSettings()) {
+  return settings.decisionProvider ?? DEFAULT_DECISION_PROVIDER;
+}
+
+/** Same precedence as the runtime provider setup: auth store key overrides config `provider.openai.apiKey`. */
+export async function resolveOpenAIApiKey(
+  cwd: string,
+  sources: { loadConfig: typeof loadDiligentConfig; loadAuth: typeof loadAuthStore } = {
+    loadConfig: loadDiligentConfig,
+    loadAuth: loadAuthStore,
+  },
+): Promise<string | undefined> {
+  const { config } = await sources.loadConfig(cwd);
+  const stored = (await sources.loadAuth({ mode: config.provider?.auth?.credentialsStore ?? "auto" })).openai;
+  return stored || config.provider?.openai?.apiKey;
 }
 
 export async function createDecisionProvider(
@@ -49,8 +111,13 @@ export async function createDecisionProvider(
   if (config.provider === "laya") {
     if (observationMode !== "structured")
       throw new Error("Laya does not support the requested visual/image observation mode");
-    const model = config.model ?? process.env.DILIGENT_LAYA_MODEL ?? "laya:en";
-    const url = config.url ?? process.env.DILIGENT_LAYA_URL ?? "http://127.0.0.1:11435/api/decide";
+    const settings = (options.readSettings ?? readPlaytestDecisionSettings)();
+    const url = settings.laya?.url;
+    if (!url)
+      throw new DecisionProviderConfigError(
+        `Laya requires playtest.laya.url in ${settings.path ?? "~/.overdare/overdare.jsonc"}, for example ${LAYA_CONFIG_EXAMPLE}`,
+      );
+    const model = config.model ?? settings.laya?.model ?? DEFAULT_LAYA_MODEL;
     const chooser = createLayaChooser({ url, model, goal: config.goal, fetch: options.fetch });
     const endpoint = new URL(url);
     return {
@@ -63,14 +130,12 @@ export async function createDecisionProvider(
     };
   }
   if (config.provider !== "openai-decisions") throw new Error("Unsupported decision provider");
-  if (config.url && config.url !== OPENAI_ENDPOINT)
-    throw new Error("OpenAI Decisions requires the official HTTPS endpoint; credentials are not sent to custom URLs");
   const model = config.model ?? "gpt-6-luna";
   if (model !== "gpt-6-luna") throw new Error("The documented Decisions endpoint currently supports model gpt-6-luna");
-  const apiKey = (await (options.resolveApiKey ?? (async () => process.env.OPENAI_API_KEY))())?.trim();
+  const apiKey = (await (options.resolveApiKey ?? (() => resolveOpenAIApiKey(options.cwd ?? process.cwd())))())?.trim();
   if (!apiKey)
-    throw new Error(
-      "OpenAI Decisions requires OPENAI_API_KEY on the sidecar host; existing ChatGPT sign-in is not automatically reused",
+    throw new DecisionProviderConfigError(
+      "OpenAI Decisions needs an OpenAI API key: connect one in Settings -> AI connection. ChatGPT sign-in is not accepted by the Decisions API.",
     );
   const request = options.fetch ?? ((url, init) => fetch(url, init));
   return {

@@ -44,7 +44,8 @@ startOwnedSession
 | Has this harness failed the same way before? | [run-history.ts](run-history.ts) |
 | What stays inline versus in evidence files? | [run-output.ts](run-output.ts): bounded provenance-first output |
 | How are selected runs reported without custom scripts? | [run-report.ts](run-report.ts): validated records, deterministic artifacts, no acceptance inference |
-| Which provider receives state and images? | [decision-provider.ts](decision-provider.ts), [visual-observation.ts](visual-observation.ts) |
+| Which provider receives state and images? | [decision-provider.ts](decision-provider.ts) (`overdare.jsonc` `playtest` settings, read per run), [visual-observation.ts](visual-observation.ts) |
+| How are strict validation failures explained? | [validation-hints.ts](validation-hints.ts): validator codes to fix hints |
 | What ends an episode with no progress? | [progress.ts](progress.ts) |
 | Did the model actually influence play? | [decision-evidence.ts](decision-evidence.ts); distinct from [coverage.ts](coverage.ts) |
 | How are two real clients bound and measured? | [multiplayer.ts](multiplayer.ts), [concurrency.ts](concurrency.ts) |

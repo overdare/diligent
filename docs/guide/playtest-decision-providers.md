@@ -9,18 +9,40 @@ owned-session cleanup. A model/provider never directly sends Studio input.
 
 | Argument | Behavior |
 | --- | --- |
-| `decisionProvider` | `laya` or `openai-decisions`. Omitted: sidecar host's `DILIGENT_DECISION_PROVIDER`, else `laya` |
+| `decisionProvider` | `laya` or `openai-decisions`. Omitted: `overdare.jsonc` `playtest.decisionProvider`, else `openai-decisions` |
 | `observationMode` | `structured` (default) or `structured+image` |
 | `model` | Laya model/configured default, or currently `gpt-6-luna` for Decisions |
-| `decisionUrl` | Existing Laya override. Decisions accepts only its official HTTPS endpoint. |
 | `maxVisualAgeMs` | 250..30000, default 2000; maximum image age before a new model choice dispatch |
 
 Existing `harnessName`, `goal`, duration, decision interval and stuck timeout keep
-their behavior. Laya's existing defaults and wire format remain intact; visual
-mode with Laya is rejected instead of silently dropping images.
+their behavior. Endpoints and credentials are user configuration, never tool
+arguments. Laya's wire format remains intact; visual mode with Laya is rejected
+instead of silently dropping images.
+
+## Provider configuration
+
+Provider settings live in the `playtest` section of the product config file
+`overdare.jsonc`, the same file Studio host/port settings use. It is read freshly
+on every run, so edits apply without a restart. Invalid values fail with the
+file path and key.
+
+```jsonc
+// ~/.overdare/overdare.jsonc (or ~/.<DILIGENT_STORAGE_NAMESPACE>/overdare.jsonc; legacy ~/.diligent/overdare.jsonc)
+{
+  "playtest": {
+    "decisionProvider": "laya", // omit for the default "openai-decisions"
+    "laya": { "url": "http://127.0.0.1:11435/api/decide", "model": "laya:en" } // model optional
+  }
+}
+```
+
+- `openai-decisions` (default) needs no section.
+- `laya` is available only when configured: `playtest.laya.url` (http/https) is
+  required; `playtest.laya.model` defaults to `laya:en`. Selecting `laya` without
+  a URL fails before any Studio call and names the setting to add.
 
 These settings apply to `mode: "autonomous"` (the default). `mode: "verification"`
-creates no provider, so it needs neither Ollaya nor `OPENAI_API_KEY`; the arguments
+creates no provider, so it needs neither Ollaya nor an OpenAI API key; the arguments
 above are rejected in that mode and `decisionConfig.provider` is recorded as `none`.
 
 Example for an already installed, validated harness:
@@ -44,8 +66,11 @@ first; the playtest tool starts and stops its own session.
 
 ## Credentials and request handling
 
-Set `OPENAI_API_KEY` in the **sidecar host's** server environment. Do not put a
-credential in tool arguments, Lua, browser configuration or traces. The adapter
+Connect an OpenAI API key in **Settings -> AI connection**. The adapter reads it
+from the Diligent auth store, falling back to `provider.openai.apiKey` in Diligent
+config (the auth store wins, as for chat providers). ChatGPT sign-in is not
+accepted by the Decisions API. Do not put a credential in tool arguments, Lua or
+traces. The adapter
 sends it as a Bearer credential to `https://api.openai.com/v1/decisions`, rejects
 custom authenticated destinations and disables redirects. Missing credentials
 fail before any Studio calls. There is no automatic ChatGPT OAuth reuse or token

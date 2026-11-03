@@ -283,6 +283,59 @@ describe("runPlaytest", () => {
     expect(result.cleanup.stopped).toBe(true);
   });
 
+  test("waits at startup until the driver creates the frame StringValue", async () => {
+    const events: PlaytestEvent[] = [];
+    const withoutFrame = { character: { data: { clientId: "client-1" } }, instances: { data: { instances: [] } } };
+    const f = createRpc({
+      observePayload: (count, snapshot, frameName) =>
+        count <= 3 ? withoutFrame : observePayload("client-1", snapshot, frameName),
+    });
+    const result = await runPlaytest(
+      optionsFor(f, {
+        maxDurationMs: 8_000,
+        startupTimeoutMs: 2_500,
+        onEvent: (event: PlaytestEvent) => events.push(event),
+      }),
+    );
+
+    expect(result.outcome).toBe("success");
+    expect(
+      events.some(
+        (event) =>
+          event.type === "readiness_wait" &&
+          event.phase === "startup" &&
+          event.section === "instances" &&
+          String(event.reason).includes("__PlaytestFrame"),
+      ),
+    ).toBe(true);
+  });
+
+  test("times out at startup when the frame StringValue never appears", async () => {
+    const f = createRpc({
+      observePayload: () => ({ character: { data: { clientId: "client-1" } }, instances: { data: { instances: [] } } }),
+    });
+    const result = await runPlaytest(optionsFor(f, { maxDurationMs: 8_000, startupTimeoutMs: 1_500 }));
+
+    expect(result.outcome).toBe("timeout");
+    expect(result.reason).toContain("startupTimeoutMs");
+    expect(result.diagnostics.readinessWaits[0]?.reason).toContain("__PlaytestFrame");
+    expect(f.calls.some((call) => call.method === "game.input.inject")).toBe(false);
+  });
+
+  test("fails when the frame StringValue disappears after the first frame", async () => {
+    const f = createRpc({
+      beforeInputFrame: (count) => frame({ revision: count, gameTimeSeconds: 10 + count, actions: [] }),
+      observePayload: (count, snapshot, frameName) =>
+        count <= 1
+          ? observePayload("client-1", snapshot, frameName)
+          : { character: { data: { clientId: "client-1" } }, instances: { data: { instances: [] } } },
+    });
+    const result = await runPlaytest(optionsFor(f, { maxDurationMs: 8_000, startupTimeoutMs: 2_500 }));
+
+    expect(result.outcome).toBe("error");
+    expect(result.reason).toContain("did not return StringValue __PlaytestFrame");
+  });
+
   test("waits for an adapter ready=false initial frame to become ready before dispatch", async () => {
     const events: PlaytestEvent[] = [];
     const f = createRpc({

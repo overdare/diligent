@@ -1299,7 +1299,7 @@ function createPlaytestEpisode(options: RunPlaytestOptions) {
       ...(terminal ? { terminal } : {}),
       ...(stuck ? { stuck } : {}),
       verification,
-      diagnostics: diagnostics.summary({ outcome, stats, verification, stuck }),
+      diagnostics: diagnostics.summary({ outcome, reason, stats, verification, stuck }),
       stats,
       decisionEvidence: decisionEvidence.summary(),
       ...(multi ? { perActorEvidence: perActorEvidence(), concurrencyEvidence: concurrency.summary() } : {}),

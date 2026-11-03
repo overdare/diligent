@@ -11,7 +11,7 @@ import {
 } from "./harness";
 import { HARNESS_HELPERS_SOURCE, HELPERS_MODULE_NAME } from "./harness-helpers";
 import { createRunReport } from "./run-report";
-import { approve, harnessParams, type PlaytestToolOptions, validate, withSignal } from "./tool-shared";
+import { approve, formatHints, harnessParams, type PlaytestToolOptions, validate, withSignal } from "./tool-shared";
 
 const toolName = "studiorpc_game_playtest_harness";
 const description =
@@ -109,7 +109,7 @@ export function createHarnessTool(options: PlaytestToolOptions): Tool {
         }
         const checked = await validate(rpc, [installed.moduleGuid, installed.driverGuid, installed.helperGuid]);
         return {
-          output: `${warning ? `${warning}\n` : ""}${JSON.stringify({ ...installed, source: undefined, valid: checked.valid }, null, 2)}\n\n${checked.output}`,
+          output: `${warning ? `${warning}\n` : ""}${JSON.stringify({ ...installed, source: undefined, valid: checked.valid }, null, 2)}\n\n${checked.output}${formatHints(checked.hints)}`,
           metadata: {
             name: installed.name,
             sourceHash: installed.sourceHash,
@@ -118,6 +118,7 @@ export function createHarnessTool(options: PlaytestToolOptions): Tool {
             helperGuid: installed.helperGuid,
             frameName: installed.frameName,
             valid: checked.valid,
+            ...(checked.hints.length > 0 ? { hints: checked.hints } : {}),
           },
         };
       } finally {

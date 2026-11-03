@@ -3,7 +3,14 @@ import type { PlaytestFrame } from "./frame";
 import type { SessionTarget } from "./runtime-types";
 
 export class AdapterError extends Error {}
-type FrameValueResult = { ready: true; value: string } | { ready: false; reason: string };
+type FrameValueResult =
+  | { ready: true; value: string }
+  | {
+      ready: false;
+      reason: string;
+      /** The instance list was readable but lacked the frame StringValue. */
+      missingFrame?: true;
+    };
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -58,7 +65,13 @@ export function frameStringValue(observation: unknown, frameName: string): Frame
     const path = record.path;
     return name === frameName || path === frameName || (typeof path === "string" && path.endsWith(`.${frameName}`));
   });
-  if (!instance) throw new AdapterError(`game.observe did not return StringValue ${frameName}`);
+  if (!instance) {
+    return {
+      ready: false,
+      missingFrame: true,
+      reason: `game.observe did not return StringValue ${frameName}; the driver has not created it yet`,
+    };
+  }
   const value = asRecord(asRecord(instance)?.Value);
   if (value?.Type !== "String" || typeof value.String !== "string") {
     throw new AdapterError(`${frameName}.Value is not a tagged String value`);

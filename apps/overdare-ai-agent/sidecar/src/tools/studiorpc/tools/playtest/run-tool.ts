@@ -3,7 +3,13 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Tool } from "../../types";
 import { createCoverageTracker } from "./coverage";
-import { createDecisionProvider, type DecisionProvider, defaultDecisionProvider } from "./decision-provider";
+import {
+  createDecisionProvider,
+  type DecisionProvider,
+  DecisionProviderConfigError,
+  defaultDecisionProvider,
+  readPlaytestDecisionSettings,
+} from "./decision-provider";
 import { withHarnessDriver } from "./driver-state";
 import { readHarness } from "./harness";
 import { findRepeatedFailure } from "./run-history";
@@ -12,6 +18,7 @@ import { DEFAULT_INTENT_DECISION_INTERVAL_MS, DEFAULT_STUCK_TIMEOUT_MS, runPlayt
 import {
   approve,
   DEFAULT_RUN_DURATION_MS,
+  formatHints,
   type PlaytestToolOptions,
   runParams,
   validate,
@@ -23,15 +30,11 @@ const toolName = "studiorpc_game_playtest";
 const DEFAULT_PHYSICAL_BATCH_MS = 2_000;
 
 function configuredProviderNote(): string {
-  try {
-    return `Omit decisionProvider, model and decisionUrl to use this host's configured default provider (currently ${defaultDecisionProvider()}) with its default model/endpoint; set them only when the user asks for a specific provider.`;
-  } catch (error) {
-    return `${error instanceof Error ? error.message : String(error)}; pass decisionProvider explicitly until the host setting is fixed.`;
-  }
+  return "Omit decisionProvider and model to use the user's configured default (overdare.jsonc playtest.decisionProvider, else openai-decisions) with its default model; set them only when the user asks for a specific provider. Endpoints and credentials are user configuration, never tool arguments.";
 }
 
 function describeRunTool(): string {
-  return `Start a fresh Studio play session, run an editable UGC harness, observe effects, then stop the same session. mode=autonomous (default) lets the selected decision provider choose among meaningful candidates; mode=verification runs scripted acceptance without any provider (first offered candidate, decisionEvidence not_applicable) and is the right mode for feature or regression checks. ${configuredProviderNote()} numberOfPlayer defaults to 1; 2 owns two real injectable PIE clients, binds them to authoritative state.multiplayerActors, and runs independent concurrent actor-local decision and native input RPC loops with separate histories, goals and evidence. Two-player mode is structured-only, retains physical intent steps and uses balanced keys/normalized pointers (no main GUI lookup); in autonomous mode each new model-selected intent needs meaningful alternatives. RPC/model overlap is not native execution proof; concurrencyEvidence keeps native intervals unknown unless separately measured by the game. Laya uses structured state only; OpenAI Decisions supports structured state plus actual viewport images for one player. OpenAI requests use server-side OPENAI_API_KEY and may transmit game observations/images to the official API. Visual mode requires one targeted client and screenshot files readable by the sidecar, with optional STUDIO_SCREENSHOT_REMOTE_ROOT/LOCAL_ROOT mapping. Continuous observation, stale-choice checks, bounded input, retained intents and the 15-second progress watchdog remain active. Results report the game outcome, the adapter's requirement checks (verification), diagnostics with hints, decisionEvidence and coverage separately, and repeatedFailure when the same harness keeps failing the same way. Requires stopped PIE and a validated harness. Success comes only from the adapter's observed game terminal, not a model estimate.`;
+  return `Start a fresh Studio play session, run an editable UGC harness, observe effects, then stop the same session. mode=autonomous (default) lets the selected decision provider choose among meaningful candidates; mode=verification runs scripted acceptance without any provider (first offered candidate, decisionEvidence not_applicable) and is the right mode for feature or regression checks. ${configuredProviderNote()} numberOfPlayer defaults to 1; 2 owns two real injectable PIE clients, binds them to authoritative state.multiplayerActors, and runs independent concurrent actor-local decision and native input RPC loops with separate histories, goals and evidence. Two-player mode is structured-only, retains physical intent steps and uses balanced keys/normalized pointers (no main GUI lookup); in autonomous mode each new model-selected intent needs meaningful alternatives. RPC/model overlap is not native execution proof; concurrencyEvidence keeps native intervals unknown unless separately measured by the game. Laya uses structured state only; OpenAI Decisions supports structured state plus actual viewport images for one player. OpenAI requests use the OpenAI API key connected in Settings -> AI connection (ChatGPT sign-in is not accepted) and may transmit game observations/images to the official API. Visual mode requires one targeted client and screenshot files readable by the sidecar, with optional STUDIO_SCREENSHOT_REMOTE_ROOT/LOCAL_ROOT mapping. Continuous observation, stale-choice checks, bounded input, retained intents and the 15-second progress watchdog remain active. Results report the game outcome, the adapter's requirement checks (verification), diagnostics with hints, decisionEvidence and coverage separately, and repeatedFailure when the same harness keeps failing the same way. Requires stopped PIE and a validated harness. Success comes only from the adapter's observed game terminal, not a model estimate.`;
 }
 
 export function createRunTool(options: PlaytestToolOptions): Tool {
@@ -43,29 +46,49 @@ export function createRunTool(options: PlaytestToolOptions): Tool {
       const parsed = runParams.parse(args);
       const mode = parsed.mode ?? "autonomous";
       const numberOfPlayer = parsed.numberOfPlayer ?? 1;
-      const chooser: DecisionProvider | undefined =
-        mode === "autonomous"
-          ? await createDecisionProvider(
-              {
-                provider: parsed.decisionProvider ?? defaultDecisionProvider(),
-                observationMode: parsed.observationMode ?? "structured",
-                goal: parsed.goal,
-                model: parsed.model,
-                url: parsed.decisionUrl,
-              },
-              options.decisionOptions,
-            )
-          : undefined;
+      let chooser: DecisionProvider | undefined;
+      if (mode === "autonomous") {
+        const decisionOptions = { cwd: options.cwd, ...options.decisionOptions };
+        try {
+          chooser = await createDecisionProvider(
+            {
+              provider:
+                parsed.decisionProvider ??
+                defaultDecisionProvider((decisionOptions.readSettings ?? readPlaytestDecisionSettings)()),
+              observationMode: parsed.observationMode ?? "structured",
+              goal: parsed.goal,
+              model: parsed.model,
+            },
+            decisionOptions,
+          );
+        } catch (error) {
+          if (!(error instanceof DecisionProviderConfigError)) throw error;
+          return { output: error.message, metadata: { error: true, reason: "decision_provider_config" } };
+        }
+      }
       const rpc = withSignal(options.callRpc, ctx);
       const asset = await readHarness(rpc, parsed.harnessName);
-      if (!asset?.driverGuid) throw new Error("Install the Studio harness and its observation driver before running");
+      if (!asset?.driverGuid)
+        return {
+          output: `Harness ${parsed.harnessName} or its observation driver is not installed; install it with game_playtest_harness before running.`,
+          metadata: { error: true, reason: "harness_missing", harnessName: parsed.harnessName },
+        };
       const checked = await validate(rpc, [
         asset.moduleGuid,
         asset.driverGuid,
         ...(asset.helperGuid ? [asset.helperGuid] : []),
       ]);
       if (!checked.valid)
-        throw new Error(`Harness validation did not pass; repair it before playing.\n${checked.output}`);
+        return {
+          output: `Harness validation did not pass; repair it before playing.\n${checked.output}${formatHints(checked.hints)}`,
+          metadata: {
+            error: true,
+            reason: "harness_invalid",
+            harnessName: asset.name,
+            validation: checked.output,
+            hints: checked.hints,
+          },
+        };
       const maxDurationMs = parsed.maxDurationMs ?? DEFAULT_RUN_DURATION_MS;
       const stuckTimeoutMs = parsed.stuckTimeoutMs ?? DEFAULT_STUCK_TIMEOUT_MS;
       const maxPhysicalBatchDurationMs = parsed.maxPhysicalBatchDurationMs ?? DEFAULT_PHYSICAL_BATCH_MS;

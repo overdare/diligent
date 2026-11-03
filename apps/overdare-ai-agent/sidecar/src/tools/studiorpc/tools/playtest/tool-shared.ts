@@ -6,6 +6,7 @@ import type { WriteLock } from "../../write-lock";
 import type { DecisionProviderOptions } from "./decision-provider";
 import { reportRunIdsSchema } from "./run-report";
 import { DEFAULT_INTENT_DECISION_INTERVAL_MS, DEFAULT_STUCK_TIMEOUT_MS } from "./runtime";
+import { validationHints } from "./validation-hints";
 
 export const DEFAULT_RUN_DURATION_MS = 80_000;
 export const MAX_SINGLE_PLAYER_DURATION_MS = 180_000;
@@ -44,7 +45,7 @@ export const harnessParams = z.discriminatedUnion("operation", [
     .strict(),
 ]);
 
-const PROVIDER_ONLY_ARGS = ["decisionProvider", "model", "decisionUrl", "maxVisualAgeMs"] as const;
+const PROVIDER_ONLY_ARGS = ["decisionProvider", "model", "maxVisualAgeMs"] as const;
 
 export const runParams = z
   .object({
@@ -76,7 +77,7 @@ export const runParams = z
       .enum(["laya", "openai-decisions"])
       .optional()
       .describe(
-        "Decision backend; omit to use the sidecar host's configured default named in the tool description. OpenAI Decisions requires OPENAI_API_KEY on the sidecar host. Autonomous mode only.",
+        "Decision backend; omit to use overdare.jsonc playtest.decisionProvider, else openai-decisions. OpenAI Decisions uses the OpenAI API key connected in Settings -> AI connection; laya requires playtest.laya.url in overdare.jsonc. Autonomous mode only.",
       ),
     observationMode: z
       .enum(["structured", "structured+image"])
@@ -118,13 +119,6 @@ export const runParams = z
       .describe(
         `Stop after this much time without meaningful progress; default ${DEFAULT_STUCK_TIMEOUT_MS} ms. 0 disables. Adapter progress.waiting can declare one bounded normal wait per progress sequence.`,
       ),
-    decisionUrl: z
-      .string()
-      .url()
-      .optional()
-      .describe(
-        "Laya endpoint override; otherwise DILIGENT_LAYA_URL or localhost:11435. OpenAI Decisions uses only its official HTTPS endpoint.",
-      ),
     intentDecisionIntervalMs: z
       .number()
       .int()
@@ -140,7 +134,7 @@ export const runParams = z
       .max(100)
       .optional()
       .describe(
-        "Provider model. Laya uses DILIGENT_LAYA_MODEL or laya:en; OpenAI Decisions currently uses gpt-6-luna.",
+        "Provider model. Laya uses overdare.jsonc playtest.laya.model or laya:en; OpenAI Decisions currently uses gpt-6-luna.",
       ),
   })
   .strict()
@@ -215,10 +209,19 @@ function validationText(reply: unknown): string {
   return JSON.stringify(reply);
 }
 
-export async function validate(rpc: typeof call, guids: string[]): Promise<{ output: string; valid: boolean }> {
+export async function validate(
+  rpc: typeof call,
+  guids: string[],
+): Promise<{ output: string; valid: boolean; hints: string[] }> {
   const output = validationText(
     await rpc("lua.validate", { mode: "strict", targetGuids: guids }, { timeoutMs: 120000 }),
   );
   const match = /SUMMARY\s+scripts=\d+\s+errors=(\d+)/.exec(output);
-  return { output, valid: Boolean(match && Number(match[1]) === 0) };
+  const valid = Boolean(match && Number(match[1]) === 0);
+  return { output, valid, hints: valid ? [] : validationHints(output) };
+}
+
+/** Renders validation fix hints as a trailing block; empty when there are none. */
+export function formatHints(hints: string[]): string {
+  return hints.length > 0 ? `\n\nFix hints:\n${hints.map((hint) => `- ${hint}`).join("\n")}` : "";
 }

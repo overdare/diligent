@@ -14,6 +14,14 @@ const frame = (extra: Record<string, unknown> = {}) =>
     ...extra,
   });
 
+test("a coverage target without a description is accepted and summarized", () => {
+  const c = createCoverageTracker();
+  c.observe(frame({ coverage: { targets: [{ id: "phase.playing", kind: "event" }], observed: ["phase.playing"] } }));
+  const summary = c.summary();
+  expect(summary).toMatchObject({ status: "complete", totalTargets: 1, coveredTargets: 1 });
+  expect(summary.targets[0]?.description).toBeUndefined();
+});
+
 test("a successful game without a declared test inventory does not imply coverage", () => {
   const c = createCoverageTracker();
   c.observe(frame());

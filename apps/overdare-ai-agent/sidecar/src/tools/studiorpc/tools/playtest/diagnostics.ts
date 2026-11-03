@@ -42,6 +42,8 @@ export interface PlaytestDiagnostics {
 
 export interface DiagnosticsInput {
   outcome: PlaytestResult["outcome"];
+  /** Run end reason, when the run ended abnormally. */
+  reason?: string;
   stats: PlaytestStats;
   verification: VerificationSummary;
   stuck?: PlaytestResult["stuck"];
@@ -142,7 +144,7 @@ export function createDiagnosticsTracker(): DiagnosticsTracker {
       }
     },
 
-    summary({ outcome, stats, verification, stuck }) {
+    summary({ outcome, reason, stats, verification, stuck }) {
       const readinessWaits = [...readiness.values()].sort((a, b) => b.count - a.count).slice(0, MAX_READINESS_ROWS);
       const unmetExpectations = [...unmet.values()].sort((a, b) => b.count - a.count).slice(0, MAX_UNMET_ROWS);
       const hints: string[] = [];
@@ -190,6 +192,11 @@ export function createDiagnosticsTracker(): DiagnosticsTracker {
         const after = stuck.lastActionId ? ` after ${stuck.lastActionId}` : "";
         hints.push(
           `progress.sequence did not advance for ${Math.round(stuck.inactiveMs)} ms${after}. Confirm whether that action changed state before adjusting timeouts.`,
+        );
+      }
+      if ([reason, observerError].some((value) => value?.includes("adapter progress sequence regressed"))) {
+        hints.push(
+          "The adapter's progress.sequence went backwards. Keep it in a module-level monotonic counter that only increases; never recompute it from possibly stale evidence and never reset it on respawn or round restart.",
         );
       }
 

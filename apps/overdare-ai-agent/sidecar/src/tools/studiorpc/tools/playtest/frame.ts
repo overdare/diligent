@@ -72,7 +72,7 @@ const coverageTargetSchema = z
   .object({
     id: z.string().min(1).max(128),
     kind: z.enum(["action", "state", "event"]),
-    description: z.string().min(1).max(512),
+    description: z.string().min(1).max(512).optional(),
     source: z.string().max(512).optional(),
   })
   .strict();

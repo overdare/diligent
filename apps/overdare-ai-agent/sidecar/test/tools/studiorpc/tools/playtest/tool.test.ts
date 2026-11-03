@@ -233,7 +233,7 @@ test("playtest exposes the caller's stuck timeout while refusing out-of-range va
   expect(() => tool.parameters.parse({ ...request, stuckTimeoutMs: 180001 })).toThrow();
 });
 
-test("missing OpenAI credentials and unsupported visual provider fail before Studio calls", async () => {
+test("missing OpenAI credentials return an error result and unsupported visual provider fails before Studio calls", async () => {
   let calls = 0;
   const tool = createPlaytestTools({
     cwd: "/tmp",
@@ -241,11 +241,14 @@ test("missing OpenAI credentials and unsupported visual provider fail before Stu
       calls++;
       throw Error("unexpected RPC");
     },
-    decisionOptions: { resolveApiKey: async () => undefined },
+    decisionOptions: { resolveApiKey: async () => undefined, readSettings: () => ({}) },
   })[1]!;
-  await expect(
-    tool.execute({ harnessName: "sample", goal: "inspect", decisionProvider: "openai-decisions" }, context),
-  ).rejects.toThrow(/OPENAI_API_KEY/);
+  const result = await tool.execute(
+    { harnessName: "sample", goal: "inspect", decisionProvider: "openai-decisions" },
+    context,
+  );
+  expect(result.metadata?.error).toBe(true);
+  expect(result.output).toMatch(/Settings -> AI connection/);
   await expect(
     tool.execute(
       { harnessName: "sample", goal: "inspect", decisionProvider: "laya", observationMode: "structured+image" },
@@ -255,31 +258,54 @@ test("missing OpenAI credentials and unsupported visual provider fail before Stu
   expect(calls).toBe(0);
 });
 
-test("DILIGENT_DECISION_PROVIDER sets the default provider while explicit arguments still win", async () => {
-  const original = process.env.DILIGENT_DECISION_PROVIDER;
+test("configured decisionProvider sets the default while explicit arguments still win", async () => {
+  let settings: Record<string, unknown> = {};
   const tool = createPlaytestTools({
     cwd: "/tmp",
     callRpc: async () => {
       throw Error("unexpected RPC");
     },
-    decisionOptions: { resolveApiKey: async () => undefined },
+    decisionOptions: { resolveApiKey: async () => undefined, readSettings: () => settings },
   })[1]!;
-  try {
-    process.env.DILIGENT_DECISION_PROVIDER = "openai-decisions";
-    await expect(tool.execute({ harnessName: "sample", goal: "inspect" }, context)).rejects.toThrow(/OPENAI_API_KEY/);
-    await expect(
-      tool.execute({ harnessName: "sample", goal: "inspect", decisionProvider: "laya" }, context),
-    ).rejects.toThrow(/unexpected RPC/);
-    process.env.DILIGENT_DECISION_PROVIDER = "unknown";
-    await expect(tool.execute({ harnessName: "sample", goal: "inspect" }, context)).rejects.toThrow(
-      /DILIGENT_DECISION_PROVIDER/,
-    );
-    delete process.env.DILIGENT_DECISION_PROVIDER;
-    await expect(tool.execute({ harnessName: "sample", goal: "inspect" }, context)).rejects.toThrow(/unexpected RPC/);
-  } finally {
-    if (original === undefined) delete process.env.DILIGENT_DECISION_PROVIDER;
-    else process.env.DILIGENT_DECISION_PROVIDER = original;
-  }
+  const missingKey = await tool.execute({ harnessName: "sample", goal: "inspect" }, context);
+  expect(missingKey.output).toMatch(/OpenAI API key/);
+  const missingUrl = await tool.execute({ harnessName: "sample", goal: "inspect", decisionProvider: "laya" }, context);
+  expect(missingUrl.metadata?.error).toBe(true);
+  expect(missingUrl.output).toMatch(/playtest\.laya\.url/);
+  settings = { decisionProvider: "laya", laya: { url: "http://127.0.0.1:9/api/decide" } };
+  await expect(tool.execute({ harnessName: "sample", goal: "inspect" }, context)).rejects.toThrow(/unexpected RPC/);
+  expect(
+    (await tool.execute({ harnessName: "sample", goal: "inspect", decisionProvider: "openai-decisions" }, context))
+      .output,
+  ).toMatch(/OpenAI API key/);
+});
+
+test("a missing harness and failed validation return error results with fix hints", async () => {
+  let installed = false;
+  const tool = createPlaytestTools({
+    cwd: "/tmp",
+    callRpc: (async (method: string) => {
+      if (method === "level.browse") return installed ? tree : { tree: [] };
+      if (method === "instance.read")
+        return {
+          instance: { Name: "sample", Source: "return {}" },
+        };
+      if (method === "lua.validate")
+        return {
+          output:
+            "E type 39:3-39:32 1007 Function only returns 1 value, but 2 are required here\nSUMMARY scripts=2 errors=1 warnings=0",
+        };
+      throw Error(`unexpected RPC ${method}`);
+    }) as never,
+  })[1]!;
+  const missing = await tool.execute({ harnessName: "sample", goal: "inspect", mode: "verification" }, context);
+  expect(missing.metadata?.error).toBe(true);
+  expect(missing.output).toMatch(/not installed/);
+  installed = true;
+  const invalid = await tool.execute({ harnessName: "sample", goal: "inspect", mode: "verification" }, context);
+  expect(invalid.metadata?.error).toBe(true);
+  expect(invalid.output).toContain("1007 Function only returns");
+  expect(invalid.output).toMatch(/declare the function return type/);
 });
 
 test("shared playtest tool switches to Decisions with pixels and persists provider and capture evidence", async () => {

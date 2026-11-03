@@ -113,6 +113,10 @@ export function createFrameObserver(options: FrameObserverOptions) {
         }
         const frameValue = frameStringValue(observation, options.frameName);
         if (!frameValue.ready) {
+          // Before the first frame, the driver may simply not have created the StringValue yet;
+          // after it, a vanished frame means the adapter broke.
+          if (frameValue.missingFrame && latest)
+            throw new AdapterError(`game.observe did not return StringValue ${options.frameName}`);
           unavailableFrameObservation = { receivedAtMs, reason: frameValue.reason };
           emit("readiness_wait", {
             phase: latest ? "running" : "startup",

@@ -112,7 +112,7 @@ continue to use the same observation contract.
 provider, and `decisionEvidence` measures whether the model's choices were dispatched and had confirmed effects.
 
 `mode: "verification"` is scripted acceptance for a feature or regression. No decision provider is created,
-warmed or called, and provider arguments (`decisionProvider`, `model`, `decisionUrl`, `maxVisualAgeMs`,
+warmed or called, and provider arguments (`decisionProvider`, `model`, `maxVisualAgeMs`,
 `observationMode: "structured+image"`) are rejected. When several candidates are offered the runner dispatches the
 first one in adapter order and records a `scenario_choice`; singletons and retained intents behave as in autonomous
 mode. `decisionEvidence.status` is `not_applicable`, so the harness does not need artificial choice points to look
@@ -294,7 +294,8 @@ even when observation revisions advance or action IDs repeat. The model-start re
 descriptions as well as IDs. Evidence is aggregated before trace truncation; it verifies participation and declared
 effects, not strategy quality or a game win.
 
-The harness tools and skill are opt-in. Set `experiments.overrides["autonomous-playtest"]` to `true` in the
+The harness tools and skill are opt-in. Set `experiments.overrides["studio-testing"]` to `true` (Web: Settings →
+Experiments → "Studio testing") in the
 active global namespace's `config.jsonc` (see [Product experiments](experiments.md)). An omitted or `false`
 override hides both `studiorpc_game_playtest` and `studiorpc_game_playtest_harness`, along with the skill's
 system-prompt entry. Manual play and low-level input tools are unaffected. Restart an MCP/router host after
@@ -317,15 +318,27 @@ require adapter-reported observations. No inventory is reported as `not_declared
 The percentage covers only the declared test targets, not automatic whole-code branch coverage, and
 does not change the episode's success/failure outcome.
 
-For the default Laya provider, native Ollaya must already be installed. Set `DILIGENT_LAYA_URL` to its `/api/decide`
-endpoint and optionally `DILIGENT_LAYA_MODEL` (default `laya:en`), or pass `decisionUrl`/`model` per run.
-The model is warmed before PIE starts. The decision endpoint is local to the sidecar's host, which may be
+The default decision provider is OpenAI Decisions. Laya is available only when configured in the `playtest`
+section of `overdare.jsonc` (read freshly each run; native Ollaya must already be installed):
+
+```jsonc
+// ~/.overdare/overdare.jsonc (or ~/.<DILIGENT_STORAGE_NAMESPACE>/overdare.jsonc; legacy ~/.diligent/overdare.jsonc)
+{
+  "playtest": {
+    "decisionProvider": "laya", // omit for the default "openai-decisions"
+    "laya": { "url": "http://127.0.0.1:11435/api/decide", "model": "laya:en" } // model optional
+  }
+}
+```
+
+`playtest.laya.url` is required for Laya; `playtest.laya.model` defaults to `laya:en`, and a per-run `model`
+argument still overrides it. The Laya model is warmed before PIE starts. The decision endpoint is local to the sidecar's host, which may be
 a Mac connected by dev-cross to Windows Studio; it need not be hosted inside Studio. An ordinary Ollama
 service does not implement this native decision API. The old Python raid PoC is not a production dependency.
 
 `decisionProvider: "openai-decisions"` selects the public OpenAI Decisions adapter;
 `observationMode: "structured+image"` adds actual PNG observations at model-decision
-boundaries. Credentials are server-side and no ChatGPT OAuth fallback is automatic.
+boundaries. It uses the OpenAI API key connected in Settings → AI connection; ChatGPT sign-in is not accepted.
 See [decision providers and visual input](playtest-decision-providers.md) for the
 implemented settings, image mapping, freshness checks and validation limits.
 
