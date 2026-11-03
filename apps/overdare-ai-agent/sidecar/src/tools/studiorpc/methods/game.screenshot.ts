@@ -255,7 +255,12 @@ export async function postProcess(result: unknown, args: Record<string, unknown>
   const ambiguous: string[] = [];
   let failureDetail = "";
   let levelBrowse: Promise<unknown> | undefined;
+  const target = {
+    ...(typeof args.pieSessionId === "string" ? { pieSessionId: args.pieSessionId } : {}),
+    ...(typeof args.clientId === "string" ? { clientId: args.clientId } : {}),
+  };
   const cachedCallRpc: CallRpc = (method, params, options) => {
+    if (method === "game.instance.read") return callRpc(method, { ...params, ...target }, options);
     if (method === "level.browse" && Object.keys(params).length === 0) {
       levelBrowse ??= callRpc(method, params, options);
       return levelBrowse;
@@ -277,7 +282,7 @@ export async function postProcess(result: unknown, args: Record<string, unknown>
       absent.push(name);
     }
   }
-  const nearby = absent.length > 0 ? await listRunningInstanceNames(callRpc) : [];
+  const nearby = absent.length > 0 ? await listRunningInstanceNames(cachedCallRpc) : [];
   if (absent.length > 0) {
     out.locateNotFound = absent;
     out.locateNote =

@@ -161,12 +161,12 @@ describe("live Editor tools", () => {
     const tools = await createStudioRpcToolProvider({
       callRpc: async (method) => {
         calls.push(method);
-        throw new StudioRpcError("Unsupported Editor member: GetService", -32000, data);
+        throw new StudioRpcError("Unsupported Editor member: FutureUnsupportedMethod", -32000, data);
       },
     }).createTools({ cwd: "/tmp/nonexistent-schema-free-project" });
     const result = await tools
       .find((tool) => tool.name === "studiorpc_execute_luau")!
-      .execute({ target: "Editor", code: 'return game:GetService("Workspace")' }, context);
+      .execute({ target: "Editor", code: "return game:FutureUnsupportedMethod()" }, context);
     expect(result.metadata).toMatchObject({ error: true, data, executionSucceeded: false });
     expect(result.output).toContain("Studio reports no mutation was attempted.");
     expect(result.output).not.toContain("partial world changes may remain");

@@ -59,7 +59,14 @@ crosshair. `source` says whether that camera is the editor viewport or the runni
 test the player camera is what fills the screen, and `game.screenshot` reports the same block for the shot it
 just took, so the two never describe different moments.
 
-`game.screenshot` also accepts `cameraPosition` + `lookAt` to aim one shot; the editor viewport returns to
+`studiorpc_game_screenshot` accepts optional `pieSessionId` and `clientId` strings from `game.pie.status`.
+Pass them together to capture a particular play-test client on Studio builds that support targeted
+screenshots. They are sent unchanged to `game.screenshot`; omitting both preserves Studio's existing
+viewport selection. Named `locate` queries use the same client for `game.instance.read`, including the
+nearby-name list. These play-test identifiers are separate from the agent session ID in RPC metadata.
+
+The screenshot tool accepts `camera: { position: { x, y, z }, lookAt: { x, y, z } }`, which sends
+`cameraPosition` + `lookAt` to Studio to aim one shot; the editor viewport returns to
 where the user left it as soon as the capture ends, on every path including failure. It is rejected during a
 play test, because moving the editor viewport would not change what the capture shows.
 

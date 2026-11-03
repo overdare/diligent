@@ -276,6 +276,7 @@ export function buildAssetManagerImportRender(
         title: "Asset manager import",
         items: [
           { key: "file", value: returnedFile ?? file },
+          { key: "assetName", value: readString(args.assetName) ?? "" },
           { key: "assetid", value: returnedAssetId ?? "" },
         ].filter((item) => item.value.length > 0),
       },
@@ -525,6 +526,10 @@ export function buildGameScreenshotRender(
   const source = isRecord(result) ? readString(result.source) : undefined;
 
   const items: { key: string; value: string }[] = [{ key: "captureType", value: captureType }];
+  for (const key of ["pieSessionId", "clientId"] as const) {
+    const value = readString(args[key]);
+    if (value) items.push({ key, value });
+  }
   if (typeof args.includeGui === "boolean") {
     items.push({ key: "includeGui", value: String(args.includeGui) });
   }

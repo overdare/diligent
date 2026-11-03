@@ -112,6 +112,7 @@ Current guides:
 - Code mode: `docs/guide/code-mode.md`
 - File links and previews: `docs/guide/file-links.md`
 - Studio snapshots: `docs/guide/studio-snapshots.md`
+- Character authoring ownership: `docs/guide/character-authoring.md`
 - AgentNativeBridge: `docs/guide/agent-native-bridge.md`
 - Product experiments: `docs/guide/experiments.md`
 - Model-backed eval suites: `docs/guide/evals.md`
