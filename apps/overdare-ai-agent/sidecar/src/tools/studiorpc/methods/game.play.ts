@@ -61,7 +61,8 @@ export const params = z
         args.separateServer === undefined &&
         args.restart !== true),
     {
-      message: "addClient: true cannot be combined with numberOfPlayer, mobileSimulator, separateServer, or restart: true.",
+      message:
+        "addClient: true cannot be combined with numberOfPlayer, mobileSimulator, separateServer, or restart: true.",
     },
   );
 export async function preCall(args: Record<string, unknown>, callRpc: CallRpc): Promise<void> {
