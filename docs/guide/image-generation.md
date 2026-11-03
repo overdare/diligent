@@ -50,7 +50,7 @@ For Studio workflows, pass the returned `file` directly to
 does not import an asset or save a Studio level.
 
 When developing with a Mac agent and remote Windows Studio, configure the dev-only shared
-file-root mapping described in [the cross-Studio guide](./mac-agent-windows-studio.md#image-import-during-cross-machine-development).
+file-root mapping described in [the cross-Studio guide](./mac-agent-windows-studio.md#image-import-and-screenshots-during-cross-machine-development).
 Image generation does not depend on this mapping; only the dev Studio RPC boundary converts
 the local file path before import.
 

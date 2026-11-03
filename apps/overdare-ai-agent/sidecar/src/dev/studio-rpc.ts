@@ -1,4 +1,4 @@
-// @summary Opt-in dev adapter for agent-mounted asset files read by a remote Studio process.
+// @summary Opt-in dev adapter mapping files between the agent's mount and a remote Studio process.
 
 import { posix, win32 } from "node:path";
 import { call, StudioRpcError } from "../tools/studiorpc/rpc";
@@ -10,6 +10,8 @@ interface DevStudioRpcOptions {
 }
 
 const ASSET_IMPORT_METHODS = new Set(["asset_manager.import", "asset_manager.image.import"]);
+// Studio reports the capture on its own disk; the sidecar reads it (and the agent sees it) through the mount.
+const SCREENSHOT_METHOD = "game.screenshot";
 
 export function createDevStudioRpc(options: DevStudioRpcOptions, callRpc: typeof call = call): typeof call {
   if (!options.enabled) return callRpc;
@@ -28,6 +30,8 @@ export function createDevStudioRpc(options: DevStudioRpcOptions, callRpc: typeof
   }
 
   return async (method, params, rpcOptions) => {
+    if (method === SCREENSHOT_METHOD)
+      return mapScreenshotResult(await callRpc(method, params, rpcOptions), localRoot, remoteRoot);
     if (!ASSET_IMPORT_METHODS.has(method) || typeof params?.file !== "string")
       return callRpc(method, params, rpcOptions);
     rpcOptions?.signal?.throwIfAborted();
@@ -72,4 +76,14 @@ function mapSharedAssetPath(file: string, localRoot: string, remoteRoot: string)
       "Use a file inside STUDIO_LOCAL_FILE_ROOT or its mapped STUDIO_REMOTE_FILE_ROOT. " +
       "Keep the import step blocked; do not substitute another asset or change file format.",
   );
+}
+
+function mapScreenshotResult(result: unknown, localRoot: string, remoteRoot: string): unknown {
+  if (typeof result !== "object" || result === null || !("path" in result) || typeof result.path !== "string")
+    return result;
+  const local = pathStyle(localRoot);
+  const remote = pathStyle(remoteRoot);
+  const relative = pathWithinRoot(result.path, remoteRoot, remote);
+  if (relative === undefined) return result;
+  return { ...result, path: local.join(localRoot, ...relative.split(remote.sep)) };
 }

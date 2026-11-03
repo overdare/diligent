@@ -219,7 +219,7 @@ Editing means **writing** to the mounted `.ovdrjm`. If the mount is read-only it
 
 The script itself is `scripts/dev-cross-studio.sh`. To understand how it works, see the manual steps above.
 
-## Image import during cross-machine development
+## Image import and screenshots during cross-machine development
 
 Studio reads imported images on the Windows host. Configure both shared-directory roots so the
 dev sidecar can translate an agent-local path for `studiorpc_asset_manager_import`:
@@ -240,6 +240,15 @@ For example, `/Volumes/StudioProject/.overdare/images/generated/icon.png` maps t
 output path to the import tool. Paths outside the configured roots are rejected; already mapped
 Windows paths within the remote root are accepted. The adapter is enabled only with `--dev`
 and an enabled Studio connection. It does not affect image generation or normal same-host imports.
+
+The same roots map `studiorpc_game_screenshot` results in the other direction. Studio reports the
+capture on its own disk (for example `C:/Projects/StudioProject/Screenshots/Agent/shot.png`); the
+dev adapter rewrites a path inside `STUDIO_REMOTE_FILE_ROOT` to its mounted counterpart
+(`/Volumes/StudioProject/Screenshots/Agent/shot.png`) so the sidecar can attach the image and the agent
+can reopen it. Studio writes captures under the open project, so the share must contain that project:
+a remote root that is a UNC path, or a different folder than the one Studio has open, leaves the
+Windows path unchanged and the Mac cannot read it. Prefer the Windows drive path for
+`STUDIO_REMOTE_FILE_ROOT`.
 
 ## No build needed
 
