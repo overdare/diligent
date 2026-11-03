@@ -11,6 +11,7 @@
     { "name": "custom-character", "entry": "custom-character" },
     { "name": "gui-builder", "entry": "gui-builder" },
     { "name": "image-asset-generation", "entry": "image-asset-generation" },
+    { "name": "luau-testing", "entry": "luau-testing" },
     { "name": "overdare-camera-templates", "entry": "overdare-camera-templates" },
     { "name": "performance-optimization", "entry": "performance-optimization" },
     { "name": "procedural-model-builder", "entry": "procedural-model-builder" },

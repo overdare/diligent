@@ -272,32 +272,38 @@ describe("OVERDARE MCP server", () => {
     }
   });
 
-  test.each([undefined, false])("MCP hides autonomous playtest when its override is %s", async (enabled) => {
+  test.each([undefined, false])("MCP hides Studio testing when its override is %s", async (enabled) => {
     const client = await connectClient(
       join(import.meta.dir, "../../bootstrap"),
-      enabled === undefined ? undefined : { "autonomous-playtest": enabled },
+      enabled === undefined ? undefined : { "studio-testing": enabled },
     );
     try {
       const { tools } = await client.listTools();
-      expect(tools.find((tool) => tool.name === "load_skill")?.description).not.toContain("autonomous-playtest");
-      for (const name of ["studiorpc_game_playtest", "studiorpc_game_playtest_harness"]) {
+      const skills = tools.find((tool) => tool.name === "load_skill")?.description;
+      expect(skills).not.toContain("autonomous-playtest");
+      expect(skills).not.toContain("luau-testing");
+      const calls: Record<string, Record<string, unknown>> = {
+        studiorpc_game_playtest: { harnessName: "test", goal: "test" },
+        studiorpc_game_playtest_harness: { operation: "describe" },
+        studiorpc_luau_test: { operation: "describe" },
+      };
+      for (const [name, args] of Object.entries(calls)) {
         expect(tools.some((tool) => tool.name === name)).toBe(false);
-        const result = await client.callTool({
-          name,
-          arguments: name.endsWith("_harness") ? { operation: "describe" } : { harnessName: "test", goal: "test" },
-        });
+        const result = await client.callTool({ name, arguments: args });
         expect(result.isError).toBe(true);
       }
-      const skill = await client.callTool({ name: "load_skill", arguments: { name: "autonomous-playtest" } });
-      expect(skill.isError).toBe(true);
+      for (const name of ["autonomous-playtest", "luau-testing"]) {
+        const skill = await client.callTool({ name: "load_skill", arguments: { name } });
+        expect(skill.isError).toBe(true);
+      }
       expect(tools.some((tool) => tool.name === "studiorpc_game_play")).toBe(true);
     } finally {
       await client.close();
     }
   });
 
-  test("MCP clients can opt into playtest tools and read the UGC authoring contract", async () => {
-    const client = await connectClient(await makeBootstrapDir(), { "autonomous-playtest": true });
+  test("MCP clients can opt into Studio testing tools and read their authoring contracts", async () => {
+    const client = await connectClient(await makeBootstrapDir(), { "studio-testing": true });
     try {
       const { tools } = await client.listTools();
       expect(tools.find((tool) => tool.name === "studiorpc_game_playtest")?.inputSchema).toMatchObject({
@@ -312,17 +318,20 @@ describe("OVERDARE MCP server", () => {
       expect(JSON.stringify(result.content)).toContain("expectations");
       expect(JSON.stringify(result.content)).toContain("observe()");
       expect(JSON.stringify(result.content)).toContain("sourceHash");
+      const luau = await client.callTool({ name: "studiorpc_luau_test", arguments: { operation: "describe" } });
+      expect(luau.isError).not.toBe(true);
+      expect(JSON.stringify(luau.content)).toContain("frktest");
     } finally {
       await client.close();
     }
   });
 
-  test("opting into autonomous playtest exposes its skill instructions and base directory", async () => {
+  test("opting into Studio testing exposes its skill instructions and base directory", async () => {
     const bootstrapDir = join(import.meta.dir, "../../bootstrap");
     const registries = await buildRegistries({
       cwd: process.cwd(),
       bootstrapDir,
-      experiments: resolveExperimentStates(OVERDARE_EXPERIMENTS, { "autonomous-playtest": true }),
+      experiments: resolveExperimentStates(OVERDARE_EXPERIMENTS, { "studio-testing": true }),
     });
     const load = registries.tools.get("load_skill")!;
     expect(load.description).toContain("autonomous-playtest");
