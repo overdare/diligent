@@ -64,7 +64,10 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
       try {
         const maxTokens = options.maxTokens ?? model.maxOutputTokens;
         const effort = options.effort ?? "medium";
+        // These models bind replayed thinking to its prefix. Request server-side dropping after edits.
+        // https://platform.claude.com/docs/en/build-with-claude/preserved-thinking
         const usesThinkingBindingControls =
+          model.modelId === "claude-fable-5-1" ||
           model.modelId === "claude-opus-5-5" ||
           model.modelId === "claude-sonnet-5-5" ||
           model.modelId === "claude-haiku-5-5";
