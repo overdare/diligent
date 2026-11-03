@@ -20,9 +20,9 @@ export const readOnly = true;
 export const timeoutMs = ANIMATION_TIMEOUT_MS;
 
 export const description =
-  "Read a character rig and template, or an editable animation with its revision. Omit modelGuid for ODA; supply a Workspace Model with one skeletal MeshPart for its original rig. assetPath infers that clip's rig. " +
+  "Read a character rig and template, or an editable animation with its revision. Omit modelGuid for the built-in Studio character; supply a Workspace Model with one skeletal MeshPart for its original rig. assetPath infers that clip's rig. " +
   "assetId reopens this project's published source clip or downloads an editable copy; editing preserves the published ID until a new publication is used. General rigs retain original bone names, bind poses, weights and materials. " +
-  "The rig reports bone-local reference transforms and component axes in Z-up cm; ODA-only IK/camera/item filters do not apply to general rigs. " +
+  "The rig reports bone-local reference transforms and component axes in Z-up cm; Only the built-in character excludes IK/camera/item bones from editing; other rigs retain their original bone names. " +
   "preview is opt-in. It returns rendered views and raw component-space pose/floor measurements. openEditor opens the selected clip in AnimationEditor; a different open clip is preserved and causes an error. With preview it also captures the editor window. Use character-animation for pose guidance.";
 
 export const params = z

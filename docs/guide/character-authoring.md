@@ -42,7 +42,7 @@ verification belong to the Diligent skill and enriched agent tool.
 
 | Surface | Input and effect | Persistence |
 |---|---|---|
-| `animation.read/write` | Existing ODA/general rig; sparse reference-pose Euler delta keys, version-1 animation JSON | Local editable `/Temp/AnimationAssets/` clips; `write` saves the asset, not a published ID |
+| `animation.read/write` | Built-in Studio character or selected Model rig; sparse reference-pose Euler delta keys, version-1 animation JSON | Local editable `/Temp/AnimationAssets/` clips; `write` saves the asset, not a published ID |
 | `animation.publish` | Uploads a saved clip with its original Skeleton | Each call issues a new numeric asset ID; old IDs remain unchanged |
 | `character.build` | Geometry plus separate `authored_v1` rig and dense parent-local quaternion motion, or motion only for an existing rig | A requestId freezes one saved draft; commit validates its exact four revisions |
 | `character.inspect` | Source/build, selected observation, or live runtime inspection | Observation may save isolated capture evidence; it does not edit Workspace or advance live playback |

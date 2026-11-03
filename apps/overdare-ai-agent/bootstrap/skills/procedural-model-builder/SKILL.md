@@ -112,7 +112,7 @@ place copies of it with `studiorpc_execute_luau`, grouped under one Folder or Mo
 new model for each placement. A few repeats that belong to one object, such as a table's four legs,
 stay inside that object's recipe.
 
-For non-ODA rigging and animation, read `studiorpc_character_api` and the
+To turn a generated model into a rigged, animated character, read `studiorpc_character_api` and the
 `custom-character` skill. The existing `character.build` accepts this
 ProceduralModel's GUID and freezes its Source, Size and typed attributes for a
 separate character draft. The recipe emits geometry; supply rig, weights and

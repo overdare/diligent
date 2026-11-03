@@ -1,8 +1,8 @@
-# Default ODA rig reference
+# Built-in Studio character rig reference
 
-These measurements apply to the default ODA rig, not arbitrary imported characters.
+These measurements apply to Studio's built-in character rig (`rig.family: "oda"`), not arbitrary imported characters.
 
-## ODA rig conventions (measured)
+## Built-in rig conventions (measured)
 
 The character faces +Y; its left is +X; up is +Z. `rotation` is `[X, Y, Z]` degrees about each bone's own axes, from the reference pose (standing straight, arms hanging slightly out). Each region's axes point differently, so the same channel does different things in different regions. A positive value does this:
 
@@ -29,11 +29,11 @@ The legs are a thigh of 27.7 cm and a shin of 24.0 cm. The hip joints are 68.9 c
 
 The sole is 17.4 cm below the ankle and the toe tip 26 cm ahead of it. Foot Z+ lowers the toes: +15 by 6 cm, +30 by 11 cm, +45 by 14 cm. A pointed foot on the floor therefore needs its ankle raised that much. Foot Z −30 drops the heel 3 cm. Sitting on the floor with level thighs, the seat touches down at a LowerTorso translation x of about −62.
 
-Move the body with LowerTorso `translation`, as ODA's own animations do; they never animate Root. Its axes are x = up, y = forward, z = the character's right, in cm. Root rotates the whole body about the feet (X+ tips forward, Y+ leans right, Z+ turns right), which is rarely what you want.
+Move the body with LowerTorso `translation`, as the shipped character animations do; they never animate Root. Its axes are x = up, y = forward, z = the character's right, in cm. Root rotates the whole body about the feet (X+ tips forward, Y+ leans right, Z+ turns right), which is rarely what you want.
 
 The contact sheet flattens depth, so read `preview.poseSamples` when it matters where a hand is: y forward, x left, z height, in cm.
 
-## What ODA's own animations do (catalog, 30 fps)
+## What the shipped character animations do (catalog, 30 fps)
 
 Use these as a scale for amplitude and timing. They are sampled from the shipped clips:
 
@@ -45,7 +45,7 @@ Use these as a scale for amplitude and timing. They are sampled from the shipped
 
 Joints stay within these ranges: knee 0…140, elbow 0…130, thigh lift to about −120.
 
-## ODA solver result details
+## Solver result details
 
 A pin over one frame with a position is an IK solve. Ranges or paths up to five frames also return
 solved upper/lower limb and hand/foot rotation keys. `reachMarginCm` is remaining reach (negative
@@ -65,7 +65,7 @@ reports skin heights grouped by original dominant bone influence; `preview.poseS
 component-space bone positions and rotations. A measured height alone does not determine support
 or whether an airborne pose is intentional.
 
-## ODA grounding examples
+## Grounding examples
 
 A foot on the ground gets a pin with `flat: true` over the frames it is planted. A pin holds the hand or foot where it is at `from`, orientation included, so key the pose you want there first. When the heel leaves the floor before the foot does (a push-off, a step, rising onto the toes), follow the flat pin with a `pivot: "toe"` pin and key Foot Z up over those frames; a pin that starts right after another on the same foot continues from it, so flat, toe, flat stays in place. Lift the heel with the knee already bent: near full extension a 1 cm rise turns the knee about 20° in one frame. A hand or foot that must travel a route (a wave's arc, a punch's line) takes a `path` instead of hand-keyed arm rotations. `preview.floor` contains `referenceLowestCm` and raw `samples` with `frame`, `lowestCm`, `bone` and `lowestByBoneCm`, measured against component z = 0. Compare these with the intended support and requested images; the report does not decide when the character is planted or in flight. Choose acceptable floor offsets for the task rather than treating a fixed tolerance as a native quality verdict.
 

@@ -21,10 +21,10 @@ export const method = "animation.write";
 export const timeoutMs = ANIMATION_TIMEOUT_MS;
 
 export const description =
-  "Create or fully replace an animation clip from version-1 JSON and save it as a local .uasset. Read the rig first; use modelGuid for an existing single-skin Model, or omit it for ODA. Existing assetPath infers its original rig. " +
+  "Create or fully replace an animation clip from version-1 JSON and save it as a local .uasset. Read the rig first; use modelGuid for an existing single-skin Model, or omit it for the built-in Studio character. Existing assetPath infers its original rig. " +
   "Keys are reference-pose deltas: rotation [roll,pitch,yaw] degrees about local X/Y/Z, translation cm along those axes. Missing tracks use the reference pose; replacement removes omitted tracks and keys. Native limits are 64 tracks and 4096 keys, at most 10 seconds; the name cannot change on replacement. " +
   "Replacement requires the last read/write revision. On REVISION_CONFLICT, read the current clip before merging an edit. A timed-out create may have succeeded; inspect before retrying. SAVE_FAILED can report applied=true,saved=false. " +
-  "dryRun evaluates without saving or rendering, returning joints, component axes, skin heights and requested ODA IK solutions. pins and ground are ODA-only and bake into keys; replacements need their original authored keys and solver requests again. General clips retain their Skeleton/binds/weights; unsupported scale, events, additive or root-motion data are rejected. " +
+  "dryRun evaluates without saving or rendering, returning joints, component axes, skin heights and requested built-in-character IK solutions. pins and ground support only the built-in Studio character rig and bake into keys; replacements need their original authored keys and solver requests again. General clips retain their Skeleton/binds/weights; unsupported scale, events, additive or root-motion data are rejected. " +
   "Preview is opt-in. A preview failure does not undo a save; recapture with animation.read. Results include assetPath, revision, applied/saved/created and diagnostics. Publish the saved clip to obtain a gameplay asset ID. Use character-animation for pose and solver guidance.";
 
 export const params = z

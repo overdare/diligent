@@ -1,4 +1,4 @@
-// @summary Exposes agent-authored non-ODA geometry, rigs and clips through ordinary Studio tools.
+// @summary Exposes agent-authored custom character geometry, rigs and clips through ordinary Studio tools.
 
 import type { ImageBlock } from "@diligent/protocol";
 import { z } from "zod";
@@ -38,7 +38,7 @@ export const build = {
   timeoutMs: 900_000,
   recover: async (error: unknown) => withBuildErrorData(error),
   description:
-    "Build a saved non-ODA character draft from geometry plus separate rig and motion.document data. Read character.api for formats and limits. Inspected static or baked ProceduralModel inputs use geometryRevision, part GUIDs and final vertex IDs; private recipe captures use generated part names. Existing-rig inputs use rigRevision and target.kind=animation_only, preserving the original rig and accepting only new motion. Exactly one skin region is supported; other captured parts can be Bone attachments. Inputs freeze per requestId; retries/commit reuse the snapshot, while a new requestId captures changes. commit=false saves a draft without captures; commit=true requires its exact four revisions and native integrity checks. mode=apply requires an inspected source draft, successful publicationId and expectedSourceGraphRevision. It changes Workspace without saving, using existing character classes and RigBuilder frame/size; recipe-only drafts cannot apply. Changed sources, partial uploads and name conflicts reject placement. Stop PIE before apply; persist with studiorpc_level_save_file. Use custom-character for review and gameplay integration.",
+    "Build a saved custom character draft from geometry plus separate rig and motion.document data. Read character.api for formats and limits. Inspected static or baked ProceduralModel inputs use geometryRevision, part GUIDs and final vertex IDs; private recipe captures use generated part names. Existing-rig inputs use rigRevision and target.kind=animation_only, preserving the original rig and accepting only new motion. Exactly one skin region is supported; other captured parts can be Bone attachments. Inputs freeze per requestId; retries/commit reuse the snapshot, while a new requestId captures changes. commit=false saves a draft without captures; commit=true requires its exact four revisions and native integrity checks. mode=apply requires an inspected source draft, successful publicationId and expectedSourceGraphRevision. It changes Workspace without saving, using existing character classes and RigBuilder frame/size; recipe-only drafts cannot apply. Changed sources, partial uploads and name conflicts reject placement. Stop PIE before apply; persist with studiorpc_level_save_file. Use custom-character for review and gameplay integration.",
   params: z.union([
     z
       .object({
@@ -184,7 +184,7 @@ export const inspect = {
   readOnly: true,
   timeoutMs: 900_000,
   description:
-    "Inspect a non-ODA character. mode=source reads source identities/revisions and paged static vertex data, or an existing single-skin rig with native bind poses; stop PIE first. mode=build reads a saved manifest. mode=observation reads or captures one revision-bound preset; refresh recaptures it, and images selects attachments (RGB by default). Bone probes need explicit observationBones/bendTestRegions. mode=runtime requires PIE and selects a named Model on client or authority. Optional skin returns evaluated linear-skin positions and stable render vertex IDs; it does not advance playback or refresh bones. Missing CPU buffers or active morphs are unavailable. Morph/cloth/WPO effects are outside measurement scope. Review and interpretation guidance is in custom-character.",
+    "Inspect a custom character. mode=source reads source identities/revisions and paged static vertex data, or an existing single-skin rig with native bind poses; stop PIE first. mode=build reads a saved manifest. mode=observation reads or captures one revision-bound preset; refresh recaptures it, and images selects attachments (RGB by default). Bone probes need explicit observationBones/bendTestRegions. mode=runtime requires PIE and selects a named Model on client or authority. Optional skin returns evaluated linear-skin positions and stable render vertex IDs; it does not advance playback or refresh bones. Missing CPU buffers or active morphs are unavailable. Morph/cloth/WPO effects are outside measurement scope. Review and interpretation guidance is in custom-character.",
   normalizeArgs: normalizeInspectArgs,
   attachImages: attachInspectionImages,
   recover: async (error: unknown) => withErrorData(error),

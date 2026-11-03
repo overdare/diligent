@@ -1,19 +1,21 @@
 ---
 name: character-animation
-description: Create, edit and publish animation clips on ODA or an existing single-skin rig.
+description: Create, edit and publish animation clips on the built-in Studio character or an existing single-skin Model.
 ---
 
 # Character Animation
 
 ## Select the original rig first
 
-For a general character, call `studiorpc_animation_read` with its Workspace `modelGuid`. This selects the Model's existing single skeletal MeshPart and returns its original bone names, bind transforms and component axes. Create a clip with the same `modelGuid`; later reads and writes can infer the rig from `assetPath`. Read an existing animation with `assetId` and this selector to obtain an editable copy while preserving the source. Upload with the same `studiorpc_animation_publish` tool; general clips retain their original Skeleton.
+For an existing Workspace Model, call `studiorpc_animation_read` with its `modelGuid`. This selects the Model's single skeletal MeshPart and returns its original bone names, bind transforms and component axes. Create a clip with the same `modelGuid`; later reads and writes can infer the rig from `assetPath`. Omit `modelGuid` to use Studio's built-in character rig. Read an existing animation with `assetId` and this selector to obtain an editable copy while preserving the source. Publish with `studiorpc_animation_publish`; clips retain their original Skeleton.
 
-When `rig.family` is `general`, use its actual bone axes and keys. ODA anatomy, angles, pins and ground solvers do not apply. General `dryRun` reports original bone positions, component axes and skin heights; preview uses the original materials and component +X/+Y views. Measurements use the selected rig's component axes without anatomical inference. Source clips with animated scale, additive poses, events or root-motion extraction are rejected rather than losing those features in a copy. Existing hierarchy, bind pose and weights are preserved; this editing path does not perform rigging.
+The returned `rig.family` identifies solver support: `oda` is Studio's built-in character skeleton;
+`general` is another skeleton, using its original bone axes and keys without the built-in pins or ground solvers.
+For `general`, `dryRun` reports original bone positions, component axes and skin heights; preview uses the original materials and component +X/+Y views. Measurements use the selected rig's component axes without anatomical inference. Source clips with animated scale, additive poses, events or root-motion extraction are rejected rather than losing those features in a copy. Existing hierarchy, bind pose and weights are preserved; this editing path does not perform rigging.
 
 For facing and runtime integration, use the shared
 [custom-character guidance](../custom-character/SKILL.md#facing-and-runtime-frame).
-For ODA poses, read the [measured rig axes and shipped-motion examples](references/oda-rig.md).
+For the built-in character, read the [measured rig axes and shipped-motion examples](references/default-character-rig.md).
 
 `studiorpc_animation_write` with `dryRun: true` returns pose measurements without saving or
 rendering: `joints` contains bone positions, `lowestPointCm` groups lowest skin vertices by
@@ -32,7 +34,7 @@ Block the story poses first (anticipation, the action's extreme, the recovery), 
 - The hips rise only once something below supports them: feet planted under them, or a hand on the floor.
 - Holds keep a little motion (breathing, a small drift) so they don't read as frozen.
 
-For ODA support poses, use the [pin and ground examples](references/oda-rig.md#oda-grounding-examples).
+For built-in character support poses, use the [pin and ground examples](references/default-character-rig.md#grounding-examples).
 These solvers bake keys and are unavailable for general rigs.
 
 To change an animation you only know by its id (an Action Sequence AnimationTrack, a script), open it with studiorpc_animation_read `assetId`. Edit the returned assetPath, publish, and put the new id where the old one was used.
