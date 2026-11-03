@@ -16,6 +16,50 @@ import { StudioRpcError } from "../../../../src/tools/studiorpc/rpc";
 
 const IMAGE = { width: 998, height: 735 };
 
+describe("game.screenshot isolated GUI", () => {
+  test("forwards an exact rendered GUI path with transparent background", () => {
+    const args = params.parse({ guiPath: "PlayerGui.HUD.Menu" });
+    expect(normalizeArgs(args)).toEqual({ guiPath: "PlayerGui.HUD.Menu", background: "transparent" });
+  });
+
+  test("preserves an opaque RGB background and selected client", () => {
+    const args = {
+      guiPath: "CoreGui.ScreenGui.Panel",
+      background: { r: 12, g: 34, b: 56 },
+      pieSessionId: "session",
+      clientId: "client-2",
+    };
+    expect(normalizeArgs(params.parse(args))).toEqual(args);
+  });
+
+  test("rejects ambiguous capture options and invalid RGB values", () => {
+    for (const extra of [
+      { instanceId: "part" },
+      { camera: { position: { x: 0, y: 0, z: 1 }, lookAt: { x: 0, y: 0, z: 0 } } },
+      { includeGui: false },
+      { locate: ["Part"] },
+      { yaws: [35] },
+      { pitch: 20 },
+      { background: { r: -1, g: 0, b: 0 } },
+      { background: { r: 0.5, g: 0, b: 0 } },
+      { background: { r: 256, g: 0, b: 0 } },
+      { background: "white" },
+    ])
+      expect(params.safeParse({ guiPath: "PlayerGui.HUD", ...extra }).success).toBe(false);
+    expect(params.safeParse({ background: "transparent" }).success).toBe(false);
+    expect(params.safeParse({ guiPath: "" }).success).toBe(false);
+  });
+
+  test("passes GUI images through without adding scene-camera diagnostics", async () => {
+    const result = { path: "capture.png", captureMode: "isolatedGui", image: { width: 200, height: 100 } };
+    expect(
+      await postProcess(result, { guiPath: "PlayerGui.HUD" }, async () => {
+        throw new Error("no scene lookup");
+      }),
+    ).toEqual(result);
+  });
+});
+
 function shot(
   position: { X: number; Y: number; Z: number },
   orientation: { X: number; Y: number; Z: number },

@@ -42,3 +42,28 @@ describe("game.play restart", () => {
     expect(normalizeArgs({ restart: true, numberOfPlayer: 2 })).toEqual({ numberOfPlayer: 2 });
   });
 });
+
+describe("game.play mobile simulator selection", () => {
+  test.each([true, false])("preserves the explicit %s choice across restart normalization", async (mobileSimulator) => {
+    const args = params.parse({ mobileSimulator, restart: true });
+    const calls: string[] = [];
+    await preCall(args, async (method) => {
+      calls.push(method);
+      return {};
+    });
+    expect(calls).toEqual(["game.stop"]);
+    expect(normalizeArgs(args)).toEqual({ mobileSimulator });
+  });
+
+  test("omission preserves Studio's current selection", () => {
+    expect(normalizeArgs(params.parse({}))).toEqual({});
+  });
+
+  test.each(["false", null, 0, {}])("rejects non-boolean choice %j", (mobileSimulator) => {
+    expect(params.safeParse({ mobileSimulator }).success).toBe(false);
+  });
+
+  test("cannot change the simulator while adding a client", () => {
+    expect(params.safeParse({ addClient: true, mobileSimulator: false }).success).toBe(false);
+  });
+});

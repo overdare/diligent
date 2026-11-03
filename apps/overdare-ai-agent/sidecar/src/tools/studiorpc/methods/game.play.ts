@@ -6,10 +6,18 @@ export const method = "game.play";
 
 export const description =
   "Start the OVERDARE Studio play test. Calling it while PIE is already running keeps that session; pass " +
-  "restart: true to stop it first and start clean.";
+  "restart: true to stop it first and start clean. Choose mobileSimulator when starting a stopped session.";
 
 export const params = z
   .object({
+    mobileSimulator: z
+      .boolean()
+      .optional()
+      .describe(
+        "Enable or disable the mobile simulator for the next play session. The device is fixed to Galaxy A04e with " +
+          "Actual Resolution. Omit to preserve Studio's selection. Use restart: true to change it during a running session. " +
+          "Cannot be combined with addClient: true.",
+      ),
     addClient: z
       .boolean()
       .optional()
@@ -34,9 +42,14 @@ export const params = z
       .describe("Stop an existing play test before starting, so the game begins from a clean session."),
   })
   .strict()
-  .refine((args) => args.addClient !== true || (args.numberOfPlayer === undefined && args.restart !== true), {
-    message: "addClient: true cannot be combined with numberOfPlayer or restart: true.",
-  });
+  .refine(
+    (args) =>
+      args.addClient !== true ||
+      (args.numberOfPlayer === undefined && args.restart !== true && args.mobileSimulator === undefined),
+    {
+      message: "addClient: true cannot be combined with numberOfPlayer, restart: true, or mobileSimulator.",
+    },
+  );
 export async function preCall(args: Record<string, unknown>, callRpc: CallRpc): Promise<void> {
   if (args.restart !== true) return;
   await callRpc("game.stop", {});
