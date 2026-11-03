@@ -84,9 +84,8 @@ Studio enforces, and the tools pre-check:
 - `pointerMove` positions are viewport-normalized `0..1`; `mouseDelta` axes are bounded by ±4096 and need a
   captured mouse
 - `scroll` takes ±10 wheel notches at the current pointer position
-- `textInput` takes up to 256 printable characters and goes to whatever holds keyboard focus, so Studio
-  refuses it with `viewportNotFocused` rather than typing into one of its own panels. Note that the OVERDARE
-  Lua API has no `TextBox`, so nothing scriptable receives characters yet — this exists for when one lands
+- `textInput` is not supported by `studiorpc_game_input_inject`; Studio currently rejects it as well.
+  Key events send key down/up, not character input, so do not assume they enter text into a focused `TextBox`.
 
 `action: "press"` (with an optional `durationMs`) is a sidecar shorthand: Studio has no press action, so the
 tool expands it to `down` / `wait` / `up` before sending. It is the shape to reach for — one authored event
