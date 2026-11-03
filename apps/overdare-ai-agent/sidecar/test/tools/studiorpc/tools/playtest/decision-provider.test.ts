@@ -209,19 +209,30 @@ describe("overdare.jsonc playtest settings", () => {
   });
 });
 
-test("the OpenAI key comes from the auth store before the config key", async () => {
-  const config = { provider: { auth: { credentialsStore: "file" }, openai: { apiKey: "config-key" } } };
+test("the OpenAI key comes from the auth store, then the config key, then OPENAI_API_KEY", async () => {
   const modes: unknown[] = [];
-  const sources = (stored?: string) => ({
-    loadConfig: (async () => ({ config })) as never,
-    loadAuth: (async (options: unknown) => {
-      modes.push(options);
-      return stored ? { openai: stored } : {};
+  const sources = (options: { stored?: string; configKey?: string; envKey?: string }) => ({
+    loadConfig: (async () => ({
+      config: { provider: { auth: { credentialsStore: "file" }, openai: { apiKey: options.configKey } } },
+    })) as never,
+    loadAuth: (async (authOptions: unknown) => {
+      modes.push(authOptions);
+      return options.stored ? { openai: options.stored } : {};
     }) as never,
+    env: { OPENAI_API_KEY: options.envKey },
   });
-  expect(await resolveOpenAIApiKey("/project", sources("stored-key"))).toBe("stored-key");
-  expect(await resolveOpenAIApiKey("/project", sources())).toBe("config-key");
-  expect(modes).toEqual([{ mode: "file" }, { mode: "file" }]);
+  expect(
+    await resolveOpenAIApiKey(
+      "/project",
+      sources({ stored: "stored-key", configKey: "config-key", envKey: "env-key" }),
+    ),
+  ).toBe("stored-key");
+  expect(await resolveOpenAIApiKey("/project", sources({ configKey: "config-key", envKey: "env-key" }))).toBe(
+    "config-key",
+  );
+  expect(await resolveOpenAIApiKey("/project", sources({ envKey: " env-key " }))).toBe("env-key");
+  expect(await resolveOpenAIApiKey("/project", sources({ envKey: "  " }))).toBeUndefined();
+  expect(modes).toEqual([{ mode: "file" }, { mode: "file" }, { mode: "file" }, { mode: "file" }]);
 });
 
 test("refusals, duplicate answers, unavailable choices, HTTP failures and missing required pixels never return a choice", async () => {

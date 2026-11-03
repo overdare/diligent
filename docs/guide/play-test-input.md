@@ -338,7 +338,8 @@ service does not implement this native decision API. The old Python raid PoC is 
 
 `decisionProvider: "openai-decisions"` selects the public OpenAI Decisions adapter;
 `observationMode: "structured+image"` adds actual PNG observations at model-decision
-boundaries. It uses the OpenAI API key connected in Settings → AI connection; ChatGPT sign-in is not accepted.
+boundaries. It uses the OpenAI API key from Settings → AI connection, Diligent config or the sidecar host's
+`OPENAI_API_KEY`; ChatGPT sign-in is not accepted.
 See [decision providers and visual input](playtest-decision-providers.md) for the
 implemented settings, image mapping, freshness checks and validation limits.
 

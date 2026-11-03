@@ -90,17 +90,25 @@ export function defaultDecisionProvider(settings: PlaytestDecisionSettings = rea
   return settings.decisionProvider ?? DEFAULT_DECISION_PROVIDER;
 }
 
-/** Same precedence as the runtime provider setup: auth store key overrides config `provider.openai.apiKey`. */
+/**
+ * Same precedence as chat providers: auth store key, then config `provider.openai.apiKey`, then the
+ * host's `OPENAI_API_KEY` (for example from `.env.local` in dev).
+ */
 export async function resolveOpenAIApiKey(
   cwd: string,
-  sources: { loadConfig: typeof loadDiligentConfig; loadAuth: typeof loadAuthStore } = {
+  sources: {
+    loadConfig: typeof loadDiligentConfig;
+    loadAuth: typeof loadAuthStore;
+    env: Record<string, string | undefined>;
+  } = {
     loadConfig: loadDiligentConfig,
     loadAuth: loadAuthStore,
+    env: process.env,
   },
 ): Promise<string | undefined> {
   const { config } = await sources.loadConfig(cwd);
   const stored = (await sources.loadAuth({ mode: config.provider?.auth?.credentialsStore ?? "auto" })).openai;
-  return stored || config.provider?.openai?.apiKey;
+  return stored || config.provider?.openai?.apiKey || sources.env.OPENAI_API_KEY?.trim() || undefined;
 }
 
 export async function createDecisionProvider(
@@ -135,7 +143,7 @@ export async function createDecisionProvider(
   const apiKey = (await (options.resolveApiKey ?? (() => resolveOpenAIApiKey(options.cwd ?? process.cwd())))())?.trim();
   if (!apiKey)
     throw new DecisionProviderConfigError(
-      "OpenAI Decisions needs an OpenAI API key: connect one in Settings -> AI connection. ChatGPT sign-in is not accepted by the Decisions API.",
+      "OpenAI Decisions needs an OpenAI API key: connect one in Settings -> AI connection or set OPENAI_API_KEY on the sidecar host. ChatGPT sign-in is not accepted by the Decisions API.",
     );
   const request = options.fetch ?? ((url, init) => fetch(url, init));
   return {

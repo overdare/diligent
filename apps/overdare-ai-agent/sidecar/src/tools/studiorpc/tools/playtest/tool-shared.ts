@@ -77,7 +77,7 @@ export const runParams = z
       .enum(["laya", "openai-decisions"])
       .optional()
       .describe(
-        "Decision backend; omit to use overdare.jsonc playtest.decisionProvider, else openai-decisions. OpenAI Decisions uses the OpenAI API key connected in Settings -> AI connection; laya requires playtest.laya.url in overdare.jsonc. Autonomous mode only.",
+        "Decision backend; omit to use overdare.jsonc playtest.decisionProvider, else openai-decisions. OpenAI Decisions uses the OpenAI API key from Settings -> AI connection, Diligent config or OPENAI_API_KEY; laya requires playtest.laya.url in overdare.jsonc. Autonomous mode only.",
       ),
     observationMode: z
       .enum(["structured", "structured+image"])

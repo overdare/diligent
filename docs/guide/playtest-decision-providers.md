@@ -67,8 +67,9 @@ first; the playtest tool starts and stops its own session.
 ## Credentials and request handling
 
 Connect an OpenAI API key in **Settings -> AI connection**. The adapter reads it
-from the Diligent auth store, falling back to `provider.openai.apiKey` in Diligent
-config (the auth store wins, as for chat providers). ChatGPT sign-in is not
+from the Diligent auth store, then `provider.openai.apiKey` in Diligent config, then
+the sidecar host's `OPENAI_API_KEY` (for example from `.env.local` in dev), the same
+order chat providers use. ChatGPT sign-in is not
 accepted by the Decisions API. Do not put a credential in tool arguments, Lua or
 traces. The adapter
 sends it as a Bearer credential to `https://api.openai.com/v1/decisions`, rejects
