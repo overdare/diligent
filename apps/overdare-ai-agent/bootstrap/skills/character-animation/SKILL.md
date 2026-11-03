@@ -13,6 +13,8 @@ When `rig.family` is `general`, use its actual bone axes and keys. The measured 
 
 For authored general locomotion, declare the actual `speedCmPerSec`, optional component-space horizontal unit `forwardDirection` (default +X), and each contact bone's `contactIntervalsSeconds` in `motion.document`. When relevant to the task, request `character.inspect` travel observations to compare the same sole vertices. A zero-speed draft or empty contact map cannot establish low sliding. Choose useful captures and review measured poses/weights against the requested action; native integrity success is not a visual-quality verdict. Captures and fresh-process replay are optional review, not commit prerequisites.
 
+For facing and runtime integration, use the shared
+[custom-character guidance](../custom-character/SKILL.md#facing-and-runtime-frame).
 The sections below describe the default ODA rig.
 
 Make a clip that a person watching it would recognise as the requested motion, with weight and timing that feel alive. The tool descriptions define the JSON, pins and preview; this skill covers what they cannot: how the ODA rig moves and what ODA's own animations look like in numbers.

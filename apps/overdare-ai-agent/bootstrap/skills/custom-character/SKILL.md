@@ -28,6 +28,21 @@ Authoring data uses Unreal Z-up centimetres and quaternion parent-local poses.
 Lua uses Y-up coordinates. `animation.read/write` uses a different Euler delta-key
 format; read that tool's contract before editing a clip through it.
 
+## Facing and runtime frame
+
+Choose and record the mesh-component front axis for the intended runtime. Z-up does not require
+an anatomical +X front. Preserve existing imported geometry, bind poses and clips; adjust review
+cameras to the actual front instead of rotating source assets for a default preview.
+
+When creating a new character for the existing RigBuilder binding, account for its native mesh
+frame: mesh-local +Y aligns with actor forward. Keep generated geometry, bind poses and motion
+consistent with that frame. A one-time Body.CFrame change is not a persistent mesh-frame setting.
+`motion.document.forwardDirection` selects observation travel only; it does not rotate the rig or
+declare anatomical facing. Movement may intentionally be sideways or backward.
+
+For the requested actions, check the rendered character's front against its intended movement or
+attack direction. Track time or actor displacement alone does not establish correct facing.
+
 ## Choose review for the task
 
 Build with `commit=false`; it saves a draft without automatically rendering review
