@@ -1,11 +1,14 @@
 // @summary Product experiment list/set handlers with atomic coupled capability persistence.
 
+import { createLogger } from "@diligent/logging";
 import { getGlobalConfigPath, saveGlobalExperimentOverrides } from "../config";
 import type { ExperimentDefinition, ResolvedExperiment } from "../experiments";
 import type { ExperimentsListResponse, ExperimentsSetParams } from "../protocol";
 import type { ConfigReloadResult } from "./config-handlers";
 import { handleConfigReload } from "./config-handlers";
 import type { ThreadRuntime } from "./thread-handlers";
+
+const logger = createLogger({ scope: "runtime.experiments" });
 
 export interface ExperimentConfigManager {
   getDefinitions: () => ExperimentDefinition[];
@@ -35,9 +38,29 @@ export async function handleExperimentsSet(
       .filter((definition) => params.overrides[definition.id] !== definition.defaultEnabled)
       .map((definition) => [definition.id, params.overrides[definition.id]!]),
   );
+  const before = new Map(manager.getExperiments().map((experiment) => [experiment.id, experiment.enabled]));
   await saveGlobalExperimentOverrides(stored);
   await handleConfigReload(reloadConfig, threads, goalsEnabled);
-  return buildResponse(manager.getExperiments());
+  const after = manager.getExperiments();
+  for (const experiment of after) {
+    if (before.get(experiment.id) !== experiment.enabled) notifyEnabledChange(experiment);
+  }
+  return buildResponse(after);
+}
+
+function notifyEnabledChange(experiment: ResolvedExperiment): void {
+  const hook = experiment.onEnabledChange;
+  if (!hook) return;
+  // The save already succeeded; a product side effect must not turn it into a failed request.
+  Promise.resolve()
+    .then(() => hook(experiment.enabled))
+    .catch((error: unknown) => {
+      logger.warn("experiment_side_effect_failed", {
+        message: `[experiments] ${experiment.id} ${experiment.enabled ? "enable" : "disable"} side effect failed`,
+        error,
+        fields: { experimentId: experiment.id, enabled: experiment.enabled },
+      });
+    });
 }
 
 function buildResponse(experiments: readonly ResolvedExperiment[]): ExperimentsListResponse {

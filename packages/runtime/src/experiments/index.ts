@@ -8,6 +8,13 @@ export interface ExperimentDefinition {
   toolNames?: readonly string[];
   skillNames?: readonly string[];
   agentNames?: readonly string[];
+  /**
+   * Product side effect for a settings change made through experiments/set. Called after the new state is
+   * persisted and reloaded, only when the resolved enabled state actually changed. Not awaited by the request:
+   * a slow or failing effect never blocks or rejects the settings save, so products must keep their own
+   * on-use fallback for states changed by editing config directly.
+   */
+  onEnabledChange?: (enabled: boolean) => void | Promise<void>;
 }
 
 export interface ResolvedExperiment extends ExperimentDefinition {
