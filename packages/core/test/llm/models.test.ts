@@ -140,9 +140,21 @@ describe("provider-scoped model catalog", () => {
     expect(getDefaultModelRef("gemini")).toEqual({ provider: "gemini", modelId: "gemini-3.6-flash" });
     expect(resolveModel({ provider: "gemini", modelId: "gemini" }).modelId).toBe("gemini-3.6-flash");
 
-    for (const removedModelId of ["gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-3.1-flash-lite"]) {
+    for (const removedModelId of ["gemini-3.1-pro-preview", "gemini-3.1-flash-lite"]) {
       expect(findModel({ provider: "gemini", modelId: removedModelId })).toBeUndefined();
     }
+  });
+
+  it("resolves the routed Gemini 3.5 ID to the served 3.6 card without adding a stale picker entry", () => {
+    const replacement = resolveModel({ provider: "gemini", modelId: "gemini-3.6-flash" });
+    expect(resolveModel({ provider: "gemini", modelId: "gemini-3.5-flash" })).toBe(replacement);
+    expect(resolveModelSelector("gemini/gemini-3.5-flash")).toBe(replacement);
+    expect(resolveModelSelector("gemini-3.5-flash")).toBe(replacement);
+    expect(findModel({ provider: "vertex", modelId: "gemini-3.5-flash" })).toBeUndefined();
+    expect(listModels("gemini").map((model) => model.modelId)).not.toContain("gemini-3.5-flash");
+    expect(
+      getModelInfoList().find((model) => model.provider === "gemini" && model.modelId === replacement.modelId),
+    ).toMatchObject({ supportsVision: replacement.supportsVision, supportedEfforts: replacement.supportedEfforts });
   });
 
   it("resolves aliases only inside the explicit provider", () => {
