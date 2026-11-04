@@ -162,7 +162,7 @@ scripts/dev-cross-studio.sh 192.168.0.42 13377
 
 ### To also edit — specify the world directory (mount path)
 
-WARNING — **important limitation**: reads like `level.browse` are pure RPC and work cross-machine with the setup above, but **v1 file-path tools such as `instance_read` / `instance_move` read and write the local `.ovdrjm` file directly** (then `level.apply` RPC makes Studio reload). So to edit through them, the agent must have filesystem access to **the exact live world file that Studio has open**.
+WARNING — **important limitation**: instance, script, and Luau tools are pure RPC and work cross-machine with the setup above, but **the collision profile/channel tools and the rollback snapshots read and write the local `.ovdrjm` file directly** (collision writes then call `level.apply` so Studio reloads). For those, the agent must have filesystem access to **the exact live world file that Studio has open**.
 
 How: share the Windows Studio project folder over SMB, mount it on the Mac, and pass that path.
 
@@ -174,7 +174,7 @@ scripts/dev-cross-studio.sh 10.40.32.103 13377 /Volumes/StudioProject
 make dev-cross
 ```
 
-When set, the sidecar `--cwd` becomes this path so edit tools modify the live world directly. **If unset, cwd=repo so only browse works and editing is not possible.**
+When set, the sidecar `--cwd` becomes this path so the file-based tools work on the live world. **If unset, cwd=repo: RPC edits still work, but collision profile tools fail and no rollback snapshots are captured.**
 
 > NOTE: **The symlink (skills) and the mount (world file) are separate things.** Easy to confuse, so to be clear:
 > - **Mount** = access the Windows Studio **project folder** from the Mac to read/write the live `.ovdrjm` **world file**. `--cwd` is this path.

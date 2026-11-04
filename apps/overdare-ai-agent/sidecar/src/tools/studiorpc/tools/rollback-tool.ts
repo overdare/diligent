@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { call } from "../rpc";
 import type { Tool, ToolContext, ToolResult } from "../types";
 import type { WriteLock } from "../write-lock";
+import { checkResult } from "./instance-rpc/result";
 import {
   captureSnapshot,
   findLatestSnapshot,
@@ -17,7 +18,6 @@ import {
 } from "./snapshot";
 import { saveLevelForSnapshot } from "./snapshot-capture";
 import { summarizeSnapshot } from "./snapshot-summary";
-import { checkResult } from "./v2/result";
 
 interface RollbackOptions {
   writeLock?: WriteLock;

@@ -1,14 +1,14 @@
-// @summary Separates Studio v2 warnings from failures inside a successful JSON-RPC result.
+// @summary Separates Studio instance RPC warnings from failures inside a successful JSON-RPC result.
 
 /**
  * `call()` rejects only on the JSON-RPC envelope's `error`. The instance methods
- * report their own outcome inside `result`, so every v2 response is checked here.
+ * report their own outcome inside `result`, so every instance response is checked here.
  *
  * `message` holds one entry per affected item, joined by `; `, each prefixed with
  * `[WARNING]` or `[ERROR]`. A warning means Studio completed the write and ignored
- * something (an unknown property, a Mobility set below Workspace); the file backend
- * surfaces the same cases as suggestions rather than failing, so warnings are
- * returned instead of thrown. Anything unprefixed is treated as a failure, since an
+ * something (an unknown property, a Mobility set below Workspace); the tools surface
+ * those cases as suggestions rather than failing, so warnings are returned instead
+ * of thrown. Anything unprefixed is treated as a failure, since an
  * unrecognised message cannot be assumed harmless.
  */
 export interface ResultCheck {

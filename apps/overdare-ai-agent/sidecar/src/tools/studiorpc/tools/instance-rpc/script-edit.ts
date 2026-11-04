@@ -5,15 +5,15 @@ import { buildScriptEditRender } from "../../render";
 import type { ToolResult } from "../../types";
 import { normalizeLeadingSpaces, normalizeLineEndings } from "../ovdrjm-utils";
 import { applyEdit } from "../script-edit-tool";
-import { callInstanceRpc, DEPTH_SELF, readInstanceNode } from "./client";
+import { DEPTH_SELF, type InstanceClient } from "./client";
 import { instanceTypeOf, SCRIPT_CLASSES } from "./scripts";
 
 type ScriptEditArgs = ReturnType<typeof scriptEdit.params.parse>;
 
-export async function editScriptViaRpc(parsed: ScriptEditArgs): Promise<ToolResult> {
+export async function editScriptViaRpc(client: InstanceClient, parsed: ScriptEditArgs): Promise<ToolResult> {
   const { guid: targetGuid, old_string, new_string, replace_all } = parsed;
 
-  const target = await readInstanceNode(targetGuid, DEPTH_SELF);
+  const target = await client.readInstanceNode(targetGuid, DEPTH_SELF);
   if (!target) {
     throw new Error(`ActorGuid not found in .ovdrjm: ${targetGuid}`);
   }
@@ -36,7 +36,7 @@ export async function editScriptViaRpc(parsed: ScriptEditArgs): Promise<ToolResu
       : { result: edited, converted: 0 };
   const eolNormalized = normalizeLineEndings(normalized.result);
 
-  await callInstanceRpc("instance.update", {
+  await client.callInstanceRpc("instance.update", {
     Instances: [{ ActorGuid: targetGuid, Source: eolNormalized.result }],
   });
 

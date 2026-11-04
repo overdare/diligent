@@ -1,14 +1,11 @@
-// @summary Reads instance properties from the .ovdrjm level file, preserving Studio JSON properties without a class whitelist.
+// @summary Reads instance properties through Studio, preserving Studio JSON properties without a class whitelist.
 
-import { resolveApiVersion } from "../config";
 import * as instanceRead from "../methods/instance.read";
 import { pickInstanceProperties } from "../methods/instance-properties";
-import { buildInstanceReadRender } from "../render";
-import { call } from "../rpc";
-import type { Tool, ToolContext, ToolResult } from "../types";
-import { missingGuidResult } from "./instance-status";
-import { findNodeByActorGuid, isRecord, type OvdrjmNode, readOvdrjmRoot } from "./ovdrjm-utils";
-import { readInstanceViaRpc } from "./v2/instance-read";
+import type { Tool, ToolResult } from "../types";
+import type { InstanceClient } from "./instance-rpc/client";
+import { readInstanceViaRpc } from "./instance-rpc/instance-read";
+import { isRecord, type OvdrjmNode } from "./ovdrjm-utils";
 
 type ReadableNode = {
   guid: string;
@@ -46,69 +43,25 @@ function toToolName(method: string): string {
   return `studiorpc_${method.replace(/\./g, "_")}`;
 }
 
-/**
- * The .ovdrjm holds whatever this sidecar last wrote, not what Studio holds. Right
- * after a write that gap is wide: a freshly created Part reads back with four
- * properties instead of sixteen — no CFrame, no Size — and reports a CanQuery that
- * Studio does not have. Asking Studio to save first makes the file current.
- *
- * Best-effort on purpose. Reading the file is what this tool is for, and it worked
- * without a live Studio before; a failed flush costs freshness, not the answer.
- */
-async function flushStudioToFile(callRpc: typeof call): Promise<void> {
-  try {
-    await callRpc("level.save.file", {});
-  } catch {
-    /* 파일이 낡을 뿐, 읽기는 계속한다 */
-  }
-}
-
-async function executeInstanceRead(
-  args: Record<string, unknown>,
-  _ctx: ToolContext,
-  cwd: string,
-  callRpc: typeof call,
-): Promise<ToolResult> {
+async function executeInstanceRead(client: InstanceClient, args: Record<string, unknown>): Promise<ToolResult> {
   const parsed = instanceRead.params.parse(instanceRead.normalizeArgs(args));
   if (!parsed.guid) {
     throw new Error(
-      "studiorpc_instance_read needs a guid — it reads one instance out of the saved level and has no " +
+      "studiorpc_instance_read needs a guid — it reads one instance from the Editor level and has no " +
         "listing mode. To list the running game's instances, call studiorpc_game_observe with " +
         "{ instances: true }; that is the live counterpart and the one with the listing.",
     );
   }
-  if (resolveApiVersion() === "v2") return await readInstanceViaRpc({ ...parsed, guid: parsed.guid });
-  await flushStudioToFile(callRpc);
-  const { root } = readOvdrjmRoot(cwd);
-
-  const target = findNodeByActorGuid(root, parsed.guid);
-  if (!target) {
-    return missingGuidResult({ operation: "instance.read", guid: parsed.guid, role: "target" });
-  }
-
-  const readable = toReadableNode(target, parsed.recursive);
-  if (!readable) {
-    return {
-      output: `Instance ${parsed.guid} has no InstanceType.`,
-      metadata: { error: true, method: "instance.read" },
-    };
-  }
-
-  const output = JSON.stringify(readable, null, 2);
-  return {
-    output,
-    render: buildInstanceReadRender(parsed as unknown as Record<string, unknown>, output),
-    metadata: { method: "instance.read", guid: parsed.guid, recursive: parsed.recursive },
-  };
+  return await readInstanceViaRpc(client, { ...parsed, guid: parsed.guid });
 }
 
-export function createInstanceReadTool(cwd: string, callRpc: typeof call = call): Tool {
+export function createInstanceReadTool(client: InstanceClient): Tool {
   return {
     name: toToolName(instanceRead.method),
     description: instanceRead.description,
     parameters: instanceRead.params,
-    async execute(args, ctx) {
-      return executeInstanceRead(args, ctx, cwd, callRpc);
+    async execute(args) {
+      return executeInstanceRead(client, args);
     },
   };
 }

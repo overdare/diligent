@@ -84,29 +84,22 @@ const advice = (value: ReturnType<typeof checkScriptReferences>) =>
 
 describe("action sequence script references", () => {
   test("uses saved Studio script subtrees and reports unavailable scans explicitly", async () => {
-    const previous = process.env.STUDIO_API_VERSION;
-    process.env.STUDIO_API_VERSION = "v2";
-    try {
-      const calls: string[] = [];
-      const result = await enrichScriptReferences({ issues: [] }, "sequence", "unused", async (method) => {
-        calls.push(method);
-        return method === "level.browse"
-          ? { level: [{ ActorGuid: "service" }] }
-          : { instance: root('runner:Play("Wrong")') };
-      });
-      expect(calls).toEqual(["level.browse", "instance.read"]);
-      expect(result.scriptReferenceCheck).toMatchObject({ status: "completed", scriptsSearched: 1 });
-      expect(result.issues).toEqual([]);
-      expect(result.scriptReferenceCheck).toMatchObject({ issues: [{ kind: "missingPlaySequence" }] });
-      const unavailable = await enrichScriptReferences({ issues: [] }, "sequence", "unused", async () => {
-        throw new Error("offline");
-      });
-      expect(unavailable.scriptReferenceCheck).toMatchObject({ status: "unavailable", reason: "offline" });
-      expect(unavailable.issues).toEqual([]);
-    } finally {
-      if (previous === undefined) delete process.env.STUDIO_API_VERSION;
-      else process.env.STUDIO_API_VERSION = previous;
-    }
+    const calls: string[] = [];
+    const result = await enrichScriptReferences({ issues: [] }, "sequence", async (method) => {
+      calls.push(method);
+      return method === "level.browse"
+        ? { level: [{ ActorGuid: "service" }] }
+        : { instance: root('runner:Play("Wrong")') };
+    });
+    expect(calls).toEqual(["level.browse", "instance.read"]);
+    expect(result.scriptReferenceCheck).toMatchObject({ status: "completed", scriptsSearched: 1 });
+    expect(result.issues).toEqual([]);
+    expect(result.scriptReferenceCheck).toMatchObject({ issues: [{ kind: "missingPlaySequence" }] });
+    const unavailable = await enrichScriptReferences({ issues: [] }, "sequence", async () => {
+      throw new Error("offline");
+    });
+    expect(unavailable.scriptReferenceCheck).toMatchObject({ status: "unavailable", reason: "offline" });
+    expect(unavailable.issues).toEqual([]);
   });
   test("reports missing literal Play names with script evidence and respects existing names", () => {
     const result = checkScriptReferences(root('actionRunner:Play("Attak")\nactionRunner:Play("Attack")'), "sequence");

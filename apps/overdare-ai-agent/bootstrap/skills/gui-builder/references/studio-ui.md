@@ -3,7 +3,7 @@
 ## Building in Studio
 
 - Build static UI with `studiorpc_execute_luau` (`target: "Editor"`), not with a script that recreates the GUI at runtime. Edit existing GUI in place, and leave controller-owned spawning, such as character labels, to its controller. For root and attachment choices, see [gui-types.md](gui-types.md).
-- `studiorpc_instance_move` only changes the parent; change `Position`/`Size` with Editor Luau.
+- Setting `Parent` only changes the hierarchy; change `Position`/`Size` with Editor Luau.
 - Import a local image once with `studiorpc_asset_manager_import` and bind the returned `asset.assetid`, never a file path. Reuse one frame asset across sibling buttons. A resizing panel should use `ScaleType = "Slice"` with a `SliceCenter` in source-image pixels.
 - Use `ImageButton` for clickable artwork. `TextButton` is for text controls, not a substitute for planned button artwork.
 

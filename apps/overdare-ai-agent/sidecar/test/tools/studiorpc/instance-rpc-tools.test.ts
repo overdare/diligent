@@ -1,19 +1,18 @@
-// @summary Verifies the Studio v2 tool path: wire conversion, save-after-write, validation and failure handling.
+// @summary Verifies the Studio instance RPC tools: wire conversion, save-after-write, validation and failure handling.
 //
-// Studio is stood in for by a local JSON-RPC socket server rather than a module
-// mock, so the tools exercise the real transport and nothing leaks into the
-// other test files that mock ./rpc.ts.
+// Studio is stood in for by the provider's injected `callRpc` rather than a module
+// mock, so the tools run against it regardless of which other test files have
+// mocked ./rpc.ts, and nothing leaks into them. The transport itself is covered by
+// rpc.test.ts.
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import net from "node:net";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { EOL, tmpdir } from "node:os";
 import { join } from "node:path";
-import readline from "node:readline";
 import type { Tool } from "@diligent/core/tool-contract";
 import { runWithSessionExecutionContext } from "@diligent/runtime";
 import { createStudioRpcToolProvider } from "../../../src/tools/studiorpc";
-import { checkResult } from "../../../src/tools/studiorpc/tools/v2/result";
+import { checkResult } from "../../../src/tools/studiorpc/tools/instance-rpc/result";
 
 interface RpcCall {
   method: string;
@@ -92,55 +91,32 @@ function studioResponder(method: string, params?: Record<string, unknown>): unkn
   return { success: true };
 }
 
-let server: net.Server;
-const previousEnv: Record<string, string | undefined> = {};
-
-function rememberEnv(key: string): void {
-  previousEnv[key] = process.env[key];
-}
-
-function restoreEnv(key: string): void {
-  if (previousEnv[key] === undefined) delete process.env[key];
-  else process.env[key] = previousEnv[key];
-}
-
-beforeAll(async () => {
-  rememberEnv("STUDIO_HOST");
-  rememberEnv("STUDIO_PORT");
-
-  server = net.createServer((socket) => {
-    const lines = readline.createInterface({ input: socket });
-    lines.on("line", (line) => {
-      const request = JSON.parse(line) as RpcCall & { id: number };
-      rpcCalls.push({ method: request.method, params: request.params, ...(request.meta && { meta: request.meta }) });
-      const result = respond(request.method, request.params);
-      socket.write(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-
-  process.env.STUDIO_HOST = "127.0.0.1";
-  process.env.STUDIO_PORT = String((server.address() as net.AddressInfo).port);
-});
-
-afterAll(async () => {
-  restoreEnv("STUDIO_HOST");
-  restoreEnv("STUDIO_PORT");
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-});
-
 const createdDirs: string[] = [];
 
 function makeStudioProject(): string {
-  const cwd = mkdtempSync(join(tmpdir(), "studiorpc-v2-"));
+  const cwd = mkdtempSync(join(tmpdir(), "studiorpc-instance-rpc-"));
   writeFileSync(join(cwd, "Test.umap"), "");
   writeFileSync(join(cwd, "Test.ovdrjm"), JSON.stringify({ Root: makeWorld() }, null, 2));
   createdDirs.push(cwd);
   return cwd;
 }
 
+/** The provider's transport: records each request as it would go on the wire and answers from `respond`. */
+async function fakeStudio(
+  method: string,
+  params?: Record<string, unknown>,
+  options?: { sessionId?: string },
+): Promise<unknown> {
+  rpcCalls.push({
+    method,
+    ...(params !== undefined && Object.keys(params).length > 0 && { params: structuredClone(params) }),
+    ...(options?.sessionId && { meta: { sessionId: options.sessionId } }),
+  });
+  return structuredClone(respond(method, params));
+}
+
 async function loadTools(cwd: string): Promise<Map<string, Tool>> {
-  const provider = createStudioRpcToolProvider();
+  const provider = createStudioRpcToolProvider({ callRpc: fakeStudio });
   const tools = await provider.createTools({ cwd, host: { approve: async () => "once" } });
   return new Map(tools.map((tool) => [tool.name, tool]));
 }
@@ -158,8 +134,6 @@ function paramsOf(method: string): Record<string, unknown> | undefined {
 }
 
 beforeEach(() => {
-  rememberEnv("STUDIO_API_VERSION");
-  process.env.STUDIO_API_VERSION = "v2";
   rpcCalls.length = 0;
   issuedGuids = 0;
   world = makeWorld();
@@ -167,14 +141,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  restoreEnv("STUDIO_API_VERSION");
   for (const dir of createdDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 describe("Studio session attribution on the wire", () => {
   const cases: Array<[string, Record<string, unknown>]> = [
-    ["studiorpc_instance_move", { items: [{ guid: PART_GUID, parentGuid: FOLDER_A_GUID }] }],
-    ["studiorpc_instance_delete", { items: [{ guid: PART_GUID }] }],
     ["studiorpc_script_add", { class: "Script", parentGuid: FOLDER_A_GUID, name: "NewScript", source: "print(1)" }],
     ["studiorpc_script_edit", { guid: SCRIPT_GUID, old_string: "print(1)", new_string: "print(9)" }],
     ["studiorpc_script_delete", { guid: SCRIPT_GUID }],
@@ -182,11 +153,7 @@ describe("Studio session attribution on the wire", () => {
     ["studiorpc_level_browse", {}],
     ["studiorpc_level_save_file", {}],
   ];
-  test.each([
-    "v1",
-    "v2",
-  ])("all %s RPCs, including reads, saves and validation, carry the caller session", async (version) => {
-    process.env.STUDIO_API_VERSION = version;
+  test("all RPCs, including reads, saves and validation, carry the caller session", async () => {
     for (const [name, args] of cases) {
       rpcCalls.length = 0;
       const tools = await loadTools(makeStudioProject());
@@ -199,7 +166,7 @@ describe("Studio session attribution on the wire", () => {
 
   test("shared tools keep parent and child sessions separate across overlapping calls", async () => {
     const cwd = makeStudioProject();
-    const provider = createStudioRpcToolProvider();
+    const provider = createStudioRpcToolProvider({ callRpc: fakeStudio });
     await provider.onUserPromptSubmit!({
       session_id: "parent",
       transcript_path: "",
@@ -245,10 +212,10 @@ describe("Studio session attribution on the wire", () => {
 
 describe("checkResult", () => {
   test("rejects an explicit failure", () => {
-    expect(() => checkResult("instance.move", { success: false, message: "no such GUID" })).toThrow(
-      /instance\.move failed: no such GUID/,
+    expect(() => checkResult("instance.update", { success: false, message: "no such GUID" })).toThrow(
+      /instance\.update failed: no such GUID/,
     );
-    expect(() => checkResult("instance.move", { success: false })).toThrow(/\(no message\)/);
+    expect(() => checkResult("instance.update", { success: false })).toThrow(/\(no message\)/);
   });
 
   test("treats any non-empty message on a successful result as a partial failure", () => {
@@ -266,7 +233,7 @@ describe("checkResult", () => {
   });
 });
 
-describe("v2 argument conversion", () => {
+describe("argument conversion", () => {
   test("maps instance_read recursive onto Depth", async () => {
     const tools = await loadTools(makeStudioProject());
     const read = tools.get("studiorpc_instance_read")!;
@@ -278,70 +245,39 @@ describe("v2 argument conversion", () => {
     expect(rpcCalls.at(-1)).toMatchObject({ method: "instance.read", params: { ActorGuid: PART_GUID, Depth: 0 } });
   });
 
-  test("groups instance_move items sharing a parent into one entry", async () => {
+  test("answers an unknown instance_read GUID with a structured readback status", async () => {
     const tools = await loadTools(makeStudioProject());
 
-    await tools.get("studiorpc_instance_move")!.execute(
-      {
-        items: [
-          { guid: PART_GUID, parentGuid: FOLDER_A_GUID },
-          { guid: SCRIPT_GUID, parentGuid: FOLDER_A_GUID },
-          { guid: FOLDER_B_GUID, parentGuid: FOLDER_A_GUID },
-        ],
-      },
-      toolContext(),
-    );
+    const result = await tools
+      .get("studiorpc_instance_read")!
+      .execute({ guid: "missing-target", recursive: false }, toolContext());
 
-    expect(paramsOf("instance.move")).toEqual({
-      Moves: [{ ParentActorGuid: FOLDER_A_GUID, ActorGuids: [PART_GUID, SCRIPT_GUID, FOLDER_B_GUID] }],
-    });
-  });
-
-  test("splits instance_move into one entry per distinct parent", async () => {
-    const tools = await loadTools(makeStudioProject());
-
-    await tools.get("studiorpc_instance_move")!.execute(
-      {
-        items: [
-          { guid: PART_GUID, parentGuid: FOLDER_A_GUID },
-          { guid: SCRIPT_GUID, parentGuid: FOLDER_B_GUID },
-          { guid: FOLDER_B_GUID, parentGuid: FOLDER_A_GUID },
-        ],
-      },
-      toolContext(),
-    );
-
-    expect(paramsOf("instance.move")).toEqual({
-      Moves: [
-        { ParentActorGuid: FOLDER_A_GUID, ActorGuids: [PART_GUID, FOLDER_B_GUID] },
-        { ParentActorGuid: FOLDER_B_GUID, ActorGuids: [SCRIPT_GUID] },
-      ],
-    });
-  });
-
-  test("flattens instance_delete items into an ActorGuids string array", async () => {
-    const tools = await loadTools(makeStudioProject());
-
-    await tools
-      .get("studiorpc_instance_delete")!
-      .execute({ items: [{ guid: PART_GUID }, { guid: FOLDER_B_GUID }] }, toolContext());
-
-    expect(paramsOf("instance.delete")).toEqual({ ActorGuids: [PART_GUID, FOLDER_B_GUID] });
+    const status = {
+      kind: "missing_guid",
+      code: "missing_target_guid",
+      operation: "instance.read",
+      guid: "missing-target",
+      role: "target",
+      requiresReadback: true,
+      suggestedTool: "studiorpc_level_browse",
+    };
+    expect(result.metadata).toMatchObject({ error: true, method: "instance.read", status });
+    const statusJson = /^<studio_instance_status>\n(?<json>[\s\S]*?)\n<\/studio_instance_status>\n/.exec(result.output)
+      ?.groups?.json;
+    expect(JSON.parse(statusJson!)).toMatchObject(status);
+    expect(result.render).toMatchObject({ outputSummary: "missing_target_guid" });
   });
 });
 
-describe("v2 level.save.file", () => {
+describe("level.save.file", () => {
   const writes: Array<[string, Record<string, unknown>]> = [
-    ["studiorpc_instance_move", { items: [{ guid: PART_GUID, parentGuid: FOLDER_A_GUID }] }],
-    ["studiorpc_instance_delete", { items: [{ guid: PART_GUID }] }],
     ["studiorpc_script_add", { class: "Script", parentGuid: FOLDER_A_GUID, name: "S", source: "print(1)" }],
     ["studiorpc_script_edit", { guid: SCRIPT_GUID, old_string: "print(1)", new_string: "print(9)" }],
     ["studiorpc_script_delete", { guid: SCRIPT_GUID }],
   ];
 
   for (const [name, args] of writes) {
-    test.each(["v1", "v2"])(`${name} attributes every RPC to the executing child on %s`, async (version) => {
-      process.env.STUDIO_API_VERSION = version;
+    test(`${name} attributes every RPC to the executing child`, async () => {
       const tools = await loadTools(makeStudioProject());
       const result = await runWithSessionExecutionContext(
         {
@@ -367,7 +303,7 @@ describe("v2 level.save.file", () => {
       expect(result.metadata?.error).toBeUndefined();
       const methods = methodsCalled();
       const writeIndex = methods.findLastIndex((method) =>
-        ["instance.create", "instance.update", "instance.move", "instance.delete"].includes(method),
+        ["instance.create", "instance.update", "instance.delete"].includes(method),
       );
       expect(writeIndex).toBeGreaterThanOrEqual(0);
       expect(methods.filter((method) => method === "level.save.file")).toHaveLength(savesAfterWrite ? 1 : 0);
@@ -394,7 +330,7 @@ describe("v2 level.save.file", () => {
   }
 });
 
-describe("v2 failure reporting", () => {
+describe("failure reporting", () => {
   test("does not report success when Studio returns a partial failure", async () => {
     const tools = await loadTools(makeStudioProject());
     respond = (method, params) => {
@@ -412,15 +348,14 @@ describe("v2 failure reporting", () => {
   test("does not save the level when Studio reports success:false", async () => {
     const tools = await loadTools(makeStudioProject());
     respond = (method, params) => {
-      if (method === "instance.move") return { success: false, message: "target is locked" };
+      if (method === "instance.delete") return { success: false, message: "target is locked" };
       return studioResponder(method, params);
     };
 
-    await expect(
-      tools
-        .get("studiorpc_instance_move")!
-        .execute({ items: [{ guid: PART_GUID, parentGuid: FOLDER_A_GUID }] }, toolContext()),
-    ).rejects.toThrow(/instance\.move failed: target is locked/);
+    const result = await tools.get("studiorpc_script_delete")!.execute({ guid: SCRIPT_GUID }, toolContext());
+
+    expect(result.metadata?.error).toBe(true);
+    expect(result.output).toMatch(/instance\.delete failed: target is locked/);
     expect(methodsCalled()).not.toContain("level.save.file");
   });
 
@@ -441,57 +376,7 @@ describe("v2 failure reporting", () => {
   });
 });
 
-describe("v2 validation", () => {
-  test("refuses to move a Service class and sends no write", async () => {
-    const tools = await loadTools(makeStudioProject());
-
-    const result = await tools
-      .get("studiorpc_instance_move")!
-      .execute({ items: [{ guid: WORKSPACE_GUID, parentGuid: FOLDER_A_GUID }] }, toolContext());
-
-    expect(result.metadata).toMatchObject({
-      error: true,
-      status: { code: "protected_service_class", operation: "instance.move", class: "Workspace" },
-    });
-    expect(methodsCalled()).toEqual(["level.browse"]);
-  });
-
-  test("refuses a hierarchy cycle and sends no write", async () => {
-    const tools = await loadTools(makeStudioProject());
-
-    const result = await tools
-      .get("studiorpc_instance_move")!
-      .execute({ items: [{ guid: FOLDER_A_GUID, parentGuid: FOLDER_A_GUID }] }, toolContext());
-
-    expect(result.metadata).toMatchObject({ error: true, status: { code: "hierarchy_cycle" } });
-    expect(methodsCalled()).toEqual(["level.browse"]);
-  });
-
-  test("refuses to delete a Service class and sends no write", async () => {
-    const tools = await loadTools(makeStudioProject());
-
-    const result = await tools
-      .get("studiorpc_instance_delete")!
-      .execute({ items: [{ guid: WORKSPACE_GUID }] }, toolContext());
-
-    expect(result.metadata).toMatchObject({
-      error: true,
-      status: { code: "protected_service_class", operation: "instance.delete" },
-    });
-    expect(methodsCalled()).toEqual(["level.browse"]);
-  });
-
-  test("reports a missing GUID for instance_delete instead of forwarding it", async () => {
-    const tools = await loadTools(makeStudioProject());
-
-    const result = await tools
-      .get("studiorpc_instance_delete")!
-      .execute({ items: [{ guid: "no-such-guid" }] }, toolContext());
-
-    expect(result.metadata).toMatchObject({ error: true, status: { code: "missing_target_guid" } });
-    expect(methodsCalled()).toEqual(["level.browse"]);
-  });
-
+describe("validation", () => {
   test("refuses to delete a non-script instance through script_delete", async () => {
     const tools = await loadTools(makeStudioProject());
 
@@ -513,20 +398,15 @@ describe("v2 validation", () => {
     expect(result.output).toContain("no Source");
     expect(methodsCalled()).toEqual(["instance.read"]);
   });
-  test.each([
-    "v1",
-    "v2",
-  ])("focused Source edits preserve non-Lua indentation for future classes on %s", async (version) => {
-    process.env.STUDIO_API_VERSION = version;
+
+  test("focused Source edits preserve non-Lua indentation for future classes", async () => {
     const recipe = {
       InstanceType: "FutureSourceContainer",
       ActorGuid: "RECIPE",
       Source: "def on_generate():\n    pass",
     };
     world.LuaChildren!.push(recipe);
-    const cwd = makeStudioProject();
-    writeFileSync(join(cwd, "Test.ovdrjm"), JSON.stringify({ Root: world }));
-    const tools = await loadTools(cwd);
+    const tools = await loadTools(makeStudioProject());
     const read = await tools.get("studiorpc_script_read")!.execute({ guid: "RECIPE" }, toolContext());
     const edit = await tools
       .get("studiorpc_script_edit")!
@@ -534,66 +414,14 @@ describe("v2 validation", () => {
     expect(read.output).toContain("    pass");
     expect(edit.metadata).toMatchObject({ method: "script.edit", count: 1 });
     const expectedSource = ["def on_generate():", "    return"].join(EOL);
-    if (version === "v2") {
-      expect(paramsOf("instance.update")).toEqual({
-        Instances: [{ ActorGuid: "RECIPE", Source: expectedSource }],
-      });
-      expect(methodsCalled()).toEqual(["instance.read", "instance.read", "instance.update"]);
-    } else {
-      const saved = JSON.parse(readFileSync(join(cwd, "Test.ovdrjm"), "utf8"));
-      expect(findWorldNode(saved.Root, "RECIPE")?.Source).toBe(expectedSource);
-      expect(methodsCalled()).toEqual(["level.apply"]);
-    }
+    expect(paramsOf("instance.update")).toEqual({
+      Instances: [{ ActorGuid: "RECIPE", Source: expectedSource }],
+    });
+    expect(methodsCalled()).toEqual(["instance.read", "instance.read", "instance.update"]);
   });
 });
 
-describe("v1 stays on the file path", () => {
-  test("instance_delete edits the .ovdrjm and applies the level when the version is v1", async () => {
-    process.env.STUDIO_API_VERSION = "v1";
-    const cwd = makeStudioProject();
-    const tools = await loadTools(cwd);
-
-    const result = await tools
-      .get("studiorpc_instance_delete")!
-      .execute({ items: [{ guid: PART_GUID }] }, toolContext());
-
-    expect(methodsCalled()).toEqual(["level.apply"]);
-    expect(readFileSync(join(cwd, "Test.ovdrjm"), "utf-8")).not.toContain(PART_GUID);
-    expect(result.metadata).toMatchObject({ method: "instance.delete", targetGuids: [PART_GUID], deleteCount: 1 });
-  });
-
-  test("script_read returns the same output on both paths", async () => {
-    const cwd = makeStudioProject();
-
-    process.env.STUDIO_API_VERSION = "v2";
-    const v2Tools = await loadTools(cwd);
-    const v2 = await v2Tools.get("studiorpc_script_read")!.execute({ guid: SCRIPT_GUID }, toolContext());
-
-    process.env.STUDIO_API_VERSION = "v1";
-    const v1Tools = await loadTools(cwd);
-    const v1 = await v1Tools.get("studiorpc_script_read")!.execute({ guid: SCRIPT_GUID }, toolContext());
-
-    expect(v2.output).toBe(v1.output);
-    expect(v2.metadata).toEqual(v1.metadata);
-  });
-
-  test("script_delete returns the same output and metadata on both paths", async () => {
-    const cwd = makeStudioProject();
-
-    process.env.STUDIO_API_VERSION = "v2";
-    const v2Tools = await loadTools(cwd);
-    const v2 = await v2Tools.get("studiorpc_script_delete")!.execute({ guid: SCRIPT_GUID }, toolContext());
-
-    process.env.STUDIO_API_VERSION = "v1";
-    const v1Tools = await loadTools(cwd);
-    const v1 = await v1Tools.get("studiorpc_script_delete")!.execute({ guid: SCRIPT_GUID }, toolContext());
-
-    expect(v2.output).toBe(v1.output);
-    expect(v2.metadata).toEqual(v1.metadata);
-  });
-});
-
-describe("dedicated VFXRecipe authoring over v2", () => {
+describe("dedicated VFXRecipe authoring", () => {
   test("creates and patches normalized recipe JSON through the registered tool", async () => {
     const tools = await loadTools(makeStudioProject());
     const tool = tools.get("studiorpc_vfx_recipe_upsert")!;
@@ -609,7 +437,13 @@ describe("dedicated VFXRecipe authoring over v2", () => {
               InfiniteLoop: false,
               LoopCount: 3,
               BaseLayer: [
-                { Name: "Body", NiagaraSystem: "NeutralBurst_A", SpawnCount: 3, Alpha: [{ Time: 0, Value: 1 }] },
+                {
+                  Name: "Body",
+                  NiagaraSystem: "NeutralBurst_A",
+                  Position: { X: 1, Y: 2, Z: 3 },
+                  SpawnCount: 3,
+                  Alpha: [{ Time: 0, Value: 1 }],
+                },
               ],
             },
           },
@@ -623,8 +457,10 @@ describe("dedicated VFXRecipe authoring over v2", () => {
     expect((create.Instances[0].BaseLayer as Array<Record<string, unknown>>)[0]).toMatchObject({
       NiagaraSystem:
         "/CommonContent/VFX/Layer/0_Base/NeutralBurst_A/VFX_UGC_Base_NeutralBurst_A.VFX_UGC_Base_NeutralBurst_A",
+      Position: { ObjectType: "Vector3" },
       Alpha: [{ Time: 0, Value: 1 }],
     });
+    expect(result.metadata?.addCount).toBe(1);
     const added = result.metadata?.added as Array<{ guid: string }>;
     // The transport fixture issues GUIDs but does not persist create calls.
     world.LuaChildren!.push({ ...create.Instances[0], ActorGuid: added[0].guid });
@@ -639,13 +475,36 @@ describe("dedicated VFXRecipe authoring over v2", () => {
     });
     expect(rpcCalls.filter((call) => call.method === "level.save.file")).toHaveLength(1);
   });
-  test("rejects a non-recipe GUID before sending an update or save", async () => {
+  test("rejects a non-recipe GUID anywhere in the batch before sending an update or save", async () => {
+    world.LuaChildren!.push({ InstanceType: "VFXRecipe", ActorGuid: "R", Name: "Recipe", LoopCount: 4 });
     const tools = await loadTools(makeStudioProject());
     await expect(
-      tools
-        .get("studiorpc_vfx_recipe_upsert")!
-        .execute({ items: [{ guid: PART_GUID, properties: {} }] }, toolContext()),
+      tools.get("studiorpc_vfx_recipe_upsert")!.execute(
+        {
+          items: [
+            { guid: "R", properties: { LoopCount: 2 } },
+            { guid: PART_GUID, properties: {} },
+          ],
+        },
+        toolContext(),
+      ),
     ).rejects.toThrow("VFXRecipe");
     expect(rpcCalls.some((call) => call.method === "instance.update" || call.method === "level.save.file")).toBe(false);
+  });
+
+  test("ignores Mobility below a top-level object and reports it", async () => {
+    const tools = await loadTools(makeStudioProject());
+    const result = await tools
+      .get("studiorpc_vfx_recipe_upsert")!
+      .execute(
+        { items: [{ parentGuid: PART_GUID, name: "Nested", properties: { Mobility: "Static" } }] },
+        toolContext(),
+      );
+
+    expect(result.metadata?.info).toEqual([
+      expect.stringMatching(/^Ignored Mobility for .+: Mobility can only be changed on a direct child of Workspace\.$/),
+    ]);
+    const create = paramsOf("instance.create") as { Instances: Array<Record<string, unknown>> };
+    expect(create.Instances[0]).not.toHaveProperty("Mobility");
   });
 });

@@ -2,15 +2,9 @@
 
 import type { ToolRenderPayload, ToolResult } from "../types";
 
-export type InstanceOperation = "instance.read" | "vfx_recipe.upsert" | "instance.move" | "instance.delete";
-export type InstanceGuidRole = "target" | "parent" | "new_parent";
-export type MissingGuidCode = "missing_target_guid" | "missing_parent_guid" | "missing_new_parent_guid";
-export type InvalidOperationCode =
-  | "protected_service_class"
-  | "invalid_parent_class"
-  | "hierarchy_cycle"
-  | "duplicate_move"
-  | "conflicting_operation";
+export type InstanceOperation = "instance.read" | "vfx_recipe.upsert";
+export type InstanceGuidRole = "target" | "parent";
+export type MissingGuidCode = "missing_target_guid" | "missing_parent_guid";
 
 export type MissingGuidStatus = {
   kind: "missing_guid";
@@ -23,23 +17,11 @@ export type MissingGuidStatus = {
   suggestedTool: "studiorpc_level_browse";
 };
 
-export type InvalidOperationStatus = {
-  kind: "invalid_operation";
-  code: InvalidOperationCode;
-  operation: InstanceOperation;
-  guid: string;
-  role: InstanceGuidRole;
-  class?: string;
-  message: string;
-  requiresReadback: false;
-};
-
-export type InstanceToolStatus = MissingGuidStatus | InvalidOperationStatus;
+export type InstanceToolStatus = MissingGuidStatus;
 
 const missingGuidCodeByRole: Record<InstanceGuidRole, MissingGuidCode> = {
   target: "missing_target_guid",
   parent: "missing_parent_guid",
-  new_parent: "missing_new_parent_guid",
 };
 
 const statusOutputOpen = "<studio_instance_status>";
@@ -57,29 +39,21 @@ function statusRender(status: InstanceToolStatus): ToolRenderPayload {
     outputSummary: status.code,
     blocks: [
       { type: "key_value", title: "Studio instance status", items: statusRenderItems(status) },
-      { type: "summary", text: status.message, tone: status.kind === "missing_guid" ? "warning" : "danger" },
+      { type: "summary", text: status.message, tone: "warning" },
     ],
   };
 }
 
 function statusRenderItems(status: InstanceToolStatus): StatusRenderItem[] {
-  const items: StatusRenderItem[] = [
+  return [
     { key: "kind", value: status.kind },
     { key: "code", value: status.code },
     { key: "operation", value: status.operation },
     { key: "role", value: status.role },
     { key: "guid", value: status.guid },
     { key: "requiresReadback", value: String(status.requiresReadback) },
+    { key: "suggestedTool", value: status.suggestedTool },
   ];
-
-  if ("suggestedTool" in status) {
-    items.push({ key: "suggestedTool", value: status.suggestedTool });
-  }
-  if ("class" in status && status.class) {
-    items.push({ key: "class", value: status.class });
-  }
-
-  return items;
 }
 
 export function instanceStatusResult(status: InstanceToolStatus): ToolResult {
@@ -123,26 +97,6 @@ export function missingGuidError(input: {
   role: InstanceGuidRole;
 }): InstanceToolStatusError {
   return new InstanceToolStatusError(missingGuidStatus(input));
-}
-
-export function invalidInstanceOperationError(input: {
-  operation: InstanceOperation;
-  code: InvalidOperationCode;
-  guid: string;
-  role: InstanceGuidRole;
-  class?: string;
-  message: string;
-}): InstanceToolStatusError {
-  return new InstanceToolStatusError({
-    kind: "invalid_operation",
-    code: input.code,
-    operation: input.operation,
-    guid: input.guid,
-    role: input.role,
-    ...(input.class ? { class: input.class } : {}),
-    message: input.message,
-    requiresReadback: false,
-  });
 }
 
 export function resultFromInstanceToolStatusError(error: unknown): ToolResult | undefined {

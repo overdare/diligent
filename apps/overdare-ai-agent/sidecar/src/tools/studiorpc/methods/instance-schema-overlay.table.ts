@@ -110,8 +110,8 @@ const humanoidDescription = (names: readonly string[], kind: string): Record<str
     `${kind} `,
   );
 const cframeNote = "Position in cm; Orientation in degrees.";
-const retiredCap = (max: number) =>
-  `Keep at or below ${max}; the retired upsert validator capped it there and Studio publishes no maximum.`;
+// These caps predate live schema discovery; Studio itself publishes no maximum for these properties.
+const softCap = (max: number) => `Keep at or below ${max}; Studio publishes no maximum.`;
 
 /**
  * Notes keyed by `<Class>.<Property>` or `<declaredOn>.<Property>`; the exact class key wins, so an inherited
@@ -254,14 +254,14 @@ export const propertyNotes: Readonly<Record<string, string>> = {
   "SimulationBall.bPausedWhenSleeping": "Pause playback while the simulation snapshot is sleeping.",
   "SimulationBall.bTraceComplex": "Use complex triangle-mesh collision instead of simple shapes.",
   "SimulationBall.bUseRestingContactToSleep": "Let near-static ground contacts put the ball to sleep.",
-  "Lighting.AmbientSkyBrightness": retiredCap(10),
-  "Lighting.Contrast": retiredCap(2),
-  "Lighting.MoonBrightness": retiredCap(3),
-  "Lighting.MoonMaxHeight": retiredCap(90),
-  "Lighting.NightBrightness": retiredCap(3),
-  "Lighting.StarsBrightness": retiredCap(8),
-  "Lighting.SunBrightness": retiredCap(50),
-  "Lighting.SunMaxHeight": retiredCap(85),
+  "Lighting.AmbientSkyBrightness": softCap(10),
+  "Lighting.Contrast": softCap(2),
+  "Lighting.MoonBrightness": softCap(3),
+  "Lighting.MoonMaxHeight": softCap(90),
+  "Lighting.NightBrightness": softCap(3),
+  "Lighting.StarsBrightness": softCap(8),
+  "Lighting.SunBrightness": softCap(50),
+  "Lighting.SunMaxHeight": softCap(85),
 };
 
 /** Engine sentinel enum members that Studio exports but that are not real choices. */

@@ -5,13 +5,13 @@ import { buildInstanceReadRender } from "../../render";
 import type { ToolResult } from "../../types";
 import { toReadableNode } from "../instance-read-tool";
 import { missingGuidResult } from "../instance-status";
-import { DEPTH_SELF, DEPTH_SUBTREE, readInstanceNode } from "./client";
+import { DEPTH_SELF, DEPTH_SUBTREE, type InstanceClient } from "./client";
 
 /** guid is optional in the schema so a call with none is answered with a sentence; the tool checks it first. */
 type InstanceReadArgs = ReturnType<typeof instanceRead.params.parse> & { guid: string };
 
-export async function readInstanceViaRpc(parsed: InstanceReadArgs): Promise<ToolResult> {
-  const target = await readInstanceNode(parsed.guid, parsed.recursive ? DEPTH_SUBTREE : DEPTH_SELF);
+export async function readInstanceViaRpc(client: InstanceClient, parsed: InstanceReadArgs): Promise<ToolResult> {
+  const target = await client.readInstanceNode(parsed.guid, parsed.recursive ? DEPTH_SUBTREE : DEPTH_SELF);
   if (!target) {
     return missingGuidResult({ operation: "instance.read", guid: parsed.guid, role: "target" });
   }

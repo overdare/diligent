@@ -9,7 +9,7 @@ import {
 } from "../instance-document-operations";
 import { findNodeByActorGuid, type OvdrjmNode } from "../ovdrjm-utils";
 import type { VfxRecipeItem } from "../vfx-recipe-upsert-tool";
-import { callInstanceRpc, createdActorGuids, readLevelRoot, saveLevelFile, takeWarnings } from "./client";
+import { createdActorGuids, type InstanceClient } from "./client";
 
 /** Studio issues ActorGuid and ObjectKey itself, and children arrive through their own calls. */
 const LOCAL_ONLY_KEYS = new Set(["ActorGuid", "ObjectKey", "LuaChildren"]);
@@ -35,12 +35,13 @@ function changedProperties(before: Record<string, unknown>, after: OvdrjmNode): 
 
 /**
  * Applies the batch to a local copy of the level first, so class preflight, Mobility policy and
- * GUID resolution match the file backend, then sends only the resulting changes to Studio.
+ * GUID resolution run before anything is sent, then sends only the resulting changes to Studio.
  */
 export async function upsertVfxRecipesViaRpc(
+  client: InstanceClient,
   items: readonly VfxRecipeItem[],
 ): Promise<{ added: AddedInstanceMetadata[]; info: string[] }> {
-  const root = await readLevelRoot();
+  const root = await client.readLevelRoot();
   assertInstanceClasses(
     root,
     items.map((item) => ("guid" in item ? item : { class: "VFXRecipe" })),
@@ -70,11 +71,11 @@ export async function upsertVfxRecipesViaRpc(
   }
 
   if (updateInstances.length > 0) {
-    await callInstanceRpc("instance.update", { Instances: updateInstances });
+    await client.callInstanceRpc("instance.update", { Instances: updateInstances });
   }
   // instance.create takes one parent per call, so adds are grouped by parentGuid.
   for (const [parentGuid, pending] of addsByParent) {
-    const result = await callInstanceRpc("instance.create", {
+    const result = await client.callInstanceRpc("instance.create", {
       ParentActorGuid: parentGuid,
       Instances: pending.map((entry) => toCreatePayload(entry.node)),
     });
@@ -89,6 +90,6 @@ export async function upsertVfxRecipesViaRpc(
   // Studio cascades a top-level object's Mobility by itself and refuses a Mobility set below
   // Workspace, so only the local tree is brought in line to keep the reported info consistent.
   normalizeWorkspaceMobility(root);
-  await saveLevelFile();
-  return { added, info: [...mobilityInfo, ...takeWarnings()] };
+  await client.saveLevelFile();
+  return { added, info: [...mobilityInfo, ...client.takeWarnings()] };
 }

@@ -1,8 +1,8 @@
 // @summary Defines the native Studio Rig Builder insertion contract.
 
 import { z } from "zod";
+import { checkResult } from "../tools/instance-rpc/result";
 import type { CallRpc } from "../tools/pie-input/target";
-import { checkResult } from "../tools/v2/result";
 
 export const method = "rig_builder.insert";
 

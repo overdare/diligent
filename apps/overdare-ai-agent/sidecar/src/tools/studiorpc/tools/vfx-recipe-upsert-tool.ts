@@ -1,31 +1,20 @@
-// @summary Creates and patches VFXRecipe instances through the level file or the Studio instance RPCs.
-import { readFileSync, writeFileSync } from "node:fs";
+// @summary Creates and patches VFXRecipe instances through the Studio instance RPCs.
 import { z } from "zod";
-import { resolveApiVersion } from "../config";
 import {
   parseVfxRecipeCreateProperties,
   parseVfxRecipePatchProperties,
   vfxRecipePropertiesSchema,
 } from "../methods/vfx-recipe.params";
 import { buildVfxRecipeUpsertRender } from "../render";
-import { applyLevelChanges as applyLevelChangesDefault } from "../rpc";
 import type { Tool, ToolContext, ToolResult } from "../types";
 import type { WriteLock } from "../write-lock";
-import {
-  type AddedInstanceMetadata,
-  addInstancesInDocument,
-  assertInstanceClasses,
-  normalizeWorkspaceMobility,
-  requireDocumentRoot,
-  updateInstancesInDocument,
-} from "./instance-document-operations";
+import type { AddedInstanceMetadata } from "./instance-document-operations";
+import type { InstanceClient } from "./instance-rpc/client";
+import { upsertVfxRecipesViaRpc } from "./instance-rpc/vfx-recipe-upsert";
 import { resultFromInstanceToolStatusError } from "./instance-status";
-import { readAndWriteOvdrjm, resolveOvdrjmPathFromUmap } from "./ovdrjm-utils";
-import { upsertVfxRecipesViaRpc } from "./v2/vfx-recipe-upsert";
 
 const TOOL_NAME = "studiorpc_vfx_recipe_upsert";
 const METHOD = "vfx_recipe.upsert";
-const CLASS_NAME = "VFXRecipe";
 
 const items = (propertySchema: z.ZodTypeAny) =>
   z
@@ -109,73 +98,7 @@ function vfxRecipeUpsertResult(
   };
 }
 
-async function upsertVfxRecipesInFile(
-  args: unknown,
-  parsedItems: readonly VfxRecipeItem[],
-  cwd: string,
-  applyLevelChanges: () => Promise<unknown>,
-): Promise<ToolResult> {
-  const fileResult = (() => {
-    try {
-      const { ovdrjmPath } = resolveOvdrjmPathFromUmap(cwd);
-      const originalBytes = readFileSync(ovdrjmPath);
-      const result = readAndWriteOvdrjm(cwd, (rootDoc) => {
-        const root = requireDocumentRoot(rootDoc);
-        assertInstanceClasses(
-          root,
-          parsedItems.map((item) => (isVfxRecipeUpdate(item) ? item : { class: CLASS_NAME })),
-          CLASS_NAME,
-        );
-        const mobilityInfo: string[] = [];
-        const added: AddedInstanceMetadata[] = [];
-        for (const item of parsedItems) {
-          if (isVfxRecipeUpdate(item)) updateInstancesInDocument(root, [item], { mobilityInfo });
-          else added.push(...addInstancesInDocument(rootDoc, [{ ...item, class: CLASS_NAME }], { mobilityInfo }));
-        }
-        // A top-level object's Mobility governs its whole assembly, so cascade it
-        // down to every descendant that carries an explicit Mobility.
-        normalizeWorkspaceMobility(root);
-        return { added, mobilityInfo };
-      });
-      return { ...result, originalBytes, writtenBytes: readFileSync(ovdrjmPath) };
-    } catch (error) {
-      const result = resultFromInstanceToolStatusError(error);
-      if (result) return result;
-      throw error;
-    }
-  })();
-  if ("output" in fileResult) return fileResult;
-
-  try {
-    await applyLevelChanges();
-  } catch (error) {
-    let recovery: string;
-    try {
-      // The write lock covers agent tools, but Studio or the user may save
-      // during apply. Preserve those later bytes instead of overwriting them.
-      if (readFileSync(fileResult.ovdrjmPath).equals(fileResult.writtenBytes)) {
-        writeFileSync(fileResult.ovdrjmPath, fileResult.originalBytes);
-        recovery = "file restored to its pre-upsert bytes";
-      } else {
-        recovery = "file changed after upsert; not restored";
-      }
-    } catch (restoreError) {
-      recovery = `file restoration failed: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`;
-    }
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `${METHOD} apply failed: ${message}; ${recovery}. Studio state is unconfirmed; inspect it before retrying.`,
-      { cause: error },
-    );
-  }
-  return vfxRecipeUpsertResult(args, parsedItems, fileResult.added, fileResult.mobilityInfo);
-}
-
-export function createVfxRecipeUpsertTool(
-  cwd: string,
-  writeLock: WriteLock,
-  applyLevelChanges: () => Promise<unknown> = applyLevelChangesDefault,
-): Tool {
+export function createVfxRecipeUpsertTool(client: InstanceClient, writeLock: WriteLock): Tool {
   return {
     name: TOOL_NAME,
     description:
@@ -187,7 +110,7 @@ export function createVfxRecipeUpsertTool(
       const approval = await ctx.approve({
         permission: "write",
         toolName: TOOL_NAME,
-        description: "Update .ovdrjm world file",
+        description: "Create or update VFXRecipe instances in the Editor level",
         details: args,
       });
       if (approval === "reject") {
@@ -195,16 +118,12 @@ export function createVfxRecipeUpsertTool(
       }
       const release = await writeLock.acquire();
       try {
-        if (resolveApiVersion() !== "v2")
-          return await upsertVfxRecipesInFile(args, parsedItems, cwd, applyLevelChanges);
-        try {
-          const { added, info } = await upsertVfxRecipesViaRpc(parsedItems);
-          return vfxRecipeUpsertResult(args, parsedItems, added, info);
-        } catch (error) {
-          const result = resultFromInstanceToolStatusError(error);
-          if (result) return result;
-          throw error;
-        }
+        const { added, info } = await upsertVfxRecipesViaRpc(client, parsedItems);
+        return vfxRecipeUpsertResult(args, parsedItems, added, info);
+      } catch (error) {
+        const result = resultFromInstanceToolStatusError(error);
+        if (result) return result;
+        throw error;
       } finally {
         release();
       }

@@ -1,6 +1,7 @@
 // @summary Flushes Studio and captures only a confirmed, current level checkpoint.
 import type { TextGenerationFn } from "@diligent/runtime";
 import type { call } from "../rpc";
+import { checkResult } from "./instance-rpc/result";
 import { isRecord } from "./ovdrjm-utils";
 import {
   type CaptureOptions,
@@ -11,7 +12,6 @@ import {
   snapshotsDir,
 } from "./snapshot";
 import { summarizeSnapshot } from "./snapshot-summary";
-import { checkResult } from "./v2/result";
 
 export async function saveLevelForSnapshot(callRpc: typeof call, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted();

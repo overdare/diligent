@@ -3,7 +3,7 @@
 import type * as scriptRead from "../../methods/script.read";
 import { buildScriptReadRender } from "../../render";
 import type { ToolResult } from "../../types";
-import { DEPTH_SELF, readInstanceNode } from "./client";
+import { DEPTH_SELF, type InstanceClient } from "./client";
 import { instanceTypeOf, SCRIPT_CLASSES } from "./scripts";
 
 type ScriptReadArgs = ReturnType<typeof scriptRead.params.parse>;
@@ -15,13 +15,13 @@ function formatLineNumber(lineNum: number, maxLineNum: number): string {
   return `${String(lineNum).padStart(width)}\t`;
 }
 
-export async function readScriptViaRpc(parsed: ScriptReadArgs): Promise<ToolResult> {
+export async function readScriptViaRpc(client: InstanceClient, parsed: ScriptReadArgs): Promise<ToolResult> {
   const { guid: targetGuid, offset, limit } = parsed;
 
   let source: string;
   let scriptName: string;
   try {
-    const target = await readInstanceNode(targetGuid, DEPTH_SELF);
+    const target = await client.readInstanceNode(targetGuid, DEPTH_SELF);
     if (!target) {
       return { output: `Error: ActorGuid not found: ${targetGuid}`, metadata: { error: true } };
     }

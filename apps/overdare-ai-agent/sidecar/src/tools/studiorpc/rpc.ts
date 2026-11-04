@@ -54,9 +54,6 @@ function renderReason(data: unknown): string {
   const reason = (data as Record<string, unknown>).reason;
   return typeof reason === "string" && reason.length > 0 ? `\n\nReason: ${reason}` : "";
 }
-export async function applyLevelChanges(): Promise<unknown> {
-  return call("level.apply", {});
-}
 
 export async function call(
   method: string,

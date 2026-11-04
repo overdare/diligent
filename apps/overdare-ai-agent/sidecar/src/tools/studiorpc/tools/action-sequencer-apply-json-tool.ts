@@ -67,7 +67,7 @@ export function createActionSequencerApplyJsonTool(callRpc: typeof call, writeLo
           );
         }
         if (parsed.dryRun && cwd && isRecord(result)) {
-          result = await enrichScriptReferences(result, parsed.instanceGuid, cwd, callRpc, json);
+          result = await enrichScriptReferences(result, parsed.instanceGuid, callRpc, json);
         }
         const output =
           typeof result === "string"
