@@ -55,6 +55,8 @@ describe("schema overlay on targeted lookups", () => {
       ...mobility,
       note: propertyNotes["Instance.Mobility"],
     });
+    expect(propertyOf(classOf(output, "FutureWidget"), "Mobility")?.note).toContain("Enum.MobilityMode.Static");
+    expect(propertyOf(classOf(output, "FutureWidget"), "Mobility")?.note).toContain("Enum.MobilityMode.Movable");
   });
 
   test("hides engine sentinel enum members while keeping real choices", async () => {

@@ -118,7 +118,8 @@ const softCap = (max: number) => `Keep at or below ${max}; Studio publishes no m
  * property can be annotated once on its declaring class.
  */
 export const propertyNotes: Readonly<Record<string, string>> = {
-  "Instance.Mobility": "Settable only on top-level Workspace objects (direct children of Workspace).",
+  "Instance.Mobility":
+    "Settable only on top-level Workspace objects (direct children of Workspace). Use Enum.MobilityMode.Static or Enum.MobilityMode.Movable.",
   "BasePart.Size": "Centimeters.",
   "BasePart.CFrame": cframeNote,
   "Attachment.CFrame": `Local to the parent part. ${cframeNote}`,
