@@ -24,6 +24,8 @@ After a config reload (`config/reload`, e.g. Web/TUI `/reload`) or server restar
 
 Direct-only tools never become nested: tools flagged `codeModeDirect` in `packages/runtime/src/tools/tool-metadata.ts` (`plan`, `request_user_input`, `skill`, `read_image`, goal tools, collab tools) and provider-native tools (`modelExposure`). Their results drive client UI, user interaction, or image content that cannot cross the JSON-only guest bridge.
 
+The `exec` description lists the direct-only tools and tells the model to call them directly. In `on` mode, `ALL_TOOLS` identifies which tools are callable inside `exec`; a tool's presence in the direct tool list does not imply it is nested-callable.
+
 Sub-agents spawned by collab tools apply the same `codeMode` to their own tool list. Each child has its own `CodeModeSession` (cells and `store`), kept across that child's turns and not shared with the parent. Children inherit the parent's direct tool list and wrap it themselves, so `exec`/`exec_wait` are never passed down.
 
 ## `exec`

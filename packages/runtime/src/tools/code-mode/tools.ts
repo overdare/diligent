@@ -89,7 +89,11 @@ export function applyCodeMode(tools: Tool[], options: CodeModeAssemblyOptions): 
   );
   const exec: Tool<typeof ExecParams> = {
     name: EXEC_TOOL_NAME,
-    description: buildExecDescription(options.codeMode, nestedTools),
+    description: buildExecDescription(
+      options.codeMode,
+      nestedTools,
+      tools.filter((tool) => !isNested(tool)),
+    ),
     parameters: ExecParams,
     async execute(args, ctx) {
       const snapshot = await options.session.exec(

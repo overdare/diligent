@@ -72,6 +72,19 @@ describe("applyCodeMode exposure", () => {
     const { exposed } = setup([echo, plan], "on");
     expect(exposed.map((tool) => tool.name)).toEqual(["echo", "plan", "exec", "exec_wait"]);
   });
+
+  test.each(["on", "only"] as const)("skill stays direct and is not available inside exec in %s mode", async (mode) => {
+    const skill = makeTool("skill", async () => ({ output: "skill content" }));
+    const { exposed, exec } = setup([echo, skill], mode);
+    expect(exposed.find((tool) => tool.name === "skill")).toBe(skill);
+    expect(exec.description).toContain("`skill`");
+    expect(exec.description).toContain("directly");
+    const result = await exec.execute(
+      { code: `text(typeof tools.skill); text(ALL_TOOLS.some(tool => tool.name === "skill"));` },
+      makeCtx("call-skill"),
+    );
+    expect(result.output).toBe("Script completed\nundefined\nfalse");
+  });
 });
 
 describe("exec", () => {
