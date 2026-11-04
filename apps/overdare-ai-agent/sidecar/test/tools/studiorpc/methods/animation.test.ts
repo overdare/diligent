@@ -169,6 +169,51 @@ describe("animation params", () => {
     ).toBe(false);
   });
 
+  test("accept explicit chain pins and ground requests without changing authored values", () => {
+    const args = {
+      animation: CONTRACT_ANIMATION,
+      modelGuid: "custom-rig",
+      pins: [{ chain: ["Hip", "Knee", "Ankle"], frames: [0, 10], flat: false, pole: [0, 20, 10] }],
+      ground: [{ frames: [0, 10], translationBone: "Root", heightCm: -2.5, bones: ["Ankle", "Toe"] }],
+    };
+    expect(animationWrite.params.parse(args)).toEqual(args);
+    expect(animationWrite.normalizeArgs(args)).toEqual(args);
+    const minimal = {
+      animation: CONTRACT_ANIMATION,
+      pins: [{ chain: ["Hip", "Knee", "Ankle"], frames: [0, 10] }],
+      ground: [{ frames: [0, 10], translationBone: "Root" }],
+    };
+    expect(animationWrite.params.parse(minimal)).toEqual(minimal);
+  });
+
+  test("reject ambiguous chains, implicit foot frames and malformed explicit ground selections", () => {
+    const pin = (value: Record<string, unknown>) =>
+      animationWrite.params.safeParse({ animation: CONTRACT_ANIMATION, pins: [{ frames: [0, 10], ...value }] }).success;
+    expect(pin({})).toBe(false);
+    expect(pin({ bone: "RightFoot", chain: ["Hip", "Knee", "Ankle"] })).toBe(false);
+    expect(pin({ chain: ["Hip", "Knee"] })).toBe(false);
+    expect(pin({ chain: ["Hip", "", "Ankle"] })).toBe(false);
+    expect(pin({ chain: ["Hip", "Knee", "A".repeat(1024)] })).toBe(false);
+    expect(pin({ chain: ["Hip", "Knee", "Ankle"], flat: true })).toBe(false);
+    expect(pin({ chain: ["Hip", "Knee", "Ankle"], pivot: "toe" })).toBe(false);
+    const ground = (value: Record<string, unknown>) =>
+      animationWrite.params.safeParse({ animation: CONTRACT_ANIMATION, ground: [{ frames: [0, 10], ...value }] })
+        .success;
+    expect(ground({ heightCm: 0 })).toBe(false);
+    expect(ground({ bones: ["Ankle"] })).toBe(false);
+    expect(ground({ translationBone: "" })).toBe(false);
+    expect(ground({ translationBone: "A".repeat(1024) })).toBe(false);
+    expect(ground({ translationBone: "Root", heightCm: Number.POSITIVE_INFINITY })).toBe(false);
+    expect(ground({ translationBone: "Root", heightCm: -100000 })).toBe(true);
+    expect(ground({ translationBone: "Root", heightCm: 100000 })).toBe(true);
+    expect(ground({ translationBone: "Root", heightCm: -100001 })).toBe(false);
+    expect(ground({ translationBone: "Root", heightCm: 100001 })).toBe(false);
+    expect(ground({ translationBone: "Root", bones: [] })).toBe(false);
+    expect(ground({ translationBone: "Root", bones: [""] })).toBe(false);
+    expect(ground({ translationBone: "Root", bones: ["A".repeat(1024)] })).toBe(false);
+    expect(ground({ translationBone: "Root", bones: ["Ankle", "ankle"] })).toBe(false);
+  });
+
   test("read opens a clip by assetPath or an animation by assetId", () => {
     expect(animationRead.params.parse({ assetId: "ovdrassetid://42", preview: true })).toEqual({
       assetId: "ovdrassetid://42",
@@ -243,6 +288,34 @@ describe("animation tools over the generic Studio RPC path", () => {
     const tools = await createStudioRpcToolProvider({ callRpc }).createTools({ cwd: tmpdir() });
     return tools.find((tool) => tool.name === name)!;
   }
+
+  test("forward explicit solver inputs and retain native per-rig capabilities", async () => {
+    const solvers = {
+      pins: { chain: true, builtInShorthand: false, flat: false, toePivot: false },
+      ground: { translationBone: true, bones: true, builtInDefault: false },
+    };
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const callRpc = async (method: string, params: unknown) => {
+      calls.push({ method, params });
+      return method === "animation.read" ? { rig: { solvers, bones: [] } } : { dryRun: true, frames: [] };
+    };
+    const read = await toolFor("studiorpc_animation_read", callRpc);
+    const result = await read.execute(read.parameters.parse({ modelGuid: "custom-rig" }), toolContext());
+    expect(JSON.parse(result.output).rig.solvers).toEqual(solvers);
+    const write = await toolFor("studiorpc_animation_write", callRpc);
+    const args = {
+      animation: CONTRACT_ANIMATION,
+      modelGuid: "custom-rig",
+      dryRun: true,
+      pins: [{ chain: ["Hip", "Knee", "Ankle"], frames: [0, 10], position: [0, 0, 1] }],
+      ground: [{ frames: [0, 10], translationBone: "Root", heightCm: 0, bones: ["Ankle"] }],
+    };
+    await write.execute(write.parameters.parse(args), toolContext());
+    expect(calls).toEqual([
+      { method: "animation.read", params: { modelGuid: "custom-rig" } },
+      { method: "animation.write", params: args },
+    ]);
+  });
 
   test("preserve raw floor samples and axes without adding capture or review operations", async () => {
     const floor = {

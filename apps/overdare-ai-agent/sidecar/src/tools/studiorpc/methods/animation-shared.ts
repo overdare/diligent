@@ -70,59 +70,109 @@ const previewOptions = z
   .strict();
 
 /**
- * Pins keep a hand or foot at one component-space point over a frame range (a planted foot, a hand on the
- * floor while the body turns), or move it along a path. Studio bakes them into keys on the limb's upper, lower
- * and end bones.
+ * Pins solve an explicit two-bone chain, or a built-in hand/foot shorthand, in component space.
+ * Studio validates the selected rig and bakes solved rotations into keys.
  */
 export const pinsSchema = z
   .array(
-    z
-      .object({
-        bone: z.enum(["RightHand", "LeftHand", "RightFoot", "LeftFoot"]),
-        frames: z.array(z.number().int().min(0)).length(2).describe("[from, to], inclusive."),
-        position: vec3("[x, y, z] component cm. Omit to hold the point where the effector is at `from`.").optional(),
-        flat: z
-          .boolean()
-          .optional()
-          .describe("Feet only: the foot lies flat on the floor (sole at z = 0) keeping its heading at `from`."),
-        pole: vec3(
-          "[x, y, z] component cm: a point the elbow or knee bends toward. Omit to bend the way it hinges.",
-        ).optional(),
-        path: z
-          .array(
-            z
-              .object({
-                frame: z.number().int().min(0),
-                position: vec3("[x, y, z] component cm."),
-              })
-              .strict(),
-          )
-          .min(1)
-          .max(64)
-          .optional()
-          .describe("Instead of position: targets on frames inside `frames`, ascending; eased between, held outside."),
-        pivot: z
-          .literal("toe")
-          .optional()
-          .describe(
-            "Feet only, not with flat: hold the front edge of the sole; the keyed foot rotation lifts the heel.",
-          ),
-      })
-      .strict(),
+    z.union([
+      z
+        .object({
+          bone: z.enum(["RightHand", "LeftHand", "RightFoot", "LeftFoot"]),
+          ...pinFields(),
+          flat: z
+            .boolean()
+            .optional()
+            .describe("Built-in feet only: lie flat on the floor (sole at z = 0), keeping the heading at `from`."),
+          pivot: z
+            .literal("toe")
+            .optional()
+            .describe("Built-in feet only, not with flat: hold the front edge of the sole."),
+        })
+        .strict(),
+      z
+        .object({
+          chain: z
+            .array(z.string().min(1).max(1023))
+            .length(3)
+            .describe("[upper, joint, effector] bone names, direct parent-child links."),
+          ...pinFields(),
+          flat: z
+            .literal(false)
+            .optional()
+            .describe("Explicit chains have no inferred sole frame; only false is accepted."),
+        })
+        .strict(),
+    ]),
   )
   .max(8);
 
+function pinFields() {
+  return {
+    frames: z.array(z.number().int().min(0)).length(2).describe("[from, to], inclusive."),
+    position: vec3("[x, y, z] component cm. Omit to hold the point where the effector is at `from`.").optional(),
+    pole: vec3(
+      "[x, y, z] component cm: bend toward this point. Explicit straight chains require a valid pole.",
+    ).optional(),
+    path: z
+      .array(
+        z
+          .object({
+            frame: z.number().int().min(0),
+            position: vec3("[x, y, z] component cm."),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(64)
+      .optional()
+      .describe("Instead of position: targets on frames inside `frames`, ascending; eased between, held outside."),
+  };
+}
+
 /**
- * Ground ranges keep the lowest point of the body on the floor on every frame (rolls, falls, sitting, lying): Studio
- * moves LowerTorso straight up or down and bakes it into keys, before the pins.
+ * Ground ranges align evaluated skin to a declared component-Z height before pins.
+ * The built-in shorthand moves LowerTorso; explicit mode selects the translation bone and optional skin influences.
  */
 export const groundSchema = z
   .array(
     z
       .object({
         frames: z.array(z.number().int().min(0)).length(2).describe("[from, to], inclusive."),
+        translationBone: z
+          .string()
+          .min(1)
+          .max(1023)
+          .optional()
+          .describe("Bone translated along component Z; required for general rigs."),
+        heightCm: z
+          .number()
+          .finite()
+          .min(-100000)
+          .max(100000)
+          .optional()
+          .describe("Target component-Z height in cm, default 0. Requires translationBone."),
+        bones: z
+          .array(z.string().min(1).max(1023))
+          .min(1)
+          .refine(
+            (bones) => new Set(bones.map((bone) => bone.toLowerCase())).size === bones.length,
+            "Select each bone once",
+          )
+          .optional()
+          .describe(
+            "Select skin vertices with any positive weight on these bones; requires translationBone. Omit for all skin vertices.",
+          ),
       })
-      .strict(),
+      .strict()
+      .refine((ground) => ground.heightCm === undefined || ground.translationBone !== undefined, {
+        message: "heightCm requires translationBone",
+        path: ["heightCm"],
+      })
+      .refine((ground) => ground.bones === undefined || ground.translationBone !== undefined, {
+        message: "bones requires translationBone",
+        path: ["bones"],
+      }),
   )
   .max(8);
 
