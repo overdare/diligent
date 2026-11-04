@@ -56,6 +56,7 @@ interface ThreadEventReducerDeps<TItem> {
     planCallCount: number;
     collabAgentNamesByThreadId: Record<string, string>;
     nowMs: number;
+    parentActive?: boolean;
   }) => { item: TItem; collabAgentNamesByThreadId: Record<string, string>; planCallCount: number };
 }
 
@@ -303,6 +304,7 @@ export function reduceThreadEvent<TItem>(
         planCallCount: state.planCallCount,
         collabAgentNamesByThreadId: state.collabAgentNamesByThreadId,
         nowMs: deps.nowMs,
+        parentActive: event.parentToolCallId !== undefined && event.parentToolCallId in state.toolCalls,
       });
       const toolCalls = { ...state.toolCalls };
       delete toolCalls[event.toolCallId];

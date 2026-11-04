@@ -448,13 +448,25 @@ export function buildToolEndItem(options: {
   planCallCount: number;
   collabAgentNamesByThreadId: Record<string, string>;
   nowMs: number;
+  /** Whether the event's parent call (code mode `exec`/`exec_wait`) is still running. */
+  parentActive?: boolean;
 }): { item: ThreadItem; collabAgentNamesByThreadId: Record<string, string>; planCallCount: number } {
   const result = buildToolEndItemLines(options);
   if (!options.event.parentToolCallId) return result;
-  // Code mode nested calls finish before their `exec` result; a gutter groups them above it.
-  const gutter = `${t.dim}  │${t.reset} `;
   const item = result.item;
   if (item instanceof UserMessageView || item.kind === "assistant_chunk" || item.kind === "thinking") return result;
+  if (!options.parentActive) {
+    // A yielded cell's background call commits after its parent's result, so a gutter would group it under an
+    // unrelated row; label its origin instead.
+    const marker = `${t.dim}↳ script ·${t.reset} `;
+    const backgroundItem: ThreadItem =
+      item.kind === "plain"
+        ? { ...item, lines: item.lines.map((line, index) => (index === 0 ? `${marker}${line}` : line)) }
+        : { ...item, header: `${marker}${item.header}` };
+    return { ...result, item: backgroundItem };
+  }
+  // Calls made while their `exec`/`exec_wait` call runs finish before its result; a gutter groups them above it.
+  const gutter = `${t.dim}  │${t.reset} `;
   const nestedItem: ThreadItem =
     item.kind === "plain"
       ? { ...item, lines: item.lines.map((line) => `${gutter}${line}`) }

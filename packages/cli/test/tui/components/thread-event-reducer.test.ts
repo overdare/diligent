@@ -185,4 +185,44 @@ describe("reduceThreadEvent", () => {
     if (built.item.kind !== "tool_result") return;
     expect(built.item.header).toContain("[code-reviewer]");
   });
+
+  test("code mode nested results get a gutter while their parent runs and an origin marker after it ended", () => {
+    const deps = {
+      ...createDeps(10),
+      buildToolEndItem: (options: Parameters<typeof buildToolEndItem>[0]) => {
+        const built = buildToolEndItem(options);
+        return { ...built, item: { id: built.item.kind === "tool_result" ? built.item.header : built.item.kind } };
+      },
+    };
+    const nestedEnd = (toolCallId: string) =>
+      ({
+        type: "tool_end",
+        toolName: "read",
+        toolCallId,
+        parentToolCallId: "tc-exec",
+        output: "x",
+        isError: false,
+      }) as const;
+
+    let state = createState({ toolCalls: { "tc-exec": { startedAt: 1 } } });
+    state = reduceThreadEvent(state, nestedEnd("tc-exec#1"), deps).state;
+    state = reduceThreadEvent(
+      state,
+      {
+        type: "tool_end",
+        toolName: "exec",
+        toolCallId: "tc-exec",
+        output: "Script running with cell ID 1",
+        isError: false,
+      },
+      deps,
+    ).state;
+    // The yielded cell keeps running: this result commits below the exec result.
+    state = reduceThreadEvent(state, nestedEnd("tc-exec#2"), deps).state;
+
+    const [driven, , background] = state.items.map((item) => item.id);
+    expect(driven).toContain("│");
+    expect(background).toContain("↳ script");
+    expect(background).not.toContain("│");
+  });
 });

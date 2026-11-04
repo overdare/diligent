@@ -116,6 +116,8 @@ export type RenderItem =
       render?: ToolRenderPayload;
       /** Set when this call ran inside a code mode `exec` call; rendered nested under it. */
       parentToolCallId?: string;
+      /** A yielded cell ran this call after other rows followed its parent, so it is labelled, not nested. */
+      background?: boolean;
     }
   | {
       id: string;

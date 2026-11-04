@@ -107,7 +107,8 @@ export function ToolBlock({
   const inlinePreview = inlinePreviewWhenCollapsed
     ? [inputSummary, showOutputSummary ? outputSummary : ""].filter((part) => part.trim().length > 0).join(" · ")
     : "";
-  const rowTitle = inlinePreview ? `${activityTitle}: ${inlinePreview}` : activityTitle;
+  const baseTitle = inlinePreview ? `${activityTitle}: ${inlinePreview}` : activityTitle;
+  const rowTitle = item.background ? `Script · ${baseTitle}` : baseTitle;
 
   // A lone row merges into a group when an adjacent call arrives (live or from an earlier history page);
   // the group starts from what was on screen, so an opened preview neither vanishes nor shrinks the row.
@@ -116,8 +117,8 @@ export function ToolBlock({
   }, [item.id, nested, open]);
 
   return (
-    // Calls made from a code mode `exec` script hang under that exec row.
-    <div className={item.parentToolCallId ? "ml-3 border-l border-border/30 pl-3" : undefined}>
+    // Calls made from a code mode `exec` script hang under that exec row; background calls are labelled instead.
+    <div className={item.parentToolCallId && !item.background ? "ml-3 border-l border-border/30 pl-3" : undefined}>
       <div className="min-w-0">
         <ToolActivityRow
           title={rowTitle}

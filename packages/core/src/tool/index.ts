@@ -18,4 +18,5 @@ export type {
   ToolContext,
   ToolRegistry,
   ToolResult,
+  ToolRunScope,
 } from "./types";

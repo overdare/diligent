@@ -410,3 +410,35 @@ test("completed tool preserves protocol images for preview", () => {
   });
   expect(next.items[0]).toMatchObject({ kind: "tool", outputImages });
 });
+
+test("a nested call is nested only while its parent group is the latest row", () => {
+  let state = reduceToolEvent(
+    initialThreadState,
+    toolStartEvent({ itemId: "exec", toolCallId: "tc-exec", toolName: "exec" }),
+  );
+  state = reduceToolEvent(
+    state,
+    toolStartEvent({ itemId: "n1", toolCallId: "tc-exec#1", toolName: "read", parentToolCallId: "tc-exec" }),
+  );
+  state = reduceToolEvent(
+    state,
+    toolStartEvent({ itemId: "n2", toolCallId: "tc-exec#2", toolName: "read", parentToolCallId: "tc-exec" }),
+  );
+  // The yielded cell keeps running: a direct call lands before its next background call.
+  state = reduceToolEvent(state, toolStartEvent({ itemId: "direct", toolCallId: "tc-direct", toolName: "bash" }));
+  state = reduceToolEvent(
+    state,
+    toolStartEvent({ itemId: "n3", toolCallId: "tc-exec#3", toolName: "bash", parentToolCallId: "tc-exec" }),
+  );
+
+  const rows = state.items.flatMap((item) =>
+    item.kind === "tool" ? [[item.toolCallId, item.background === true]] : [],
+  );
+  expect(rows).toEqual([
+    ["tc-exec", false],
+    ["tc-exec#1", false],
+    ["tc-exec#2", false],
+    ["tc-direct", false],
+    ["tc-exec#3", true],
+  ]);
+});

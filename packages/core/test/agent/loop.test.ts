@@ -278,6 +278,65 @@ describe("Agent loop", () => {
     }
   });
 
+  test("work a tool tracks on its run scope settles after the run closes it and before agent_end", async () => {
+    const order: string[] = [];
+    const tool: Tool = {
+      name: "background",
+      description: "Keeps working after returning",
+      parameters: z.object({}),
+      async execute(_args, context) {
+        const scope = context.runScope!;
+        scope.track(
+          (async () => {
+            const { promise, resolve } = Promise.withResolvers<void>();
+            scope.closing.addEventListener("abort", () => resolve(), { once: true });
+            await promise;
+            order.push("closing");
+            await Promise.resolve();
+            order.push("work settled");
+          })(),
+        );
+        return { output: "started" };
+      },
+    };
+    const streamFn = createMockStreamFunction([
+      makeAssistant([{ type: "tool_call", id: "tc-1", name: "background", input: {} }], "tool_use"),
+      makeAssistant([{ type: "text", text: "done" }]),
+    ]);
+    const agent = new Agent(TEST_MODEL, [], [tool], { llmMsgStreamFn: streamFn });
+    agent.subscribe((event) => {
+      if (event.type === "agent_end") order.push("agent_end");
+    });
+
+    await agent.prompt({ role: "user", content: "Start", timestamp: Date.now() });
+    expect(order).toEqual(["closing", "work settled", "agent_end"]);
+  });
+
+  test("a run scope signal follows the run abort, not a tool batch interrupt", async () => {
+    const scopes: Array<{ batch: AbortSignal; run: AbortSignal }> = [];
+    const tool: Tool = {
+      name: "probe",
+      description: "Records its signals",
+      parameters: z.object({}),
+      async execute(_args, context) {
+        scopes.push({ batch: context.signal, run: context.runScope!.signal });
+        agent.interruptTools();
+        return { output: "ok" };
+      },
+    };
+    const streamFn = createMockStreamFunction([
+      makeAssistant([{ type: "tool_call", id: "tc-1", name: "probe", input: {} }], "tool_use"),
+      makeAssistant([{ type: "text", text: "done" }]),
+    ]);
+    const agent = new Agent(TEST_MODEL, [], [tool], { llmMsgStreamFn: streamFn });
+    const controller = new AbortController();
+    await agent.prompt({ role: "user", content: "Start", timestamp: Date.now() }, controller.signal);
+    expect(scopes[0]?.batch.aborted).toBe(true);
+    expect(scopes[0]?.run.aborted).toBe(false);
+    controller.abort();
+    expect(scopes[0]?.run.aborted).toBe(true);
+  });
+
   test("text-only response: single turn", async () => {
     const msg = makeAssistant([{ type: "text", text: "Hello!" }]);
     const streamFn = createMockStreamFunction([msg]);

@@ -2,7 +2,7 @@
 
 import type { ToolOutputFileStore } from "../tool/executor";
 import { executeTool } from "../tool/executor";
-import type { ToolContext, ToolRegistry } from "../tool/types";
+import type { ToolContext, ToolRegistry, ToolRunScope } from "../tool/types";
 import type { ToolCallBlock, ToolResultMessage } from "../types";
 import type { AgentStream } from "./types";
 
@@ -21,6 +21,7 @@ export async function runToolCalls(
   onToolAbort: () => void,
   outputStore?: ToolOutputFileStore,
   sessionId?: string,
+  runScope?: ToolRunScope,
 ): Promise<{
   executions: ToolCallExecution[];
 }> {
@@ -47,6 +48,7 @@ export async function runToolCalls(
     emitNestedToolEvent: (event) => {
       stream.emit({ ...event, parentToolCallId: toolCall.id });
     },
+    ...(runScope ? { runScope } : {}),
   });
 
   const canRunInParallel =
