@@ -4,19 +4,19 @@ import type * as scriptAdd from "../../methods/script.add";
 import { buildScriptAddRender } from "../../render";
 import type { ToolResult } from "../../types";
 import { normalizeLeadingSpaces, normalizeLineEndings } from "../ovdrjm-utils";
-import { callInstanceRpc, createdActorGuids, saveLevelFile } from "./client";
+import { createdActorGuids, type InstanceClient } from "./client";
 
 type ScriptAddArgs = ReturnType<typeof scriptAdd.params.parse>;
 
-export async function addScriptViaRpc(parsed: ScriptAddArgs): Promise<ToolResult> {
+export async function addScriptViaRpc(client: InstanceClient, parsed: ScriptAddArgs): Promise<ToolResult> {
   const normalized = normalizeLeadingSpaces(parsed.source);
   const eolNormalized = normalizeLineEndings(normalized.result);
 
-  const result = await callInstanceRpc("instance.create", {
+  const result = await client.callInstanceRpc("instance.create", {
     ParentActorGuid: parsed.parentGuid,
     Instances: [{ InstanceType: parsed.class, Name: parsed.name, Source: eolNormalized.result }],
   });
-  await saveLevelFile();
+  await client.saveLevelFile();
 
   const addedGuid = createdActorGuids(result)[0] ?? "";
   let output = `Script added: ${parsed.name} (${addedGuid})`;

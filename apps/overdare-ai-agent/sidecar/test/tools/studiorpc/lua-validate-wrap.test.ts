@@ -1,21 +1,14 @@
 // @summary Verifies that the tools which write Lua validate what they wrote, and only that.
 //
-// The provider takes an injected `callRpc`, so assertions read that rather than a
-// socket or a module mock — `mock.module("studiorpc/rpc.ts")` in mcp-server.test.ts
-// and procedural-tools.test.ts is process-global and would otherwise swallow the
-// calls once those files have run. A local socket server still backs the tools'
-// own module-level `applyLevelChanges` for a standalone run.
-//
-// The tools run on the v1 file path, which keeps the fake Studio small: the wrapper
-// only ever reads the tool's metadata, and v1 and v2 emit identical metadata for
-// all three tools (v2-tools.test.ts is what pins that equivalence).
+// The provider takes an injected `callRpc`, so the fake Studio is that function
+// rather than a socket or a module mock — `mock.module("studiorpc/rpc.ts")` in
+// mcp-server.test.ts and procedural-tools.test.ts is process-global and would
+// otherwise swallow the calls once those files have run.
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import readline from "node:readline";
 import { createStudioRpcToolProvider, scriptEditTargets } from "../../../src/tools/studiorpc";
 
 interface RpcCall {
@@ -32,7 +25,9 @@ const REPORT =
 const rpcCalls: RpcCall[] = [];
 let validateFails = false;
 
-function makeWorld() {
+type WorldNode = Record<string, unknown> & { ActorGuid?: string; LuaChildren?: WorldNode[] };
+
+function makeWorld(): WorldNode {
   return {
     InstanceType: "Workspace",
     ActorGuid: WORKSPACE_GUID,
@@ -44,32 +39,24 @@ function makeWorld() {
   };
 }
 
-let server: net.Server;
-const previousEnv: Record<string, string | undefined> = {};
-
-beforeAll(async () => {
-  for (const key of ["STUDIO_HOST", "STUDIO_PORT"]) previousEnv[key] = process.env[key];
-
-  server = net.createServer((socket) => {
-    const lines = readline.createInterface({ input: socket });
-    lines.on("line", (line) => {
-      const request = JSON.parse(line) as { id: number };
-      socket.write(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { success: true } })}\n`);
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-
-  process.env.STUDIO_HOST = "127.0.0.1";
-  process.env.STUDIO_PORT = String((server.address() as net.AddressInfo).port);
-});
-
-afterAll(async () => {
-  for (const [key, value] of Object.entries(previousEnv)) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
+function findWorldNode(node: WorldNode, guid: string): WorldNode | undefined {
+  if (node.ActorGuid === guid) return node;
+  for (const child of node.LuaChildren ?? []) {
+    const found = findWorldNode(child, guid);
+    if (found) return found;
   }
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-});
+  return undefined;
+}
+
+/** Stands in for Studio's instance RPCs: reads come from the fixture world, creates get a fresh GUID. */
+function studioResult(method: string, params?: Record<string, unknown>): unknown {
+  if (method === "instance.read") {
+    const node = findWorldNode(makeWorld(), params?.ActorGuid as string);
+    return node ? { success: true, instance: node } : { success: true };
+  }
+  if (method === "instance.create") return { success: true, ActorGuids: ["NEW-1"] };
+  return { success: true };
+}
 
 const createdDirs: string[] = [];
 
@@ -84,7 +71,7 @@ function makeStudioProject(): string {
 /** Records what the provider asks Studio for, and answers lua.validate with a report. */
 const recordingCallRpc = async (method: string, params?: Record<string, unknown>): Promise<unknown> => {
   rpcCalls.push({ method, params });
-  if (method !== "lua.validate") return { success: true };
+  if (method !== "lua.validate") return studioResult(method, params);
   if (validateFails) throw new Error("Studio RPC error [-32601]: method not found");
   return { output: REPORT };
 };
@@ -104,15 +91,11 @@ function validateCalls(): RpcCall[] {
 }
 
 beforeEach(() => {
-  previousEnv.STUDIO_API_VERSION = process.env.STUDIO_API_VERSION;
-  process.env.STUDIO_API_VERSION = "v1";
   rpcCalls.length = 0;
   validateFails = false;
 });
 
 afterEach(() => {
-  if (previousEnv.STUDIO_API_VERSION === undefined) delete process.env.STUDIO_API_VERSION;
-  else process.env.STUDIO_API_VERSION = previousEnv.STUDIO_API_VERSION;
   for (const dir of createdDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 

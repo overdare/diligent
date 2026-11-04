@@ -45,13 +45,6 @@ function clip(value: string, max = 80): string {
   return value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;
 }
 
-function summarizeTargets(values: string[], actionWord: string): string {
-  if (values.length === 0) return actionWord;
-  if (values.length === 1) return `${actionWord} ${values[0]}`;
-  if (values.length === 2) return `${actionWord} ${values[0]}, ${values[1]}`;
-  return `${actionWord} ${values[0]}, ${values[1]} +${values.length - 2}`;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -164,54 +157,6 @@ export function buildDeleteRender(title: string, targetGuid: string, output: str
     blocks: [
       { type: "key_value", title, items: [{ key: "targetGuid", value: targetGuid }] },
       { type: "summary", text: firstLine(output, "Deleted."), tone: "warning" },
-    ],
-  };
-}
-
-export function buildInstanceDeleteRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
-  const items = Array.isArray(args.items) ? args.items : [];
-  const targetGuids = items.flatMap((item) => {
-    if (!isRecord(item)) return [];
-    const guid = readString(item.guid);
-    return guid ? [guid] : [];
-  });
-  const deleteCount = targetGuids.length;
-  const inputSummary = summarizeTargets(targetGuids, "delete");
-
-  return {
-    inputSummary: clip(inputSummary),
-    outputSummary: summarizeText(output, "Deleted."),
-    blocks: [
-      {
-        type: "key_value",
-        title: "Studio instance delete",
-        items: [
-          { key: "deletes", value: String(deleteCount) },
-          ...targetGuids.map((guid, index) => ({ key: `target${index + 1}`, value: guid })),
-        ],
-      },
-      { type: "summary", text: firstLine(output, "Deleted."), tone: "warning" },
-    ],
-  };
-}
-
-export function buildInstanceAddRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
-  const className = readString(args.class) ?? "Instance";
-  const instanceName = readString(args.name) ?? "unnamed";
-  return {
-    inputSummary: clip(`${className} ${instanceName}`),
-    outputSummary: summarizeText(output, "Instance added."),
-    blocks: [
-      {
-        type: "key_value",
-        title: "Studio instance add",
-        items: [
-          { key: "class", value: className },
-          { key: "name", value: instanceName },
-          { key: "parent", value: readString(args.parentGuid) ?? "" },
-        ].filter((item) => item.value.length > 0),
-      },
-      { type: "summary", text: firstLine(output, "Instance added."), tone: "success" },
     ],
   };
 }
@@ -338,26 +283,6 @@ export function buildVfxRecipeUpsertRender(args: Record<string, unknown>, output
         ],
       },
       { type: "summary", text: firstLine(output, "Recipes upserted."), tone: "success" },
-    ],
-  };
-}
-
-export function buildInstanceMoveRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
-  const items = Array.isArray(args.items) ? args.items : [];
-  const moveCount = items.filter(
-    (item) => isRecord(item) && readString(item.guid) && readString(item.parentGuid),
-  ).length;
-
-  return {
-    inputSummary: clip(moveCount > 0 ? summarizeCount(moveCount, "move") : "move"),
-    outputSummary: summarizeText(output, "Instances moved."),
-    blocks: [
-      {
-        type: "key_value",
-        title: "Studio instance move",
-        items: [{ key: "moves", value: String(moveCount) }],
-      },
-      { type: "summary", text: firstLine(output, "Instances moved."), tone: "success" },
     ],
   };
 }

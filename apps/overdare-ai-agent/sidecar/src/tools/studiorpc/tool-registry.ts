@@ -44,8 +44,6 @@ import {
   buildGameScreenshotRender,
   buildGameStopRender,
   buildHubTokenReadRender,
-  buildInstanceDeleteRender,
-  buildInstanceMoveRender,
   buildInstanceReadRender,
   buildLevelBrowseRender,
   buildLevelPublishRender,
@@ -126,8 +124,6 @@ export const renderBuilders: Record<string, RenderBuilder> = {
   studiorpc_level_browse: ({ args, result }) => buildLevelBrowseRender(result, args),
   studiorpc_level_save_file: ({ output }) => buildLevelSaveFileRender(output),
   studiorpc_instance_read: ({ normalizedArgs, output }) => buildInstanceReadRender(normalizedArgs, output),
-  studiorpc_instance_delete: ({ normalizedArgs, output }) => buildInstanceDeleteRender(normalizedArgs, output),
-  studiorpc_instance_move: ({ normalizedArgs, output }) => buildInstanceMoveRender(normalizedArgs, output),
   studiorpc_game_play: ({ normalizedArgs, output }) => buildGamePlayRender(normalizedArgs, output),
   studiorpc_game_stop: ({ output }) => buildGameStopRender(output),
   studiorpc_game_screenshot: ({ normalizedArgs, output, result }) =>

@@ -75,7 +75,7 @@ actually imported.
 
 Use the returned GUIDs to identify the imported roots, then resolve those verified objects through
 supported Editor hierarchy lookup and place them with Editor Luau; do not invent a GUID lookup method.
-`studiorpc_instance_move` only reparents; it does not translate objects. Place
+Setting `Parent` only reparents; it does not translate objects. Place
 structure before fixtures and scatter props. Read back the target subtree after a
 batch so the next placement uses current positions rather than stale assumptions.
 

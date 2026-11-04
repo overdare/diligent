@@ -23,9 +23,9 @@ import { createAssetDrawerImportBulkTool } from "./tools/asset-drawer-import-bul
 import { createCollisionProfileTools } from "./tools/collision-profile-tool";
 import { createExecuteLuauTool } from "./tools/execute-luau-tool";
 import { createHubWorldCategoriesListTool } from "./tools/hub-world-categories-list-tool";
-import { createInstanceDeleteTool } from "./tools/instance-delete-tool";
-import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
+import { createInstanceClient } from "./tools/instance-rpc/client";
+import { checkResult } from "./tools/instance-rpc/result";
 import { createPerformanceTools } from "./tools/performance-tools";
 import { createPieInputTools } from "./tools/pie-input";
 import { createRollbackTool } from "./tools/rollback-tool";
@@ -41,7 +41,6 @@ import { createSnapshotListTool } from "./tools/snapshot-list-tool";
 import { getStudioChangeCollector } from "./tools/studio-change-collector";
 import type { StudioChangeConsumer } from "./tools/studio-change-store";
 import { captureStudioChanges, createStudioChangesTool } from "./tools/studio-changes-tool";
-import { checkResult } from "./tools/v2/result";
 import { createVfxRecipeUpsertTool } from "./tools/vfx-recipe-upsert-tool";
 import type { Tool, ToolResult } from "./types";
 import { createWriteLock, type WriteLock } from "./write-lock";
@@ -239,7 +238,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-/** The script a `script.edit` call rewrote, from the metadata both the v1 and v2 paths return. */
+/** The script a `script.edit` call rewrote, from the metadata the tool returns. */
 export function scriptEditTargets(_args: unknown, result: ToolResult): string[] {
   const guid = result.metadata?.targetGuid;
   if (typeof guid !== "string" || !guid) return [];
@@ -251,7 +250,7 @@ export function scriptEditTargets(_args: unknown, result: ToolResult): string[] 
   return [guid];
 }
 
-/** The script a `script.add` call created, from the metadata both the v1 and v2 paths return. */
+/** The script a `script.add` call created, from the metadata the tool returns. */
 function scriptAddTargets(_args: unknown, result: ToolResult): string[] {
   const guid = result.metadata?.guid;
   return typeof guid === "string" && guid ? [guid] : [];
@@ -281,6 +280,7 @@ export async function createStudioRpcTools(ctx: {
   const transport = ctx.callRpc ?? call;
   const callRpc: typeof call = (method, params, options) => transport(method, params, studioRpcCallOptions(options));
   const applyLevelChanges = () => callRpc("level.apply", {});
+  const instanceClient = createInstanceClient(callRpc);
   const getTurnState = (toolContext: SnapshotToolContext) =>
     SNAPSHOT_TURN in toolContext ? toolContext[SNAPSHOT_TURN] : ctx.getTurnState?.();
 
@@ -391,16 +391,17 @@ export async function createStudioRpcTools(ctx: {
       },
       ctx.host,
     ),
-    wrapTool(createInstanceReadTool(ctx.cwd, callRpc), ctx.host),
+    wrapTool(createInstanceReadTool(instanceClient), ctx.host),
     wrapTool(withSnapshot(createExecuteLuauTool(callRpc, writeLock)), ctx.host),
-    wrapTool(withSnapshot(createVfxRecipeUpsertTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
-    wrapTool(withSnapshot(createInstanceDeleteTool(ctx.cwd, writeLock)), ctx.host),
-    wrapTool(withSnapshot(createInstanceMoveTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
-    wrapTool(createScriptReadTool(ctx.cwd), ctx.host),
-    wrapTool(createScriptGrepTool(ctx.cwd), ctx.host),
-    wrapTool(withSnapshot(withLuaValidate(createScriptAddTool(ctx.cwd, writeLock), scriptAddTargets)), ctx.host),
-    wrapTool(withSnapshot(createScriptDeleteTool(ctx.cwd, writeLock)), ctx.host),
-    wrapTool(withSnapshot(withLuaValidate(createScriptEditTool(ctx.cwd, writeLock), scriptEditTargets)), ctx.host),
+    wrapTool(withSnapshot(createVfxRecipeUpsertTool(instanceClient, writeLock)), ctx.host),
+    wrapTool(createScriptReadTool(instanceClient), ctx.host),
+    wrapTool(createScriptGrepTool(instanceClient), ctx.host),
+    wrapTool(withSnapshot(withLuaValidate(createScriptAddTool(instanceClient, writeLock), scriptAddTargets)), ctx.host),
+    wrapTool(withSnapshot(createScriptDeleteTool(instanceClient, writeLock)), ctx.host),
+    wrapTool(
+      withSnapshot(withLuaValidate(createScriptEditTool(instanceClient, writeLock), scriptEditTargets)),
+      ctx.host,
+    ),
     wrapTool(withSnapshot(createAssetDrawerImportBulkTool(callRpc, writeLock)), ctx.host),
     ...createCollisionProfileTools(ctx.cwd, writeLock, applyLevelChanges).map((tool) =>
       wrapTool(isCollisionEdit(tool.name) ? withSnapshot(tool) : tool, ctx.host),
@@ -522,7 +523,6 @@ export async function createStudioRpcTools(ctx: {
               result = await enrichScriptReferences(
                 result,
                 String((args as Record<string, unknown>).instanceGuid),
-                ctx.cwd,
                 toolCallRpc,
               );
             }
@@ -573,8 +573,8 @@ export async function createStudioRpcTools(ctx: {
     });
   }
 
-  // All tool implementations, including v1/v2 helpers that import call directly,
-  // inherit the executing agent's identity through awaits and write-lock waits.
+  // All tool implementations, including helpers that import call directly (the Hub
+  // token read), inherit the executing agent's identity through awaits and write-lock waits.
   return tools.map((tool) => ({
     ...tool,
     execute: (args, toolCtx) =>

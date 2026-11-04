@@ -66,22 +66,6 @@ export function clearStaleWorldTransforms(node: OvdrjmNode): number {
   return cleared;
 }
 
-export function removeNodeByActorGuid(node: OvdrjmNode, targetGuid: string): boolean {
-  if (!Array.isArray(node.LuaChildren)) return false;
-  const children = node.LuaChildren as OvdrjmNode[];
-  const index = children.findIndex((child) => isRecord(child) && child.ActorGuid === targetGuid);
-  if (index !== -1) {
-    children.splice(index, 1);
-    return true;
-  }
-  for (const child of children) {
-    if (isRecord(child) && removeNodeByActorGuid(child as OvdrjmNode, targetGuid)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 export function findFilesByExtension(cwd: string, extension: string): string[] {
   const entries = readdirSync(cwd, { withFileTypes: true });
   return entries
@@ -111,18 +95,6 @@ export function resolveOvdrjmPathFromUmap(cwd: string): { umapPath: string; ovdr
   }
 
   return { umapPath, ovdrjmPath };
-}
-
-export function readOvdrjmRoot(cwd: string): { umapPath: string; ovdrjmPath: string; root: OvdrjmNode } {
-  const { umapPath, ovdrjmPath } = resolveOvdrjmPathFromUmap(cwd);
-  const buf = readFileSync(ovdrjmPath);
-  const raw = buf[0] === 0xff && buf[1] === 0xfe ? new TextDecoder("utf-16le").decode(buf) : buf.toString("utf-8");
-  const parsedJson = JSON.parse(raw) as Record<string, unknown>;
-  const root = parsedJson.Root;
-  if (!isRecord(root)) {
-    throw new Error("Invalid .ovdrjm format: Root object is missing.");
-  }
-  return { umapPath, ovdrjmPath, root: root as OvdrjmNode };
 }
 
 export function readOvdrjmDocument(cwd: string): {

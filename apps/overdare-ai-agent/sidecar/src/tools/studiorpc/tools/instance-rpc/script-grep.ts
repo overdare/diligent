@@ -5,11 +5,11 @@ import { buildScriptGrepRender } from "../../render";
 import type { ToolResult } from "../../types";
 import type { OvdrjmNode } from "../ovdrjm-utils";
 import { countScripts, grepSubtree, MAX_MATCHES, type MatchLine } from "../script-grep-tool";
-import { DEPTH_SUBTREE, readInstanceNode, readLevelRoot } from "./client";
+import { DEPTH_SUBTREE, type InstanceClient } from "./client";
 
 type ScriptGrepArgs = ReturnType<typeof scriptGrep.params.parse>;
 
-export async function grepScriptsViaRpc(parsed: ScriptGrepArgs): Promise<ToolResult> {
+export async function grepScriptsViaRpc(client: InstanceClient, parsed: ScriptGrepArgs): Promise<ToolResult> {
   const { pattern, parentGuid, ignore_case } = parsed;
 
   let regex: RegExp;
@@ -24,7 +24,7 @@ export async function grepScriptsViaRpc(parsed: ScriptGrepArgs): Promise<ToolRes
 
   let startNode: OvdrjmNode;
   try {
-    const target = parentGuid ? await readInstanceNode(parentGuid, DEPTH_SUBTREE) : await readLevelRoot();
+    const target = parentGuid ? await client.readInstanceNode(parentGuid, DEPTH_SUBTREE) : await client.readLevelRoot();
     if (!target) {
       return { output: `Error: ActorGuid not found: ${parentGuid}`, metadata: { error: true } };
     }

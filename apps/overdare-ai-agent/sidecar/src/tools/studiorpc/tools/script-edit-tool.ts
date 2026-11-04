@@ -1,20 +1,10 @@
-// @summary Edits a script's Source property in .ovdrjm via exact string replacement.
+// @summary Edits a script's Source in the Editor level via exact string replacement.
 
-import { resolveApiVersion } from "../config";
 import * as scriptEdit from "../methods/script.edit";
-import { buildScriptEditRender } from "../render";
-import { applyLevelChanges } from "../rpc";
 import type { Tool, ToolContext, ToolResult } from "../types";
 import type { WriteLock } from "../write-lock";
-import {
-  findNodeByActorGuid,
-  isRecord,
-  normalizeLeadingSpaces,
-  normalizeLineEndings,
-  type OvdrjmNode,
-  readAndWriteOvdrjm,
-} from "./ovdrjm-utils";
-import { editScriptViaRpc } from "./v2/script-edit";
+import type { InstanceClient } from "./instance-rpc/client";
+import { editScriptViaRpc } from "./instance-rpc/script-edit";
 
 // ---------------------------------------------------------------------------
 // Helpers — line-oriented matching in the style of apply_patch's deriveNewContent.
@@ -150,12 +140,6 @@ function applyEdit(content: string, edit: SingleEdit): { result: string; count: 
 }
 
 // ---------------------------------------------------------------------------
-// Script class guard
-// ---------------------------------------------------------------------------
-
-const SCRIPT_CLASSES = new Set(["Script", "LocalScript", "ModuleScript"]);
-
-// ---------------------------------------------------------------------------
 // script_edit tool
 // ---------------------------------------------------------------------------
 
@@ -166,7 +150,7 @@ function toToolName(method: string): string {
 async function executeScriptEdit(
   args: Record<string, unknown>,
   ctx: ToolContext,
-  cwd: string,
+  client: InstanceClient,
   writeLock: WriteLock,
 ): Promise<ToolResult> {
   const toolName = toToolName(scriptEdit.method);
@@ -188,63 +172,9 @@ async function executeScriptEdit(
     return { output: "[Rejected by user]", metadata: { error: true } };
   }
 
-  // --- Read .ovdrjm, apply edit, write back ---
   const release = await writeLock.acquire();
   try {
-    if (resolveApiVersion() === "v2") return await editScriptViaRpc(parsed);
-    let count = 0;
-    let tabCount = 0;
-    let eolCount = 0;
-    let scriptName: string | undefined;
-    let scriptClass: string | undefined;
-
-    readAndWriteOvdrjm(cwd, (rootDoc) => {
-      const root = rootDoc.Root;
-      if (!isRecord(root)) {
-        throw new Error("Invalid .ovdrjm format: Root object is missing.");
-      }
-
-      const target = findNodeByActorGuid(root as OvdrjmNode, targetGuid);
-      if (!target) {
-        throw new Error(`ActorGuid not found in .ovdrjm: ${targetGuid}`);
-      }
-
-      const instanceType = typeof target.InstanceType === "string" ? target.InstanceType : undefined;
-      if (typeof target.Source !== "string" && (!instanceType || !SCRIPT_CLASSES.has(instanceType))) {
-        throw new Error(
-          `Instance ${targetGuid} (${instanceType ?? "unknown"}) has no Source. ` +
-            "Use studiorpc_execute_luau with target Editor to edit other instances.",
-        );
-      }
-
-      scriptClass = instanceType;
-      scriptName = typeof target.Name === "string" ? target.Name : undefined;
-      const source = typeof target.Source === "string" ? target.Source : "";
-
-      const { result, count: editCount } = applyEdit(source, { old_string, new_string, replace_all });
-
-      // Only Lua source uses tab normalization; preserve other source languages.
-      const normalized =
-        instanceType && SCRIPT_CLASSES.has(instanceType) ? normalizeLeadingSpaces(result) : { result, converted: 0 };
-      const eolNormalized = normalizeLineEndings(normalized.result);
-      target.Source = eolNormalized.result;
-      tabCount = normalized.converted;
-      eolCount = eolNormalized.converted;
-      count = editCount;
-    });
-
-    await applyLevelChanges();
-
-    let output = `Edited script ${targetGuid}: replaced ${count} occurrence(s)`;
-    const normalizations: string[] = [];
-    if (tabCount > 0) normalizations.push(`${tabCount} leading 4-space group(s) → tabs`);
-    if (eolCount > 0) normalizations.push(`${eolCount} line ending(s) normalized`);
-    if (normalizations.length > 0) output += ` (${normalizations.join(", ")})`;
-    return {
-      output,
-      render: buildScriptEditRender({ targetGuid, scriptName, old_string, new_string, replace_all }, output, count),
-      metadata: { method: "script.edit", targetGuid, count, class: scriptClass },
-    };
+    return await editScriptViaRpc(client, parsed);
   } catch (err) {
     return {
       output: `Error: ${err instanceof Error ? err.message : String(err)}`,
@@ -255,13 +185,13 @@ async function executeScriptEdit(
   }
 }
 
-export function createScriptEditTool(cwd: string, writeLock: WriteLock): Tool {
+export function createScriptEditTool(client: InstanceClient, writeLock: WriteLock): Tool {
   return {
     name: toToolName(scriptEdit.method),
     description: scriptEdit.description,
     parameters: scriptEdit.params,
     async execute(args, ctx) {
-      return executeScriptEdit(args, ctx, cwd, writeLock);
+      return executeScriptEdit(args, ctx, client, writeLock);
     },
   };
 }

@@ -31,7 +31,6 @@ const nativeCalls: Array<{ method: string; params?: Record<string, unknown> }> =
 
 mock.module("../src/tools/studiorpc/rpc.ts", () => ({
   StudioRpcError,
-  applyLevelChanges: async () => ({ ok: true }),
   call: (method: string, params?: Record<string, unknown>) => {
     if (method === "instance.schema.search") return schemaSearchMock(params);
     if (

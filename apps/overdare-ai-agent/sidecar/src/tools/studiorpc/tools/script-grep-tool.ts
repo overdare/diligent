@@ -1,11 +1,10 @@
-// @summary Searches for a regex pattern across script Source properties in .ovdrjm.
+// @summary Searches for a regex pattern across script Source properties in the Editor level.
 
-import { resolveApiVersion } from "../config";
 import * as scriptGrep from "../methods/script.grep";
-import { buildScriptGrepRender } from "../render";
-import type { Tool, ToolResult } from "../types";
-import { findNodeByActorGuid, type OvdrjmNode, readOvdrjmRoot } from "./ovdrjm-utils";
-import { grepScriptsViaRpc } from "./v2/script-grep";
+import type { Tool } from "../types";
+import type { InstanceClient } from "./instance-rpc/client";
+import { grepScriptsViaRpc } from "./instance-rpc/script-grep";
+import type { OvdrjmNode } from "./ovdrjm-utils";
 
 const SCRIPT_CLASSES = new Set(["Script", "LocalScript", "ModuleScript"]);
 const MAX_MATCHES = 100;
@@ -87,75 +86,13 @@ function countScripts(node: OvdrjmNode): number {
   return count;
 }
 
-async function executeScriptGrep(args: Record<string, unknown>, cwd: string): Promise<ToolResult> {
-  const parsed = scriptGrep.params.parse(args);
-  if (resolveApiVersion() === "v2") return await grepScriptsViaRpc(parsed);
-  const { pattern, parentGuid, ignore_case } = parsed;
-
-  let regex: RegExp;
-  try {
-    regex = new RegExp(pattern, ignore_case ? "i" : "");
-  } catch (err) {
-    return {
-      output: `Error: invalid regex: ${err instanceof Error ? err.message : String(err)}`,
-      metadata: { error: true },
-    };
-  }
-
-  let startNode: OvdrjmNode;
-  try {
-    const { root } = readOvdrjmRoot(cwd);
-    if (parentGuid) {
-      const target = findNodeByActorGuid(root, parentGuid);
-      if (!target) {
-        return { output: `Error: ActorGuid not found: ${parentGuid}`, metadata: { error: true } };
-      }
-      startNode = target;
-    } else {
-      startNode = root;
-    }
-  } catch (err) {
-    return {
-      output: `Error: ${err instanceof Error ? err.message : String(err)}`,
-      metadata: { error: true },
-    };
-  }
-
-  const scriptsSearched = countScripts(startNode);
-  if (scriptsSearched === 0) {
-    return { output: "No scripts found in the search scope.", metadata: { error: true } };
-  }
-
-  const matchLines: MatchLine[] = [];
-  const totalMatches = grepSubtree(startNode, regex, matchLines, MAX_MATCHES);
-
-  if (totalMatches === 0) {
-    return {
-      output: "No matches found.",
-      render: buildScriptGrepRender(pattern, 0, scriptsSearched),
-      metadata: { method: "script.grep", matchCount: 0, scriptsSearched },
-    };
-  }
-
-  let output = matchLines.map((m) => `${m.scriptName} [${m.scriptGuid}]:${m.lineNum}:${m.text}`).join("\n");
-  if (totalMatches > MAX_MATCHES) {
-    output += `\n\n... (${totalMatches - MAX_MATCHES} more matches not shown)`;
-  }
-
-  return {
-    output,
-    render: buildScriptGrepRender(pattern, totalMatches, scriptsSearched),
-    metadata: { method: "script.grep", matchCount: totalMatches, scriptsSearched },
-  };
-}
-
-export function createScriptGrepTool(cwd: string): Tool {
+export function createScriptGrepTool(client: InstanceClient): Tool {
   return {
     name: toToolName(scriptGrep.method),
     description: scriptGrep.description,
     parameters: scriptGrep.params,
     async execute(args) {
-      return executeScriptGrep(args, cwd);
+      return grepScriptsViaRpc(client, scriptGrep.params.parse(args));
     },
   };
 }

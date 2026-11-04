@@ -1,0 +1,106 @@
+// @summary Sends the Studio instance RPCs over an injected transport and unwraps their responses.
+
+import { type call, RPC_INSTANCE_NOT_FOUND, StudioRpcError } from "../../rpc";
+import { isRecord, type OvdrjmNode } from "../ovdrjm-utils";
+import { checkResult } from "./result";
+
+/** `instance.read` depth: 0 = the instance alone, N = N levels below it, -1 = the whole subtree. */
+export const DEPTH_SELF = 0;
+export const DEPTH_SUBTREE = -1;
+
+/** Mirrors the level root's node shape; Studio never sends the root itself. */
+const LEVEL_ROOT_INSTANCE_TYPE = "DataModel";
+
+export interface InstanceClient {
+  /** Members of `params` are PascalCase; the envelope and method names stay snake_case. */
+  callInstanceRpc(method: string, params: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Flushes Studio's editor state to .umap/.ovdrjm. The collision profile tools still
+   * read and rewrite that file, so a write that skips this is overwritten by their next one.
+   */
+  saveLevelFile(): Promise<void>;
+  /**
+   * Answers undefined for a guid Studio does not know. Every caller already branches
+   * on that; letting the RPC error through instead would skip those branches and
+   * surface the raw JSON-RPC envelope.
+   */
+  readInstanceNode(actorGuid: string, depth: number): Promise<OvdrjmNode | undefined>;
+  /**
+   * The whole tree with every property, at the cost of one round trip per top-level
+   * instance. `level.browse` alone omits the values that Mobility policy, property
+   * diffing and script search read, so each service is re-read at full depth.
+   */
+  readLevelRoot(): Promise<OvdrjmNode>;
+  /** Warnings raised since the last take; the tools append them to their suggestions. */
+  takeWarnings(): string[];
+}
+
+/**
+ * `callRpc` is the provider's transport, so these requests carry the same session
+ * and abort signal as every other Studio call the tool makes.
+ */
+export function createInstanceClient(callRpc: typeof call): InstanceClient {
+  let pendingWarnings: string[] = [];
+
+  async function callInstanceRpc(method: string, params: Record<string, unknown>): Promise<unknown> {
+    const result = await callRpc(method, params);
+    pendingWarnings = pendingWarnings.concat(checkResult(method, result).warnings);
+    return result;
+  }
+
+  async function readInstanceNode(actorGuid: string, depth: number): Promise<OvdrjmNode | undefined> {
+    let result: unknown;
+    try {
+      result = await callInstanceRpc("instance.read", { ActorGuid: actorGuid, Depth: depth });
+    } catch (error) {
+      if (error instanceof StudioRpcError && error.code === RPC_INSTANCE_NOT_FOUND) return undefined;
+      throw error;
+    }
+    const instance = isRecord(result) ? (result as { instance?: unknown }).instance : undefined;
+    return isRecord(instance) ? (instance as OvdrjmNode) : undefined;
+  }
+
+  /**
+   * There is no ActorGuid that names the level root — `instance.read` answers
+   * -32004 for an empty guid and for every sentinel. `level.browse` lists the
+   * top-level services instead, but only carries guid/name/class, so each service
+   * is re-read at full depth to get the properties callers rely on (Mobility,
+   * Source). The root node is assembled locally and carries no ActorGuid, so a
+   * guid lookup can never resolve to it.
+   */
+  async function readLevelRoot(): Promise<OvdrjmNode> {
+    const browsed = await callRpc("level.browse", {});
+    const level = isRecord(browsed) ? (browsed as { level?: unknown }).level : undefined;
+    if (!Array.isArray(level)) throw new Error("level.browse returned no level list.");
+    const children: OvdrjmNode[] = [];
+    for (const entry of level.filter(isRecord)) {
+      const guid = (entry as { ActorGuid?: unknown }).ActorGuid;
+      if (typeof guid !== "string" || guid === "") continue;
+      const node = await readInstanceNode(guid, DEPTH_SUBTREE);
+      if (node) children.push(node);
+    }
+    if (children.length === 0) throw new Error("level.browse listed no top-level instances.");
+    return { InstanceType: LEVEL_ROOT_INSTANCE_TYPE, Name: "Game", LuaChildren: children };
+  }
+
+  return {
+    callInstanceRpc,
+    async saveLevelFile() {
+      await callRpc("level.save.file", {});
+    },
+    readInstanceNode,
+    readLevelRoot,
+    takeWarnings() {
+      const warnings = pendingWarnings;
+      pendingWarnings = [];
+      return warnings;
+    },
+  };
+}
+
+/** `instance.create` answers with one GUID per requested instance, in request order. */
+export function createdActorGuids(result: unknown): string[] {
+  const guids = isRecord(result) ? (result as { ActorGuids?: unknown }).ActorGuids : undefined;
+  if (!Array.isArray(guids)) return [];
+  return guids.map((guid) => (typeof guid === "string" ? guid : ""));
+}

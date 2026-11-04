@@ -1,4 +1,4 @@
-// @summary Shared script-instance constants for the Studio v2 script tools.
+// @summary Shared script-instance constants for the Studio script tools.
 
 export const SCRIPT_CLASSES = new Set(["Script", "LocalScript", "ModuleScript"]);
 

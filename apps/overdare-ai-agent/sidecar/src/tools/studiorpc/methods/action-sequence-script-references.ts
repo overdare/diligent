@@ -1,7 +1,6 @@
 // @summary Checks literal ActionRunner and ActionSequence signal references through the script_grep traversal.
-import { resolveApiVersion } from "../config";
 import type { call } from "../rpc";
-import { type OvdrjmNode, readOvdrjmRoot } from "../tools/ovdrjm-utils";
+import type { OvdrjmNode } from "../tools/ovdrjm-utils";
 import { countScripts, grepSubtree, MAX_MATCHES, type MatchLine } from "../tools/script-grep-tool";
 import { isRecord } from "./action-sequence-shared";
 
@@ -326,25 +325,20 @@ export function checkScriptReferences(root: OvdrjmNode, targetGuid: string, prop
 export async function enrichScriptReferences(
   result: RecordValue,
   targetGuid: string,
-  cwd: string,
   callRpc: typeof call,
   proposed?: RecordValue,
 ): Promise<RecordValue> {
   try {
-    let root: OvdrjmNode;
-    if (resolveApiVersion() === "v1") root = readOvdrjmRoot(cwd).root;
-    else {
-      const browsed = await callRpc("level.browse", {});
-      if (!isRecord(browsed) || !Array.isArray(browsed.level)) throw new Error("level.browse returned no hierarchy");
-      const children: OvdrjmNode[] = [];
-      for (const entry of browsed.level) {
-        if (!isRecord(entry) || typeof entry.ActorGuid !== "string") continue;
-        const read = await callRpc("instance.read", { ActorGuid: entry.ActorGuid, Depth: -1 });
-        if (!isRecord(read) || !isRecord(read.instance)) throw new Error("instance.read returned no subtree");
-        children.push(read.instance);
-      }
-      root = { InstanceType: "DataModel", LuaChildren: children };
+    const browsed = await callRpc("level.browse", {});
+    if (!isRecord(browsed) || !Array.isArray(browsed.level)) throw new Error("level.browse returned no hierarchy");
+    const children: OvdrjmNode[] = [];
+    for (const entry of browsed.level) {
+      if (!isRecord(entry) || typeof entry.ActorGuid !== "string") continue;
+      const read = await callRpc("instance.read", { ActorGuid: entry.ActorGuid, Depth: -1 });
+      if (!isRecord(read) || !isRecord(read.instance)) throw new Error("instance.read returned no subtree");
+      children.push(read.instance);
     }
+    const root: OvdrjmNode = { InstanceType: "DataModel", LuaChildren: children };
     const status = checkScriptReferences(root, targetGuid, proposed);
     return {
       ...result,
