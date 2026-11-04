@@ -30,6 +30,12 @@ If `studiorpc_level_publish` is unavailable, stop and tell the user that publish
 
 If `hub_world_categories_list` is unavailable or fails for an authentication or network reason, follow the fallbacks defined per step below.
 
+## Existing World and Version Deletion
+
+A request to publish, update, or redeploy an existing world does not authorize deleting or discarding an existing world, place, version, or draft. This also applies when deletion appears to bypass a cache or API problem.
+
+Before deleting or discarding one of these resources, identify the specific target, explain the reason, impact, and known recovery options or uncertainty, and obtain the user's explicit approval for that action. An unpublished status, a backup, or announcing the action is not approval. If the user has already explicitly approved the specific action and target, do not ask again.
+
 ## High-Level Workflow
 
 1. Confirm the user wants to publish or make the current world live.
