@@ -28,7 +28,19 @@ const valueSchema: z.ZodType<ValueSchema> = z.lazy(() =>
     })
     .passthrough(),
 );
-const property = z.object({ name: z.string(), declaredOn: z.string(), valueSchema }).passthrough();
+const property = z
+  .object({
+    name: z.string(),
+    declaredOn: z.string(),
+    available: z.array(z.string()).optional(),
+    valueSchema: valueSchema.optional(),
+  })
+  .passthrough()
+  .refine(
+    (entry) =>
+      entry.valueSchema !== undefined ||
+      (entry.available?.includes("game") === true && !entry.available.includes("editor")),
+  );
 type Property = z.infer<typeof property>;
 const classEntry = z.object({ class: z.string(), properties: z.array(property).optional() }).passthrough();
 type ClassEntry = z.infer<typeof classEntry>;
@@ -67,13 +79,13 @@ function collectValueTypes(schema: ValueSchema | undefined, found: Set<string>):
 function annotateProperty(className: string, entry: Property, valueTypes: Set<string>): Property {
   const hidden = lookup(hiddenEnumValues, className, entry);
   const schema =
-    hidden && entry.valueSchema.enum
+    hidden && entry.valueSchema?.enum
       ? { ...entry.valueSchema, enum: entry.valueSchema.enum.filter((value) => !hidden.includes(String(value))) }
       : entry.valueSchema;
   collectValueTypes(schema, valueTypes);
   // A supplement Studio has started to publish keeps only its note; Studio's field wins.
   const note = lookup(propertyNotes, className, entry) ?? supplementProperties[className]?.[entry.name]?.note;
-  return { ...entry, valueSchema: schema, ...(note !== undefined && { note }) };
+  return { ...entry, ...(schema !== undefined && { valueSchema: schema }), ...(note !== undefined && { note }) };
 }
 
 function matchesQuery(className: string, propertyName: string, query: string): boolean {
@@ -90,9 +102,12 @@ function supplementEntries(className: string, present: ReadonlySet<string>, quer
     });
 }
 
-function annotateClass(entry: ClassEntry, query: string, valueTypes: Set<string>) {
-  const properties = entry.properties ?? [];
+function annotateClass(entry: ClassEntry, query: string, valueTypes: Set<string>, kinds?: ReadonlySet<string>) {
   const note = classNotes[entry.class];
+  if (kinds && !kinds.has("properties")) {
+    return { ...entry, ...(note !== undefined && { note }) };
+  }
+  const properties = entry.properties ?? [];
   return {
     ...entry,
     ...(note !== undefined && { note }),
@@ -112,20 +127,39 @@ function missingSupplementClasses(returned: ReadonlySet<string>, requested: stri
   });
 }
 
-/** Adds sidecar notes, supplementary properties and Luau value-type notes to a property-level search result. */
-export function annotateDetailResult(result: unknown, args: { query?: unknown; classes?: unknown }): unknown {
-  const parsed = searchResult.safeParse(result);
-  if (!parsed.success) return result;
+/** Selects member kinds and adds sidecar notes; property supplements and value types are scoped to property lookups. */
+export function annotateDetailResult(
+  result: unknown,
+  args: { query?: unknown; classes?: unknown; kinds?: unknown },
+): unknown {
+  const kinds = Array.isArray(args.kinds) ? new Set<string>(args.kinds) : undefined;
+  let selected = result;
+  if (kinds && result && typeof result === "object" && "classes" in result && Array.isArray(result.classes)) {
+    selected = {
+      ...result,
+      classes: result.classes.map((entry: unknown) => {
+        if (!entry || typeof entry !== "object") return entry;
+        return Object.fromEntries(
+          Object.entries(entry).filter(
+            ([key]) => !["properties", "functions", "events"].includes(key) || kinds.has(key),
+          ),
+        );
+      }),
+    };
+  }
+  const parsed = searchResult.safeParse(selected);
+  if (!parsed.success) return selected;
   const query = typeof args.query === "string" ? args.query : "";
   const requested = Array.isArray(args.classes)
     ? args.classes.filter((name): name is string => typeof name === "string")
     : undefined;
   const valueTypes = new Set<string>();
   const classes: Record<string, unknown>[] = parsed.data.classes.map((entry) =>
-    annotateClass(entry, query, valueTypes),
+    annotateClass(entry, query, valueTypes, kinds),
   );
   const returned = new Set(parsed.data.classes.map((entry) => entry.class));
-  for (const className of missingSupplementClasses(returned, requested, query)) {
+  const missing = !kinds || kinds.has("properties") ? missingSupplementClasses(returned, requested, query) : [];
+  for (const className of missing) {
     const properties = supplementEntries(className, new Set(), query, valueTypes);
     if (properties.length === 0) continue;
     const note = classNotes[className];

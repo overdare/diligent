@@ -38,6 +38,39 @@ const classOf = (output: { classes: Entry[] }, name: string) => output.classes.f
 const propertyOf = (entry: Entry | undefined, name: string) => entry?.properties?.find((p) => p.name === name);
 
 describe("schema overlay on targeted lookups", () => {
+  test("keeps gameplay-only members without disabling annotations on editor properties", async () => {
+    const runtimeProperty = {
+      name: "AssemblyRootPart",
+      declaredOn: "BasePart",
+      available: ["game"],
+      type: "BasePart",
+      access: "readonly",
+    };
+    const mobility = {
+      name: "Mobility",
+      declaredOn: "Instance",
+      available: ["editor", "game"],
+      type: "Enum.MobilityMode",
+      access: "readwrite",
+      valueSchema: { type: "string", enum: ["Static", "Movable"], luaEnum: "MobilityMode" },
+    };
+    const functions = [{ name: "Clone", declaredOn: "Instance", params: [], returns: "Instance", static: false }];
+    const events = [{ name: "Changed", declaredOn: "Instance", params: [{ name: "property", type: "string" }] }];
+    const output = await search(
+      { classes: ["Part"] },
+      {
+        classes: [{ class: "Part", scriptCreatable: true, properties: [runtimeProperty, mobility], functions, events }],
+      },
+    );
+    expect(propertyOf(classOf(output, "Part"), "AssemblyRootPart")).toEqual(runtimeProperty);
+    expect(propertyOf(classOf(output, "Part"), "Mobility")).toEqual({
+      ...mobility,
+      note: propertyNotes["Instance.Mobility"],
+    });
+    expect(output.valueTypes?.Enum).toBe(valueTypeNotes.Enum);
+    expect(classOf(output, "Part")).toMatchObject({ scriptCreatable: true, functions, events });
+  });
+
   test("annotates an inherited property through its declaring class and keeps Studio fields", async () => {
     const mobility = {
       name: "Mobility",

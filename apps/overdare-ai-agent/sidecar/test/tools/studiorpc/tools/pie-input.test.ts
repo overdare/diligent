@@ -1,7 +1,7 @@
 // @summary Tests the play-test input tools: target resolution, batch rules, and moveTo waiting.
 
 import { describe, expect, test } from "bun:test";
-import type { Tool } from "@diligent/core/tool-contract";
+import { executeTool, type Tool } from "@diligent/core/tool-contract";
 import { createStudioRpcToolProvider } from "../../../../src/tools/studiorpc";
 import { StudioRpcError } from "../../../../src/tools/studiorpc/rpc";
 import { createPieInputTools, normalizeWaitedMoveStatus } from "../../../../src/tools/studiorpc/tools/pie-input";
@@ -1533,16 +1533,38 @@ describe("play-test input tools", () => {
     expect(calls).toHaveLength(0);
   });
 
-  test("inject accepts scroll and textInput events", async () => {
+  test("inject accepts scroll through tool argument validation", async () => {
     const { calls, byName } = toolsFor((call) => (call.method === "game.pie.status" ? runningStatus() : {}));
-    const events = [
-      { type: "scroll", delta: -3 },
-      { type: "textInput", text: "hello" },
-    ];
+    const events = [{ type: "scroll", delta: -3 }];
+    const result = await executeTool(
+      byName,
+      {
+        type: "tool_call",
+        id: "scroll",
+        name: "studiorpc_game_input_inject",
+        input: { events },
+      },
+      ctx,
+    );
 
-    await run(byName.get("studiorpc_game_input_inject"), { events });
-
+    expect(result.metadata?.error).not.toBe(true);
     expect(calls[1].params?.events).toEqual(events);
+  });
+
+  test("inject rejects unsupported text input before contacting Studio", async () => {
+    const { calls, byName } = toolsFor(() => runningStatus());
+    const result = await executeTool(
+      byName,
+      {
+        type: "tool_call",
+        id: "text",
+        name: "studiorpc_game_input_inject",
+        input: { events: [{ type: "textInput", text: "hello" }] },
+      },
+      ctx,
+    );
+    expect(result.metadata?.error).toBe(true);
+    expect(calls).toHaveLength(0);
   });
 
   test("a look with no timeoutMs is budgeted from the angle it asks for", async () => {

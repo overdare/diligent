@@ -78,15 +78,17 @@ target only (`WITH_MCP_PIE_INPUT`), so an editor-target Studio answers method-no
 
 Studio enforces, and the tools pre-check:
 
-- keys `W A S D Q E R SpaceBar LeftShift LeftControl`, pointer buttons `left` / `right`
-- at most 64 events and 10s of total `wait` per batch
+- keys from the tool's advertised key enum (letters, digits, navigation and control keys), pointer
+  buttons `left` / `right`
+- at most 64 expanded events and a 60s batch budget; conditional waits charge 2s each against that
+  budget, with their combined timeouts capped at 300s
 - every key and button pressed down must be released inside the same batch
 - `pointerMove` positions are viewport-normalized `0..1`; `mouseDelta` axes are bounded by ±4096 and need a
   captured mouse
 - `scroll` takes ±10 wheel notches at the current pointer position
-- `textInput` takes up to 256 printable characters and goes to whatever holds keyboard focus, so Studio
-  refuses it with `viewportNotFocused` rather than typing into one of its own panels. Note that the OVERDARE
-  Lua API has no `TextBox`, so nothing scriptable receives characters yet — this exists for when one lands
+- `textInput` is unsupported: the tool's event schema rejects it before RPC, and Studio's native
+  parser rejects it with `textInputUnsupportedOnThisPlatform`. `TextBox` exists, but this tool cannot
+  type text into it. Key down/up events are separate from character input and do not replace it
 
 `action: "press"` (with an optional `durationMs`) is a sidecar shorthand: Studio has no press action, so the
 tool expands it to `down` / `wait` / `up` before sending. It is the shape to reach for — one authored event
