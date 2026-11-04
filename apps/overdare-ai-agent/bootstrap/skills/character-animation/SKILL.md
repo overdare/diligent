@@ -36,6 +36,27 @@ Block the story poses first (anticipation, the action's extreme, the recovery), 
 - The hips rise only once something below supports them: feet planted under them, or a hand on the floor.
 - Holds keep a little motion (breathing, a small drift) so they don't read as frozen.
 
+## One-shot ending poses
+
+Choose when the character settles in clip time: `frame = seconds * fps`. For example, a fall
+that settles at 0.9 s at 30 fps reaches its lying pose at frame 27. Keep that pose through a
+later clip end, using constant interpolation over a truly still tail to avoid cubic drift.
+
+Runtime pose retention is separate from those keys. A non-looping AnimationTrack naturally
+ends and fades out; `Looped=false` and `Stop()` do not hold its pose. On a still-playing track,
+pause before it reaches `Length`, then set the desired clip time:
+
+```lua
+track:AdjustSpeed(0)
+track.TimePosition = holdFrame / fps
+```
+
+Use the track's `TimePosition` in seconds for the trigger; elapsed wall time differs when playback
+speed changes. Leave room after the hold time so natural completion has not already stopped the
+track. For an NPC, control its track from the server, with the intended priority and blend weight;
+continuing idle/walk tracks can otherwise blend into the held pose. Resume with `AdjustSpeed`
+or stop/fade the track when the gameplay state releases it.
+
 ## Pins and ground
 
 Choose the anatomy, support phases and trajectories for the requested character. Studio solves the

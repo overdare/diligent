@@ -27,11 +27,23 @@ Authoring data uses Unreal Z-up centimetres and quaternion parent-local poses.
 Lua uses Y-up coordinates. `animation.read/write` uses a different Euler delta-key
 format; read that tool's contract before editing a clip through it.
 
+For imported FBX, compare the inspected source bounds in cm with the intended size: a 1.8 m
+character should be about 180 cm tall. Metre-valued coordinates need a factor of 100, but an
+importer may already have converted them. Use `desired size in cm / inspected size in cm`
+for a remaining size correction. Prepare the import or working source at the intended size before
+building a new rig, then use its returned vertices and transforms consistently for geometry,
+bind poses and motion translations. Existing-rig animation editing preserves the imported rig.
+
 ## Facing and runtime frame
 
 The existing RigBuilder binding aligns mesh-local +Y with actor forward. For new characters,
 keep geometry, bind poses and motion consistent with the intended runtime frame. Body snaps to
 the native character mesh; Body.CFrame does not set a persistent mesh-frame offset.
+
+FBX axis metadata describes the coordinate frame, not which way the character's face points.
+For a new rig intended for this binding, align the working geometry and rig with mesh-local +Y
+before authoring motion. Existing-rig edits retain its original frame. Choose preview camera
+angles independently; rotating a camera changes the view, not the character's runtime facing.
 
 `motion.document.forwardDirection` controls observation travel, not anatomical facing or binding.
 Rendered facing and actor travel are separate facts; sideways or backward motion may be intentional.
@@ -63,6 +75,8 @@ Do not manually publish each dependency or rewrite the source model.
 
 Use the existing Model, Skeleton/Bone, MeshPart, Humanoid, Animator and Animation
 instances. A server Script loads the saved Animation and starts its AnimationTrack.
+For timed falls and held ending poses, use the
+[one-shot ending guidance](../character-animation/SKILL.md#one-shot-ending-poses).
 For NPC travel, use Humanoid.MoveTo/MoveToFinished and coordinate WalkSpeed and
 track playback with the authored motion. Apply changes Workspace but does not save the world;
 persist it with `studiorpc_level_save_file`.
