@@ -32,7 +32,7 @@ export async function callInstanceRpc(method: string, params: Record<string, unk
  * those files, so a v2 write that skips this is overwritten by the next one.
  */
 export async function saveLevelFile(): Promise<void> {
-  await call("level.save.file", {});
+  checkResult("level.save.file", await call("level.save.file", {}));
 }
 
 /**

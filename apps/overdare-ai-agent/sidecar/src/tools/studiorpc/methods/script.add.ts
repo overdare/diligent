@@ -3,7 +3,7 @@ import { z } from "zod";
 export const method = "script.add";
 
 export const description =
-  "Add a script under a parent instance. IMPORTANT: Use tabs for indentation. Leading 4-space groups will be auto-converted to tabs.";
+  "Add a script under a parent instance. IMPORTANT: Use tabs for indentation. Leading 4-space groups will be auto-converted to tabs. If creation succeeds but saving fails, the result identifies the created script and the save outcome is unknown; inspect the state before retrying.";
 
 export const params = z.object({
   class: z.enum(["LocalScript", "Script", "ModuleScript"]),

@@ -23,7 +23,15 @@ export async function deleteScriptViaRpc(parsed: ScriptDeleteArgs): Promise<Tool
   }
 
   await callInstanceRpc("instance.delete", { ActorGuids: [parsed.guid] });
-  await saveLevelFile();
+  try {
+    await saveLevelFile();
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Script deletion succeeded (GUID: ${parsed.guid}), but level.save.file failed: ${reason}. ` +
+        "The save outcome is unknown. Do not repeat deletion; inspect Studio and verify the saved state.",
+    );
+  }
 
   const output = "Deleted.";
   return {

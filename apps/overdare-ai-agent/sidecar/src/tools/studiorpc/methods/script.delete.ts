@@ -2,7 +2,8 @@ import { z } from "zod";
 
 export const method = "script.delete";
 
-export const description = "Delete a script instance.";
+export const description =
+  "Delete a script instance. If deletion succeeds but saving fails, the save outcome is unknown; inspect the state before retrying.";
 
 export const params = z.object({
   guid: z

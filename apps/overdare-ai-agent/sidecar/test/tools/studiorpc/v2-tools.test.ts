@@ -395,6 +395,34 @@ describe("v2 level.save.file", () => {
 });
 
 describe("v2 failure reporting", () => {
+  test("reports the created script when saving fails without repeating creation", async () => {
+    const tools = await loadTools(makeStudioProject());
+    respond = (method, params) =>
+      method === "level.save.file" ? { success: false, message: "disk unavailable" } : studioResponder(method, params);
+    const result = await tools
+      .get("studiorpc_script_add")!
+      .execute({ class: "Script", parentGuid: FOLDER_A_GUID, name: "S", source: "print(1)" }, toolContext());
+    expect(result.metadata?.error).toBe(true);
+    expect(result.output).toContain("Script creation succeeded (GUID: NEW-1)");
+    expect(result.output).toContain("disk unavailable");
+    expect(result.output).toContain("save outcome is unknown");
+    expect(result.output).toContain("Do not repeat creation");
+    expect(methodsCalled().filter((method) => method === "instance.create")).toHaveLength(1);
+  });
+
+  test("reports the deleted script when saving fails without repeating deletion", async () => {
+    const tools = await loadTools(makeStudioProject());
+    respond = (method, params) =>
+      method === "level.save.file" ? { success: false, message: "disk unavailable" } : studioResponder(method, params);
+    const result = await tools.get("studiorpc_script_delete")!.execute({ guid: SCRIPT_GUID }, toolContext());
+    expect(result.metadata?.error).toBe(true);
+    expect(result.output).toContain("Script deletion succeeded (GUID: S1)");
+    expect(result.output).toContain("disk unavailable");
+    expect(result.output).toContain("save outcome is unknown");
+    expect(result.output).toContain("Do not repeat deletion");
+    expect(methodsCalled().filter((method) => method === "instance.delete")).toHaveLength(1);
+  });
+
   test("does not report success when Studio returns a partial failure", async () => {
     const tools = await loadTools(makeStudioProject());
     respond = (method, params) => {

@@ -16,9 +16,17 @@ export async function addScriptViaRpc(parsed: ScriptAddArgs): Promise<ToolResult
     ParentActorGuid: parsed.parentGuid,
     Instances: [{ InstanceType: parsed.class, Name: parsed.name, Source: eolNormalized.result }],
   });
-  await saveLevelFile();
-
   const addedGuid = createdActorGuids(result)[0] ?? "";
+  try {
+    await saveLevelFile();
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Script creation succeeded${addedGuid ? ` (GUID: ${addedGuid})` : ""}, but level.save.file failed: ${reason}. ` +
+        "The save outcome is unknown. Do not repeat creation; inspect Studio and verify the saved state.",
+    );
+  }
+
   let output = `Script added: ${parsed.name} (${addedGuid})`;
   const normalizations: string[] = [];
   if (normalized.converted > 0) normalizations.push(`${normalized.converted} leading 4-space group(s) → tabs`);
