@@ -64,7 +64,8 @@ Choose a supported face for native GUI text. Source: the supplied internal Studi
 
 Replace the sample hierarchy with the verified target.
 
-Use a family asset ID when the catalog provides one. In the Editor VM, access StarterGui through `game.StarterGui`; current native builds also support `game:GetService("StarterGui")`, with service members still limited by the Editor API. Older builds may require direct child access. Check unfamiliar properties with the live schema; it does not enumerate methods.
+Use a family asset ID when the catalog provides one. The Editor examples use `game.StarterGui`;
+the `studiorpc_execute_luau` contract describes other supported service access.
 
 ```lua
 local label = game.StarterGui.MainGui.TitleLabel

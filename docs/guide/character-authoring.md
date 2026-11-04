@@ -38,6 +38,32 @@ verification belong to the Diligent skill and enriched agent tool.
 | Optional fresh-process runner and local RPC diagnostics client | Native source replay and source/revision/asset integrity validation |
 | Agent convenience validation | Authoritative input, source revision and mutation guards |
 
+## Operation boundaries
+
+| Surface | Input and effect | Persistence |
+|---|---|---|
+| `animation.read/write` | Built-in Studio character or selected Model rig; sparse reference-pose Euler delta keys, version-1 animation JSON | Local editable `/Temp/AnimationAssets/` clips; `write` saves the asset, not a published ID |
+| `animation.publish` | Uploads a saved clip with its original Skeleton | Each call issues a new numeric asset ID; old IDs remain unchanged |
+| `character.build` | Geometry plus separate `authored_v1` rig and dense parent-local quaternion motion, or motion only for an existing rig | A requestId freezes one saved draft; commit validates its exact four revisions |
+| `character.inspect` | Source/build, selected observation, or live runtime inspection | Observation may save isolated capture evidence; it does not edit Workspace or advance live playback |
+| `character.export` | Committed native draft, either FBX interchange or ordinary native publication | Publication may issue partial IDs on failure; no Workspace placement |
+| `character.build(mode=apply)` | Successful publication plus source-graph revision for an inspected source | Creates the result or adds an existing-rig Animation; world save is separate |
+
+The two animation input formats are separate contracts. `motion.document`, travel metadata and
+contact intervals belong to `character.build`, not `animation.write`. New authored rigs require
+identity root keys; existing-rig motion preserves the original root bind on every frame.
+Character draft assets under `/ProceduralCharacters/` are inspected through `character.inspect`,
+not by passing their package paths to `animation.read`.
+
+Known native limitation: ordinary `animation` revision hashing does not include `bEnableRootMotion`,
+`bForceRootLock` or `RootMotionRootLock`. Changes to those settings alone may escape its revision
+conflict check. This is a Studio follow-up, separate from character draft validation.
+
+Scene properties and gameplay scripts use OVERDARE Y-up coordinates; authoring geometry and
+native measurements use Unreal Z-up centimetres. A coordinate frame does not prescribe anatomical
+facing. The [custom-character skill](../../apps/overdare-ai-agent/bootstrap/skills/custom-character/SKILL.md)
+owns facing, camera and runtime-integration guidance.
+
 The existing native build, inspect and export operations remain available. Moving
 instructions does not bypass source preservation, publication dependencies,
 stale-source rejection, revision/asset integrity or rollback checks.

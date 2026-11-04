@@ -41,11 +41,10 @@ export const params = z
       .boolean()
       .optional()
       .describe(
-        "Use only for controlled precision performance measurements, not ordinary playtesting. true starts a separate headless dedicated server for this PIE session; false forces one-process PIE; omission preserves Studio configuration. " +
-          "Save intended changes with the level-save tool first; this tool does not save them automatically. It waits for verified server readiness before starting clients. " +
-          "An accepted request is asynchronous: poll studiorpc_game_pie_status for server.state and clients; game.stop also cancels startup. " +
-          "Choose it only when starting stopped PIE, or combine with restart: true. Cannot be combined with addClient: true. " +
-          "Separate-process PIE restricts existing input/observation tools; external server performance currently includes OS CPU/memory only, not Lua scopes or server tick timing.",
+        "For controlled performance measurements: true starts a headless dedicated server; false forces one-process PIE; omission preserves configuration. " +
+          "Uses the saved world without saving edits. Requires stopped PIE or restart:true; incompatible with addClient:true. " +
+          "Startup is asynchronous: game_pie_status reports server.state and clients; game.stop cancels pending startup. " +
+          "Separate-process input/observation is restricted; server measurements are OS CPU/memory only. Details: performance-optimization skill.",
       ),
     restart: z
       .boolean()

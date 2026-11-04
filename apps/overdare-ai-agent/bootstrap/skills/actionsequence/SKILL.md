@@ -1,6 +1,6 @@
 ---
 name: actionsequence
-description: "Handles Action Sequence asset creation/editing, track layout (Animation/Sound/Collision/Trigger/Event), animation catalog lookup, ActionSequence JSON editing and apply_json diagnostics, and preset usage. Use this skill for any request involving action sequence assets or track timing."
+description: Create or edit OVERDARE Action Sequence assets and track timing. For reviewing saved sequences, use actionsequence-review.
 ---
 
 ## 1. Overview

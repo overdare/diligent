@@ -65,8 +65,9 @@ def on_generate(model, size, attributes):
 ## Coordinate spaces
 
 Native geometry operations and spatial inputs to the recipe use model-local Unreal coordinates:
-centimetres, Z up. By default, author props facing +X with their base at z=0, unless the asset needs a
-different orientation or origin.
+centimetres, Z up; this does not impose a front axis or origin.
+For rigged characters, follow the facing and runtime-frame guidance in
+[custom-character](../custom-character/SKILL.md#facing-and-runtime-frame).
 
 - Studio supplies the built-in `size` argument as `(Editor Size.Z, Editor Size.X, Editor Size.Y)`, so
   recipe extents `(160, 45, 240)` need Editor Size `[45, 240, 160]`. Do not reorder `size` again inside
@@ -94,7 +95,8 @@ lantern's handle.
    model, or `guid` to update one, along with `sourcePath`, `size`, `attributes`, and `rebuild: true`.
    Keep the returned `guid`.
 4. Judge the returned bake report (see below), then photograph the model with
-   `studiorpc_game_screenshot` `{ instanceId: <guid>, yaws: [35, 215] }`. See "Looking at the prop".
+   `studiorpc_game_screenshot`, choosing `yaws` for the model's actual front and other useful views.
+   See "Looking at the prop".
 5. Fix the same recipe file and bake the same model again. To change only parameters, call
    `studiorpc_proceduralmodel_set` with just the changed `attributes` and `rebuild: true`. Ship when the
    numbers and the picture agree.
@@ -110,11 +112,11 @@ place copies of it with `studiorpc_execute_luau`, grouped under one Folder or Mo
 new model for each placement. A few repeats that belong to one object, such as a table's four legs,
 stay inside that object's recipe.
 
-For non-ODA rigging and animation, read `studiorpc_character_api` and the
+To turn a generated model into a rigged, animated character, read `studiorpc_character_api` and the
 `custom-character` skill. The existing `character.build` accepts this
 ProceduralModel's GUID and freezes its Source, Size and typed attributes for a
-separate character draft. Its recipe must explicitly emit the requested rig,
-weights and motion; the bridge does not infer them. It leaves the source model
+separate character draft. The recipe emits geometry; supply rig, weights and
+motion as separate structured data. It leaves the source model
 unchanged and retains the normal FBX import/upload and Lua playback workflow.
 
 ## Judge on the numbers before the picture
@@ -148,9 +150,9 @@ success flag is not visual evidence, and if the image cannot be read, report tha
 exposure, the creator's camera untouched — so two shots are comparable and you see the prop as it
 ships. Steer the view without changing anything:
 
-- `yaws: [35, 215]` — compass angles to orbit through, one PNG each (up to 8). The default camera
-  sits on the recipe's +X / +Y side, so **build the prop facing +X, standing on z=0**; a face on
-  -X / -Y is invisible in the default shot unless you pass the yaw that turns it into view.
+- `yaws: [35, 215]` — example compass angles to orbit through, one PNG each (up to 8). The default
+  camera sits on the recipe's +X / +Y side. Choose yaw angles that show the model's actual front
+  and other useful views; turn the camera rather than reorienting the asset to fit the default shot.
 - `pitch` — degrees above the horizon to look down from (default 20).
 
 For a tighter or wider framing (zoom), the instance render frames automatically and has no
