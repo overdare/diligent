@@ -24,9 +24,31 @@ settings, aim the camera, start or stop play, write draft recipes (`proceduralmo
 
 ## Schema-guided instance editing
 
-`studiorpc_instance_schema_search` annotates inherited `Mobility` properties with the Editor Luau
-enum type: use `Enum.MobilityMode.Static` or `Enum.MobilityMode.Movable` on direct Workspace children.
-The Studio schema lists enum values but does not supply the enum type name.
+`studiorpc_instance_schema_search({})` returns a compact class catalog without property, function,
+or event payloads. Target a class or use a non-empty member-name query to inspect details.
+Use optional `kinds` to select `properties`, `functions`, `events`, or a combination:
+
+```json
+{ "classes": ["Part"], "kinds": ["properties"] }
+{ "classes": ["Part"], "kinds": ["functions"], "query": "Pivot" }
+{ "classes": ["Part"], "kinds": ["events"] }
+```
+
+Diligent applies `kinds` after Studio's native class/name search; it is not sent to Studio.
+Omitting it preserves all member kinds in a detailed lookup. `kinds` alone requests those member
+kinds across all classes, so prefer a class or name filter for manageable results. Class metadata
+is retained, including classes whose selected member arrays are empty. Property annotations and
+supplements are included only when properties are requested.
+
+Studio publishes property `available` contexts (`editor` and/or `game`). Gameplay-only
+properties may have `type` and `access` without a JSON `valueSchema`; their presence does not imply
+Editor support. Check `creatable` before placing a class and `scriptCreatable` before gameplay
+`Instance.new`. Detailed `functions` and `events` describe gameplay members;
+verify Editor VM method support separately. Custom Luau members and globals may be absent.
+
+Studio-provided fields, including enum `valueSchema.luaEnum` and gameplay `type`, stay authoritative.
+The sidecar adds usage notes to inherited `Mobility` properties: use `Enum.MobilityMode.Static` or
+`Enum.MobilityMode.Movable` on direct Workspace children.
 
 ## Unified asset import
 
