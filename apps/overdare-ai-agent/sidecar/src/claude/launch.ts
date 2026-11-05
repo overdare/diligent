@@ -228,7 +228,8 @@ export async function prepareClaudeLaunch(options: ClaudeLaunchOptions): Promise
           ? [options.conversation.mode === "resume" ? "--resume" : "--session-id", options.conversation.id]
           : []),
         ...(disableSnapshot ? ["--system-prompt-snapshot", "off"] : []),
-        "--dangerously-skip-permissions",
+        "--permission-mode",
+        "auto",
         "--plugin-dir",
         plugin.path,
         ...(Object.keys(plugin.agents).length ? ["--agents", JSON.stringify(plugin.agents)] : []),

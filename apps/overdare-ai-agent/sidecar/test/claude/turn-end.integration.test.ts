@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { prepareClaudeLaunch } from "../../src/claude/launch";
 
 test.skipIf(process.env.CLAUDE_HOOK_NATIVE_TEST !== "1")(
-  "official Claude saves once at main-turn completion and a save failure does not continue the model",
+  "official Claude starts in Auto, saves once at main-turn completion, and does not continue after a save failure",
   async () => {
     const root = await mkdtemp(join(tmpdir(), "overdare-native-stop-"));
     // Windows can retain a just-exited native CLI's working-directory handle
@@ -131,6 +131,9 @@ test.skipIf(process.env.CLAUDE_HOOK_NATIVE_TEST !== "1")(
             "--max-turns",
             "1",
             "--print",
+            "--output-format",
+            "stream-json",
+            "--verbose",
             "Synthetic local fixture.",
           ];
           const execution = {
@@ -155,6 +158,13 @@ test.skipIf(process.env.CLAUDE_HOOK_NATIVE_TEST !== "1")(
           expect({ exit, stdout, stderr }).toMatchObject({
             exit: 0,
             stdout: expect.stringContaining("LOCAL_TURN_DONE"),
+          });
+          const messages = stdout
+            .split(/\r?\n/)
+            .filter((line) => line.startsWith("{"))
+            .map((line) => JSON.parse(line));
+          expect(messages.find((message) => message.type === "system" && message.subtype === "init")).toMatchObject({
+            permissionMode: "auto",
           });
           expect(saves).toBe(1);
           expect(modelCalls).toBe(1);

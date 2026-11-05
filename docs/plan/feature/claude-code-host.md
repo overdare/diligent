@@ -5,7 +5,7 @@
 - Run the user's unmodified, locally installed Claude Code interactively inside the existing OVERDARE WebView, with the existing web design tokens.
 - Append a rendered Studio prompt to Claude Code's own system prompt. Do not replace the native prompt or collect/copy Claude credentials.
 - Reuse the normal Claude profile and its native login by default, as requested on 2026-11-05. Run in the actual Studio project directory (for example `Documents/hey`), not a hidden metadata folder or a global hashed workspace. Keep appended prompts and MCP bindings per launch. Offer a product/environment-specific isolated profile when explicitly selected. Pass environment overrides only to child processes; never copy credentials.
-- Launch with Claude Code's native `--dangerously-skip-permissions` flag, explicitly requested on 2026-11-05. Do not add persistent permission-bypass settings to the shared profile.
+- Launch with Claude Code's native `--permission-mode auto`, including resumed conversations. This supersedes the initial permission-bypass request. Keep the permission mode session-only and defer availability and approval decisions to native Claude; never fall back to bypassing permissions.
 - Reuse OVERDARE MCP tools and lazy skills. Host-prompt connections must neither advertise nor execute `ensure_system_prompt`, nor instruct the model to call it.
 - Bind an embedded connection to its owning Studio. A closed or missing owner must never redirect edits to a different Studio.
 - Preserve ordinary external MCP clients. Expose a native-terminal launch path using the same launch preparation as the web host.

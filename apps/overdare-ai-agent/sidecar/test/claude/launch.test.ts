@@ -60,7 +60,11 @@ test("launch appends instructions, isolates files and environment, and binds MCP
   expect(first.args).not.toContain("--system-prompt");
   expect(first.args).not.toContain("--bare");
   expect(first.args).toContain("--strict-mcp-config");
-  expect(first.args).toContain("--dangerously-skip-permissions");
+  expect(first.args).toContain("--permission-mode");
+  expect(first.args[first.args.indexOf("--permission-mode") + 1]).toBe("auto");
+  expect(first.args).not.toContain("--dangerously-skip-permissions");
+  expect(first.args).not.toContain("--allow-dangerously-skip-permissions");
+  expect(first.args).not.toContain("bypassPermissions");
   expect(first.args).toContain("--plugin-dir");
   expect(first.args[first.args.indexOf("--plugin-dir") + 1]).toBe(resolve(options.storageRoot));
   const promptPath = first.args[first.args.indexOf("--append-system-prompt-file") + 1];
@@ -221,12 +225,16 @@ test("native resume and new-session arguments keep fresh Studio instructions", a
   const id = "14b6d3c0-b5b3-4d88-a880-c5ea8cd55d51";
   const resumed = await prepareClaudeLaunch({ ...base, conversation: { mode: "resume", id } });
   expect(resumed.args.slice(0, 2)).toEqual(["--resume", id]);
+  expect(resumed.args[resumed.args.indexOf("--permission-mode") + 1]).toBe("auto");
+  expect(resumed.args).not.toContain("--dangerously-skip-permissions");
   // The synthetic native executable is Bun, which does not support this newer Claude option.
   expect(resumed.args).not.toContain("--system-prompt-snapshot");
   expect(resumed.conversationId).toBe(id);
   await resumed.cleanup();
   const fresh = await prepareClaudeLaunch({ ...base, conversation: { mode: "new", id } });
   expect(fresh.args.slice(0, 2)).toEqual(["--session-id", id]);
+  expect(fresh.args[fresh.args.indexOf("--permission-mode") + 1]).toBe("auto");
+  expect(fresh.args).not.toContain("--dangerously-skip-permissions");
   expect(fresh.args).not.toContain("--resume");
   await fresh.cleanup();
   await expect(prepareClaudeLaunch({ ...base, conversation: { mode: "resume", id: "../../other" } })).rejects.toThrow(
