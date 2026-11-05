@@ -5,7 +5,7 @@ description: Create, edit, or review OVERDARE GUI in Studio, including ScreenGui
 
 # GUI Builder
 
-Build the requested GUI in Studio, preserving the existing GUI owner and unrelated work. Follow the user's explicit design choices over this skill's workflow defaults. Inspect the relevant GUI root, attachment target, and properties before editing; read its controller when changing behavior or investigating runtime overrides. Match the game's visual direction and reuse suitable existing assets.
+Build the requested GUI in Studio, preserving the existing GUI owner and unrelated work. Follow the user's design choices over this skill's workflow defaults. The layout rule below is not a workflow default: apply it to every screen GUI build, including requests to copy a mockup exactly ("make it the same", "follow this as is") and mockups supplied as a guide or grid sheet. Skip it only when the user explicitly turns it off, for example "do not apply layout rules" or "place everything at exactly these positions." Inspect the relevant GUI root, attachment target, and properties before editing; read its controller when changing behavior or investigating runtime overrides. Match the game's visual direction and reuse suitable existing assets.
 
 For review-only requests, inspect the supplied GUI and relevant references, then report findings without generating images or editing Studio. For a requested mockup or preview, stop at that deliverable; continue through implementation when the user requested a build.
 
@@ -21,7 +21,7 @@ For review-only requests, inspect the supplied GUI and relevant references, then
 
 Do not load all references up front. Focused text, font, color, spacing, or behavior edits need only their relevant references.
 
-Start a new screen or a broad redesign from a mockup image ([references/image-assets.md](references/image-assets.md)); small edits do not need one.
+Start a new screen or a broad redesign from a mockup ([references/image-assets.md](references/image-assets.md)); small edits do not need one. "Mockup" means any design image for the GUI: user-supplied or generated, a single screen or a grid sheet. image-assets.md calls it the guide.
 
 Choose artwork when the requested visual direction needs it, even if the user does not name image generation. Honor existing-assets-only or no-generation requests, and do not replace requested artwork with plain controls.
 
@@ -32,6 +32,10 @@ Native GUI means editable instances: bind artwork with `ImageButton`/`ImageLabel
 Preserve typography for unrelated edits. Use project context for routine design choices, briefly state the direction, and implement it without a generic HUD/style questionnaire. Ask only about unresolved scope or behavior choices; retain answers already given.
 
 Keep Studio writes in one editing session. Reuse existing parents and controllers, create parents before children, and batch sibling edits where supported. Add only the requested behavior.
+
+Layout rule: a mockup sets look, content, and hierarchy, not screen coordinates, because a mockup shows one screen size and device screens vary. Anchor each group to the screen edge or corner it sits near with Scale and AnchorPoint, size touch targets with Offset, and let layout classes place the children.
+
+For a new or rearranged screen HUD or menu, set the root's `ScreenInsets` to `CoreUISafeInsets` so its children follow the device safe area. Put full-screen backgrounds and modal dimmers in a separate root with `ScreenInsets = None`.
 
 Match verification to the change: read back edited properties and inspect the affected area at the actual viewport and, for world GUI, relevant viewing distances and angles; exercise changed interactions and validate changed scripts. Broaden or repeat checks only after another change, a failure, or an unresolved concern.
 
