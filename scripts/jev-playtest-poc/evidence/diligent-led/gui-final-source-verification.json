@@ -1,0 +1,62 @@
+{
+  "at": "2026-10-06T08:42:47.118Z",
+  "result": {
+    "mutated": false,
+    "sources": {
+      "1": {
+        "bytes": 72713,
+        "unchanged": true,
+        "name": "FPSCameraModule",
+        "sourceHash": "377fe2443a937c75cdcfcaffb24a40bef6c6c6ae187d7d611fc31dcb1b86eb75"
+      },
+      "2": {
+        "bytes": 8187,
+        "unchanged": true,
+        "name": "CameraConfig",
+        "sourceHash": "5f0c992243eb72eacb3a8b08c6713ecddf0b6a469040fd345362904157c4dbd8"
+      },
+      "3": {
+        "bytes": 18777,
+        "unchanged": true,
+        "name": "MissionItemController",
+        "sourceHash": "5e3b8c0363e549b4f3e5db630b62b346bfc317934bcadefc92cd91d42541f9ee"
+      },
+      "4": {
+        "bytes": 5171,
+        "unchanged": true,
+        "name": "RaycastHelper",
+        "sourceHash": "7c0e564d0c0da66795c858459a31505caee20b1271f6fc007b80f9779f429caa"
+      },
+      "5": {
+        "bytes": 6345,
+        "unchanged": true,
+        "name": "PersonalMissionService",
+        "sourceHash": "fc34acc5bee4daa107a72cfb074b3d14a2b282390c3e9719a3e74d3c3376a377"
+      },
+      "6": {
+        "bytes": 13218,
+        "unchanged": true,
+        "name": "ClientInteraction",
+        "sourceHash": "dee679342f93b61766710ec179234cc12630e2948640259e721f198043cb8b6e"
+      },
+      "7": {
+        "bytes": 32527,
+        "unchanged": true,
+        "name": "ClientActionController",
+        "sourceHash": "c641876255c20bf4892cf655a394227c2c222884d171e05576d66b14cc0caa9e"
+      },
+      "8": {
+        "bytes": 60125,
+        "unchanged": true,
+        "name": "Adapter",
+        "sourceHash": "c817fd2895d213f72f776f4e5db57475a12c39f7405be5451b159b41c6c4f530"
+      },
+      "9": {
+        "bytes": 2580,
+        "name": "Driver",
+        "sourceHash": "8efd50e041222e1c99674e3ed8304a6ae7d55790d6cc74314a97e050f9938c31"
+      }
+    },
+    "sha256VectorPassed": true
+  }
+}

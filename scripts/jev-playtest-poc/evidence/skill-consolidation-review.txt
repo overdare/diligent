@@ -1,0 +1,27 @@
+Autonomous-playtest skill consolidation review
+Date: 2026-10-07
+
+Scope
+- Documentation/skill changes only; no Studio mutations, new episodes, service
+  installation, runtime implementation changes, or PR creation in this task.
+- Existing evidence remains in place. Portable summaries, coverage and selected
+  original trace records were copied with source paths/content hashes.
+
+Validation
+- skill-creator quick_validate.py: passed.
+- Local Markdown references and installed Diligent skill symlink: checked.
+- Preserved summary/coverage hashes, source versions and owned cleanup: checked.
+- Independent read-only scenario exercise by skill_scenario_review: completed.
+
+The exercise used adjacent service panels, successful aim-only oscillation,
+shared-key recipients, a new version that never offered the changed capability,
+missing per-destination context and inaccessible screenshot pixels. It produced
+a target-level inspection plan, kept other meaningful alternatives, attributed
+incidental collection separately, retained the no-callback boundary, and reported
+the unexercised version and pixel limits accurately. It found no material internal
+contradiction. Decision granularity remains task-dependent; the entrypoint already
+requires clarification only for material choices that cannot be inferred.
+
+This is static validation and a reasoning exercise, not a live forward test,
+proof of model quality, or acceptance of the final Horror inspect implementation.
+That implementation's recorded final episode did not exercise an inspect target.

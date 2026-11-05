@@ -65,4 +65,66 @@ describe("experiment handlers", () => {
       handleExperimentsSet(manager, async () => ({ skills: [] }), new Map(), { overrides: { unknown: true } }),
     ).rejects.toThrow("Unknown experiment");
   });
+
+  it("runs a product side effect only for experiments whose state changed, without failing the save", async () => {
+    const home = await mkdtemp(join(tmpdir(), "diligent-experiments-"));
+    tempDirs.push(home);
+    const originalHome = process.env.HOME;
+    process.env.HOME = home;
+    const calls: string[] = [];
+    let signalCall = () => {};
+    const nextCall = () => {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      signalCall = resolve;
+      return promise;
+    };
+    const withHooks = [
+      {
+        ...definitions[0]!,
+        onEnabledChange: async (enabled: boolean) => {
+          calls.push(`procedural:${enabled}`);
+          signalCall();
+          throw new Error("Studio is not connected");
+        },
+      },
+      {
+        id: "steady",
+        title: "Steady",
+        description: "Unchanged experiment.",
+        defaultEnabled: true,
+        onEnabledChange: (enabled: boolean) => {
+          calls.push(`steady:${enabled}`);
+          signalCall();
+        },
+      },
+    ];
+    let states = resolveExperimentStates(withHooks, undefined);
+    const manager = { getDefinitions: () => withHooks, getExperiments: () => states };
+    const reload = (overrides: Record<string, boolean>) => async () => {
+      states = resolveExperimentStates(withHooks, overrides);
+      return { skills: [] };
+    };
+
+    try {
+      const firstCall = nextCall();
+      const result = await handleExperimentsSet(manager, reload({ procedural: true }), new Map(), {
+        overrides: { procedural: true, steady: true },
+      });
+      expect(result.experiments.find((entry) => entry.id === "procedural")?.enabled).toBe(true);
+      await firstCall;
+      expect(calls).toEqual(["procedural:true"]);
+
+      // An unchanged save fires nothing; the next real transition proves no call was queued in between.
+      await handleExperimentsSet(manager, reload({ procedural: true }), new Map(), {
+        overrides: { procedural: true },
+      });
+      const disableCall = nextCall();
+      await handleExperimentsSet(manager, reload({}), new Map(), { overrides: { procedural: false } });
+      await disableCall;
+      expect(calls).toEqual(["procedural:true", "procedural:false"]);
+    } finally {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+    }
+  });
 });

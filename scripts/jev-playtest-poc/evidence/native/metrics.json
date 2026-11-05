@@ -1,0 +1,691 @@
+{
+  "direct": {
+    "observationCount": 298,
+    "observeLatencyMedianMs": 121.4919579999987,
+    "cadenceMedianMs": 225.6321250000001,
+    "modelCalls": 32,
+    "modelLatencyMedianMs": 142.74304200000188,
+    "modelLatencyP95Ms": 164.38662499999919,
+    "movementEffects": [
+      {
+        "action": "roll_left",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": 0
+            },
+            "after": {
+              "present": true,
+              "value": -312.1835021972656
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_back",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -312.1835021972656
+            },
+            "after": {
+              "present": true,
+              "value": -312.1812438964844
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_right",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -312.1812438964844
+            },
+            "after": {
+              "present": true,
+              "value": -2.9030396938323975
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "escape_left",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -2.9030396938323975
+            },
+            "after": {
+              "present": true,
+              "value": -267.52947998046875
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_left",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -267.1395568847656
+            },
+            "after": {
+              "present": true,
+              "value": -572.9052124023438
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "escape_left",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -572.9052124023438
+            },
+            "after": {
+              "present": true,
+              "value": -829.5984497070312
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_forward",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -829.5984497070312
+            },
+            "after": {
+              "present": true,
+              "value": -753.1693115234375
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "escape_right",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -753.1693115234375
+            },
+            "after": {
+              "present": true,
+              "value": -495.5826416015625
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "escape_right",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -495.5826416015625
+            },
+            "after": {
+              "present": true,
+              "value": -238.33851623535156
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "escape_right",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -238.71791076660156
+            },
+            "after": {
+              "present": true,
+              "value": -8.257266998291016
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_left",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": 13.885425567626953
+            },
+            "after": {
+              "present": true,
+              "value": -282.693115234375
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_back",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -282.693115234375
+            },
+            "after": {
+              "present": true,
+              "value": -357.1933288574219
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_right",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -357.1933288574219
+            },
+            "after": {
+              "present": true,
+              "value": -51.213539123535156
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "escape_left",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -51.213539123535156
+            },
+            "after": {
+              "present": true,
+              "value": -298.83709716796875
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_forward",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -298.83709716796875
+            },
+            "after": {
+              "present": true,
+              "value": -305.4735412597656
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "escape_right",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -305.4735412597656
+            },
+            "after": {
+              "present": true,
+              "value": -60.77030944824219
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "escape_right",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -60.77030944824219
+            },
+            "after": {
+              "present": true,
+              "value": 33.37971496582031
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_forward",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": 50.62557601928711
+            },
+            "after": {
+              "present": true,
+              "value": 44.74457550048828
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "escape_left",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": 44.74457550048828
+            },
+            "after": {
+              "present": true,
+              "value": -50.25887680053711
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "escape_left",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -50.25887680053711
+            },
+            "after": {
+              "present": true,
+              "value": -307.94134521484375
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_back",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -307.6810302734375
+            },
+            "after": {
+              "present": true,
+              "value": -301.81597900390625
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_right",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -301.81597900390625
+            },
+            "after": {
+              "present": true,
+              "value": 3.9344801902770996
+            },
+            "passed": true
+          }
+        ]
+      }
+    ],
+    "feedbackHits": 30,
+    "invalidations": [],
+    "terminal": {
+      "at": "2026-10-01T18:53:34.907Z",
+      "type": "terminal",
+      "atMs": 68687.126375,
+      "outcome": "success",
+      "reason": "VICTORY: boss HP 0, player HP 65",
+      "revision": 592
+    }
+  },
+  "agent": {
+    "observationCount": 445,
+    "observeLatencyMedianMs": 109.96508400002494,
+    "cadenceMedianMs": 112.88783299992792,
+    "modelCalls": 24,
+    "modelLatencyMedianMs": 135.94470799993724,
+    "modelLatencyP95Ms": 145.4071249999688,
+    "movementEffects": [
+      {
+        "action": "roll_left",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": 0
+            },
+            "after": {
+              "present": true,
+              "value": -315
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_back",
+        "expectations": [
+          {
+            "key": "z",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": 1100
+            },
+            "after": {
+              "present": true,
+              "value": 1406
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_right",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -315
+            },
+            "after": {
+              "present": true,
+              "value": -12
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_right",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -12
+            },
+            "after": {
+              "present": true,
+              "value": 303
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "escape_left",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": 303
+            },
+            "after": {
+              "present": true,
+              "value": 40
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "escape_left",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": 41
+            },
+            "after": {
+              "present": true,
+              "value": -36
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_right",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": -54
+            },
+            "after": {
+              "present": true,
+              "value": 253
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_right",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": 253
+            },
+            "after": {
+              "present": true,
+              "value": 559
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_forward",
+        "expectations": [
+          {
+            "key": "z",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": 1503
+            },
+            "after": {
+              "present": true,
+              "value": 1197
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_right",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": 562
+            },
+            "after": {
+              "present": true,
+              "value": 857
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "escape_left",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": 857
+            },
+            "after": {
+              "present": true,
+              "value": 616
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "escape_left",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": 617
+            },
+            "after": {
+              "present": true,
+              "value": 546
+            },
+            "passed": true
+          }
+        ]
+      },
+      {
+        "action": "roll_right",
+        "expectations": [
+          {
+            "key": "x",
+            "op": "change",
+            "before": {
+              "present": true,
+              "value": 530
+            },
+            "after": {
+              "present": true,
+              "value": 828
+            },
+            "passed": true
+          }
+        ]
+      }
+    ],
+    "feedbackHits": 30,
+    "invalidations": [
+      {
+        "action": "fire_core",
+        "reason": "action id, validityKey, expiry, or terminal state changed"
+      }
+    ],
+    "terminal": {
+      "at": "2026-10-01T19:08:36.216Z",
+      "type": "terminal",
+      "atMs": 544947.633417,
+      "outcome": "success",
+      "reason": "VICTORY: boss HP 0, player HP 125",
+      "revision": 452
+    },
+    "finalState": {
+      "aim": true,
+      "ammo": 9,
+      "bossHp": 0,
+      "mode": "raid",
+      "phase": "VICTORY",
+      "playerHp": 125,
+      "reload": 0,
+      "remaining": 0,
+      "rollCooldown": 0.7385845000098925,
+      "round": 1,
+      "x": 828,
+      "z": 1184
+    }
+  }
+}

@@ -6,7 +6,7 @@ import "./sentry";
 import { createLogger } from "@diligent/logging";
 import { loadDiligentConfig, resolveExperimentStates } from "@diligent/runtime";
 import { createDevStudioRpc } from "./dev/studio-rpc";
-import { OVERDARE_EXPERIMENTS } from "./experiments";
+import { OVERDARE_EXPERIMENTS, withStudioSideEffects } from "./experiments";
 import { configureSidecarLogging } from "./logging";
 import {
   buildRegistries,
@@ -189,7 +189,8 @@ export async function startStudioServer(argv: string[] = process.argv.slice(2)):
           studioDisabled,
           studioRpc,
         }),
-        experimentDefinitions: OVERDARE_EXPERIMENTS,
+        // UI-only development has no Studio to inject the test framework into.
+        experimentDefinitions: studioDisabled ? OVERDARE_EXPERIMENTS : withStudioSideEffects(studioRpc.callRpc),
         // STUDIO_DISABLED=1 is UI-only development with no Studio behind it, so there is nothing for
         // the router to route to — skip the endpoint (and the registration below) entirely.
         ...(studioDisabled ? {} : { extraRoutes: createRouterEndpoint({ token: sidecarToken, registries }) }),

@@ -13,8 +13,9 @@ export interface OverdareConfig {
   port?: number;
 }
 
+/** Removes JSONC comments while leaving string contents such as `http://` URLs intact. */
 function stripJsonComments(text: string): string {
-  return text.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  return text.replace(/("(?:[^"\\\n]|\\.)*")|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, (_match, string?: string) => string ?? "");
 }
 
 let cached: OverdareConfig | undefined;
@@ -35,20 +36,33 @@ function configCandidates(): string[] {
   return currentPath === legacyPath ? [currentPath] : [currentPath, legacyPath];
 }
 
-export function loadOverdareConfig(): OverdareConfig {
-  if (cached) return cached;
+export interface OverdareConfigFile {
+  path: string;
+  /** Parsed JSONC value; absent when the file could not be read or parsed. */
+  value?: unknown;
+  error?: string;
+}
+
+/**
+ * Reads the first existing overdare.jsonc without caching, so edits apply without a restart.
+ * Returns undefined when no candidate exists.
+ */
+export function readOverdareConfigFile(): OverdareConfigFile | undefined {
   for (const configPath of configCandidates()) {
     if (!existsSync(configPath)) continue;
     try {
-      const raw = readFileSync(configPath, "utf-8");
-      cached = JSON.parse(stripJsonComments(raw)) as OverdareConfig;
-      return cached;
-    } catch {
-      cached = {};
-      return cached;
+      return { path: configPath, value: JSON.parse(stripJsonComments(readFileSync(configPath, "utf-8"))) };
+    } catch (error) {
+      return { path: configPath, error: error instanceof Error ? error.message : String(error) };
     }
   }
-  cached = {};
+  return undefined;
+}
+
+export function loadOverdareConfig(): OverdareConfig {
+  if (cached) return cached;
+  const file = readOverdareConfigFile();
+  cached = file?.value && typeof file.value === "object" ? (file.value as OverdareConfig) : {};
   return cached;
 }
 
