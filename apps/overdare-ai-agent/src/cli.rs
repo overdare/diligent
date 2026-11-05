@@ -78,6 +78,7 @@ pub fn run() -> Result<(), CliError> {
         "install" => run_install(&selection, args.collect()),
         "start" => run_webserver(&selection, args.collect()),
         "start-mcp-router" => run_mcp_router(&selection, args.collect()),
+        "claude" => run_claude(&selection, args.collect()),
         other => Err(CliError::config(format!("Unknown command: {other}"))),
     };
     if let Err(err) = &result {
@@ -371,7 +372,16 @@ fn parse_mcp_router_args(args: Vec<String>) -> Result<Option<String>, CliError> 
 }
 
 fn run_mcp_router(selection: &EnvSelection, args: Vec<String>) -> Result<(), CliError> {
-    let default_active_studio_id = parse_mcp_router_args(args)?;
+    let embedded_args: Vec<_> = args.iter().filter_map(|arg| arg.strip_prefix("--embedded-studio=")).collect();
+    if embedded_args.len() > 1 || embedded_args.first().is_some_and(|id| id.is_empty()) {
+        return Err(CliError::config("--embedded-studio requires exactly one non-empty Studio id"));
+    }
+    let embedded_studio_id = embedded_args.first().map(|id| id.to_string());
+    let remaining: Vec<_> = args.into_iter().filter(|arg| !arg.starts_with("--embedded-studio=")).collect();
+    let default_active_studio_id = parse_mcp_router_args(remaining)?;
+    if embedded_studio_id.is_some() && default_active_studio_id.is_some() {
+        return Err(CliError::config("--studio-id and --embedded-studio cannot be combined"));
+    }
     // A migration failure must not take down the MCP entrypoint: the router only reads the registry,
     // and refusing to serve an MCP client over a namespace rename would be a worse outcome than
     // reading from the un-migrated location. init/start own the migration for real.
@@ -387,19 +397,30 @@ fn run_mcp_router(selection: &EnvSelection, args: Vec<String>) -> Result<(), Cli
         .block_on(mcp_router::run_mcp_router(mcp_router::McpRouterOptions {
             registry_dir,
             default_active_studio_id,
+            embedded_studio_id,
         }))
         .map_err(CliError::start)
 }
 
 fn print_help() {
     println!(
-        "overdare-ai-agent\n\nGlobal flags:\n  --agent-env=<env>[@<version>]   Select release env (prod|dev). Optionally pin a version, e.g. prod@1.2.3 or dev@1.4.0-beta.2. Defaults to prod.\n\nCommands:\n  init [--skip-update]   Ensure runtime exists, print current/latest, and update unless skipped\n  install --bundle <zip> Install a locally built canonical runtime ZIP without network access\n  start [options]        Run updated runtime diligent-web-server as a subprocess\n                         (--init-if-missing runs init first when no runtime is installed)\n  start-mcp-router       Serve the OVERDARE MCP router on stdio. This is the stable command to\n                         configure in an MCP client; it discovers open Studio instances and routes\n                         tool calls to the selected one (--studio-id=<id> pre-selects one)"
+        "overdare-ai-agent\n\nGlobal flags:\n  --agent-env=<env>[@<version>]   Select release env (prod|dev). Optionally pin a version, e.g. prod@1.2.3 or dev@1.4.0-beta.2. Defaults to prod.\n\nCommands:\n  claude [--studio-id=<id>] Run local Claude Code in the Studio project directory\n  init [--skip-update]   Ensure runtime exists, print current/latest, and update unless skipped\n  install --bundle <zip> Install a locally built canonical runtime ZIP without network access\n  start [options]        Run updated runtime diligent-web-server as a subprocess\n                         (--init-if-missing runs init first when no runtime is installed)\n  start-mcp-router       Serve the OVERDARE MCP router on stdio. This is the stable command to\n                         configure in an MCP client; it discovers open Studio instances and routes\n                         tool calls to the selected one (--studio-id=<id> pre-selects one)"
     );
+}
+
+fn run_claude(selection: &EnvSelection, args: Vec<String>) -> Result<(), CliError> {
+    let runtime_dir = update::resolve_runtime_dir(selection).map_err(CliError::start)?;
+    let binary = runtime_dir.join(if cfg!(windows) { "diligent-web-server.exe" } else { "diligent-web-server" });
+    let status = std::process::Command::new(binary).arg("claude").args(args)
+        .env("DILIGENT_STORAGE_NAMESPACE", crate::storage::storage_namespace(selection.env))
+        .env("DILIGENT_ENV", selection.env.as_str())
+        .status().map_err(|error| CliError::start(format!("Cannot launch Claude Code host: {error}")))?;
+    if status.success() { Ok(()) } else { Err(CliError { code: status.code().unwrap_or(1), message: "Claude Code exited unsuccessfully".to_string() }) }
 }
 
 fn print_mcp_router_help() {
     println!(
-        "overdare-mcp\n\nOptions:\n  --agent-env=<env>[@<version>]   Select the prod or dev Studio registry.\n  --studio-id=<id>                Pre-select one open Studio instance.\n  -h, --help                      Show this help."
+        "overdare-mcp\n\nOptions:\n  --agent-env=<env>[@<version>]   Select the prod or dev Studio registry.\n  --studio-id=<id>                Pre-select one open Studio instance.\n  --embedded-studio=<id>          Bind to one Studio with host-appended instructions.\n                                 Disables Studio switching and prompt bootstrap.\n  -h, --help                      Show this help."
     );
 }
 

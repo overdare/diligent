@@ -13,6 +13,7 @@ interface SidebarProps {
   activeThreadId: string | null;
   attentionThreadIds?: Set<string>;
   isLoading?: boolean;
+  disabled?: boolean;
   error?: string | null;
   onNewThread: () => void;
   onOpenThread: (threadId: string) => void;
@@ -25,6 +26,7 @@ function SidebarImpl({
   activeThreadId,
   attentionThreadIds,
   isLoading,
+  disabled,
   error,
   onNewThread,
   onOpenThread,
@@ -52,6 +54,7 @@ function SidebarImpl({
         <button
           type="button"
           onClick={onNewThread}
+          disabled={disabled}
           className={`${sidebarItemClasses} flex items-center gap-2 border border-border/100 bg-surface-light text-sm font-medium text-text hover:bg-surface-strong`}
         >
           <SquarePen className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
@@ -75,6 +78,8 @@ function SidebarImpl({
               <button
                 type="button"
                 onClick={() => onOpenThread(thread.id)}
+                disabled={disabled}
+                aria-current={isActive ? "true" : undefined}
                 className={`${sidebarItemClasses} ${
                   isActive
                     ? "bg-surface-composer text-text"

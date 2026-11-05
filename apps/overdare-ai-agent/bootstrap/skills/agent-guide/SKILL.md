@@ -1,6 +1,6 @@
 ---
 name: agent-guide
-description: Explains how to use and configure the OVERDARE AI agent — setting up MCP servers, defining custom sub-agents, authoring Skills, and the config file layers. Use this skill when the user asks how the agent works or how to set something up, e.g. "how do I add an MCP server?", "how do I create a custom agent?", "how do I write a skill?", "what config options are there?", "MCP 설정하는 법", "에이전트 만드는 법", "스킬 작성법", or any general "how do I use this agent?" question. Not for building OVERDARE Studio worlds — only for explaining/guiding the agent's own configuration and usage.
+description: "Diligent harness only. Explains OVERDARE AI agent configuration: MCP servers, custom sub-agents, Skills, and config file layers. Use for questions about configuring the Diligent-based agent, not for building Studio worlds or configuring Claude Code or another harness."
 ---
 
 # Agent Usage Guide

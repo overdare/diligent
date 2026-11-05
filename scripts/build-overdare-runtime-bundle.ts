@@ -98,6 +98,42 @@ function buildSidecar(platform: PlatformConfig): string {
   return target;
 }
 
+/** Version native helpers with the sidecar, so new behavior never depends on an old launcher. */
+function stageClaudeHelpers(platform: PlatformConfig, stageDir: string): void {
+  const targets: Record<string, string> = {
+    "windows-x64": "x86_64-pc-windows-msvc",
+    "darwin-arm64": "aarch64-apple-darwin",
+    "darwin-x64": "x86_64-apple-darwin",
+    "linux-x64": "x86_64-unknown-linux-gnu",
+  };
+  const target = targets[platform.id];
+  if (!target) throw new Error(`Missing Rust helper target for ${platform.id}`);
+  run(
+    [
+      "cargo",
+      "build",
+      "--release",
+      "--manifest-path",
+      join(OVERDARE_CLI, "Cargo.toml"),
+      "--target",
+      target,
+      "--bin",
+      "overdare-terminal",
+      "--bin",
+      "overdare-mcp",
+    ],
+    ROOT,
+  );
+  const destination = join(stageDir, "assets", "bin");
+  mkdirSync(destination, { recursive: true });
+  for (const name of ["overdare-terminal", "overdare-mcp"]) {
+    cpSync(
+      join(OVERDARE_CLI, "target", target, "release", name + platform.ext),
+      join(destination, name + platform.ext),
+    );
+  }
+}
+
 function stageBootstrap(stageDir: string): void {
   validateBootstrapSkills(BOOTSTRAP_DIR);
   const defaultsOut = join(stageDir, "defaults");
@@ -115,10 +151,9 @@ function maybeStageRg(platform: PlatformConfig, stageDir: string): void {
 }
 
 /**
- * The bundle keeps `assets/bin` and `assets/lua` in its layout even though nothing is staged
- * into them any more: the retired procedural runner took the Luau interpreter with it, and
- * Studio's own `lua.validate` replaced the bundled luau-lsp and its type definitions. The
- * sidecar still resolves `assets/bin` for `rg`.
+ * Prepare the stable native asset directories. `assets/bin` holds ripgrep and the Claude
+ * terminal/MCP helpers. `assets/lua` remains empty after retiring the external Luau runner;
+ * Studio's own `lua.validate` replaced the bundled luau-lsp and its type definitions.
  */
 export function stageSidecarAssets(stageDir: string): void {
   mkdirSync(join(stageDir, "assets", "bin"), { recursive: true });
@@ -127,10 +162,9 @@ export function stageSidecarAssets(stageDir: string): void {
 
 function zipRuntimeBundle(stageDir: string, outPath: string): void {
   if (process.platform === "win32") {
-    run(
-      ["powershell", "-Command", `Compress-Archive -Path '${stageDir}\\*' -DestinationPath '${outPath}' -Force`],
-      ROOT,
-    );
+    // Windows 10 ships libarchive tar alongside ConPTY. Avoid PowerShell module loading
+    // (and shell-interpolated paths) when packaging from a Bun/PowerShell 7 environment.
+    run(["tar.exe", "-a", "-cf", outPath, "-C", stageDir, "."], ROOT);
     return;
   }
   run(["zip", "-r", outPath, "."], stageDir);
@@ -151,6 +185,7 @@ async function main(): Promise<void> {
   cpSync(sidecarPath, join(stageDir, `diligent-web-server${platform.ext}`));
   stageWebClient(resolve(SIDECAR, "dist/client"), stageDir);
   stageSidecarAssets(stageDir);
+  stageClaudeHelpers(platform, stageDir);
   stageBootstrap(stageDir);
   maybeStageRg(platform, stageDir);
 

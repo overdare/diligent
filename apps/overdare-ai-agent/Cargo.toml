@@ -12,6 +12,14 @@ path = "src/main.rs"
 name = "overdare-mcp"
 path = "src/bin/overdare-mcp.rs"
 
+[[bin]]
+name = "overdare-terminal"
+path = "src/bin/overdare-terminal.rs"
+
+[[test]]
+name = "terminal-binary"
+path = "test/terminal_binary.rs"
+
 [[test]]
 name = "mcp-router-binary"
 path = "test/mcp_router_binary.rs"
@@ -35,6 +43,8 @@ sha2 = { version = "0.10", default-features = false }
 # so extraction no longer varies with execution policy or external tools.
 zip = { version = "2", default-features = false, features = ["deflate"] }
 sentry = { version = "0.48.5", default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls"] }
+portable-pty = "0.9"
+base64 = "0.22"
 
 [dev-dependencies]
 # The MCP router tests stand up loopback HTTP sidecars to exercise real routing (studio_router.rs).
@@ -48,3 +58,6 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }

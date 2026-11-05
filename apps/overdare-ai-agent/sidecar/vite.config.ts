@@ -62,6 +62,9 @@ export default defineConfig(({ mode }) => ({
     host: true,
     port: 5174,
     proxy: {
+      "/claude/bootstrap": { target: BACKEND_HTTP_TARGET },
+      "/terminal/bootstrap": { target: BACKEND_HTTP_TARGET },
+      "/studio/view": { target: BACKEND_HTTP_TARGET },
       "/rpc": {
         target: BACKEND_WS_TARGET,
         ws: true,

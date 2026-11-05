@@ -5,6 +5,9 @@ import "./sentry";
 
 import { createLogger } from "@diligent/logging";
 import { loadDiligentConfig, resolveExperimentStates } from "@diligent/runtime";
+import { runClaudeCli } from "./claude/cli";
+import { createClaudeTerminalHost } from "./claude/host";
+import { createStudioViewState } from "./claude/view-state";
 import { createDevStudioRpc } from "./dev/studio-rpc";
 import { OVERDARE_EXPERIMENTS, withStudioSideEffects } from "./experiments";
 import { configureSidecarLogging } from "./logging";
@@ -26,6 +29,7 @@ import { postUserFeedback } from "./tools/gateway/feedback";
 import { removeRetiredPluginCopies } from "./tools/retired-plugins";
 import { resolveStudioHost, resolveStudioPort } from "./tools/studiorpc/config";
 import { createWebServer, enableProcessLogFile, parseArgs } from "./web/server";
+import { STUDIO_VIEW_ROUTE } from "./web/shared/studio-view";
 
 const logger = createLogger({ scope: "sidecar/server" });
 
@@ -166,6 +170,10 @@ export async function startStudioServer(argv: string[] = process.argv.slice(2)):
   await removeRetiredPluginCopies();
   const sidecarToken = createSidecarToken();
   let registration: StudioRegistration | null = null;
+  let claudeHost: ReturnType<typeof createClaudeTerminalHost> | null = null;
+  let shellHost: ReturnType<typeof createClaudeTerminalHost> | null = null;
+  let studioView: ReturnType<typeof createStudioViewState> | null = null;
+  const routerRoutes = createRouterEndpoint({ token: sidecarToken, registries });
 
   try {
     const studioHost = await startStudioChangeHost(cwd, studioDisabled, () =>
@@ -193,28 +201,67 @@ export async function startStudioServer(argv: string[] = process.argv.slice(2)):
         experimentDefinitions: studioDisabled ? OVERDARE_EXPERIMENTS : withStudioSideEffects(studioRpc.callRpc),
         // STUDIO_DISABLED=1 is UI-only development with no Studio behind it, so there is nothing for
         // the router to route to — skip the endpoint (and the registration below) entirely.
-        ...(studioDisabled ? {} : { extraRoutes: createRouterEndpoint({ token: sidecarToken, registries }) }),
+        ...(studioDisabled
+          ? {}
+          : {
+              extraRoutes: {
+                matches: (url: URL) =>
+                  url.pathname === "/claude/bootstrap" ||
+                  url.pathname === "/terminal/bootstrap" ||
+                  url.pathname === STUDIO_VIEW_ROUTE ||
+                  routerRoutes.matches(url),
+                handle: (req: Request, url: URL) =>
+                  url.pathname === STUDIO_VIEW_ROUTE
+                    ? (studioView?.handle(req) ?? new Response("Studio is starting", { status: 503 }))
+                    : url.pathname === "/claude/bootstrap"
+                      ? (claudeHost?.bootstrap(req) ?? new Response("Studio terminal is starting", { status: 503 }))
+                      : url.pathname === "/terminal/bootstrap"
+                        ? (shellHost?.bootstrap(req) ?? new Response("Studio terminal is starting", { status: 503 }))
+                        : routerRoutes.handle(req, url),
+              },
+            }),
       }),
     );
     const { server } = studioHost.host;
+    if (!studioDisabled) {
+      studioView = createStudioViewState({
+        cwd,
+        webOrigin: `http://127.0.0.1:${server.port}`,
+        developmentOrigin: args.dev ? "http://localhost:5174" : undefined,
+      });
+      claudeHost = createClaudeTerminalHost({
+        cwd,
+        webOrigin: `http://127.0.0.1:${server.port}`,
+        studioId: () => registration?.record.id ?? null,
+        developmentOrigin: args.dev ? "http://localhost:5174" : undefined,
+      });
+      shellHost = createClaudeTerminalHost({
+        mode: "shell",
+        cwd,
+        webOrigin: `http://127.0.0.1:${server.port}`,
+        studioId: () => registration?.record.id ?? null,
+        developmentOrigin: args.dev ? "http://localhost:5174" : undefined,
+      });
+    }
 
-    const cleanup = () => {
-      void studioHost.stop();
+    let shutdown: Promise<void> | null = null;
+    const cleanup = (): Promise<void> => {
+      if (shutdown) return shutdown;
       cleanupParentWatchdog?.();
       cleanupLogFile?.();
       // Drop the registry record so the router stops offering a Studio that is going away. The
       // heartbeat would expire it anyway; this makes a clean shutdown immediate.
       registration?.stop();
+      shutdown = Promise.allSettled([claudeHost?.close(), shellHost?.close(), studioHost.stop()]).then(() => {});
+      return shutdown;
     };
 
-    process.once("exit", cleanup);
+    process.once("exit", () => void cleanup());
     process.once("SIGTERM", () => {
-      cleanup();
-      void studioHost.stop().finally(() => process.exit(0));
+      void cleanup().finally(() => process.exit(0));
     });
     process.once("SIGINT", () => {
-      cleanup();
-      void studioHost.stop().finally(() => process.exit(0));
+      void cleanup().finally(() => process.exit(0));
     });
 
     // Launcher contract: this exact, undecorated stdout line is machine-parsed by the Rust host.
@@ -261,7 +308,19 @@ if (import.meta.main) {
   // mcp-serve` puts it at argv[2] (argv[1] is the script), but the compiled standalone binary
   // has no script entry so `diligent-web-server mcp-serve` lands it at argv[1]. A fixed index
   // silently fell through to the web server in the packaged build.
-  if (process.argv.slice(1).includes("mcp-serve")) {
+  const historyCommand = process.argv.indexOf("claude-sessions");
+  const claudeCommand = process.argv.slice(1).indexOf("claude");
+  if (historyCommand !== -1) {
+    const { runClaudeHistoryWorker } = await import("./claude/history-worker");
+    await runClaudeHistoryWorker(process.argv[historyCommand + 1] ?? "");
+  } else if (claudeCommand !== -1) {
+    try {
+      process.exitCode = await runClaudeCli(process.argv.slice(claudeCommand + 2));
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    }
+  } else if (process.argv.slice(1).includes("mcp-serve")) {
     await runMcpServerMain();
   } else {
     const startupArgs = parseArgs(process.argv.slice(2));

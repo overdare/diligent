@@ -199,6 +199,13 @@ impl StudioRouter {
         args: &Value,
         router_call_id: &str,
     ) -> ToolCallResult {
+        self.call_tool_with_binding(record, tool, args, router_call_id, false).await
+    }
+
+    pub async fn call_tool_with_binding(
+        &self, record: &StudioInstanceRecord, tool: &str, args: &Value,
+        router_call_id: &str, bound: bool,
+    ) -> ToolCallResult {
         let url = format!(
             "{}/mcp-router/tools/call",
             record.sidecar_url.trim_end_matches('/')
@@ -214,6 +221,9 @@ impl StudioRouter {
 
         match response {
             Err(err) => {
+                if bound {
+                    return ToolCallResult::failure(format!("Lost contact with the owning Studio \"{}\" ({err}). Reopen this terminal from that Studio. This connection cannot switch projects.", record.label()));
+                }
                 self.write_active(None);
                 ToolCallResult::failure(format!(
                     "Lost contact with OVERDARE Studio \"{}\" ({err}). It may have been closed. \

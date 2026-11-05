@@ -112,6 +112,7 @@ Current guides:
 - Code mode: `docs/guide/code-mode.md`
 - File links and previews: `docs/guide/file-links.md`
 - Studio snapshots: `docs/guide/studio-snapshots.md`
+- Product-owned Claude Code terminal: `docs/guide/claude-code-host.md`
 - Character authoring ownership: `docs/guide/character-authoring.md`
 - Performance captures: `docs/guide/performance-captures.md`
 - AgentNativeBridge: `docs/guide/agent-native-bridge.md`
