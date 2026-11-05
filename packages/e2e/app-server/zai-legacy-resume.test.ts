@@ -8,7 +8,11 @@ import { ensureDiligentDir, ProviderManager } from "@diligent/runtime";
 import { createProtocolClient, type ProtocolTestClient } from "./helpers/protocol-client";
 import { createTestServer } from "./helpers/server-factory";
 
-for (const modelId of ["glm-5.1", "glm-5.2"]) {
+for (const [modelId, canonicalModelId] of [
+  ["glm-5.1", "glm-5.3"],
+  ["glm-5.2", "glm-5.3"],
+  ["glm-4.7", "glm-5.3-flash"],
+]) {
   for (const effort of ["medium", "xhigh"] as const) {
     test(`resumes saved ${modelId}/${effort} with a canonical model and supported wire effort`, async () => {
       const cwd = await mkdtemp(join(tmpdir(), "diligent-zai-resume-"));
@@ -24,7 +28,7 @@ for (const modelId of ["glm-5.1", "glm-5.2"]) {
             id: "resume-fixture",
             object: "chat.completion.chunk",
             created: 1,
-            model: "glm-5.3",
+            model: canonicalModelId,
             choices: [{ index: 0, delta: { content: "resumed fixture" }, finish_reason: "stop" }],
           };
           return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, {
@@ -33,7 +37,12 @@ for (const modelId of ["glm-5.1", "glm-5.2"]) {
         },
       });
       try {
-        const card = resolveModel({ provider: "zai-coding-plan", modelId: "glm-5.3" });
+        const card = resolveModel({ provider: "zai-coding-plan", modelId: canonicalModelId });
+        // A lost saved selection must not pass by falling back to the same model.
+        const resumeDefault = resolveModel({
+          provider: card.provider,
+          modelId: canonicalModelId === "glm-5.3" ? "glm-5.3-flash" : "glm-5.3",
+        });
         const manager = new ProviderManager({
           provider: { "zai-coding-plan": { baseUrl: `${endpoint.url}api/coding/paas/v4` } },
         });
@@ -69,14 +78,15 @@ for (const modelId of ["glm-5.1", "glm-5.2"]) {
           entry.modelId = modelId;
         }
         for (const entry of effortEntries) entry.effort = effort;
-        await writeFile(sessionPath, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
+        const historicalBytes = `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`;
+        await writeFile(sessionPath, historicalBytes);
 
         client = createProtocolClient(
           createTestServer({
             cwd,
             runtimeToolsConfig: {},
             streamFunction: manager.createProxyStream(),
-            runtimeConfigOverrides: { model: card, providerManager: manager },
+            runtimeConfigOverrides: { model: resumeDefault, providerManager: manager },
           }),
         );
         await client.request("initialize", { clientName: "test", clientVersion: "0.0.1", protocolVersion: 1 });
@@ -85,9 +95,10 @@ for (const modelId of ["glm-5.1", "glm-5.2"]) {
         expect(notifications.some((notification) => notification.method === "turn/completed")).toBe(true);
         expect(requests).toHaveLength(1);
         expect(requests[0]?.path).toBe("/api/coding/paas/v4/chat/completions");
-        expect(requests[0]?.body.model).toBe("glm-5.3");
+        expect(requests[0]?.body.model).toBe(canonicalModelId);
         expect(requests[0]?.body.reasoning_effort).toBe("low");
         expect(requests[0]?.body.thinking).toEqual({ type: "enabled" });
+        expect((await readFile(sessionPath, "utf8")).startsWith(historicalBytes)).toBe(true);
       } finally {
         client?.close();
         await endpoint.stop(true);

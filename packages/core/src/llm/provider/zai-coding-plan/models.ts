@@ -33,10 +33,12 @@ export const ZAI_CODING_PLAN_MODELS = defineProviderModels("zai-coding-plan", [
     supportsThinking: true,
     supportedEfforts: ["low", "high", "max"],
     supportsVision: true,
+    // Coding Plan serves GLM-5.3-Flash for this historical ID, not the text-only GLM-5.3.
+    aliases: ["glm-4.7"],
     provenance: {
-      source: "Z.AI GLM-5.3-Flash and Coding Plan model documentation",
-      sourceUrl: "https://docs.z.ai/guides/vlm/glm-5.3-flash",
-      updatedAt: "2026-10-28",
+      source: "Z.AI GLM-5.3-Flash documentation and Coding Plan historical model routing",
+      sourceUrl: "https://docs.z.ai/devpack/overview",
+      updatedAt: "2026-11-05",
     },
   },
 ]);

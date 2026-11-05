@@ -58,6 +58,18 @@ describe("loadRuntimeConfig", () => {
     }
   });
 
+  it("resolves saved GLM-4.7 to Flash rather than the text-only Coding Plan default", () => {
+    expect(resolveRuntimeModel({ provider: "zai-coding-plan", modelId: "glm-4.7" }, ["zai-coding-plan"])).toMatchObject(
+      {
+        provider: "zai-coding-plan",
+        modelId: "glm-5.3-flash",
+        supportsVision: true,
+        supportsThinking: true,
+        supportedEfforts: ["low", "high", "max"],
+      },
+    );
+  });
+
   it("uses the configured provider default when there is no last selected model", () => {
     expect(resolveRuntimeModel(undefined, ["openai"])).toMatchObject(getDefaultModelRef("openai"));
   });
