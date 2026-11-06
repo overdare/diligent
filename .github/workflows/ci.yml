@@ -41,5 +41,8 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install ripgrep --yes --no-progress
       - run: bun install
+      - name: Verify runtime ZIP packaging (Windows)
+        if: runner.os == 'Windows'
+        run: bun test ./apps/overdare-ai-agent/sidecar/test/runtime-packaging.test.ts
       - name: Run E2E tests
         run: bun run test:e2e

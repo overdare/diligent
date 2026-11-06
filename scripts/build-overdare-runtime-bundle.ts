@@ -3,7 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { validateBootstrapSkills } from "./bootstrap-skills-manifest";
 
@@ -160,11 +160,14 @@ export function stageSidecarAssets(stageDir: string): void {
   mkdirSync(join(stageDir, "assets", "lua"), { recursive: true });
 }
 
-function zipRuntimeBundle(stageDir: string, outPath: string): void {
+export function zipRuntimeBundle(stageDir: string, outPath: string): void {
   if (process.platform === "win32") {
-    // Windows 10 ships libarchive tar alongside ConPTY. Avoid PowerShell module loading
-    // (and shell-interpolated paths) when packaging from a Bun/PowerShell 7 environment.
-    run(["tar.exe", "-a", "-cf", outPath, "-C", stageDir, "."], ROOT);
+    // Git Bash can put GNU tar first on PATH. It treats a drive-qualified archive
+    // name as a remote host, and does not provide libarchive's ZIP output support.
+    // Windows 10 ships libarchive tar alongside ConPTY; select that binary directly.
+    const systemTar = join(process.env.SystemRoot ?? process.env.WINDIR ?? "C:\\Windows", "System32", "tar.exe");
+    const archive = resolve(outPath);
+    run([systemTar, "-a", "-cf", basename(archive), "-C", resolve(stageDir), "."], dirname(archive));
     return;
   }
   run(["zip", "-r", outPath, "."], stageDir);
