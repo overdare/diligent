@@ -76,9 +76,11 @@ describe("provider-scoped model catalog", () => {
 
   it("rejects retired model IDs and version aliases in selection and protocol lists", () => {
     const retired = [
-      ...(["openai", "chatgpt"] as const).flatMap((provider) =>
-        ["gpt-6-sol", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6"].map((modelId) => ({ provider, modelId })),
-      ),
+      ...["gpt-6-sol", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6"].map((modelId) => ({
+        provider: "openai" as const,
+        modelId,
+      })),
+      ...["gpt-5.5", "gpt-5.6"].map((modelId) => ({ provider: "chatgpt" as const, modelId })),
       ...["claude-opus-5", "claude-opus-4-8", "claude-fable-5", "opus-5", "opus-4-8", "fable-5"].map((modelId) => ({
         provider: "anthropic" as const,
         modelId,
@@ -90,6 +92,14 @@ describe("provider-scoped model catalog", () => {
       expect(getModelInfoList().some((model) => model.provider === ref.provider && model.modelId === ref.modelId)).toBe(
         false,
       );
+    }
+  });
+
+  it("keeps previous-generation ChatGPT models selectable for plans that lag the latest rollout", () => {
+    for (const modelId of ["gpt-6-sol", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+      const ref = { provider: "chatgpt" as const, modelId };
+      expect(resolveModel(ref).modelId).toBe(modelId);
+      expect(getModelInfoList().some((model) => model.provider === "chatgpt" && model.modelId === modelId)).toBe(true);
     }
   });
 
