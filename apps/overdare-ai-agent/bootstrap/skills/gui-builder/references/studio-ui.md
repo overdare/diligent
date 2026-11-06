@@ -4,7 +4,7 @@
 
 - Build static UI with `studiorpc_execute_luau` (`target: "Editor"`), not with a script that recreates the GUI at runtime. Edit existing GUI in place, and leave controller-owned spawning, such as character labels, to its controller. For root and attachment choices, see [gui-types.md](gui-types.md).
 - Setting `Parent` only changes the hierarchy; change `Position`/`Size` with Editor Luau.
-- Import a local image once with `studiorpc_asset_manager_import` and bind the returned `asset.assetid`, never a file path. Reuse one frame asset across sibling buttons. A resizing panel should use `ScaleType = "Slice"` with a `SliceCenter` in source-image pixels.
+- Import a local image once with `studiorpc_asset_manager_import` and bind the returned `asset.assetid`, never a file path. Reuse one frame asset across sibling buttons. A resizing panel should use `ScaleType = "Slice"` with a `SliceCenter` in source-image pixels. To show part of an image, set `ImageRectOffset` and `ImageRectSize` in source-image pixels instead of cropping the file.
 - Use `ImageButton` for clickable artwork. `TextButton` is for text controls, not a substitute for planned button artwork.
 
 ## Mobile layout
@@ -13,7 +13,7 @@ This section covers screen HUDs and menus; world GUI does not need a screen HUD 
 
 Design for touch-only landscape play from the start, not a desktop HUD scaled down. Map each required action to a system control, a custom button, or a gesture; an icon, counter, or reticle alone is not an input. Distinguish tap actions from held ones, including release and cancel.
 
-The screen is never empty. At runtime CoreGui supplies a top-left system menu, a lower-left joystick, and a lower-right jump button, even when `StarterGui` is empty, and screenshots can omit them. For a new or rearranged HUD, open [default-mobile-controls.png](default-mobile-controls.png) with `read_image` to see where they sit; verified runtime state takes precedence. For inventory or equipment, read [core-gui.md](core-gui.md) and [backpack.md](backpack.md) first: Backpack Tools already have a native selector at the bottom of the screen.
+The screen is never empty. At runtime CoreGui supplies a top-left system menu, a lower-left joystick, and a lower-right jump button, even when `StarterGui` is empty, and screenshots can omit them. For a new or rearranged HUD, use the safe-area root from SKILL.md. For inventory or equipment, read [core-gui.md](core-gui.md) and [backpack.md](backpack.md) first: Backpack Tools already have a native selector at the bottom of the screen.
 
 Decide how the HUD coexists with the default controls, and carry the decision and the occupied regions into the guide prompt:
 
@@ -24,7 +24,7 @@ Decide how the HUD coexists with the default controls, and carry the decision an
 Other layout rules:
 
 - Position top-level groups with Scale and AnchorPoint, and use Offset for concrete touch-target sizes.
-- Important mobile labels usually need at least 24px at the reference viewport. Keep text live in `TextLabel`/`TextButton`; read [fonts.md](fonts.md) when choosing faces.
+- Important mobile labels need at least 24px at 1600×720, the Studio mobile simulator's screen. Keep text live in `TextLabel`/`TextButton`; read [fonts.md](fonts.md) when choosing faces.
 - Keep normal HUDs in ZIndex 0–99, overlays and modals in 100–199, and debug layers in 200+. Runtime overlap checks compare within a band, so do not move ordinary buttons into overlay bands to hide warnings. Order screen roots with `DisplayOrder`.
 
 ## Layout tools

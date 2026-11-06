@@ -25,7 +25,7 @@ local backpackEnabled = starterGui:GetCoreGuiEnabled(Enum.CoreGuiType.Backpack)
 print("Backpack enabled:", backpackEnabled)
 ```
 
-Read existing GUI/input scripts for visibility overrides and inspect the play-test screen with representative content. An enabled setting is not a measurement of bounds or proof that inventory content exists. A screenshot without native UI is not proof that it is disabled. The bundled mobile controls image shows movement/jump context; it is not a complete inventory layout reference.
+Read existing GUI/input scripts for visibility overrides and inspect the play-test screen with representative content. An enabled setting is not a measurement of bounds or proof that inventory content exists. A screenshot without native UI is not proof that it is disabled. Check in the play test whether the bottom Backpack strip falls inside the safe area before placing panels near it.
 
 Keep active native controls and system navigation accessible. For Tool-based games, inspect the bottom inventory strip as well as joystick/jump regions before placing ammo panels or combat buttons. Use the actual viewport and interactions, including selecting equipment while moving; do not invent fixed backpack pixel bounds.
 

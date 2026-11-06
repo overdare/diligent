@@ -10,8 +10,7 @@ Track the guide, asset generation/import, GUI binding, and verification separate
 
 For screen-space gameplay HUDs, read the mobile-layout guidance in [studio-ui.md](studio-ui.md) first. Map actions to touch inputs, reserve active system-control space, and decide whether to retain or replace jump. Select typography from [fonts.md](fonts.md) only when choosing new faces.
 
-Use the actual scene and user art direction for the game's mood. When generating a mobile HUD guide, pass the bundled [default mobile controls reference](default-mobile-controls.png) in `referenceImages`, alongside relevant scene/style images. Resolve its absolute path from the skill base directory: `references/default-mobile-controls.png`. It supplies control-placement context when gameplay captures omit CoreGui; do not copy its character or scenery. Retained system controls are layout context, not assets to regenerate or import.
-
+Use the actual scene and user art direction for the game's mood. When generating a mobile HUD guide, list the system controls in the prompt (top-left system menu, lower-left joystick, lower-right jump unless replaced) so the guide leaves them clear. Retained system controls are layout context, not assets to regenerate or import.
 Check that every reference is readable on the agent host before calling `generate_image`. In Mac-to-Windows dev, a Studio screenshot's `C:/...` path is not a Mac path: use the configured shared roots to locate and verify its local counterpart. Do not prepend the working directory to a foreign-host path or discard a required reference to bypass an error. Accept up to five PNG, JPEG, or WebP references per call.
 
 Reuse an approved design as the guide; otherwise generate one with `background: "opaque"`, attaching a current game screenshot in `referenceImages`:
@@ -20,7 +19,7 @@ Reuse an approved design as the guide; otherwise generate one with `background: 
 - **BillboardGui:** Use the nameplate, marker, or badge aspect ratio and a scene reference showing its target. Design for its apparent size at the intended viewing distance.
 - **SurfaceGui:** Use the target face/panel aspect ratio and a scene reference showing placement. Keep the production design front-facing; scene perspective is context, not distortion to bake into the asset.
 
-Do not force world GUI into a full-screen landscape guide or attach the default mobile-controls image unless a screen HUD is also being designed. Generated lettering indicates hierarchy; final labels use native text.
+Do not force world GUI into a full-screen landscape guide or list system controls unless a screen HUD is also being designed. Generated lettering indicates hierarchy; final labels use native text.
 
 Inspect the guide for missing requested elements, readability, and overlaps before deriving assets. Reuse an existing guide if it already fits. Generate alternatives only when requested or needed to resolve a concrete design issue. For a requested mockup or preview, deliver the guide; for a build, continue to artwork production without an extra approval step. Reviewing an existing design does not require generating a guide.
 
