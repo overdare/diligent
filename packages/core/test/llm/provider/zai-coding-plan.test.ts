@@ -20,10 +20,11 @@ const model: Model = {
 
 // A loopback response tests Diligent's wire contract, not live model behavior.
 describe("GLM-5.3 Coding Plan Chat Completions contract", () => {
-  // Coding Plan routes both historical generations to GLM-5.3, not Flash.
+  // Coding Plan routes GLM-5.1/5.2 to GLM-5.3, but GLM-4.7 to vision-capable Flash.
   for (const [selector, modelId] of [
     ["glm-5.3", "glm-5.3"],
     ["glm-5.3-flash", "glm-5.3-flash"],
+    ["glm-4.7", "glm-5.3-flash"],
     ["glm-5.2", "glm-5.3"],
     ["glm-5.1", "glm-5.3"],
     ["glm", "glm-5.3"],
