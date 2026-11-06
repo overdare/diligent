@@ -4,25 +4,35 @@ import { readFileSync } from "node:fs";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../types";
 import { findSnapshotById, type SnapshotEntry, truncateLabel } from "./snapshot";
-import { readSnapshotData, type SnapshotDataPage } from "./snapshot-data";
+import { readSnapshotData, readSnapshotDiff, type SnapshotDataPage, type SnapshotDiffPage } from "./snapshot-data";
 
 const params = z.object({
   snapshotId: z.string().describe("Snapshot id from studiorpc_snapshot_list."),
+  compareToSnapshotId: z
+    .string()
+    .optional()
+    .describe("Required only for diff: the after snapshot. snapshotId is the before snapshot."),
   view: z
-    .enum(["tree", "instance", "script"])
+    .enum(["tree", "instance", "script", "diff"])
     .default("tree")
-    .describe("tree: saved hierarchy; instance: property JSON excluding Source; script: original Source text."),
+    .describe(
+      "tree: saved hierarchy; instance: properties excluding Source; script: original Source; diff: map-wide preservation changes.",
+    ),
   guid: z
     .string()
     .min(1)
     .optional()
-    .describe("Required for instance/script. For tree, optionally restrict to this saved subtree."),
+    .describe(
+      "Required for instance/script. For tree, optionally restrict to this saved subtree. Not allowed for diff.",
+    ),
   offset: z
     .number()
     .int()
     .min(0)
     .default(0)
-    .describe("Zero-based node offset for tree, character offset for instance/script. Use nextOffset to continue."),
+    .describe(
+      "Zero-based node offset for tree, change offset for diff, character offset for instance/script. Use nextOffset to continue.",
+    ),
   limit: z
     .number()
     .int()
@@ -30,7 +40,7 @@ const params = z.object({
     .max(8000)
     .optional()
     .describe(
-      "Page size: tree defaults to 50 nodes and caps larger requests at 200; instance/script default to 4000 characters (max 8000).",
+      "Page size: tree/diff default to 50 items and cap larger requests at 200; instance/script default to 4000 characters (max 8000).",
     ),
   includeConversation: z
     .boolean()
@@ -41,7 +51,10 @@ const params = z.object({
 const description =
   "Inspect a saved snapshot without rolling back or contacting Studio. Returns JSON with snapshot metadata, " +
   "the stored stateSummary, and paged map data. Start with tree to find saved GUIDs; use instance for properties " +
-  "or script for exact Source text. Continue with data.nextOffset when present; the output byte budget may " +
+  "or script for exact Source text. Use diff with compareToSnapshotId to compare before/after immutable maps by GUID, " +
+  "with added/removed/changed/unchanged counts, changed fields/property names and Source SHA-256, never full Source. " +
+  "Diff is map-wide (no guid), sorted by GUID; metadata and child ordering are excluded, stored properties are not whitelisted. " +
+  "Continue with data.nextOffset when present; the output byte budget may " +
   "return fewer items than limit. Concatenate instance content pages before parsing their property JSON. Read only the immutable " +
   "snapshot, so it works even if the current map changed or Studio is offline. With includeConversation=true, " +
   "also look up the exact userMessageId in its recorded transcript (text/time fallback for legacy snapshots). " +
@@ -151,31 +164,59 @@ export function createSnapshotContextTool(cwd: string): Tool {
     async execute(rawArgs, ctx): Promise<ToolResult> {
       const args = params.parse(rawArgs ?? {});
       ctx.signal.throwIfAborted();
+      const argumentError =
+        args.view === "diff"
+          ? args.compareToSnapshotId === undefined
+            ? "Snapshot diff view requires compareToSnapshotId."
+            : args.guid !== undefined
+              ? "Snapshot diff view is map-wide and does not accept guid."
+              : undefined
+          : args.compareToSnapshotId !== undefined
+            ? "compareToSnapshotId is only supported for the diff view."
+            : undefined;
+      if (argumentError) {
+        return { output: argumentError, metadata: { error: true, method: "snapshot.context" } };
+      }
       let snapshot: SnapshotEntry;
+      let compareToSnapshot: SnapshotEntry | undefined;
       try {
         snapshot = findSnapshotById(cwd, args.snapshotId);
+        if (args.view === "diff") compareToSnapshot = findSnapshotById(cwd, args.compareToSnapshotId!);
       } catch (error) {
         return { output: (error as Error).message, metadata: { error: true, method: "snapshot.context" } };
       }
-      let data: SnapshotDataPage | undefined;
+      let data: SnapshotDataPage | SnapshotDiffPage | undefined;
       let dataError: string | undefined;
       try {
-        data = await readSnapshotData(snapshot.path, {
-          view: args.view,
-          guid: args.guid,
-          offset: args.offset,
-          limit: args.view === "tree" ? Math.min(args.limit ?? 50, 200) : (args.limit ?? 4000),
-        });
+        if (args.view === "diff") {
+          data = await readSnapshotDiff(snapshot.path, compareToSnapshot!.path, {
+            offset: args.offset,
+            limit: Math.min(args.limit ?? 50, 200),
+          });
+        } else {
+          data = await readSnapshotData(snapshot.path, {
+            view: args.view,
+            guid: args.guid,
+            offset: args.offset,
+            limit: args.view === "tree" ? Math.min(args.limit ?? 50, 200) : (args.limit ?? 4000),
+          });
+        }
       } catch (error) {
         dataError = error instanceof Error ? error.message : String(error);
       }
       ctx.signal.throwIfAborted();
       const { path: _path, transcriptPath: _transcriptPath, ...metadata } = snapshot;
+      let comparisonMetadata: Omit<SnapshotEntry, "path" | "transcriptPath"> | undefined;
+      if (compareToSnapshot) {
+        const { path: _comparePath, transcriptPath: _compareTranscript, ...entry } = compareToSnapshot;
+        comparisonMetadata = { ...entry, summaryStatus: entry.summaryStatus ?? "unavailable" };
+      }
       const conversation = args.includeConversation ? readConversation(snapshot) : undefined;
       const render = () =>
         JSON.stringify(
           {
             snapshot: { ...metadata, summaryStatus: snapshot.summaryStatus ?? "unavailable" },
+            ...(comparisonMetadata ? { compareToSnapshot: comparisonMetadata } : {}),
             ...(data ? { data } : { dataError }),
             ...(conversation !== undefined ? { conversation } : {}),
           },
@@ -184,13 +225,18 @@ export function createSnapshotContextTool(cwd: string): Tool {
         );
       let output = render();
       while (data && Buffer.byteLength(output) > OUTPUT_BYTE_CAP) {
-        const length = data.view === "tree" ? data.nodes.length : data.content.length;
+        const length =
+          data.view === "tree" ? data.nodes.length : data.view === "diff" ? data.changes.length : data.content.length;
         if (length <= 1) {
-          dataError = "Snapshot metadata or instance identity exceeds the context output limit.";
+          dataError =
+            data.view === "diff"
+              ? "Snapshot metadata, instance identity or complete change record exceeds the context output limit."
+              : "Snapshot metadata or instance identity exceeds the context output limit.";
           data = undefined;
         } else {
           const keep = Math.floor(length / 2);
           if (data.view === "tree") data.nodes = data.nodes.slice(0, keep);
+          else if (data.view === "diff") data.changes = data.changes.slice(0, keep);
           else data.content = data.content.slice(0, keep);
           data.nextOffset = data.offset + keep;
         }
@@ -198,13 +244,18 @@ export function createSnapshotContextTool(cwd: string): Tool {
       }
       if (Buffer.byteLength(output) > OUTPUT_BYTE_CAP) {
         dataError = "Snapshot metadata exceeds the context output limit.";
-        output = JSON.stringify({ snapshot: { id: snapshot.id }, dataError });
+        output = JSON.stringify({
+          snapshot: { id: snapshot.id },
+          ...(compareToSnapshot ? { compareToSnapshot: { id: compareToSnapshot.id } } : {}),
+          dataError,
+        });
       }
       return {
         output,
         metadata: {
           method: "snapshot.context",
           snapshotId: snapshot.id,
+          ...(compareToSnapshot ? { compareToSnapshotId: compareToSnapshot.id } : {}),
           userMessageId: snapshot.userMessageId,
           ...(dataError !== undefined ? { error: true } : {}),
         },

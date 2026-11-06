@@ -57,6 +57,46 @@ The default `tree` view returns a flat preorder hierarchy with GUID, name, class
 
 Conversation lookup is off by default. When requested, it returns the linked user message plus up to four following text entries, each capped at 500 characters, stopping before the next user request. It does not run a separate LLM analysis: the calling agent interprets the excerpt. Messages following capture can describe later changes and are not evidence of the saved map state. An unreadable transcript does not prevent map inspection. An unreadable or invalid snapshot map returns `dataError` while retaining metadata and any requested conversation when they fit the output budget.
 
+### Compare two saved maps
+
+Use `view: "diff"` to compare the complete saved before/after maps without a live-world Lua dump, a property
+whitelist, a model request, or a custom audit script:
+
+```typescript
+studiorpc_snapshot_context({
+  snapshotId: "session_3",
+  compareToSnapshotId: "session_4",
+  view: "diff",
+  limit: 50,
+});
+```
+
+`snapshotId` is the before state; `compareToSnapshotId` is the after state. Diff is map-wide and rejects `guid`.
+The comparison ID is rejected on other views. Both IDs use the same safe direct lookup as ordinary context reads.
+Capture an after checkpoint with `studiorpc_snapshot_create({})` when needed; comparison itself never saves or
+changes Studio.
+
+The response includes metadata for both snapshots and a `data` page:
+
+- Global `counts` distinguish added, removed, changed and unchanged instances. `total` counts changes, not instances.
+- Rows are sorted by stable GUID. Before/after identities distinguish name, class and parent changes.
+- `changedProperties` covers all stored properties, including `Enabled`, transforms and read-only/unknown properties.
+  Derived caches can therefore appear as changes; the tool does not silently dismiss them as harmless.
+- `Source` changes use SHA-256 of the exact saved text, including line endings. Source bodies are never included.
+- `ActorGuid`, `ObjectKey`, `InstanceType`, `LuaChildren`, `Name` and `Parent` are separated from stored properties.
+  Identity/hierarchy changes use GUID, name, class and actual tree parentage; object keys and child ordering are ignored.
+  Property object-key order is ignored, but array order, value types and missing values remain significant.
+
+Pages default to 50 changes and cap larger requests at 200, within the same 40,000-byte response budget.
+Follow `data.nextOffset` with both IDs and `view: "diff"` unchanged. Global counts remain the same on every page.
+An empty out-of-range page is not a clean diff: check `total` and `counts`. Missing/duplicate GUIDs, malformed
+hierarchies, invalid maps and a single change too large to fit return an explicit error, not a preservation pass.
+
+This compares saved `.ovdrjm` documents only. It cannot prove external asset preservation, runtime correctness,
+visual/audio acceptance, or which changes were authorized. Inspect the changed rows against the requested scope;
+use the instance/script views on either snapshot for values or source text.
+
+
 ## State summaries
 
 New automatic, manual, and safety snapshots have `summaryStatus` in metadata:

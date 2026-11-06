@@ -1,6 +1,8 @@
-// @summary Reads bounded tree, instance, or script pages directly from an immutable snapshot file.
+// @summary Reads immutable snapshot pages and computes GUID-based saved-map preservation differences.
 
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
 import { pickInstanceProperties } from "../methods/instance-properties";
 import { decodeOvdrjm } from "./ovdrjm-utils";
 
@@ -137,9 +139,8 @@ function pageContent(
   };
 }
 
-/** Reads one bounded page from a saved .ovdrjm without touching the live project or Studio RPC. */
-export async function readSnapshotData(snapshotPath: string, options: SnapshotDataOptions): Promise<SnapshotDataPage> {
-  validatePage(options);
+/** Shared immutable-file parser; never resolves the current project map. */
+async function readSnapshotRoot(snapshotPath: string): Promise<SnapshotNode> {
   const bytes = await readFile(snapshotPath);
   let document: unknown;
   try {
@@ -151,6 +152,13 @@ export async function readSnapshotData(snapshotPath: string, options: SnapshotDa
   if (!isPlainRecord(root)) {
     throw new Error("Invalid snapshot .ovdrjm format: Root must be an object.");
   }
+  return root;
+}
+
+/** Reads one bounded page from a saved .ovdrjm without touching the live project or Studio RPC. */
+export async function readSnapshotData(snapshotPath: string, options: SnapshotDataOptions): Promise<SnapshotDataPage> {
+  validatePage(options);
+  const root = await readSnapshotRoot(snapshotPath);
 
   let target: LocatedNode = { node: root, depth: 0 };
   if (options.guid !== undefined) {
@@ -190,4 +198,148 @@ export async function readSnapshotData(snapshotPath: string, options: SnapshotDa
   const properties = pickInstanceProperties(target.node);
   delete properties.Source;
   return pageContent("instance", instance, JSON.stringify(properties, null, 2), options.offset, options.limit);
+}
+
+interface DiffIdentity {
+  name: string | null;
+  class: string | null;
+  parentGuid: string | null;
+}
+
+interface SnapshotChange {
+  guid: string;
+  status: "added" | "removed" | "changed";
+  before: DiffIdentity | null;
+  after: DiffIdentity | null;
+  changedFields: Array<keyof DiffIdentity>;
+  changedProperties: string[];
+  sourceSha256?: { before: string | null; after: string | null };
+}
+
+export interface SnapshotDiffPage {
+  view: "diff";
+  units: "changes";
+  offset: number;
+  total: number;
+  nextOffset?: number;
+  counts: { added: number; removed: number; changed: number; unchanged: number };
+  changes: SnapshotChange[];
+}
+
+interface DiffNode {
+  identity: DiffIdentity;
+  properties: Record<string, unknown>;
+}
+
+/** Fail closed rather than filtering malformed children or collapsing duplicate identities. */
+function indexSnapshot(root: SnapshotNode): Map<string, DiffNode> {
+  const nodes = new Map<string, DiffNode>();
+  const stack: Array<{ node: SnapshotNode; parentGuid: string | null }> = [{ node: root, parentGuid: null }];
+  while (stack.length > 0) {
+    const { node, parentGuid } = stack.pop()!;
+    const guid = node.ActorGuid;
+    if (typeof guid !== "string" || guid.trim().length === 0) {
+      throw new Error("Invalid snapshot identity: every instance must have a non-empty ActorGuid.");
+    }
+    if (nodes.has(guid)) throw new Error("Invalid snapshot identity: duplicate ActorGuid.");
+    if (node.Name !== undefined && typeof node.Name !== "string") {
+      throw new Error("Invalid snapshot identity: Name must be a string when present.");
+    }
+    if (node.InstanceType !== undefined && typeof node.InstanceType !== "string") {
+      throw new Error("Invalid snapshot identity: InstanceType must be a string when present.");
+    }
+    if (node.Source !== undefined && typeof node.Source !== "string") {
+      throw new Error("Invalid snapshot property: Source must be a string when present.");
+    }
+    nodes.set(guid, {
+      identity: {
+        name: typeof node.Name === "string" ? node.Name : null,
+        class: typeof node.InstanceType === "string" ? node.InstanceType : null,
+        parentGuid,
+      },
+      properties: pickInstanceProperties(node),
+    });
+    if (node.LuaChildren === undefined) continue;
+    if (!Array.isArray(node.LuaChildren)) {
+      throw new Error("Invalid snapshot hierarchy: LuaChildren must be an array when present.");
+    }
+    for (const child of node.LuaChildren) {
+      if (!isPlainRecord(child)) throw new Error("Invalid snapshot hierarchy: each child must be an object.");
+      stack.push({ node: child, parentGuid: guid });
+    }
+  }
+  return nodes;
+}
+
+/** Compare each saved file once; output shrinking slices this result, never rereads either map. */
+export async function readSnapshotDiff(
+  beforePath: string,
+  afterPath: string,
+  options: Pick<SnapshotDataOptions, "offset" | "limit">,
+): Promise<SnapshotDiffPage> {
+  validatePage({ ...options, view: "tree" });
+  const [beforeRoot, afterRoot] = await Promise.all([readSnapshotRoot(beforePath), readSnapshotRoot(afterPath)]);
+  const beforeNodes = indexSnapshot(beforeRoot);
+  const afterNodes = indexSnapshot(afterRoot);
+  const guids = [...new Set([...beforeNodes.keys(), ...afterNodes.keys()])].sort();
+  const counts = { added: 0, removed: 0, changed: 0, unchanged: 0 };
+  const changes: SnapshotChange[] = [];
+  let total = 0;
+  for (const guid of guids) {
+    const before = beforeNodes.get(guid);
+    const after = afterNodes.get(guid);
+    const changedFields: Array<keyof DiffIdentity> = [];
+    if (before && after) {
+      for (const field of ["name", "class", "parentGuid"] as const) {
+        if (before.identity[field] !== after.identity[field]) changedFields.push(field);
+      }
+    }
+    const propertyNames = new Set([...Object.keys(before?.properties ?? {}), ...Object.keys(after?.properties ?? {})]);
+    const changedProperties = [...propertyNames]
+      .filter(
+        (key) =>
+          !before ||
+          !after ||
+          !Object.hasOwn(before.properties, key) ||
+          !Object.hasOwn(after.properties, key) ||
+          !isDeepStrictEqual(before.properties[key], after.properties[key]),
+      )
+      .sort();
+    if (before && after && changedFields.length === 0 && changedProperties.length === 0) {
+      counts.unchanged++;
+      continue;
+    }
+    const status = !before ? "added" : !after ? "removed" : "changed";
+    counts[status]++;
+    const index = total++;
+    if (index < options.offset || changes.length >= options.limit) continue;
+    const beforeSource = before?.properties.Source;
+    const afterSource = after?.properties.Source;
+    changes.push({
+      guid,
+      status,
+      before: before?.identity ?? null,
+      after: after?.identity ?? null,
+      changedFields,
+      changedProperties,
+      ...(typeof beforeSource === "string" || typeof afterSource === "string"
+        ? {
+            sourceSha256: {
+              before: typeof beforeSource === "string" ? createHash("sha256").update(beforeSource).digest("hex") : null,
+              after: typeof afterSource === "string" ? createHash("sha256").update(afterSource).digest("hex") : null,
+            },
+          }
+        : {}),
+    });
+  }
+  const end = options.offset + changes.length;
+  return {
+    view: "diff",
+    units: "changes",
+    offset: options.offset,
+    total,
+    ...(end < total ? { nextOffset: end } : {}),
+    counts,
+    changes,
+  };
 }
