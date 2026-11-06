@@ -662,6 +662,45 @@ describe("native compaction adapters", () => {
     }
   });
 
+  test("Anthropic adapter retries inline when Messages rejects file image sources", async () => {
+    const messageImageSources: string[] = [];
+    let uploads = 0;
+    globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url instanceof Request ? url.url : url).includes("/v1/files")) {
+        uploads += 1;
+        return Response.json({ id: `file_${uploads}`, type: "file" });
+      }
+      const body = JSON.parse(String(init?.body)) as {
+        messages: Array<{ content: Array<{ source?: { type: string } }> }>;
+      };
+      const sourceType = body.messages[0]?.content.find((block) => block.source)?.source?.type ?? "none";
+      messageImageSources.push(sourceType);
+      if (sourceType === "file") {
+        return Response.json(
+          { error: { type: "invalid_request_error", message: "file source not supported" } },
+          { status: 400 },
+        );
+      }
+      return Response.json({ content: [{ type: "compaction", content: "summary" }], stop_reason: "compaction" });
+    }) as unknown as typeof fetch;
+    const imageMessage = (data: string) => ({
+      role: "user" as const,
+      content: [
+        { type: "image" as const, source: { type: "base64" as const, media_type: "image/png" as const, data } },
+      ],
+      timestamp: 1,
+    });
+
+    const adapter = createAnthropicNativeCompaction("sk-ant-compaction-rejects-files", "https://api.anthropic.com");
+    const first = await adapter({ model: ANTHROPIC_MODEL, systemPrompt: [], messages: [imageMessage("Zmlyc3Q=")] });
+    const second = await adapter({ model: ANTHROPIC_MODEL, systemPrompt: [], messages: [imageMessage("c2Vjb25k")] });
+
+    expect(first.status).toBe("ok");
+    expect(second.status).toBe("ok");
+    expect(messageImageSources).toEqual(["file", "base64", "base64"]);
+    expect(uploads).toBe(1);
+  });
+
   test("Anthropic adapter trims trailing assistant turns before native compaction request", async () => {
     let capturedBody: Record<string, unknown> = {};
     globalThis.fetch = mock(async (_url: string | URL, init?: RequestInit) => {
