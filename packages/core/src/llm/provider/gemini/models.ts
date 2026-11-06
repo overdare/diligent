@@ -37,7 +37,13 @@ export const GEMINI_MODELS = defineProviderModels("gemini", [
     supportsThinking: true,
     supportedEfforts: ["low", "medium", "high"],
     supportsVision: true,
-    aliases: ["gemini-pro", "gemini-flash", "gemini"],
+    // This historical endpoint remains available but Google serves Gemini 3.6 Flash for it.
+    aliases: ["gemini-pro", "gemini-flash", "gemini", "gemini-3.5-flash"],
+    provenance: {
+      source: "Gemini 3.6 Flash model documentation and routed Gemini 3.5 deprecation",
+      sourceUrl: "https://aistudio.google.com/docs/deprecations#gemini-3-models",
+      updatedAt: "2026-11-05",
+    },
   },
   {
     modelId: "gemini-3.5-flash-lite",
