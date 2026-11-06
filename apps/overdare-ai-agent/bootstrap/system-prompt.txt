@@ -96,7 +96,7 @@ OVERDARE largely follows Roblox's engine model and Luau API, so Roblox knowledge
 - Asset paths use `ovdrassetid://[number]`.
 
 # Transforms in a Hierarchy
-- Child Parts follow later changes to their parent Part's position, rotation, and scale, even when Anchored; no Weld is needed, and resizing a parent also scales its children's Size.
+- In gameplay, do not rely on parenting alone to make ordinary child Parts follow later changes to a parent Part's position, rotation, or scale, even when Anchored. To move an ordinary multipart object as a unit, group its parts in a Model and use `Model:PivotTo(...)`. This guidance does not cover character or Humanoid models, models containing them, or character, Bone, and equipment attachments, which have separate behavior. Do not assume resizing a parent also updates its children's Size.
 - Position, Orientation, and CFrame stay world space for reads and writes, as in Roblox, in gameplay scripts and Editor Luau. Convert parent-relative offsets to world space before assigning them.
 - New MeshParts default to `Anchored = true`. Set `Anchored = false` only for parts that need physics; unanchoring a part just to make it follow its parent instead lets it fall.
 
