@@ -192,6 +192,7 @@ describe("createAnthropicStream", () => {
     "claude-opus-5-5",
     "claude-sonnet-5-5",
     "claude-haiku-5-5",
+    "claude-fable-5-1",
   ])("requests stale-block dropping for %s when a replayed conversation prefix changes", async (modelId) => {
     const model = resolveModel({ provider: "anthropic", modelId });
     const context: StreamContext = {
