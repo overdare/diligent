@@ -83,7 +83,8 @@ const server = Bun.serve({
         await next;
         return Response.json({ mode });
       } catch (error) {
-        return new Response(String(error), { status: 500 });
+        console.error("Failed to apply lab control update:", error);
+        return new Response("Internal server error", { status: 500 });
       }
     }
     if (url.pathname !== "/") return new Response("Not found", { status: 404 });
