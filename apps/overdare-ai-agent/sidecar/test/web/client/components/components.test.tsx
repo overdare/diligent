@@ -1361,6 +1361,11 @@ test("app header exposes sidebar toggle state and target", () => {
   expect(html).toContain('aria-label="Close sidebar"');
   expect(html).toContain('aria-controls="app-sidebar"');
   expect(html).toContain('aria-expanded="true"');
+  expect(html).toContain('href="/claude"');
+  expect(html).toContain('href="/terminal"');
+  expect(html).toContain('aria-label="Open terminal"');
+  expect(html).toContain('aria-label="Open Claude Code"');
+  expect(html).toContain("Run claude in a local terminal");
 });
 
 test("app header shows new conversation action only when sidebar is closed", () => {

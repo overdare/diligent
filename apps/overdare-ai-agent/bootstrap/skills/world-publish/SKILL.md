@@ -7,7 +7,7 @@ description: "Use when the user wants to make the current OVERDARE Studio world 
 
 This document defines the workflow for publishing the current OVERDARE Studio world. The official term is **world**, but users may call it a project, game, map, experience, content, or build.
 
-The key decision is **whether this world has already been published**, tracked via the `overdare.publish_state` Knowledge card.
+The key decision is **whether this world has already been published**. Keep that fact in the project's available memory or documents, for example under the topic `overdare.publish_state`.
 
 ## Required Tools
 
@@ -21,8 +21,6 @@ This skill expects the agent runtime to provide these tools. All of them are fir
   - If the world was already published, call it without metadata fields.
   - Studio opens the Creator Hub publish page in the browser after this call.
   - Error code `-32009` means the user canceled the publish in the Studio UI. Treat it as a final outcome and do not retry automatically — just tell the user it was canceled.
-- `update_knowledge`
-  - Records the publish state after a successful publish (see Step 7). Use the stable id `overdare.publish_state` so updates replace the same entry.
 - `hub_world_categories_list`
   - Returns `{ categories: string[] }` with the valid category labels accepted by the backend at the moment of the call. Use the returned values exactly as-is (preserve case).
 
@@ -30,14 +28,16 @@ If `studiorpc_level_publish` is unavailable, stop and tell the user that publish
 
 If `hub_world_categories_list` is unavailable or fails for an authentication or network reason, follow the fallbacks defined per step below.
 
+Recording the result does not require a particular tool. Use the current harness's memory facility or a project document. For example, `update_knowledge` can update a stable entry when available, while native agent memory or `docs/notes/publish-state.md` can preserve the same information elsewhere.
+
 ## High-Level Workflow
 
 1. Confirm the user wants to publish or make the current world live.
 2. Save the current project by calling `studiorpc_level_save_file`. If this tool is not available in the current toolset, skip saving and warn the user that the publish may use a stale state.
-3. Check the Knowledge cards already injected into this session's context for the `overdare.publish_state` card (identified by the `OVERDARE_PUBLISH_STATE` content marker; see Step 1).
-4. If the card is missing or does not say `published: true`, treat the world as **not yet published**: prepare metadata and call `studiorpc_level_publish` with metadata fields.
-5. If the card says `published: true`, treat the world as **already published**: call `studiorpc_level_publish` without metadata fields.
-6. If the publish call returns `{ success: true }`, record `published: true` to Knowledge via `update_knowledge` (stable id `overdare.publish_state`).
+3. Check the current project's available publish-state notes, whether already in context, native memory, or project documents (see Step 1).
+4. If the records confirm the world has **not yet been published**, prepare metadata and call `studiorpc_level_publish` with metadata fields. If the state is unknown, resolve it with available Studio/Hub information or the user before choosing a publish mode.
+5. If the records confirm `published: true`, call `studiorpc_level_publish` without metadata fields.
+6. If the publish call returns `{ success: true }`, record `published: true` using the available memory or document mechanism, updating the same project/topic.
 7. Report the result and tell the user to review/confirm on the Creator Hub page in the browser if needed.
 
 ## Step 1: Determine Whether the World Was Already Published
@@ -48,7 +48,7 @@ The important question is:
 Has this world already been published successfully from this project?
 ```
 
-Check the Knowledge cards already injected into this session's context (no lookup tool call is needed). Injected cards show only their type and content, not their id, so identify the `overdare.publish_state` card by the marker at the start of its content:
+Use publish-state notes already in context when present; otherwise consult the current project's available memory or documents. Keep records scoped to this project. One example of a recognizable content marker is:
 
 ```text
 OVERDARE_PUBLISH_STATE
@@ -56,12 +56,13 @@ OVERDARE_PUBLISH_STATE
 
 Interpret it:
 
-- Card missing, or its content does not contain `published: true` → treat the world as **not yet published**. Prepare metadata and call `studiorpc_level_publish` with metadata fields.
-- Card present with `published: true` → treat the world as **already published**. Call `studiorpc_level_publish` without metadata fields.
+- Confirmed `published: false` or a confirmed first publish → prepare metadata and call `studiorpc_level_publish` with metadata fields.
+- Confirmed `published: true` → call `studiorpc_level_publish` without metadata fields.
+- Missing, ambiguous, or inaccessible notes → the state is unknown. Check available Studio/Hub information or ask the user whether this project was published before. An unavailable memory system does not mean the world is new.
 
 ## Step 2: Publish When the World Was Already Published
 
-The world counts as already published when the `overdare.publish_state` Knowledge card is present with `published: true`.
+The world counts as already published when the project's records or verified Studio/Hub information confirm `published: true`.
 
 In this case, call:
 
@@ -77,7 +78,7 @@ After calling `studiorpc_level_publish`, Studio should open the Creator Hub publ
 
 ## Step 3: Publish When the World Was Not Published Before
 
-The world counts as not yet published when the `overdare.publish_state` Knowledge card is missing or does not contain `published: true`.
+The world counts as not yet published when available evidence or the user confirms this is its first publish. Missing memory alone is not evidence of a first publish.
 
 In this case, prepare metadata and call `studiorpc_level_publish` with the metadata fields as top-level arguments.
 
@@ -356,17 +357,15 @@ After calling `studiorpc_level_publish`, Studio should open the Creator Hub publ
 
 ### Record the Publish State
 
-Only when `studiorpc_level_publish` returns `{ success: true }`, record the state so future sessions know this world was published:
+Only when `studiorpc_level_publish` returns `{ success: true }`, record the state using the available project-memory or document mechanism so future sessions know this world was published. For example, update the existing publish-state note with:
 
 ```text
-update_knowledge({
-	id: "overdare.publish_state",
-	type: "discovery",
-	content: "OVERDARE_PUBLISH_STATE\npublished: true"
-})
+topic: overdare.publish_state
+OVERDARE_PUBLISH_STATE
+published: true
 ```
 
-Do not record anything when the call fails or returns error `-32009` (user canceled) — a canceled or failed publish means the world may still not exist on the backend, so the next attempt must send metadata fields again.
+Do not mark the publish as successful when the call fails or returns error `-32009` (user canceled). Preserve any previously confirmed publish state; a failed update does not make an existing world new.
 
 ### Handling `studiorpc_level_publish` Errors
 
@@ -395,14 +394,13 @@ Stop and explain the issue when:
 
 Treat the world as **not yet published** and call `studiorpc_level_publish` with metadata fields when:
 
-- The `overdare.publish_state` Knowledge card is missing from this session's context.
-- The card exists but does not contain `published: true`.
+- Available records or the user confirm this project has never been published.
 
 Treat the world as **already published** and call `studiorpc_level_publish` without metadata fields when:
 
-- The `overdare.publish_state` Knowledge card is present with `published: true`.
+- Available project records or verified Studio/Hub information confirm `published: true`.
 
-Record `published: true` to Knowledge (stable id `overdare.publish_state`) only after `studiorpc_level_publish` returns `{ success: true }` — never on cancel or error.
+If the publish state is unknown, resolve it before choosing a mode. Record `published: true` in the available project memory or documents only after `studiorpc_level_publish` returns `{ success: true }` — never on cancel or error.
 
 ## Key Rules
 

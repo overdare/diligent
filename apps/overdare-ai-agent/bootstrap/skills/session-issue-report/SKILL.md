@@ -1,6 +1,6 @@
 ---
 name: session-issue-report
-description: Use when Studio behavior contradicts checked valid input or a documented contract, the agent's own mistaken approach wastes meaningful work, or a missing capability or concrete improvement would materially help the current task. Includes useful feature requests even when the task ultimately succeeds, and supported bug suspicions whose root cause is not yet proven.
+description: "Diligent harness only; requires its agent_report tool. Use when Studio behavior contradicts checked valid input or a documented contract, the agent's own mistaken approach wastes meaningful work, or a missing capability or concrete improvement would materially help the current task. Includes useful feature requests even when the task ultimately succeeds, and supported bug suspicions whose root cause is not yet proven."
 ---
 
 # Session Issue Report

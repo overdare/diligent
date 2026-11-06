@@ -1,6 +1,8 @@
 // @summary Top navigation bar: sidebar toggle, thread status, title, and tool/knowledge buttons
 
+import { ClaudeIcon } from "./ClaudeIcon";
 import { Landmark, Menu, Settings, SquarePen } from "./icons";
+import { TerminalCommandIcon } from "./TerminalCommandIcon";
 import { iconButtonClasses } from "./ui-styles";
 
 interface AppHeaderProps {
@@ -59,12 +61,23 @@ export function AppHeader({
         </span>
       )}
       <span className="min-w-0 flex-1 truncate text-xs text-muted/90">{threadTitle || "NEW CONVERSATION"}</span>
+      <a href="/terminal" title="Open a project shell" aria-label="Open terminal" className={iconButtonClasses}>
+        <TerminalCommandIcon className="h-4 w-4" />
+      </a>
+      <a
+        href="/claude"
+        title="Run claude in a local terminal"
+        aria-label="Open Claude Code"
+        className={iconButtonClasses}
+      >
+        <ClaudeIcon className="h-4 w-4 text-[#d97757]" />
+      </a>
       <button
         type="button"
         onClick={onOpenKnowledge}
         aria-label="Open knowledge"
         title="Knowledge"
-        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-knowledge-backlog/35 bg-knowledge-backlog/12 text-sm text-knowledge-backlog/90 transition hover:border-knowledge-backlog/55 hover:bg-knowledge-backlog/18 hover:text-knowledge-backlog"
+        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-knowledge-backlog/12 text-sm text-knowledge-backlog/90 transition hover:bg-knowledge-backlog/18 hover:text-knowledge-backlog"
       >
         <Landmark className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
       </button>

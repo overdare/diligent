@@ -45,6 +45,8 @@ open one.";
 pub struct McpRouterOptions {
     pub registry_dir: std::path::PathBuf,
     pub default_active_studio_id: Option<String>,
+    /// Host supplies Studio instructions and binds this connection to one immutable owner.
+    pub embedded_studio_id: Option<String>,
 }
 
 /// Everything the request handlers need. `catalog` is re-read per request rather than cached at
@@ -52,10 +54,17 @@ pub struct McpRouterOptions {
 struct RouterState {
     router: StudioRouter,
     registry_dir: std::path::PathBuf,
+    embedded_studio_id: Option<String>,
 }
 
 impl RouterState {
     fn catalog(&self) -> CatalogSnapshot {
+        if let Some(id) = &self.embedded_studio_id {
+            return self.router.live_studios().into_iter()
+                .find(|record| &record.id == id)
+                .and_then(|record| record.catalog)
+                .unwrap_or_default();
+        }
         studio_registry::best_catalog(
             &self.registry_dir,
             chrono::Utc::now(),
@@ -70,8 +79,12 @@ impl RouterState {
     /// contain the same name would otherwise make selection unreachable.
     fn tools(&self) -> Vec<ToolDescriptor> {
         let mut tools = studio_router::session_tools();
+        if self.embedded_studio_id.is_some() {
+            tools.retain(|tool| tool.name == GET_ACTIVE_OVERDARE_STUDIO);
+        }
         for tool in self.catalog().tools {
-            if studio_router::is_session_tool(&tool.name) {
+            if studio_router::is_session_tool(&tool.name)
+                || (self.embedded_studio_id.is_some() && matches!(tool.name.as_str(), "ensure_system_prompt" | "load_skill")) {
                 continue;
             }
             tools.push(tool);
@@ -84,12 +97,26 @@ impl RouterState {
     }
 
     fn instructions(&self) -> String {
+        if self.embedded_studio_id.is_some() {
+            return "Studio development instructions have already been appended by the host. \
+                Use the native overdare plugin for task-specific skills. This connection is bound to \
+                its owning Studio; if that Studio closes, stop and ask the user to reopen it. \
+                Never select another Studio or infer a replacement target.".to_string();
+        }
         match self.catalog().instructions {
             Some(studio) if !studio.trim().is_empty() => {
                 format!("{ROUTER_INSTRUCTIONS}\n\n{studio}")
             }
             _ => ROUTER_INSTRUCTIONS.to_string(),
         }
+    }
+
+    async fn resolve(&self) -> Result<studio_registry::StudioInstanceRecord, String> {
+        if let Some(id) = &self.embedded_studio_id {
+            return self.router.live_studios().into_iter().find(|record| &record.id == id)
+                .ok_or_else(|| format!("The owning Studio {id} is no longer available. Reopen its terminal from that Studio. This connection cannot switch projects."));
+        }
+        self.router.resolve().await
     }
 
     /// A fingerprint of what the client currently believes. When it changes, the client is told to
@@ -128,7 +155,7 @@ async fn handle(state: &RouterState, request: &Request, id: &Value) -> Value {
         "tools/call" => Ok(call_tool(state, request).await.to_value()),
         "prompts/get" => match request.param_str("name") {
             None => Err((INVALID_PARAMS, "prompts/get requires a name".to_string())),
-            Some(name) => match state.router.resolve().await {
+            Some(name) => match state.resolve().await {
                 // A prompt lives in a Studio's bootstrap dir, so it needs a target just like a tool
                 // does. Reported as a JSON-RPC error because prompts/get has no isError channel.
                 Err(message) => Err((INTERNAL_ERROR, message)),
@@ -162,6 +189,18 @@ async fn call_tool(state: &RouterState, request: &Request) -> ToolCallResult {
         .cloned()
         .unwrap_or_else(|| json!({}));
 
+    if state.embedded_studio_id.is_some() {
+        if matches!(name, "ensure_system_prompt" | "load_skill" | LIST_OVERDARE_STUDIOS | SET_ACTIVE_OVERDARE_STUDIO) {
+            return ToolCallResult::failure("This tool is unavailable in a host-configured Studio session.");
+        }
+        if name == GET_ACTIVE_OVERDARE_STUDIO {
+            return match state.resolve().await {
+                Ok(record) => ToolCallResult::text(json!({"id": record.id, "cwd": record.cwd, "hubEndpoint": record.hub_endpoint}).to_string()),
+                Err(message) => ToolCallResult::failure(message),
+            };
+        }
+    }
+
     match name {
         LIST_OVERDARE_STUDIOS => return state.router.tool_list_studios().await,
         SET_ACTIVE_OVERDARE_STUDIO => return state.router.tool_set_active(&args).await,
@@ -171,7 +210,7 @@ async fn call_tool(state: &RouterState, request: &Request) -> ToolCallResult {
 
     // Ambiguity and "no Studio open" surface as tool errors, not JSON-RPC errors: the model has to
     // read them and act (list, then select), which it cannot do with a protocol-level failure.
-    let record = match state.router.resolve().await {
+    let record = match state.resolve().await {
         Ok(record) => record,
         Err(message) => return ToolCallResult::failure(message),
     };
@@ -180,7 +219,11 @@ async fn call_tool(state: &RouterState, request: &Request) -> ToolCallResult {
         .as_ref()
         .map(|id| id.to_string())
         .unwrap_or_else(|| "0".to_string());
-    state.router.call_tool(&record, name, &args, &call_id).await
+    if state.embedded_studio_id.is_some() {
+        state.router.call_tool_with_binding(&record, name, &args, &call_id, true).await
+    } else {
+        state.router.call_tool(&record, name, &args, &call_id).await
+    }
 }
 
 /// Run the stdio MCP router until stdin closes.
@@ -196,6 +239,7 @@ pub async fn run_mcp_router(options: McpRouterOptions) -> Result<(), String> {
     let state = Arc::new(RouterState {
         router,
         registry_dir: options.registry_dir,
+        embedded_studio_id: options.embedded_studio_id,
     });
 
     eprintln!(
@@ -385,6 +429,7 @@ mod tests {
             })
             .expect("router"),
             registry_dir: dir,
+            embedded_studio_id: None,
         }
     }
 
@@ -424,6 +469,39 @@ mod tests {
             ]
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn embedded_catalog_uses_only_its_owner_and_omits_prompt_bootstrap() {
+        let dir = temp_dir("embedded-catalog");
+        write_record(&dir, "owner", &["ensure_system_prompt", "load_skill", "owner_tool"]);
+        write_record(&dir, "other", &["other_tool"]);
+        let mut state = state(dir.clone());
+        state.embedded_studio_id = Some("owner".to_string());
+        let names: Vec<String> = state.tools().into_iter().map(|tool| tool.name).collect();
+        assert!(names.contains(&"owner_tool".to_string()));
+        assert!(!names.contains(&"load_skill".to_string()));
+        assert!(!names.contains(&"ensure_system_prompt".to_string()));
+        assert!(!names.contains(&"other_tool".to_string()));
+        assert!(!names.contains(&SET_ACTIVE_OVERDARE_STUDIO.to_string()));
+        assert!(!state.instructions().contains("ensure_system_prompt"));
+        for name in ["ensure_system_prompt", SET_ACTIVE_OVERDARE_STUDIO, LIST_OVERDARE_STUDIOS] {
+            let result = respond(&state, 1, "tools/call", json!({"name": name, "arguments": {"id": "other"}}));
+            assert_eq!(result["result"]["isError"], true, "direct call must be blocked: {name}");
+        }
+        let failed = respond(&state, 2, "tools/call", json!({"name": "owner_tool", "arguments": {}}));
+        assert_eq!(failed["result"]["isError"], true);
+        let recovery = failed["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(recovery.contains("owning Studio"), "{recovery}");
+        assert!(!recovery.contains(LIST_OVERDARE_STUDIOS), "{recovery}");
+        assert!(!recovery.contains(SET_ACTIVE_OVERDARE_STUDIO), "{recovery}");
+        assert_eq!(runtime().block_on(state.resolve()).unwrap().id, "owner");
+        fs::remove_file(dir.join("owner.json")).unwrap();
+        assert!(!state.tools().iter().any(|tool| tool.name == "other_tool"));
+        let error = runtime().block_on(state.resolve()).unwrap_err();
+        assert!(error.contains("owner"));
+        assert_eq!(state.embedded_studio_id.as_deref(), Some("owner"));
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

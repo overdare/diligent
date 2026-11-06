@@ -5,24 +5,24 @@ description: "Use to RECORD durable OVERDARE Studio project memory — before th
 
 # Record Project Memory Skill
 
-This skill **records** durable OVERDARE Studio project memory into two stores:
+This skill **records** durable OVERDARE Studio project memory using the facilities available in the current agent harness:
 
-- **Knowledge**: short, current handoff cards for fast resume.
+- **Project memory**: short, current handoff notes for fast resume, using a memory tool, native agent memory, or project-local notes.
 - **Project docs**: longer human-readable design, planning, and decision records.
 
 Record only what a future session would otherwise lose: confirmed decisions, plans, milestones, and durable preferences. Never copy what is already visible in the current Studio world, scripts, instances, or logs — that is re-readable state, not memory.
 
 ## Core Rule
 
-Docs hold the full explanation. Knowledge holds the current resume summary and links to those docs.
+Docs hold the full explanation. Project memory holds the current resume summary and links to those docs. These may be maintained in the same project document when no separate memory facility is available; do not create duplicate stores merely to follow this structure.
 
-If information is long, debated, historical, or reviewable by people, put it in docs and store only a short pointer in Knowledge.
+If information is long, debated, historical, or reviewable by people, put it in docs and keep only a short pointer in the current memory summary.
 
-If information directly changes what the agent should do next session, keep a short active summary in Knowledge.
+If information directly changes what the agent should do next session, keep a short active summary in project memory.
 
-## What Belongs in Knowledge
+## What Belongs in Project Memory
 
-Use Knowledge for compact, current, action-oriented handoff cards. For each recurring card, use a stable id so updates replace the same entry instead of creating duplicates:
+Keep compact, current, action-oriented handoff notes. Use a stable topic, heading, file, or entry id so updates replace the same information instead of creating duplicates. The following names are suggested conventions, not a required storage API:
 
 - `overdare.project_brief` — `OVERDARE_PROJECT_BRIEF`: current game concept, genre, core loop, current goal.
 - `overdare.doc_index` — `OVERDARE_DOC_INDEX`: important docs paths for this project.
@@ -31,9 +31,9 @@ Use Knowledge for compact, current, action-oriented handoff cards. For each recu
 - `overdare.decision.<short_topic>` — `OVERDARE_DECISION`: one decision per entry, with a docs pointer when available.
 - `overdare.preference.<short_topic>` — `OVERDARE_USER_PREFERENCE`: one durable project preference per entry.
 
-When calling `update_knowledge`, always store these cards with `type: "discovery"` and the card's stable `id`. The `OVERDARE_*` marker and its fields go in `content`. (`type` is only a display label — retrieval and grouping rely on the stable `id` and the `OVERDARE_*` marker, not on `type`.)
+Choose the available recording mechanism. For example, a harness with `update_knowledge` can update a stable entry; Claude Code can use its native memory or a project document such as `docs/README.md`. Preserve the information and update existing notes; no particular tool, argument schema, or marker format is required.
 
-Keep entries short. Prefer updating an existing entry over adding a near-duplicate. Each entry must stay under 1,000 characters; if details would exceed that, move them into project docs and keep only a short summary, status, and docs link in Knowledge.
+Keep summaries short and respect the selected storage mechanism's limits. Prefer updating an existing note over adding a near-duplicate. Move lengthy details into project docs and keep only a short summary, status, and docs link in the active memory summary.
 
 ## What Belongs in Docs
 
@@ -44,7 +44,7 @@ Use project-local docs for information that should be read, reviewed, or preserv
 - Milestone plans and acceptance criteria.
 - Architecture Decision Records (ADRs).
 - Brainstorming notes and meeting notes.
-- Detailed implementation notes that are too long for Knowledge.
+- Detailed implementation notes that are too long for the active memory summary.
 
 Recommended project-local docs layout:
 
@@ -69,23 +69,23 @@ Recommended project-local docs layout:
 Always treat docs paths in this skill as relative to the current project working directory.
 
 - Correct: `<project cwd>/docs/design/game-overview.md`
-- Correct Knowledge pointer: `docs/design/game-overview.md`
+- Correct memory pointer: `docs/design/game-overview.md`
 
 If the current project does not have a `docs/` directory yet, create it in the project working directory only when durable planning/design records or meaningful decisions/plans need a docs home.
 
-## Recording Harness
+## Recording Guidelines
 
 When you record durable information:
 
 1. Prefer updating `OVERDARE_CURRENT_PLAN`, `OVERDARE_IMPLEMENTATION_MAP`, or an existing decision over adding a new duplicate entry.
-2. Put long, reviewable detail in docs; keep a short active summary plus a docs pointer in Knowledge.
+2. Put long, reviewable detail in docs; keep a short active summary plus a docs pointer in project memory.
 3. Mark outdated decisions as `superseded`; never leave conflicting active decisions.
 4. Do not record temporary debug state, unconfirmed ideas, or minor cosmetic tweaks.
 5. If, after finishing work, there is nothing durable to record, record nothing and say so. Do not create filler entries.
 
-## Knowledge Entry Templates
+## Memory Content Examples
 
-Use concise content like these examples.
+Use concise content like these examples, adapting headings and identifiers to the available memory mechanism.
 
 ### Project Brief
 
@@ -223,7 +223,7 @@ When you record memory or docs, briefly tell the user what changed:
 
 ```text
 I updated the project handoff:
-- Knowledge: current plan and implementation map
+- Project memory: current plan and implementation map
 - Docs: docs/design/combat-system.md
 - Next session can resume from: HP UI connection
 ```
