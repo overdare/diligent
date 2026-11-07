@@ -119,8 +119,16 @@ describe("ChatGPT HTTP transport", () => {
     expect((body.input as Array<Record<string, unknown>>)[0]).toMatchObject({ type: "additional_tools" });
   });
 
-  test("sends GPT-6.1 Sol, Terra, and Luna through ChatGPT Responses Lite", async () => {
-    for (const modelId of ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"]) {
+  test("sends current and previous-generation ChatGPT models through Responses Lite", async () => {
+    for (const modelId of [
+      "gpt-6.1-sol",
+      "gpt-6.1-terra",
+      "gpt-6-luna",
+      "gpt-6-sol",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+    ]) {
       const model = resolveModel({ provider: "chatgpt", modelId });
       const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
       globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
