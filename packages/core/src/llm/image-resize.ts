@@ -1,0 +1,472 @@
+// @summary Downscale oversized images before base64 encoding. Vision token cost is driven by pixel
+// resolution (≈ width×height/750 for Anthropic), NOT by base64/byte size — base64 is just transport,
+// decoded server-side before the vision encoder runs. Capping the long edge keeps token cost bounded
+// and uniform across providers (Anthropic auto-resizes; OpenAI/Gemini do not).
+
+// `with { type: "file" }` makes bun embed the wasm into the compiled single-file binary; the import
+// resolves to a path we read at runtime and hand to each codec's init — bypassing the broken
+// fetch/streaming-instantiate path that fails under `bun build --compile`. This is a bun-only import
+// form with no portable .wasm types (and an ambient declaration here would not reach the dependent
+// packages that compile these files), so each is suppressed individually.
+// @ts-expect-error -- file import yields a path string at runtime
+import jpegDecWasm from "@jsquash/jpeg/codec/dec/mozjpeg_dec.wasm" with { type: "file" };
+// @ts-expect-error -- file import yields a path string at runtime
+import jpegEncWasm from "@jsquash/jpeg/codec/enc/mozjpeg_enc.wasm" with { type: "file" };
+import decodeJpeg, { init as initJpegDecode } from "@jsquash/jpeg/decode";
+import encodeJpeg, { init as initJpegEncode } from "@jsquash/jpeg/encode";
+// @ts-expect-error -- file import yields a path string at runtime
+import pngWasm from "@jsquash/png/codec/pkg/squoosh_png_bg.wasm" with { type: "file" };
+import decodePng, { init as initPngDecode } from "@jsquash/png/decode";
+import encodePng, { init as initPngEncode } from "@jsquash/png/encode";
+import resize, { initResize } from "@jsquash/resize";
+// @ts-expect-error -- file import yields a path string at runtime
+import resizeWasm from "@jsquash/resize/lib/resize/pkg/squoosh_resize_bg.wasm" with { type: "file" };
+// @ts-expect-error -- file import yields a path string at runtime
+import webpDecWasm from "@jsquash/webp/codec/dec/webp_dec.wasm" with { type: "file" };
+// @ts-expect-error -- file import yields a path string at runtime
+import webpEncWasm from "@jsquash/webp/codec/enc/webp_enc.wasm" with { type: "file" };
+import decodeWebp, { init as initWebpDecode } from "@jsquash/webp/decode";
+import encodeWebp, { init as initWebpEncode } from "@jsquash/webp/encode";
+import type { Tool } from "../tool/types";
+import type { ImageBlock } from "../types";
+
+export type ResizableMediaType = "image/png" | "image/jpeg" | "image/webp";
+
+// Anthropic processes images at no token penalty up to 1568px on the long edge (~1.15 MP). Matching
+// that threshold means we send the smallest image that costs the least without sacrificing detail
+// the model could use.
+export const DEFAULT_MAX_LONG_EDGE = 1568;
+
+// Decoding allocates width×height×4 bytes of RGBA. Refuse to decode past this ceiling so a
+// pathologically large image (e.g. a 30 MB PNG that expands to gigabytes) cannot OOM the runtime;
+// such images pass through untouched and are bounded by the caller's transport-size cap instead.
+const MAX_DECODE_PIXELS = 64 * 1024 * 1024; // 64 MP ≈ 256 MB RGBA
+
+// mozjpeg / webp are lossy; 80 keeps screenshots/photos legible to the vision model while shrinking
+// payload well below the source. PNG re-encode is lossless so it takes no quality option.
+const JPEG_QUALITY = 80;
+const WEBP_QUALITY = 80;
+
+// Byte backstop: outputs above this get force-recompressed even when their pixel dimensions are
+// within the long-edge cap. The pixel cap bounds bytes for normal photos/screenshots, but not for
+// pathological cases (e.g. a noise-heavy PNG that stays multi-MB at 1568px). 2 MB keeps the worst
+// case comfortably under Anthropic's ~5 MB per-image and 32 MB per-request transport limits.
+const MAX_ENCODED_BYTES = 2 * 1024 * 1024;
+
+type ImageDataLike = { data: Uint8ClampedArray; width: number; height: number };
+
+/** Center-crop without stretching and encode an exact-size square PNG, preserving the source. */
+export async function resizeImageToSquarePng(
+  bytes: ArrayBuffer,
+  mediaType: ResizableMediaType,
+  size: number,
+  options: { signal?: AbortSignal } = {},
+): Promise<{
+  bytes: ArrayBuffer;
+  source: { width: number; height: number };
+  crop: { x: number; y: number; width: number; height: number };
+}> {
+  const { signal } = options;
+  signal?.throwIfAborted();
+  if (!Number.isSafeInteger(size) || size < 1 || size * size > MAX_DECODE_PIXELS) {
+    throw new Error("Invalid or oversized square image size.");
+  }
+  const dimensions = imageDimensionsFromHeader(new Uint8Array(bytes), mediaType);
+  if (
+    !dimensions ||
+    dimensions.width < 1 ||
+    dimensions.height < 1 ||
+    dimensions.width * dimensions.height > MAX_DECODE_PIXELS
+  ) {
+    throw new Error("Invalid or oversized source image dimensions.");
+  }
+  const source = await decodeImage(bytes, mediaType);
+  signal?.throwIfAborted();
+  const side = Math.min(source.width, source.height);
+  const crop = {
+    x: Math.floor((source.width - side) / 2),
+    y: Math.floor((source.height - side) / 2),
+    width: side,
+    height: side,
+  };
+  let square: ImageDataLike = source;
+  if (source.width !== side || source.height !== side) {
+    const data = new Uint8ClampedArray(side * side * 4);
+    for (let row = 0; row < side; row++) {
+      const start = ((crop.y + row) * source.width + crop.x) * 4;
+      data.set(source.data.subarray(start, start + side * 4), row * side * 4);
+    }
+    square = { data, width: side, height: side };
+  }
+  if (side !== size) {
+    await ensureResize();
+    signal?.throwIfAborted();
+    square = await resize(square as ImageData, { width: size, height: size });
+  }
+  signal?.throwIfAborted();
+  const encoded = await encodeImage(square, "image/png");
+  signal?.throwIfAborted();
+  return { bytes: encoded, source: { width: source.width, height: source.height }, crop };
+}
+
+/** Validate generated bytes before treating them as an asset; never resize or re-encode them. */
+export async function validateImage(bytes: ArrayBuffer, mediaType: ResizableMediaType): Promise<void> {
+  const dimensions = imageDimensionsFromHeader(new Uint8Array(bytes), mediaType);
+  if (
+    !dimensions ||
+    dimensions.width <= 0 ||
+    dimensions.height <= 0 ||
+    dimensions.width * dimensions.height > MAX_DECODE_PIXELS
+  ) {
+    throw new Error("Invalid or oversized image dimensions.");
+  }
+  await decodeImage(bytes, mediaType);
+}
+
+export interface ImageAlphaStats {
+  width: number;
+  height: number;
+  transparentPixels: number;
+  partialPixels: number;
+  opaquePixels: number;
+}
+
+export interface ImageGridCell extends ImageAlphaStats {
+  row: number;
+  column: number;
+  x: number;
+  y: number;
+  bytes: ArrayBuffer;
+}
+
+/** Lossless PNG crops covering the original bitmap, including remainder pixels and empty cells. */
+export async function splitImageGrid(
+  bytes: ArrayBuffer,
+  mediaType: ResizableMediaType,
+  grid: { rows: number; columns: number },
+  options: { signal?: AbortSignal } = {},
+): Promise<{ width: number; height: number; cells: ImageGridCell[] }> {
+  const { signal } = options;
+  signal?.throwIfAborted();
+  const { rows, columns } = grid;
+  if (!Number.isSafeInteger(rows) || !Number.isSafeInteger(columns) || rows < 1 || columns < 1 || rows * columns > 64) {
+    throw new Error("Image grids must contain between 1 and 64 cells with positive integer rows and columns.");
+  }
+  const dimensions = imageDimensionsFromHeader(new Uint8Array(bytes), mediaType);
+  if (
+    !dimensions ||
+    dimensions.width < columns ||
+    dimensions.height < rows ||
+    dimensions.width * dimensions.height > MAX_DECODE_PIXELS
+  ) {
+    throw new Error("Invalid or oversized image dimensions for the requested grid.");
+  }
+  const source = await decodeImage(bytes, mediaType);
+  const cells: ImageGridCell[] = [];
+  for (let row = 0; row < rows; row++) {
+    for (let column = 0; column < columns; column++) {
+      signal?.throwIfAborted();
+      const x = Math.floor((column * source.width) / columns);
+      const y = Math.floor((row * source.height) / rows);
+      const width = Math.floor(((column + 1) * source.width) / columns) - x;
+      const height = Math.floor(((row + 1) * source.height) / rows) - y;
+      const data = new Uint8ClampedArray(width * height * 4);
+      for (let line = 0; line < height; line++) {
+        const start = ((y + line) * source.width + x) * 4;
+        data.set(source.data.subarray(start, start + width * 4), line * width * 4);
+      }
+      const image = { data, width, height };
+      const encoded = await encodeImage(image, "image/png");
+      signal?.throwIfAborted();
+      cells.push({ row: row + 1, column: column + 1, x, y, bytes: encoded, ...countImageAlpha(image) });
+    }
+  }
+  return { width: source.width, height: source.height, cells };
+}
+
+function countImageAlpha(image: ImageDataLike): ImageAlphaStats {
+  let transparentPixels = 0;
+  let partialPixels = 0;
+  let opaquePixels = 0;
+  for (let index = 3; index < image.data.length; index += 4) {
+    const alpha = image.data[index];
+    if (alpha === 0) transparentPixels++;
+    else if (alpha === 255) opaquePixels++;
+    else partialPixels++;
+  }
+  return { width: image.width, height: image.height, transparentPixels, partialPixels, opaquePixels };
+}
+
+/** Inspect original pixels without resizing or re-encoding; null means inspection was unavailable. */
+export async function inspectImageAlpha(
+  bytes: ArrayBuffer,
+  mediaType: ResizableMediaType,
+): Promise<ImageAlphaStats | null> {
+  const dimensions = imageDimensionsFromHeader(new Uint8Array(bytes), mediaType);
+  if (!dimensions || dimensions.width * dimensions.height > MAX_DECODE_PIXELS) return null;
+  try {
+    const image = await decodeImage(bytes, mediaType);
+    return countImageAlpha(image);
+  } catch {
+    return null;
+  }
+}
+
+async function wasmBytes(path: string): Promise<ArrayBuffer> {
+  return await Bun.file(path).arrayBuffer();
+}
+
+// Each codec inits exactly once; cache the promise so concurrent read_image calls share one init.
+let pngReady: Promise<void> | null = null;
+let jpegReady: Promise<void> | null = null;
+let webpReady: Promise<void> | null = null;
+let resizeReady: Promise<void> | null = null;
+
+async function ensurePng(): Promise<void> {
+  pngReady ??= (async () => {
+    // png decode + encode share one wasm-bindgen module; init takes a compiled WebAssembly.Module.
+    const mod = await WebAssembly.compile(await wasmBytes(pngWasm));
+    await initPngDecode(mod);
+    await initPngEncode(mod);
+  })();
+  await pngReady;
+}
+
+// mozjpeg/webp are Emscripten codecs that print to stdout/stderr on malformed input (e.g. "JPEG
+// datastream contains no image"). We already surface decode failures as a clean passthrough, so
+// silence the codec's own logging to keep tool output pristine.
+const SILENT_EMSCRIPTEN = { print: () => {}, printErr: () => {} };
+
+async function ensureJpeg(): Promise<void> {
+  // mozjpeg is an Emscripten codec — init takes module options with the raw wasm bytes (`wasmBinary`),
+  // not a WebAssembly.Module.
+  jpegReady ??= (async () => {
+    await initJpegDecode({ ...SILENT_EMSCRIPTEN, wasmBinary: await wasmBytes(jpegDecWasm) });
+    await initJpegEncode({ ...SILENT_EMSCRIPTEN, wasmBinary: await wasmBytes(jpegEncWasm) });
+  })();
+  await jpegReady;
+}
+
+async function ensureWebp(): Promise<void> {
+  webpReady ??= (async () => {
+    await initWebpDecode({ ...SILENT_EMSCRIPTEN, wasmBinary: await wasmBytes(webpDecWasm) });
+    await initWebpEncode({ ...SILENT_EMSCRIPTEN, wasmBinary: await wasmBytes(webpEncWasm) });
+  })();
+  await webpReady;
+}
+
+async function ensureResize(): Promise<void> {
+  resizeReady ??= (async () => {
+    await initResize(await WebAssembly.compile(await wasmBytes(resizeWasm)));
+  })();
+  await resizeReady;
+}
+
+async function decodeImage(bytes: ArrayBuffer, mediaType: ResizableMediaType): Promise<ImageDataLike> {
+  switch (mediaType) {
+    case "image/png":
+      await ensurePng();
+      return await decodePng(bytes);
+    case "image/jpeg":
+      await ensureJpeg();
+      return await decodeJpeg(bytes);
+    case "image/webp":
+      await ensureWebp();
+      return await decodeWebp(bytes);
+  }
+}
+
+async function encodeImage(image: ImageDataLike, mediaType: ResizableMediaType): Promise<ArrayBuffer> {
+  // jsquash types encode inputs as the DOM `ImageData` (with `colorSpace`); our structural shape is
+  // accepted at runtime, so bridge the nominal mismatch here.
+  const data = image as unknown as ImageData;
+  switch (mediaType) {
+    case "image/png":
+      await ensurePng();
+      return await encodePng(data);
+    case "image/jpeg":
+      await ensureJpeg();
+      return await encodeJpeg(data, { quality: JPEG_QUALITY });
+    case "image/webp":
+      await ensureWebp();
+      return await encodeWebp(data, { quality: WEBP_QUALITY });
+  }
+}
+
+function isResizable(mediaType: string): mediaType is ResizableMediaType {
+  return mediaType === "image/png" || mediaType === "image/jpeg" || mediaType === "image/webp";
+}
+
+/**
+ * Read pixel dimensions straight from the image header (PNG/JPEG/WebP) without decoding pixels.
+ * This lets `downscaleImageIfNeeded` skip the multi-MB full decode for images already within the
+ * cap, and refuse pathologically large images before allocating their RGBA bitmap. Returns null on
+ * an unrecognized or truncated header — callers then fall back to decoding.
+ */
+export function imageDimensionsFromHeader(
+  bytes: Uint8Array,
+  mediaType: ResizableMediaType,
+): { width: number; height: number } | null {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+  if (mediaType === "image/png") {
+    // 8-byte signature + IHDR length/type, then width@16 and height@20 (big-endian).
+    if (bytes.length >= 24 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+      return { width: dv.getUint32(16), height: dv.getUint32(20) };
+    }
+    return null;
+  }
+
+  if (mediaType === "image/jpeg") {
+    if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+    let off = 2;
+    while (off + 9 < bytes.length) {
+      if (bytes[off] !== 0xff) {
+        off++;
+        continue;
+      }
+      const marker = bytes[off + 1];
+      // Start-Of-Frame markers carry dimensions: height@+5, width@+7 (big-endian). Skip the
+      // non-SOF markers in the 0xC0-0xCF range (C4 = Huffman, C8 = JPG ext, CC = arithmetic).
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { width: dv.getUint16(off + 7), height: dv.getUint16(off + 5) };
+      }
+      const len = dv.getUint16(off + 2);
+      if (len < 2) return null;
+      off += 2 + len;
+    }
+    return null;
+  }
+
+  // image/webp: "RIFF"…"WEBP" then a VP8 / VP8L / VP8X chunk.
+  if (
+    bytes.length >= 30 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    const fmt = String.fromCharCode(bytes[12], bytes[13], bytes[14], bytes[15]);
+    if (fmt === "VP8 ") {
+      return { width: dv.getUint16(26, true) & 0x3fff, height: dv.getUint16(28, true) & 0x3fff };
+    }
+    if (fmt === "VP8L") {
+      const b0 = bytes[21];
+      const b1 = bytes[22];
+      const b2 = bytes[23];
+      const b3 = bytes[24];
+      return {
+        width: 1 + (((b1 & 0x3f) << 8) | b0),
+        height: 1 + (((b3 & 0x0f) << 10) | (b2 << 2) | ((b1 & 0xc0) >> 6)),
+      };
+    }
+    if (fmt === "VP8X") {
+      return {
+        width: 1 + (bytes[24] | (bytes[25] << 8) | (bytes[26] << 16)),
+        height: 1 + (bytes[27] | (bytes[28] << 8) | (bytes[29] << 16)),
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Return image bytes whose long edge does not exceed `maxLongEdge` and whose encoded size stays
+ * under the byte backstop, along with the (possibly changed) media type: an output that is still
+ * over the byte cap in lossless PNG is re-encoded as lossy WebP instead.
+ * Returns the ORIGINAL bytes unchanged when no downscale is warranted:
+ *   - format has no jsquash codec (e.g. GIF) — also preserves animation
+ *   - bytes the codec cannot decode — let the provider deal with the original
+ *   - within both the pixel cap and the byte cap — avoid a needless (lossy, for JPEG/WebP) re-encode
+ */
+export async function downscaleImageIfNeeded<T extends string>(
+  bytes: ArrayBuffer,
+  mediaType: T,
+  maxLongEdge: number = DEFAULT_MAX_LONG_EDGE,
+): Promise<{ bytes: ArrayBuffer; mediaType: T | "image/webp" }> {
+  const original = { bytes, mediaType };
+  if (!isResizable(mediaType)) return original;
+
+  const withinByteCap = bytes.byteLength <= MAX_ENCODED_BYTES;
+
+  // Header-only fast path: read dimensions without decoding. In-spec images skip the decode
+  // entirely, and images whose pixel count would blow the decode-memory ceiling are passed through
+  // untouched rather than risking an OOM. A null result (truncated/odd header) falls back to decode.
+  const headerDims = imageDimensionsFromHeader(new Uint8Array(bytes), mediaType);
+  if (headerDims) {
+    if (Math.max(headerDims.width, headerDims.height) <= maxLongEdge && withinByteCap) return original;
+    if (headerDims.width * headerDims.height > MAX_DECODE_PIXELS) return original;
+  }
+
+  let image: ImageDataLike;
+  try {
+    image = await decodeImage(bytes, mediaType);
+  } catch {
+    return original;
+  }
+
+  const longEdge = Math.max(image.width, image.height);
+  if (longEdge <= maxLongEdge && withinByteCap) return original;
+
+  if (longEdge > maxLongEdge) {
+    const scale = maxLongEdge / longEdge;
+    // Clamp to >= 1: an extreme aspect ratio (e.g. 6272×1) would otherwise round the short edge to 0,
+    // and the resize codec throws on a zero dimension.
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+    await ensureResize();
+    image = await resize(image as unknown as ImageData, { width, height });
+  }
+
+  let encoded = await encodeImage(image, mediaType);
+  let outType: T | "image/webp" = mediaType;
+  // Lossless PNG cannot be forced under the byte cap by re-encoding in place; switch to lossy WebP.
+  if (encoded.byteLength > MAX_ENCODED_BYTES && mediaType === "image/png") {
+    encoded = await encodeImage(image, "image/webp");
+    outType = "image/webp";
+  }
+  // A byte-cap-only pass (no resize) can fail to shrink — e.g. a JPEG already at our quality
+  // setting. Keep the original rather than swapping in a same-size-or-larger re-encode.
+  if (longEdge <= maxLongEdge && encoded.byteLength >= bytes.byteLength) return original;
+
+  return { bytes: encoded, mediaType: outType };
+}
+
+/** Downscale a single base64 image block, returning the original block when no resize is warranted. */
+async function downscaleImageBlock(image: ImageBlock): Promise<ImageBlock> {
+  if (image.source.type !== "base64" || !isResizable(image.source.media_type)) return image;
+  const u8 = Buffer.from(image.source.data, "base64");
+  const input = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+  let output: { bytes: ArrayBuffer; mediaType: ImageBlock["source"]["media_type"] };
+  try {
+    output = await downscaleImageIfNeeded(input, image.source.media_type);
+  } catch {
+    return image;
+  }
+  if (output.bytes === input) return image;
+  return {
+    ...image,
+    source: { ...image.source, media_type: output.mediaType, data: Buffer.from(output.bytes).toString("base64") },
+  };
+}
+
+/**
+ * Wrap a tool so any images it returns are downscaled at the runtime tool boundary — the single
+ * choke point every tool passes through. This bounds vision-token cost uniformly for ALL image
+ * sources (screenshots, MCP image results, pasted images), instead of relying on each image-producing
+ * tool to downscale itself. read_image already downscales internally, so for it this is a cheap no-op.
+ */
+export function withImageDownscaling(tool: Tool): Tool {
+  return {
+    ...tool,
+    async execute(args, ctx) {
+      const result = await tool.execute(args, ctx);
+      if (!result.outputImages || result.outputImages.length === 0) return result;
+      return { ...result, outputImages: await Promise.all(result.outputImages.map(downscaleImageBlock)) };
+    },
+  };
+}

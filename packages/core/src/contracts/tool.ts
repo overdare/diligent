@@ -1,0 +1,19 @@
+// @summary Public tool definition, registry, execution, and truncation-policy boundary
+
+export { dropEmptyOptionals } from "../tool/empty-arguments";
+export type { ExecuteToolOptions, ToolOutputFileStore } from "../tool/executor";
+export { executeTool } from "../tool/executor";
+export type { ObjectJsonSchema } from "../tool/input-schema";
+export { toToolInputSchema } from "../tool/input-schema";
+export { ToolRegistryBuilder } from "../tool/registry";
+export type { TruncationResult } from "../tool/truncation";
+export {
+  MAX_OUTPUT_BYTES,
+  shouldTruncate,
+  TRUNCATION_WARNING,
+  truncateHead,
+  truncateHeadTail,
+  truncateTail,
+} from "../tool/truncation";
+export type { NestedToolEvent, Tool, ToolContext, ToolRegistry, ToolResult, ToolRunScope } from "../tool/types";
+export type { ToolRenderPayloadLike } from "../types";

@@ -1,0 +1,830 @@
+// @summary Diligent client->server request schemas and typed method/result maps
+import { z } from "zod";
+import {
+  ContentBlockSchema,
+  KnowledgeEntrySchema,
+  LocalImageBlockSchema,
+  ModelRefSchema,
+  ModeSchema,
+  PendingSteerSchema,
+  ProtocolCapabilitiesSchema,
+  ProtocolVersionSchema,
+  ProviderAuthStatusSchema,
+  ProviderNameSchema,
+  SessionSummarySchema,
+  SUPPORTED_IMAGE_MEDIA_TYPES,
+  ThinkingEffortSchema,
+  ThreadItemSchema,
+} from "./data-model";
+import {
+  ThreadGoalGetParamsSchema,
+  ThreadGoalResponseSchema,
+  ThreadGoalSchema,
+  ThreadGoalSetParamsSchema,
+} from "./goals";
+import { DILIGENT_CLIENT_REQUEST_METHODS } from "./methods";
+
+export const InitializeParamsSchema = z.object({
+  clientName: z.string(),
+  clientVersion: z.string(),
+  protocolVersion: ProtocolVersionSchema.default(1),
+});
+export type InitializeParams = z.infer<typeof InitializeParamsSchema>;
+
+export const ModelInfoSchema = z.object({
+  modelId: z.string().min(1),
+  display: z.string().optional(),
+  provider: ProviderNameSchema,
+  aliases: z.array(z.string()).optional(),
+  contextWindow: z.number().int().positive(),
+  maxOutputTokens: z.number().int().positive(),
+  inputCostPer1M: z.number().optional(),
+  outputCostPer1M: z.number().optional(),
+  supportsThinking: z.boolean(),
+  supportedEfforts: z.array(ThinkingEffortSchema).optional(),
+  supportsVision: z.boolean().optional(),
+  supportsFastMode: z.boolean().optional(),
+});
+export type ModelInfo = z.infer<typeof ModelInfoSchema>;
+
+export const SkillInfoSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+});
+export type SkillInfo = z.infer<typeof SkillInfoSchema>;
+
+export const InitializeResponseSchema = z.object({
+  serverName: z.string(),
+  serverVersion: z.string(),
+  protocolVersion: z.literal(1),
+  capabilities: ProtocolCapabilitiesSchema,
+  cwd: z.string().optional(),
+  mode: ModeSchema.optional(),
+  effort: ThinkingEffortSchema.optional(),
+  fastMode: z.boolean().optional(),
+  currentModel: ModelRefSchema.optional(),
+  availableModels: z.array(ModelInfoSchema).optional(),
+  skills: z.array(SkillInfoSchema).optional(),
+});
+export type InitializeResponse = z.infer<typeof InitializeResponseSchema>;
+
+export const ThreadStartParamsSchema = z.object({
+  cwd: z.string(),
+  mode: ModeSchema.optional(),
+  effort: ThinkingEffortSchema.optional(),
+  fastMode: z.boolean().optional(),
+  model: ModelRefSchema.optional(),
+});
+export type ThreadStartParams = z.infer<typeof ThreadStartParamsSchema>;
+
+export const ThreadStartResponseSchema = z.object({
+  threadId: z.string(),
+});
+export type ThreadStartResponse = z.infer<typeof ThreadStartResponseSchema>;
+
+export const ThreadResumeParamsSchema = z
+  .object({
+    threadId: z.string().optional(),
+    mostRecent: z.boolean().optional(),
+  })
+  .refine((v) => Boolean(v.threadId) || v.mostRecent === true, {
+    message: "Either threadId or mostRecent=true is required",
+  });
+export type ThreadResumeParams = z.infer<typeof ThreadResumeParamsSchema>;
+
+export const ThreadResumeResponseSchema = z.object({
+  found: z.boolean(),
+  threadId: z.string().optional(),
+});
+export type ThreadResumeResponse = z.infer<typeof ThreadResumeResponseSchema>;
+
+export const ThreadListParamsSchema = z.object({
+  limit: z.number().int().positive().max(500).optional(),
+  includeChildren: z.boolean().optional(),
+  cursor: z.string().optional(),
+});
+export type ThreadListParams = z.infer<typeof ThreadListParamsSchema>;
+
+export const ThreadListResponseSchema = z.object({
+  data: z.array(SessionSummarySchema),
+  nextCursor: z.string().optional(),
+});
+export type ThreadListResponse = z.infer<typeof ThreadListResponseSchema>;
+
+export const ThreadReadParamsSchema = z.object({
+  threadId: z.string().optional(),
+  includeItems: z.boolean().optional(),
+});
+export type ThreadReadParams = z.infer<typeof ThreadReadParamsSchema>;
+
+export const ThreadReadResponseSchema = z.object({
+  goal: ThreadGoalSchema.nullable().optional(),
+  goalSequence: z.number().int().nonnegative().optional(),
+  cwd: z.string(),
+  items: z.array(ThreadItemSchema),
+  hasFollowUp: z.boolean(),
+  pendingSteers: z.array(PendingSteerSchema).optional(),
+  entryCount: z.number().int().nonnegative(),
+  isRunning: z.boolean(),
+  currentMode: ModeSchema.optional(),
+  currentEffort: ThinkingEffortSchema,
+  currentFastMode: z.boolean().optional(),
+  currentModel: ModelRefSchema.optional(),
+  totalCost: z.number().nonnegative().optional(),
+});
+export type ThreadReadResponse = z.infer<typeof ThreadReadResponseSchema>;
+
+export const ThreadHistoryParamsSchema = z.object({
+  threadId: z.string(),
+  cursor: z.string().optional(),
+  limit: z.number().int().positive().max(100).optional(),
+});
+export type ThreadHistoryParams = z.infer<typeof ThreadHistoryParamsSchema>;
+
+export const ThreadHistoryResponseSchema = z.object({
+  cwd: z.string(),
+  items: z.array(ThreadItemSchema),
+  nextCursor: z.string().optional(),
+});
+export type ThreadHistoryResponse = z.infer<typeof ThreadHistoryResponseSchema>;
+
+export const ThreadCompactStartParamsSchema = z.object({
+  threadId: z.string().optional(),
+});
+export type ThreadCompactStartParams = z.infer<typeof ThreadCompactStartParamsSchema>;
+
+export const ThreadCompactStartResponseSchema = z.object({
+  compacted: z.boolean(),
+  entryCount: z.number().int().nonnegative(),
+  tokensBefore: z.number().int().nonnegative(),
+  tokensAfter: z.number().int().nonnegative(),
+  summary: z.string(),
+});
+export type ThreadCompactStartResponse = z.infer<typeof ThreadCompactStartResponseSchema>;
+
+export const TurnAttachmentSchema = z.object({
+  type: z.literal("local_image"),
+  path: z.string(),
+  mediaType: z.enum(SUPPORTED_IMAGE_MEDIA_TYPES),
+  fileName: z.string().optional(),
+});
+export type TurnAttachment = z.infer<typeof TurnAttachmentSchema>;
+
+export const TurnStartParamsSchema = z.object({
+  threadId: z.string().optional(),
+  message: z.string(),
+  attachments: z.array(TurnAttachmentSchema).max(4).optional(),
+  content: z.array(ContentBlockSchema).optional(),
+  model: ModelRefSchema.optional(),
+});
+export type TurnStartParams = z.infer<typeof TurnStartParamsSchema>;
+
+export const TurnStartResponseSchema = z.object({
+  accepted: z.literal(true),
+  userMessageId: z.string().optional(),
+});
+export type TurnStartResponse = z.infer<typeof TurnStartResponseSchema>;
+
+export const TurnInterruptParamsSchema = z.object({
+  threadId: z.string().optional(),
+});
+export type TurnInterruptParams = z.infer<typeof TurnInterruptParamsSchema>;
+
+export const TurnInterruptResponseSchema = z.object({
+  interrupted: z.boolean(),
+});
+export type TurnInterruptResponse = z.infer<typeof TurnInterruptResponseSchema>;
+
+export const TurnSteerParamsSchema = z.object({
+  threadId: z.string().optional(),
+  steerId: z.string().optional(),
+  content: z.string(),
+  attachments: z.array(TurnAttachmentSchema).max(4).optional(),
+  followUp: z.boolean().default(false),
+});
+export type TurnSteerParams = z.infer<typeof TurnSteerParamsSchema>;
+
+export const TurnSteerResponseSchema = z.object({
+  queued: z.literal(true),
+  steerId: z.string(),
+});
+export type TurnSteerResponse = z.infer<typeof TurnSteerResponseSchema>;
+
+export const TurnSteerCancelParamsSchema = z.object({
+  threadId: z.string().optional(),
+  steerId: z.string(),
+});
+export type TurnSteerCancelParams = z.infer<typeof TurnSteerCancelParamsSchema>;
+
+export const TurnSteerCancelResponseSchema = z.object({
+  cancelled: z.boolean(),
+});
+export type TurnSteerCancelResponse = z.infer<typeof TurnSteerCancelResponseSchema>;
+
+export const TurnSteerUpdateParamsSchema = z.object({
+  threadId: z.string().optional(),
+  steerId: z.string(),
+  content: z.string(),
+});
+export type TurnSteerUpdateParams = z.infer<typeof TurnSteerUpdateParamsSchema>;
+
+export const TurnSteerUpdateResponseSchema = z.object({
+  updated: z.boolean(),
+});
+export type TurnSteerUpdateResponse = z.infer<typeof TurnSteerUpdateResponseSchema>;
+
+export const ModeSetParamsSchema = z.object({
+  threadId: z.string().optional(),
+  mode: ModeSchema,
+});
+export type ModeSetParams = z.infer<typeof ModeSetParamsSchema>;
+
+export const ModeSetResponseSchema = z.object({
+  mode: ModeSchema,
+});
+export type ModeSetResponse = z.infer<typeof ModeSetResponseSchema>;
+
+export const EffortSetParamsSchema = z.object({
+  threadId: z.string().optional(),
+  effort: ThinkingEffortSchema,
+});
+export type EffortSetParams = z.infer<typeof EffortSetParamsSchema>;
+
+export const EffortSetResponseSchema = z.object({
+  effort: ThinkingEffortSchema,
+});
+export type EffortSetResponse = z.infer<typeof EffortSetResponseSchema>;
+
+export const FastModeSetParamsSchema = z.object({
+  threadId: z.string().optional(),
+  fastMode: z.boolean(),
+});
+export type FastModeSetParams = z.infer<typeof FastModeSetParamsSchema>;
+
+export const FastModeSetResponseSchema = z.object({
+  fastMode: z.boolean(),
+});
+export type FastModeSetResponse = z.infer<typeof FastModeSetResponseSchema>;
+
+export const KnowledgeListParamsSchema = z.object({
+  threadId: z.string().optional(),
+  limit: z.number().int().positive().max(500).optional(),
+});
+export type KnowledgeListParams = z.infer<typeof KnowledgeListParamsSchema>;
+
+export const KnowledgeListResponseSchema = z.object({
+  data: z.array(KnowledgeEntrySchema),
+});
+export type KnowledgeListResponse = z.infer<typeof KnowledgeListResponseSchema>;
+
+const KnowledgeTypeParamSchema = z.enum(["pattern", "discovery", "preference", "correction", "backlog"]);
+
+export const KnowledgeUpdateParamsSchema = z
+  .object({
+    action: z.enum(["upsert", "delete"]),
+    threadId: z.string().optional(),
+    id: z.string().optional(),
+    type: KnowledgeTypeParamSchema.optional(),
+    content: z.string().min(1).optional(),
+    tags: z.array(z.string()).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.action === "delete") {
+      if (!value.id || value.id.trim().length === 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["id"], message: "id is required for delete action" });
+      }
+      return;
+    }
+
+    if (!value.type) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["type"], message: "type is required for upsert action" });
+    }
+    if (!value.content || value.content.trim().length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["content"],
+        message: "content is required for upsert action",
+      });
+    }
+  });
+export type KnowledgeUpdateParams = z.infer<typeof KnowledgeUpdateParamsSchema>;
+
+export const KnowledgeUpdateResponseSchema = z.object({
+  entry: KnowledgeEntrySchema.optional(),
+  deleted: z.boolean().optional(),
+});
+export type KnowledgeUpdateResponse = z.infer<typeof KnowledgeUpdateResponseSchema>;
+
+export const ThreadDeleteParamsSchema = z.object({
+  threadId: z.string(),
+});
+export type ThreadDeleteParams = z.infer<typeof ThreadDeleteParamsSchema>;
+
+export const ThreadDeleteResponseSchema = z.object({
+  deleted: z.boolean(),
+});
+export type ThreadDeleteResponse = z.infer<typeof ThreadDeleteResponseSchema>;
+
+export const ToolConflictPolicySchema = z.enum(["error", "builtin_wins", "plugin_wins"]);
+export type ToolConflictPolicy = z.infer<typeof ToolConflictPolicySchema>;
+
+export const ToolStateReasonSchema = z.enum([
+  "enabled",
+  "disabled_by_user",
+  "immutable_forced_on",
+  "plugin_disabled",
+  "plugin_load_failed",
+  "conflict_dropped",
+  "invalid_plugin_tool",
+  "superseded_by_bundled",
+]);
+export type ToolStateReason = z.infer<typeof ToolStateReasonSchema>;
+
+export const ToolDescriptorSchema = z.object({
+  name: z.string(),
+  source: z.enum(["builtin", "plugin"]),
+  pluginPackage: z.string().optional(),
+  enabled: z.boolean(),
+  immutable: z.boolean(),
+  configurable: z.boolean(),
+  available: z.boolean(),
+  reason: ToolStateReasonSchema,
+  error: z.string().optional(),
+});
+export type ToolDescriptor = z.infer<typeof ToolDescriptorSchema>;
+
+export const PluginDescriptorSchema = z.object({
+  package: z.string(),
+  configured: z.boolean(),
+  enabled: z.boolean(),
+  loaded: z.boolean(),
+  toolCount: z.number().int().nonnegative(),
+  loadError: z.string().optional(),
+  warnings: z.array(z.string()),
+});
+export type PluginDescriptor = z.infer<typeof PluginDescriptorSchema>;
+
+export const ToolsListParamsSchema = z.object({
+  threadId: z.string().optional(),
+});
+export type ToolsListParams = z.infer<typeof ToolsListParamsSchema>;
+
+export const ToolsListResponseSchema = z.object({
+  configPath: z.string(),
+  appliesOnNextTurn: z.literal(true),
+  trustMode: z.literal("full_trust"),
+  conflictPolicy: ToolConflictPolicySchema,
+  tools: z.array(ToolDescriptorSchema),
+  plugins: z.array(PluginDescriptorSchema),
+});
+export type ToolsListResponse = z.infer<typeof ToolsListResponseSchema>;
+
+export const ToolsSetPluginPatchSchema = z.object({
+  package: z.string(),
+  enabled: z.boolean().optional(),
+  tools: z.record(z.string(), z.boolean()).optional(),
+  remove: z.boolean().optional(),
+});
+export type ToolsSetPluginPatch = z.infer<typeof ToolsSetPluginPatchSchema>;
+
+export const ToolsSetParamsSchema = z.object({
+  threadId: z.string().optional(),
+  builtin: z.record(z.string(), z.boolean()).optional(),
+  plugins: z.array(ToolsSetPluginPatchSchema).optional(),
+  conflictPolicy: ToolConflictPolicySchema.optional(),
+});
+export type ToolsSetParams = z.infer<typeof ToolsSetParamsSchema>;
+
+export const ToolsSetResponseSchema = ToolsListResponseSchema;
+export type ToolsSetResponse = z.infer<typeof ToolsSetResponseSchema>;
+
+export const SkillStateReasonSchema = z.enum(["enabled", "disabled_by_user", "skills_disabled"]);
+export type SkillStateReason = z.infer<typeof SkillStateReasonSchema>;
+
+export const SkillDescriptorSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  source: z.enum(["global", "project", "config"]),
+  globalEnabled: z.boolean(),
+  effectiveEnabled: z.boolean(),
+  available: z.boolean(),
+  controlledBy: z.enum(["default", "global", "project"]),
+  reason: SkillStateReasonSchema,
+});
+export type SkillDescriptor = z.infer<typeof SkillDescriptorSchema>;
+
+export const SkillsListParamsSchema = z.object({
+  threadId: z.string().optional(),
+});
+export type SkillsListParams = z.infer<typeof SkillsListParamsSchema>;
+
+export const SkillsListResponseSchema = z.object({
+  configPath: z.string(),
+  appliesOnNextTurn: z.literal(true),
+  skillsEnabled: z.boolean(),
+  skillsEnabledControlledBy: z.enum(["default", "global", "project"]),
+  skills: z.array(SkillDescriptorSchema),
+});
+export type SkillsListResponse = z.infer<typeof SkillsListResponseSchema>;
+
+export const SkillsSetParamsSchema = z.object({
+  threadId: z.string().optional(),
+  overrides: z.record(z.string(), z.boolean()),
+});
+export type SkillsSetParams = z.infer<typeof SkillsSetParamsSchema>;
+
+export const SkillsSetResponseSchema = SkillsListResponseSchema;
+export type SkillsSetResponse = z.infer<typeof SkillsSetResponseSchema>;
+
+export const ExperimentDescriptorSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  enabled: z.boolean(),
+  defaultEnabled: z.boolean(),
+});
+export type ExperimentDescriptor = z.infer<typeof ExperimentDescriptorSchema>;
+
+export const ExperimentsListParamsSchema = z.object({
+  threadId: z.string().optional(),
+});
+export type ExperimentsListParams = z.infer<typeof ExperimentsListParamsSchema>;
+
+export const ExperimentsListResponseSchema = z.object({
+  configPath: z.string(),
+  appliesOnNextTurn: z.literal(true),
+  experiments: z.array(ExperimentDescriptorSchema),
+});
+export type ExperimentsListResponse = z.infer<typeof ExperimentsListResponseSchema>;
+
+export const ExperimentsSetParamsSchema = z.object({
+  threadId: z.string().optional(),
+  overrides: z.record(z.string(), z.boolean()),
+});
+export type ExperimentsSetParams = z.infer<typeof ExperimentsSetParamsSchema>;
+
+export const ExperimentsSetResponseSchema = ExperimentsListResponseSchema;
+export type ExperimentsSetResponse = z.infer<typeof ExperimentsSetResponseSchema>;
+
+export const SubagentStateReasonSchema = z.enum(["enabled", "disabled_by_user", "required_builtin"]);
+export type SubagentStateReason = z.infer<typeof SubagentStateReasonSchema>;
+
+export const SubagentDescriptorSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  source: z.enum(["builtin", "global", "project", "config"]),
+  required: z.boolean(),
+  globalEnabled: z.boolean(),
+  effectiveEnabled: z.boolean(),
+  available: z.boolean(),
+  controlledBy: z.enum(["required", "default", "global", "project"]),
+  reason: SubagentStateReasonSchema,
+});
+export type SubagentDescriptor = z.infer<typeof SubagentDescriptorSchema>;
+
+export const SubagentsListParamsSchema = z.object({
+  threadId: z.string().optional(),
+});
+export type SubagentsListParams = z.infer<typeof SubagentsListParamsSchema>;
+
+export const SubagentsListResponseSchema = z.object({
+  configPath: z.string(),
+  appliesOnNextTurn: z.literal(true),
+  subagents: z.array(SubagentDescriptorSchema),
+});
+export type SubagentsListResponse = z.infer<typeof SubagentsListResponseSchema>;
+
+export const SubagentsSetParamsSchema = z.object({
+  threadId: z.string().optional(),
+  overrides: z.record(z.string(), z.boolean()),
+});
+export type SubagentsSetParams = z.infer<typeof SubagentsSetParamsSchema>;
+
+export const SubagentsSetResponseSchema = SubagentsListResponseSchema;
+export type SubagentsSetResponse = z.infer<typeof SubagentsSetResponseSchema>;
+
+// --- config/set ---
+export const ConfigSetParamsSchema = z.object({
+  threadId: z.string().optional(),
+  model: ModelRefSchema.optional(),
+});
+export type ConfigSetParams = z.infer<typeof ConfigSetParamsSchema>;
+
+export const ConfigSetResponseSchema = z.object({
+  model: ModelRefSchema.optional(),
+});
+export type ConfigSetResponse = z.infer<typeof ConfigSetResponseSchema>;
+
+// --- config/reload ---
+export const ConfigReloadParamsSchema = z.object({});
+export type ConfigReloadParams = z.infer<typeof ConfigReloadParamsSchema>;
+
+export const ConfigReloadResponseSchema = z.object({
+  skills: z.array(SkillInfoSchema),
+});
+export type ConfigReloadResponse = z.infer<typeof ConfigReloadResponseSchema>;
+
+// --- auth/list ---
+export const AuthListParamsSchema = z.object({});
+export type AuthListParams = z.infer<typeof AuthListParamsSchema>;
+
+export const AuthListResponseSchema = z.object({
+  providers: z.array(ProviderAuthStatusSchema),
+  availableModels: z.array(ModelInfoSchema),
+});
+export type AuthListResponse = z.infer<typeof AuthListResponseSchema>;
+
+// --- auth/set ---
+export const AuthSetParamsSchema = z.object({
+  provider: ProviderNameSchema,
+  apiKey: z.string().min(1),
+});
+export type AuthSetParams = z.infer<typeof AuthSetParamsSchema>;
+
+export const AuthSetResponseSchema = z.object({
+  ok: z.literal(true),
+});
+export type AuthSetResponse = z.infer<typeof AuthSetResponseSchema>;
+
+// --- auth/remove ---
+export const AuthRemoveParamsSchema = z.object({
+  provider: ProviderNameSchema,
+});
+export type AuthRemoveParams = z.infer<typeof AuthRemoveParamsSchema>;
+
+export const AuthRemoveResponseSchema = z.object({
+  ok: z.literal(true),
+});
+export type AuthRemoveResponse = z.infer<typeof AuthRemoveResponseSchema>;
+
+// --- auth/oauth/start ---
+export const AuthOAuthStartParamsSchema = z.object({
+  provider: z.literal("chatgpt"),
+});
+export type AuthOAuthStartParams = z.infer<typeof AuthOAuthStartParamsSchema>;
+
+export const AuthOAuthStartResponseSchema = z.object({
+  authUrl: z.string().url(),
+});
+export type AuthOAuthStartResponse = z.infer<typeof AuthOAuthStartResponseSchema>;
+
+// --- auth/oauth/cancel ---
+export const AuthOAuthCancelParamsSchema = z.object({
+  provider: z.literal("chatgpt"),
+});
+export type AuthOAuthCancelParams = z.infer<typeof AuthOAuthCancelParamsSchema>;
+
+export const AuthOAuthCancelResponseSchema = z.object({
+  cancelled: z.boolean(),
+});
+export type AuthOAuthCancelResponse = z.infer<typeof AuthOAuthCancelResponseSchema>;
+
+// --- thread/subscribe ---
+export const ThreadSubscribeParamsSchema = z.object({
+  threadId: z.string(),
+});
+export type ThreadSubscribeParams = z.infer<typeof ThreadSubscribeParamsSchema>;
+
+export const ThreadSubscribeResponseSchema = z.object({
+  subscriptionId: z.string(),
+});
+export type ThreadSubscribeResponse = z.infer<typeof ThreadSubscribeResponseSchema>;
+
+// --- thread/unsubscribe ---
+export const ThreadUnsubscribeParamsSchema = z.object({
+  subscriptionId: z.string(),
+});
+export type ThreadUnsubscribeParams = z.infer<typeof ThreadUnsubscribeParamsSchema>;
+
+export const ThreadUnsubscribeResponseSchema = z.object({
+  ok: z.boolean(),
+});
+export type ThreadUnsubscribeResponse = z.infer<typeof ThreadUnsubscribeResponseSchema>;
+
+// --- file/read ---
+export const FileReadParamsSchema = z.object({
+  threadId: z.string().optional(),
+  path: z.string().min(1),
+});
+export type FileReadParams = z.infer<typeof FileReadParamsSchema>;
+
+const FilePreviewBaseSchema = z.object({ path: z.string(), name: z.string() });
+export const FileReadResponseSchema = z.discriminatedUnion("kind", [
+  FilePreviewBaseSchema.extend({ kind: z.literal("markdown"), content: z.string() }),
+  FilePreviewBaseSchema.extend({ kind: z.literal("text"), content: z.string() }),
+  FilePreviewBaseSchema.extend({ kind: z.literal("image"), mediaType: z.string(), dataBase64: z.string() }),
+  FilePreviewBaseSchema.extend({ kind: z.literal("binary"), mediaType: z.string(), dataBase64: z.string() }),
+  FilePreviewBaseSchema.extend({
+    kind: z.literal("directory"),
+    entries: z.array(z.object({ name: z.string(), path: z.string(), isDirectory: z.boolean() })),
+  }),
+]);
+export type FileReadResponse = z.infer<typeof FileReadResponseSchema>;
+
+// --- image/upload ---
+export const ImageUploadParamsSchema = z.object({
+  threadId: z.string().optional(),
+  fileName: z.string().min(1),
+  mediaType: z.enum(SUPPORTED_IMAGE_MEDIA_TYPES),
+  dataBase64: z.string().min(1),
+});
+export type ImageUploadParams = z.infer<typeof ImageUploadParamsSchema>;
+
+export const ImageUploadAttachmentSchema = LocalImageBlockSchema.extend({
+  webUrl: z.string().optional(),
+});
+export type ImageUploadAttachment = z.infer<typeof ImageUploadAttachmentSchema>;
+
+export const ImageUploadResponseSchema = z.object({
+  attachment: ImageUploadAttachmentSchema,
+});
+export type ImageUploadResponse = z.infer<typeof ImageUploadResponseSchema>;
+
+// --- mcp/* (server management, P070) ---
+export const McpServerStatusSchema = z.object({
+  name: z.string(),
+  transport: z.enum(["stdio", "http", "sse"]),
+  status: z.enum(["connected", "needs_auth", "error", "disabled"]),
+  toolCount: z.number().int().nonnegative(),
+  error: z.string().optional(),
+});
+export type McpServerStatus = z.infer<typeof McpServerStatusSchema>;
+
+// --- mcp/list ---
+export const McpListParamsSchema = z.object({
+  threadId: z.string().optional(),
+});
+export type McpListParams = z.infer<typeof McpListParamsSchema>;
+
+export const McpListResponseSchema = z.object({
+  servers: z.array(McpServerStatusSchema),
+});
+export type McpListResponse = z.infer<typeof McpListResponseSchema>;
+
+// --- mcp/login/start ---
+export const McpLoginStartParamsSchema = z.object({
+  server: z.string(),
+});
+export type McpLoginStartParams = z.infer<typeof McpLoginStartParamsSchema>;
+
+export const McpLoginStartResponseSchema = z.object({
+  authUrl: z.string(),
+});
+export type McpLoginStartResponse = z.infer<typeof McpLoginStartResponseSchema>;
+
+// --- mcp/logout ---
+export const McpLogoutParamsSchema = z.object({
+  server: z.string(),
+});
+export type McpLogoutParams = z.infer<typeof McpLogoutParamsSchema>;
+
+export const McpLogoutResponseSchema = z.object({
+  ok: z.literal(true),
+});
+export type McpLogoutResponse = z.infer<typeof McpLogoutResponseSchema>;
+
+export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_GET), params: ThreadGoalGetParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_SET), params: ThreadGoalSetParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE), params: InitializeParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START), params: ThreadStartParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME), params: ThreadResumeParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST), params: ThreadListParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ), params: ThreadReadParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY), params: ThreadHistoryParamsSchema }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START),
+    params: ThreadCompactStartParamsSchema,
+  }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START), params: TurnStartParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT), params: TurnInterruptParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER), params: TurnSteerParamsSchema }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER_CANCEL),
+    params: TurnSteerCancelParamsSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER_UPDATE),
+    params: TurnSteerUpdateParamsSchema,
+  }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET), params: ModeSetParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET), params: EffortSetParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.FAST_MODE_SET), params: FastModeSetParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST), params: KnowledgeListParamsSchema }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE),
+    params: KnowledgeUpdateParamsSchema,
+  }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE), params: ThreadDeleteParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST), params: ToolsListParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET), params: ToolsSetParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.SKILLS_LIST), params: SkillsListParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.SKILLS_SET), params: SkillsSetParamsSchema }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EXPERIMENTS_LIST),
+    params: ExperimentsListParamsSchema,
+  }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EXPERIMENTS_SET), params: ExperimentsSetParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.SUBAGENTS_LIST), params: SubagentsListParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.SUBAGENTS_SET), params: SubagentsSetParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET), params: ConfigSetParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_RELOAD), params: ConfigReloadParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_LIST), params: AuthListParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_SET), params: AuthSetParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_REMOVE), params: AuthRemoveParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_START), params: AuthOAuthStartParamsSchema }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_CANCEL),
+    params: AuthOAuthCancelParamsSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE),
+    params: ThreadSubscribeParamsSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_UNSUBSCRIBE),
+    params: ThreadUnsubscribeParamsSchema,
+  }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD), params: ImageUploadParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.FILE_READ), params: FileReadParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MCP_LIST), params: McpListParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MCP_LOGIN_START), params: McpLoginStartParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MCP_LOGOUT), params: McpLogoutParamsSchema }),
+]);
+export type DiligentClientRequest = z.infer<typeof DiligentClientRequestSchema>;
+
+export const DiligentClientResponseSchema = z.discriminatedUnion("method", [
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_GET), result: ThreadGoalResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_SET), result: ThreadGoalResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE), result: InitializeResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START), result: ThreadStartResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME), result: ThreadResumeResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST), result: ThreadListResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ), result: ThreadReadResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY), result: ThreadHistoryResponseSchema }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START),
+    result: ThreadCompactStartResponseSchema,
+  }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START), result: TurnStartResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT), result: TurnInterruptResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER), result: TurnSteerResponseSchema }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER_CANCEL),
+    result: TurnSteerCancelResponseSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER_UPDATE),
+    result: TurnSteerUpdateResponseSchema,
+  }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET), result: ModeSetResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET), result: EffortSetResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.FAST_MODE_SET), result: FastModeSetResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST), result: KnowledgeListResponseSchema }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE),
+    result: KnowledgeUpdateResponseSchema,
+  }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE), result: ThreadDeleteResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST), result: ToolsListResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET), result: ToolsSetResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.SKILLS_LIST), result: SkillsListResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.SKILLS_SET), result: SkillsSetResponseSchema }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EXPERIMENTS_LIST),
+    result: ExperimentsListResponseSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EXPERIMENTS_SET),
+    result: ExperimentsSetResponseSchema,
+  }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.SUBAGENTS_LIST), result: SubagentsListResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.SUBAGENTS_SET), result: SubagentsSetResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET), result: ConfigSetResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_RELOAD), result: ConfigReloadResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_LIST), result: AuthListResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_SET), result: AuthSetResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_REMOVE), result: AuthRemoveResponseSchema }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_START),
+    result: AuthOAuthStartResponseSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_CANCEL),
+    result: AuthOAuthCancelResponseSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE),
+    result: ThreadSubscribeResponseSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_UNSUBSCRIBE),
+    result: ThreadUnsubscribeResponseSchema,
+  }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD), result: ImageUploadResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.FILE_READ), result: FileReadResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MCP_LIST), result: McpListResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MCP_LOGIN_START), result: McpLoginStartResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MCP_LOGOUT), result: McpLogoutResponseSchema }),
+]);
+export type DiligentClientResponse = z.infer<typeof DiligentClientResponseSchema>;

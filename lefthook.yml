@@ -1,0 +1,20 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      run: bun run lint
+    typecheck:
+      run: bun run typecheck
+
+commit-msg:
+  commands:
+    title:
+      run: bun run validate:title --file {1}
+
+pre-push:
+  parallel: true
+  only:
+    - ref: main
+  commands:
+    test:
+      run: bun test

@@ -1,0 +1,498 @@
+// @summary Durable goal lifecycle and run ownership, independent of any client or model
+
+import { createLogger } from "@diligent/logging";
+import { type GoalChange, GoalChangeSchema, type ThreadGoal } from "@diligent/protocol";
+import type { SessionRunOutcome } from "../session/types";
+import { chargeableGoalTokens, type GoalRunIdentity, type GoalUsageSample, goalSampleKey } from "./accounting";
+import type { GoalStore } from "./store";
+
+const logger = createLogger({ scope: "runtime.goals" });
+
+export interface GoalVerification {
+  requirement: string;
+  sourceId: string;
+  quote: string;
+}
+export interface GoalObservation {
+  id: string;
+  kind: "tool" | "answer";
+  text: string;
+  isError?: boolean;
+}
+
+export interface GoalWorkScope {
+  identity: GoalRunIdentity;
+  signal: AbortSignal;
+  startedAt: number;
+  recordUsage(sample: Omit<GoalUsageSample, "identity">): void;
+  childStarted(id: string): void;
+  childFinished(id: string): void;
+}
+interface GoalHost {
+  changed: (snapshot: { goal: ThreadGoal | null; sequence: number }) => Promise<void>;
+  wake: (delayMs?: number) => void;
+}
+export class GoalController {
+  private goal: ThreadGoal | null;
+  private epoch: number;
+  private revision: number;
+  private readonly usageKeys: Set<string>;
+  private cancellation = new AbortController();
+  private children = new Set<string>();
+  private noProgress = 0;
+  private blocker?: { key: string; consecutiveRuns: number; lastRun: number };
+  private observations = new Map<string, GoalObservation>();
+  private childWaiters = new Set<() => void>();
+  private retries = 0;
+  private retryNotBefore = 0;
+  private activeRunId?: string;
+  private writes: Promise<void> = Promise.resolve();
+  private failure: unknown;
+  private clearingGoal: ThreadGoal | null = null;
+  private constructor(
+    private store: GoalStore,
+    private threadId: string,
+    private host: GoalHost,
+  ) {
+    const state = store.read();
+    this.goal = state.goal;
+    // A persisted in-flight timestamp must not count server downtime.
+    if (this.goal) this.goal.runStartedAt = undefined;
+    this.epoch = state.epoch;
+    this.revision = state.revision;
+    this.usageKeys = state.usageKeys;
+  }
+  static async open(store: GoalStore, threadId: string, host: GoalHost): Promise<GoalController> {
+    const controller = new GoalController(store, threadId, host);
+    if (controller.goal?.status === "active") await controller.pause("restart");
+    return controller;
+  }
+  read(): { goal: ThreadGoal | null; sequence: number } {
+    return { goal: this.goal ? { ...this.goal } : null, sequence: this.store.read().sequence };
+  }
+  async snapshot(): Promise<{ goal: ThreadGoal | null; sequence: number }> {
+    await this.writes;
+    // Reads must still expose the stopped goal while storage is unavailable.
+    // Recovery only persists that paused state; it never resumes execution.
+    if (this.failure) {
+      try {
+        await this.save(true);
+      } catch {
+        return this.read();
+      }
+    }
+    await this.flush();
+    const state = this.store.read();
+    return { goal: state.goal, sequence: state.sequence };
+  }
+  get hasChildren(): boolean {
+    return this.children.size > 0;
+  }
+  wake(): void {
+    if (this.goal?.status === "active") this.host.wake(Math.max(0, this.retryNotBefore - Date.now()));
+  }
+  async close(): Promise<void> {
+    await this.pause("shutdown");
+    await this.flush();
+    await this.store.close();
+  }
+  private enqueue(write: Promise<void>, recovery = false): void {
+    this.writes = Promise.all([this.writes, write])
+      .then(() => {
+        // Already queued writes may succeed after a failure. Only an explicit
+        // paused recovery snapshot may publish again or clear the failure latch.
+        if (this.failure && !recovery) return;
+        const state = this.store.read();
+        if (recovery) this.failure = undefined;
+        void this.publish({ goal: state.goal, sequence: state.sequence });
+      })
+      .catch((error: unknown) => {
+        this.failure = error;
+        this.invalidate();
+        this.revision++;
+        const stoppedGoal = this.goal ?? this.clearingGoal;
+        if (stoppedGoal)
+          this.goal = {
+            ...stoppedGoal,
+            revision: this.revision,
+            status: "paused",
+            reason: "persistence_error",
+            updatedAt: Date.now(),
+          };
+        logger.error("storage.failed", { message: "Goal state could not be saved", threadId: this.threadId, error });
+        // The failure cannot be persisted yet, but connected clients need the
+        // authoritative in-memory stop state and explicit recovery controls.
+        void this.publish(this.read());
+      });
+  }
+  private async publish(snapshot: ReturnType<GoalController["read"]>): Promise<void> {
+    try {
+      await this.host.changed(snapshot);
+    } catch (error) {
+      // Delivery is best effort. Clients reconcile through goal/get; transport
+      // failures must never invalidate ownership or poison the storage latch.
+      logger.warn("notification.failed", {
+        message: "Goal update could not be delivered",
+        threadId: this.threadId,
+        error,
+      });
+    }
+  }
+  async flush(): Promise<void> {
+    await this.writes;
+    await this.store.flush();
+    if (this.failure) throw this.failure;
+  }
+  private save(recovery = false): Promise<void> {
+    this.revision++;
+    if (this.goal) this.goal = { ...this.goal, revision: this.revision, updatedAt: Date.now() };
+    this.enqueue(
+      this.store.append({ type: "snapshot", goal: this.goal, epoch: this.epoch, revision: this.revision }),
+      recovery,
+    );
+    return this.flush();
+  }
+  private invalidate(): void {
+    this.finishClock();
+    this.epoch++;
+    this.activeRunId = undefined;
+    this.cancellation.abort();
+    this.cancellation = new AbortController();
+  }
+  async pause(reason: string): Promise<void> {
+    if (reason !== "config_reload" && this.goal?.status === "paused" && this.goal.reason === "config_reload") {
+      this.goal.reason = reason;
+      await this.save();
+      return;
+    }
+    if (this.goal?.status !== "active") return;
+    this.invalidate();
+    this.goal.status = "paused";
+    this.goal.reason = reason;
+    await this.save();
+  }
+  /** Replace the current execution with user input without revoking the objective. */
+  async interruptRun(): Promise<void> {
+    if (this.goal?.status !== "active") return;
+    this.invalidate();
+    this.noProgress = 0;
+    this.retries = 0;
+    this.retryNotBefore = 0;
+    this.resetAudit();
+    await this.save();
+  }
+  async waitForChildren(signal: AbortSignal): Promise<void> {
+    const cancellation = AbortSignal.any([signal, this.cancellation.signal]);
+    cancellation.throwIfAborted();
+    if (!this.children.size) return;
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        this.childWaiters.delete(done);
+        cancellation.removeEventListener("abort", cancel);
+      };
+      const done = () => {
+        cleanup();
+        resolve();
+      };
+      const cancel = () => {
+        cleanup();
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      this.childWaiters.add(done);
+      cancellation.addEventListener("abort", cancel, { once: true });
+    });
+  }
+  async change(
+    input: GoalChange,
+    options: { idle: boolean; enabled: boolean; mode: string; defaultMaxTurns?: number },
+  ): Promise<void> {
+    // Recover through snapshot() first. A failed write must never leave an
+    // attempted resume active in memory, even when no new snapshot is durable.
+    if (this.failure) throw this.failure;
+    const change = GoalChangeSchema.parse(input);
+    if (change.action !== "set") {
+      if (!this.goal || change.expectedGoalId !== this.goal.id || change.expectedRevision !== this.goal.revision)
+        throw new Error("Goal revision conflict; reload the current goal");
+    } else if (change.expectedRevision !== undefined && change.expectedRevision !== this.revision)
+      throw new Error("Goal revision conflict");
+    if (change.action === "set" && this.goal && change.expectedRevision === undefined)
+      throw new Error("Goal replacement requires the current expected revision");
+    if (["set", "edit", "resume"].includes(change.action)) {
+      if (!options.enabled) throw new Error("Goal mode is disabled; enable goals.enabled in configuration");
+      if (!options.idle) throw new Error("Wait for the running turn and its cleanup before changing the goal");
+      if (options.mode === "plan") throw new Error("Goal execution is unavailable in plan mode");
+      if (this.children.size > 0) throw new Error("Wait for goal-owned children to settle");
+    }
+    if (change.action === "pause") {
+      await this.pause("user");
+      return;
+    }
+    if (change.action === "clear") {
+      this.invalidate();
+      this.clearingGoal = this.goal;
+      this.goal = null;
+      try {
+        await this.save();
+      } finally {
+        this.clearingGoal = null;
+      }
+      return;
+    }
+    if (change.action === "set") {
+      if (this.goal && this.goal.status !== "complete")
+        throw new Error("An unfinished goal exists; edit or clear it first");
+      this.invalidate();
+      this.noProgress = 0;
+      this.resetAudit();
+      this.retries = 0;
+      this.retryNotBefore = 0;
+      const now = Date.now();
+      this.goal = {
+        id: crypto.randomUUID(),
+        threadId: this.threadId,
+        revision: this.revision,
+        objective: change.objective,
+        status: "active",
+        tokenBudget: change.tokenBudget,
+        maxTurns: change.maxTurns === null ? undefined : (change.maxTurns ?? options.defaultMaxTurns),
+        turnsUsed: 0,
+        tokensUsed: 0,
+        cacheReadTokens: 0,
+        activeTimeMs: 0,
+        accountingScope: "reported_agent_tokens",
+        createdAt: now,
+        updatedAt: now,
+      };
+    } else if (change.action === "edit") {
+      if (this.goal!.status === "complete") throw new Error("Completed goals cannot be edited; set a new goal instead");
+      if (this.goal!.status === "active") throw new Error("Pause the goal before editing it");
+      this.goal = {
+        ...this.goal!,
+        objective: change.objective ?? this.goal!.objective,
+        tokenBudget: change.tokenBudget === null ? undefined : (change.tokenBudget ?? this.goal!.tokenBudget),
+        maxTurns: change.maxTurns === null ? undefined : (change.maxTurns ?? this.goal!.maxTurns),
+      };
+      this.resetAudit();
+    } else {
+      if (this.goal!.status === "complete" || this.goal!.status === "active")
+        throw new Error("This goal cannot be resumed");
+      if (this.limited()) throw new Error("Raise the exhausted limit before resuming");
+      this.invalidate();
+      this.noProgress = 0;
+      this.resetAudit();
+      this.retries = 0;
+      this.retryNotBefore = 0;
+      this.goal!.status = "active";
+      this.goal!.reason = undefined;
+    }
+    await this.save();
+    if (this.goal?.status === "active") this.host.wake();
+  }
+  private limited(): boolean {
+    return (
+      !!this.goal &&
+      ((this.goal.maxTurns !== undefined && this.goal.turnsUsed >= this.goal.maxTurns) ||
+        (this.goal.tokenBudget !== undefined && this.goal.tokensUsed >= this.goal.tokenBudget))
+    );
+  }
+  private limit(): void {
+    if (!this.goal) return;
+    this.invalidate();
+    this.goal.status = "budget_limited";
+    this.goal.reason =
+      this.goal.tokenBudget !== undefined && this.goal.tokensUsed >= this.goal.tokenBudget
+        ? "token_budget"
+        : "turn_limit";
+    void this.save().catch(() => {});
+  }
+  isCurrent(identity: GoalRunIdentity): boolean {
+    return (
+      this.goal?.id === identity.goalId &&
+      this.epoch === identity.epoch &&
+      this.activeRunId === identity.outerRunId &&
+      this.goal.status === "active"
+    );
+  }
+  async beginRun(): Promise<GoalWorkScope | null> {
+    if (this.goal?.status !== "active") return null;
+    if (this.children.size > 0) return null;
+    if (this.activeRunId) throw new Error("A goal run is already active");
+    if (this.limited()) {
+      this.limit();
+      await this.flush();
+      return null;
+    }
+    const identity = { goalId: this.goal.id, epoch: this.epoch, outerRunId: crypto.randomUUID() };
+    this.activeRunId = identity.outerRunId;
+    this.goal.turnsUsed++;
+    this.goal.runStartedAt = Date.now();
+    const scope: GoalWorkScope = {
+      identity,
+      signal: this.cancellation.signal,
+      startedAt: this.goal.runStartedAt,
+      recordUsage: (sample) => this.recordUsage({ ...sample, identity }),
+      childStarted: (id) => {
+        this.children.add(id);
+      },
+      childFinished: (id) => {
+        this.children.delete(id);
+        if (!this.children.size) for (const done of this.childWaiters) done();
+        if (!this.children.size && !this.activeRunId && this.goal?.status === "active")
+          this.host.wake(Math.max(0, this.retryNotBefore - Date.now()));
+      },
+    };
+    await this.save();
+    return this.isCurrent(identity) ? scope : null;
+  }
+  recordUsage(sample: GoalUsageSample): void {
+    const key = goalSampleKey(sample);
+    if (this.usageKeys.has(key)) return;
+    this.usageKeys.add(key);
+    this.enqueue(this.store.append({ type: "usage", sample }));
+    if (this.goal?.id !== sample.identity.goalId) return;
+    this.goal.tokensUsed += chargeableGoalTokens(sample);
+    this.goal.cacheReadTokens += sample.cacheReadTokens;
+    // Synchronous abort before the core can dispatch the just-sampled tool batch.
+    if (this.goal.tokenBudget !== undefined && this.goal.tokensUsed >= this.goal.tokenBudget) {
+      if (this.goal.status === "active") this.limit();
+      else if (
+        this.goal.status === "complete" &&
+        this.epoch === sample.identity.epoch &&
+        this.activeRunId === sample.identity.outerRunId
+      ) {
+        // Completion may still have a final response in flight. Keep its verified
+        // status, but do not allow that response to bypass the execution cap.
+        this.cancellation.abort();
+      }
+    }
+  }
+  private finishClock(): void {
+    if (this.goal?.runStartedAt === undefined) return;
+    this.goal.activeTimeMs += Math.max(0, Date.now() - this.goal.runStartedAt);
+    this.goal.runStartedAt = undefined;
+  }
+  private resetAudit(): void {
+    this.blocker = undefined;
+    this.observations.clear();
+  }
+  audit() {
+    return {
+      blocker: this.blocker ? { ...this.blocker } : undefined,
+      evidenceSources: [...this.observations.values()].map(({ id, kind, text }) => ({
+        id,
+        kind,
+        preview: text.slice(0, 1000),
+      })),
+    };
+  }
+  observe(identity: GoalRunIdentity, observation: GoalObservation): void {
+    if (!this.isCurrent(identity)) return;
+    this.observations.delete(observation.id);
+    if (observation.isError || !observation.text.trim()) return;
+    // Bounded, process-local evidence. Resume requires fresh verification.
+    this.observations.set(observation.id, { ...observation, text: observation.text.slice(0, 32_000) });
+    if (this.observations.size > 32) this.observations.delete(this.observations.keys().next().value!);
+  }
+  async report(
+    identity: GoalRunIdentity,
+    status: "complete" | "blocked" | "paused",
+    evidence: string,
+    details: { blockerKey?: string; verification?: GoalVerification[] } = {},
+  ): Promise<void> {
+    if (!this.isCurrent(identity)) throw new Error("Stale goal execution");
+    if (!evidence.trim()) throw new Error("Non-empty evidence or a blocking reason is required");
+    if (status === "blocked") {
+      const key = details.blockerKey?.trim();
+      if (!key) throw new Error("Supply a stable blockerKey and revalidated evidence on three consecutive goal runs");
+      const run = this.goal!.turnsUsed;
+      if (this.blocker?.key !== key || this.blocker.lastRun < run - 1)
+        this.blocker = { key, consecutiveRuns: 1, lastRun: run };
+      else if (this.blocker.lastRun !== run)
+        this.blocker = { key, consecutiveRuns: this.blocker.consecutiveRuns + 1, lastRun: run };
+      // A nonterminal claim is successful, so the model can finish this run and recheck next time.
+      if (this.blocker.consecutiveRuns < 3) return;
+    }
+    if (status === "complete" && this.children.size)
+      throw new Error("Wait for goal-owned children before declaring completion");
+    if (status === "complete") {
+      if (!details.verification?.length)
+        throw new Error(
+          "List every objective requirement with an observed sourceId and verbatim quote; use get_goal for evidence sources",
+        );
+      for (const item of details.verification) {
+        const source = this.observations.get(item.sourceId);
+        if (!source)
+          throw new Error(`Unknown or unsuccessful evidence source: ${item.sourceId}. Verify again and use get_goal.`);
+        if (!item.requirement.trim() || !item.quote.trim() || !source.text.includes(item.quote))
+          throw new Error("Each requirement needs a verbatim excerpt from its observed evidence source");
+      }
+      this.finishClock();
+      this.goal!.completionEvidence = [
+        evidence.trim(),
+        ...details.verification.map((item) => `${item.requirement}: ${item.quote} [${item.sourceId}]`),
+      ].join("\n");
+    }
+    this.goal!.status = status;
+    if (status !== "complete") {
+      this.goal!.reason = evidence.trim();
+      this.invalidate();
+    }
+    await this.save();
+  }
+  async settle(scope: GoalWorkScope, outcome: SessionRunOutcome, hasActivity: boolean): Promise<void> {
+    const owned =
+      this.goal?.id === scope.identity.goalId &&
+      this.epoch === scope.identity.epoch &&
+      this.activeRunId === scope.identity.outerRunId;
+    if (owned && this.goal) {
+      this.finishClock();
+      if (this.goal.status === "complete" && outcome.status === "failed") {
+        this.goal.status = "blocked";
+        this.goal.reason = `Completion cleanup failed: ${outcome.error.message}`;
+        this.goal.completionEvidence = undefined;
+      }
+      await this.save();
+    }
+    const current = this.isCurrent(scope.identity);
+    if (this.activeRunId === scope.identity.outerRunId) this.activeRunId = undefined;
+    if (!current) return;
+    if (this.blocker?.lastRun !== this.goal!.turnsUsed) this.blocker = undefined;
+    let delay = 0;
+    if (outcome.status === "interrupted") {
+      await this.pause("interrupted");
+      return;
+    }
+    if (outcome.status === "failed") {
+      const error = outcome.error;
+      if (error.providerErrorReason === "usage_limit_reached") {
+        this.goal!.status = "usage_limited";
+        this.goal!.reason = error.message;
+      } else if (
+        error.isRetryable &&
+        ["network", "server_error", "rate_limit"].includes(error.providerErrorType ?? "") &&
+        this.retries < 3
+      ) {
+        delay = Math.min(60_000, Math.max(error.retryAfterMs ?? 0, 1000 * 2 ** this.retries++));
+      } else {
+        this.goal!.status = "blocked";
+        this.goal!.reason = error.message;
+      }
+    } else {
+      this.retries = 0;
+      this.noProgress = hasActivity || this.children.size > 0 ? 0 : this.noProgress + 1;
+      if (this.noProgress >= 3) {
+        this.goal!.status = "blocked";
+        this.goal!.reason = "no_progress";
+      }
+    }
+    this.retryNotBefore = Date.now() + delay;
+    if (this.goal?.status !== "active") this.invalidate();
+    await this.save();
+    if (this.goal?.status === "active") {
+      if (this.limited()) {
+        this.limit();
+        await this.flush();
+      } else this.host.wake(delay);
+    }
+  }
+}

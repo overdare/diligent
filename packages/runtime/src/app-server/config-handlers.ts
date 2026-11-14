@@ -1,0 +1,414 @@
+// @summary App-server config/auth/image helpers extracted from server.ts
+
+import { randomBytes } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
+import { downscaleImageIfNeeded } from "@diligent/core/image-contract";
+import { sameModelRef } from "@diligent/core/model-registry";
+import type { ModelRef } from "@diligent/core/provider-contract";
+import {
+  PROVIDER_NAMES,
+  ProviderError,
+  ProviderErrorReason,
+  type ProviderManager,
+} from "@diligent/core/provider-contract";
+import { createLogger } from "@diligent/logging";
+import {
+  type AuthStoreOptions,
+  createChatGPTOAuthBinding,
+  openBrowser as defaultOpenBrowser,
+  loadAuthStore,
+  loadOAuthTokens,
+  removeAuthKey,
+  removeOAuthTokens,
+  runChatGPTOAuth,
+  saveAuthKey,
+  saveOAuthTokens,
+} from "../auth/index";
+import type { ProviderAuthPresenter } from "../auth/provider-auth-presenter";
+import { resolveProjectDirName } from "../infrastructure/diligent-dir";
+import {
+  DILIGENT_SERVER_NOTIFICATION_METHODS,
+  type DiligentServerNotification,
+  type ProviderAuthStatus,
+  type ProviderName,
+  type SupportedImageMediaType,
+} from "../protocol/index";
+import { PROVIDER_DESCRIPTORS } from "../provider/descriptors";
+import { hasGoalOwnedCleanupPending, type ThreadRuntime } from "./thread-handlers";
+
+type EmitFn = (notification: DiligentServerNotification) => Promise<void>;
+
+const logger = createLogger({ scope: "runtime.app-server.auth" });
+
+export async function handleConfigSet(
+  modelConfig:
+    | {
+        getAvailableModels: () => ModelRef[];
+        onModelChange: (model: ModelRef, threadId?: string) => void;
+      }
+    | undefined,
+  currentModel: ModelRef | undefined,
+  model: ModelRef | undefined,
+  threadId?: string,
+): Promise<{ model: ModelRef | undefined }> {
+  if (!model) return { model: currentModel };
+  if (!modelConfig) throw Object.assign(new Error("Model config not available"), { code: -32601 });
+
+  const valid = modelConfig.getAvailableModels().find((entry) => sameModelRef(entry, model));
+  if (!valid) throw Object.assign(new Error(`Unknown model: ${model.provider}/${model.modelId}`), { code: -32602 });
+
+  modelConfig.onModelChange(model, threadId);
+  return { model };
+}
+
+export interface ConfigReloadResult {
+  skills: Array<{ name: string; description: string }>;
+}
+
+/**
+ * `config/reload` — re-runs skill/agent/tool discovery and reloads mcpServers/tools/hooks
+ * from disk config, without restarting the process. Existing per-thread agents are cleared
+ * so the next turn on each thread rebuilds with the fresh skills/agents/tools/MCP servers.
+ * Web-only parity for the CLI TUI's `/reload`, which achieves the same effect by respawning
+ * its app-server process.
+ */
+export async function handleConfigReload(
+  reloadConfig: (() => Promise<ConfigReloadResult>) | undefined,
+  threads: Map<string, ThreadRuntime>,
+  goalsEnabled: () => boolean = () => true,
+): Promise<ConfigReloadResult> {
+  for (const runtime of threads.values()) runtime.goalCreation = undefined;
+  if (!reloadConfig) {
+    throw Object.assign(new Error("Config reload is not supported by this app server."), { code: -32601 });
+  }
+  const goalActivity = [...threads.values()].map((runtime) => ({
+    runtime,
+    wasActive: runtime.goal?.read().goal?.status === "active",
+  }));
+  await Promise.all(goalActivity.map(({ runtime }) => runtime.goal?.pause("config_reload")));
+  if (goalActivity.some(({ runtime, wasActive }) => hasGoalOwnedCleanupPending(runtime, wasActive))) {
+    throw new Error("Wait for goal-owned work cleanup before reloading configuration");
+  }
+  const resumable = goalActivity
+    .filter(({ wasActive }) => wasActive)
+    .map(({ runtime }) => ({ runtime, goal: runtime.goal?.read().goal }));
+  const result = await reloadConfig();
+  for (const runtime of threads.values()) {
+    runtime.agent = undefined;
+  }
+  for (const { runtime, goal } of resumable) {
+    const current = runtime.goal?.read().goal;
+    if (
+      !goal ||
+      current?.id !== goal.id ||
+      current.revision !== goal.revision ||
+      current.reason !== "config_reload" ||
+      current.status !== "paused"
+    )
+      continue;
+    if (!goalsEnabled() || runtime.mode === "plan") continue;
+    if (
+      ![...threads.values()].includes(runtime) ||
+      runtime.isRunning ||
+      runtime.abortController ||
+      runtime.currentTurnId
+    )
+      continue;
+    try {
+      await runtime.goal!.change(
+        { action: "resume", expectedGoalId: goal.id, expectedRevision: goal.revision },
+        {
+          idle: true,
+          enabled: true,
+          mode: runtime.mode ?? "default",
+        },
+      );
+    } catch (error) {
+      logger.warn("goal.reload_resume_failed", {
+        message: "Configuration reloaded but a goal could not resume",
+        threadId: runtime.id,
+        error,
+      });
+    }
+  }
+  return result;
+}
+
+export async function buildProviderList(
+  providerManager?: ProviderManager,
+  authStore?: AuthStoreOptions,
+  providerAuthPresenter?: ProviderAuthPresenter,
+): Promise<ProviderAuthStatus[]> {
+  const keys = providerManager ? undefined : await loadAuthStore(authStore);
+  const oauthTokens = await loadOAuthTokens(authStore);
+  return PROVIDER_NAMES.map((provider) => {
+    const presented = providerAuthPresenter?.getStatus(provider);
+    const apiKey = providerManager?.getApiKey(provider);
+    return {
+      provider,
+      descriptor: PROVIDER_DESCRIPTORS[provider],
+      configured:
+        presented?.configured ??
+        (providerManager
+          ? providerManager.hasKeyFor(provider)
+          : provider === "chatgpt"
+            ? Boolean(oauthTokens)
+            : Boolean(keys?.[provider])),
+      maskedKey:
+        presented?.maskedKey ??
+        (apiKey
+          ? maskKey(apiKey)
+          : provider === "chatgpt"
+            ? oauthTokens
+              ? "ChatGPT OAuth"
+              : undefined
+            : keys?.[provider]
+              ? maskKey(keys[provider] as string)
+              : undefined),
+      oauthConnected: presented?.oauthConnected ?? (provider === "chatgpt" ? Boolean(oauthTokens) : undefined),
+    };
+  });
+}
+
+export async function handleAuthSet(
+  providerManager: ProviderManager | undefined,
+  params: { provider: ProviderName; apiKey: string },
+  emit: EmitFn,
+  authStore?: AuthStoreOptions,
+  providerAuthPresenter?: ProviderAuthPresenter,
+): Promise<{ ok: true }> {
+  if (!providerManager) throw Object.assign(new Error("Auth not available"), { code: -32601 });
+  if (params.provider === "chatgpt") {
+    throw Object.assign(new Error("ChatGPT uses OAuth login, not API keys"), { code: -32602 });
+  }
+
+  // Verify the key against the provider before persisting, so an invalid key is reported at save
+  // time instead of turning the status green and only failing on the first chat. This call is made
+  // by the server (not the browser), so it won't appear in the browser DevTools network tab.
+  logger.info("api_key_verification_started", {
+    message: `[auth] verifying ${params.provider} API key with provider...`,
+    fields: { provider: params.provider },
+  });
+  try {
+    await providerManager.validateApiKey(params.provider, params.apiKey);
+    logger.info("api_key_verified", {
+      message: `[auth] ${params.provider} API key verified`,
+      fields: { provider: params.provider },
+    });
+  } catch (err) {
+    const rawMessage = err instanceof Error ? err.message : "Unknown validation error";
+    const displayName = PROVIDER_DESCRIPTORS[params.provider].displayName;
+    const message =
+      err instanceof ProviderError && err.reason === ProviderErrorReason.CredentialsRejected
+        ? `Invalid API key for ${displayName}. Please check the key and try again.`
+        : `Could not verify the ${displayName} API key: ${rawMessage}`;
+    logger.warn("api_key_verification_failed", {
+      message: `[auth] ${params.provider} API key verification failed: ${message}`,
+      error: err,
+      fields: { provider: params.provider },
+    });
+    throw Object.assign(new Error(message), { code: -32602 });
+  }
+
+  await saveAuthKey(params.provider, params.apiKey, authStore);
+  providerManager.setApiKey(params.provider, params.apiKey);
+  const providers = await buildProviderList(providerManager, authStore, providerAuthPresenter);
+  await emit({ method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED, params: { providers } });
+  return { ok: true };
+}
+
+export async function handleAuthRemove(
+  providerManager: ProviderManager | undefined,
+  params: { provider: ProviderName },
+  emit: EmitFn,
+  authStore?: AuthStoreOptions,
+  providerAuthPresenter?: ProviderAuthPresenter,
+): Promise<{ ok: true }> {
+  if (!providerManager) throw Object.assign(new Error("Auth not available"), { code: -32601 });
+
+  await removeAuthKey(params.provider, authStore);
+  providerManager.removeApiKey(params.provider);
+  if (params.provider === "chatgpt") {
+    await removeOAuthTokens(authStore);
+    providerManager.removeExternalAuth("chatgpt");
+    providerAuthPresenter?.removeExternalAuth("chatgpt");
+  }
+
+  const providers = await buildProviderList(providerManager, authStore, providerAuthPresenter);
+  await emit({ method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED, params: { providers } });
+  return { ok: true };
+}
+
+export async function handleAuthOAuthStart(args: {
+  params: { provider: "chatgpt" };
+  providerManager: ProviderManager | undefined;
+  oauthPending: Promise<void> | null;
+  setOAuthPending: (value: Promise<void> | null) => void;
+  setOAuthAbortController: (controller: AbortController | null) => void;
+  openBrowser?: (url: string) => void;
+  emit: EmitFn;
+  authStore?: AuthStoreOptions;
+  providerAuthPresenter?: ProviderAuthPresenter;
+}): Promise<{ authUrl: string }> {
+  if (args.params.provider !== "chatgpt") {
+    throw Object.assign(new Error("Unsupported OAuth provider"), { code: -32602 });
+  }
+  const pm = args.providerManager;
+  if (!pm) throw Object.assign(new Error("Auth not available"), { code: -32601 });
+  if (args.oauthPending) throw Object.assign(new Error("OAuth flow already in progress"), { code: -32000 });
+
+  const loginId = randomBytes(32).toString("base64url");
+  let authUrl = "";
+  const controller = new AbortController();
+  args.setOAuthAbortController(controller);
+  // Always open browser server-side. Custom openBrowser callback is used if provided (e.g. TUI),
+  // otherwise fall back to the default platform browser launcher. This ensures it works inside
+  // Tauri where window.open() cannot open an external browser.
+  const opener = args.openBrowser ?? defaultOpenBrowser;
+
+  const pending = (async () => {
+    try {
+      const tokens = await runChatGPTOAuth({
+        timeoutMs: 5 * 60 * 1000,
+        onUrl: (url) => {
+          authUrl = url;
+        },
+        openBrowser: opener,
+        signal: controller.signal,
+      });
+      await saveOAuthTokens(tokens, args.authStore);
+      const authBinding = createChatGPTOAuthBinding({
+        initialTokens: tokens,
+        onTokensRefreshed: (nextTokens) => saveOAuthTokens(nextTokens, args.authStore),
+      });
+      pm.setExternalAuth("chatgpt", authBinding.auth);
+      args.providerAuthPresenter?.setExternalAuth("chatgpt", authBinding.presentation);
+      await args.emit({
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED,
+        params: { loginId, success: true, error: null },
+      });
+      const providers = await buildProviderList(pm, args.authStore, args.providerAuthPresenter);
+      await args.emit({
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED,
+        params: { providers },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "OAuth flow failed";
+      await args.emit({
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED,
+        params: { loginId, success: false, error: message },
+      });
+    } finally {
+      args.setOAuthPending(null);
+      args.setOAuthAbortController(null);
+    }
+  })();
+
+  args.setOAuthPending(pending);
+  return { authUrl };
+}
+
+export async function handleAuthOAuthCancel(args: {
+  params: { provider: "chatgpt" };
+  oauthAbortController: AbortController | null;
+}): Promise<{ cancelled: boolean }> {
+  if (args.params.provider !== "chatgpt") {
+    throw Object.assign(new Error("Unsupported OAuth provider"), { code: -32602 });
+  }
+  if (!args.oauthAbortController) {
+    return { cancelled: false };
+  }
+  args.oauthAbortController.abort();
+  return { cancelled: true };
+}
+
+export async function handleImageUpload(args: {
+  params: { fileName: string; mediaType: SupportedImageMediaType; dataBase64: string };
+  threadId?: string;
+  cwd: string;
+  toImageUrl?: (absPath: string) => string | undefined;
+}): Promise<{
+  type: "local_image";
+  path: string;
+  mediaType: SupportedImageMediaType;
+  fileName: string;
+  webUrl?: string;
+}> {
+  const projectDirName = resolveProjectDirName();
+  const root = args.threadId
+    ? join(args.cwd, projectDirName, "images", args.threadId)
+    : join(args.cwd, projectDirName, "images", "drafts");
+  await mkdir(root, { recursive: true });
+
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(args.params.dataBase64, "base64");
+  } catch {
+    throw new Error("Invalid image payload");
+  }
+
+  if (buffer.length === 0) throw new Error("Empty image payload");
+  if (buffer.length > 10 * 1024 * 1024) throw new Error("Image exceeds 10 MB limit");
+
+  // Downscale once at ingest so the stored file — re-read and base64'd on every subsequent
+  // request — stays small. A raw 4K screenshot is ~10 MB (~13 MB as base64); a few of them in one
+  // session breach Anthropic's 32 MB request cap while staying invisible to token accounting.
+  // The byte backstop may convert an oversized PNG to WebP, so the media type can change here.
+  let stored: { bytes: ArrayBuffer; mediaType: SupportedImageMediaType } = {
+    bytes: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer,
+    mediaType: args.params.mediaType,
+  };
+  try {
+    stored = await downscaleImageIfNeeded(stored.bytes, stored.mediaType);
+  } catch {
+    // Re-encode failure must not reject the upload — store the original.
+  }
+
+  const ext =
+    stored.mediaType === args.params.mediaType
+      ? extname(args.params.fileName) || mediaTypeToExtension(args.params.mediaType)
+      : mediaTypeToExtension(stored.mediaType);
+  const safeBase = sanitizeFileStem(basename(args.params.fileName, extname(args.params.fileName)));
+  const fileName = `${Date.now()}-${randomBytes(4).toString("hex")}-${safeBase}${ext}`;
+  const absPath = join(root, fileName);
+
+  await Bun.write(absPath, stored.bytes);
+
+  const webUrl = args.toImageUrl?.(absPath);
+  return {
+    type: "local_image",
+    path: absPath,
+    mediaType: stored.mediaType,
+    fileName: args.params.fileName,
+    webUrl,
+  };
+}
+
+function maskKey(key: string): string {
+  if (key.length <= 11) return "***";
+  return `${key.slice(0, 7)}...${key.slice(-4)}`;
+}
+
+function sanitizeFileStem(input: string): string {
+  const cleaned = input
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return cleaned || "image";
+}
+
+function mediaTypeToExtension(mediaType: string): string {
+  switch (mediaType) {
+    case "image/png":
+      return ".png";
+    case "image/jpeg":
+      return ".jpg";
+    case "image/webp":
+      return ".webp";
+    case "image/gif":
+      return ".gif";
+    default:
+      return ".img";
+  }
+}

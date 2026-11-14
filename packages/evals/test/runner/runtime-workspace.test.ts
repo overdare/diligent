@@ -1,0 +1,103 @@
+// @summary Tests runtime eval workspace confinement, manifests, diffs, and cleanup guards
+
+import { describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  canonicalizeTemporaryRoot,
+  captureWorkspace,
+  removeTemporaryRoot,
+  resolveWorkspacePath,
+  resolveWorkspacePathForFlavor,
+  rootSpellings,
+  validateTemporaryRoot,
+  workspaceDiff,
+} from "../../src/runner/runtime-workspace";
+
+describe("runtime workspace", () => {
+  test("hashes a stable relative manifest and reports changed byte budgets", async () => {
+    const root = await mkdtemp(join(tmpdir(), "diligent-runtime-eval-"));
+    try {
+      await mkdir(join(root, "src"));
+      await writeFile(join(root, "src", "value.ts"), "export const value = 1;\n");
+      const initial = await captureWorkspace(root);
+      await writeFile(join(root, "src", "value.ts"), "export const value = 2;\n");
+      const final = await captureWorkspace(root);
+      expect(initial.entries.find((entry) => entry.path === "src/value.ts")?.sha256).not.toBe(
+        final.entries.find((entry) => entry.path === "src/value.ts")?.sha256,
+      );
+      expect(workspaceDiff(initial, final)).toEqual({ changedFiles: ["src/value.ts"], changedBytes: 24 });
+    } finally {
+      await removeTemporaryRoot(root);
+    }
+  });
+
+  test("rejects Unix, Windows, UNC, and traversal escapes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "diligent-runtime-eval-"));
+    try {
+      for (const candidate of ["/etc/passwd", "C:\\Windows\\system.ini", "\\\\server\\share", "../escape"]) {
+        expect(() => resolveWorkspacePath(root, candidate)).toThrow("workspace_escape");
+      }
+      expect(resolveWorkspacePath(root, "src\\safe.ts")).toBe(join(root, "src", "safe.ts"));
+      if (process.platform === "darwin" && root.startsWith("/var/")) {
+        expect(resolveWorkspacePath(root, `/private${root}/src/safe.ts`)).toBe(`/private${root}/src/safe.ts`);
+      }
+    } finally {
+      await removeTemporaryRoot(root);
+    }
+  });
+
+  test("accepts Windows absolute paths inside the workspace and rejects Windows escapes", () => {
+    const root = "C:\\Users\\runner\\AppData\\Local\\Temp\\diligent-runtime-eval";
+    expect(resolveWorkspacePathForFlavor(root, `${root}\\references\\initial.fact`, "win32")).toBe(
+      `${root}\\references\\initial.fact`,
+    );
+    expect(resolveWorkspacePathForFlavor(root, `${root}/references/follow-up.fact`, "win32")).toBe(
+      `${root}\\references\\follow-up.fact`,
+    );
+    expect(() => resolveWorkspacePathForFlavor(root, "C:\\Windows\\system.ini", "win32")).toThrow("workspace_escape");
+    expect(() => resolveWorkspacePathForFlavor(root, "D:\\outside.txt", "win32")).toThrow("workspace_escape");
+    expect(() => resolveWorkspacePathForFlavor(root, "\\\\server\\share\\outside.txt", "win32")).toThrow(
+      "workspace_escape",
+    );
+  });
+
+  test("recognizes the forward-slash spelling of a Windows root so evidence normalizes to $WORKSPACE", () => {
+    const root = "C:\\Users\\runner\\AppData\\Local\\Temp\\diligent-runtime-eval";
+    const evidence = "C:/Users/runner/AppData/Local/Temp/diligent-runtime-eval/regions/north.fact";
+    const normalized = rootSpellings(root).reduce(
+      (text, spelling) => text.split(spelling).join("$WORKSPACE"),
+      evidence,
+    );
+    expect(normalized).toBe("$WORKSPACE/regions/north.fact");
+  });
+
+  test("canonicalizes an existing temporary-root alias before runtime assembly", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "diligent-runtime-eval-alias-"));
+    const root = join(parent, "root");
+    const alias = join(parent, "alias");
+    try {
+      await mkdir(root);
+      await symlink(root, alias, process.platform === "win32" ? "junction" : "dir");
+      expect(await canonicalizeTemporaryRoot(alias)).toBe(await canonicalizeTemporaryRoot(root));
+    } finally {
+      await removeTemporaryRoot(parent);
+    }
+  });
+
+  test("records symlinks so fixture validation can reject them", async () => {
+    const root = await mkdtemp(join(tmpdir(), "diligent-runtime-eval-"));
+    try {
+      await writeFile(join(root, "target"), "value");
+      await symlink("target", join(root, "link"));
+      expect((await captureWorkspace(root)).entries.find((entry) => entry.path === "link")?.kind).toBe("symlink");
+    } finally {
+      await removeTemporaryRoot(root);
+    }
+  });
+
+  test("refuses broad cleanup roots", () => {
+    expect(() => validateTemporaryRoot(process.cwd())).toThrow("Refusing broad");
+  });
+});

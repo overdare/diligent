@@ -1,0 +1,93 @@
+// @summary In-process product-owned tool provider contract for bundled runtime tools
+
+import type { AgentLoopHook } from "@diligent/core/agent";
+import type { ImageGenerationFn, Model, ProviderName } from "@diligent/core/provider-contract";
+import type { Tool } from "@diligent/core/tool-contract";
+import type { Logger } from "@diligent/logging";
+import type { PluginHookFn } from "../hooks/runner";
+import type { RuntimeToolHost } from "./capabilities";
+
+export interface TextGenerationInput {
+  systemPrompt: string;
+  prompt: string;
+}
+
+export interface TextGenerationOptions {
+  signal?: AbortSignal;
+  maxTokens?: number;
+}
+
+/** Selected-model text generation with provider auth retained by the runtime. */
+export type TextGenerationFn = (input: TextGenerationInput, options?: TextGenerationOptions) => Promise<string>;
+
+export interface BundledToolProviderContext {
+  cwd: string;
+  host?: RuntimeToolHost;
+  /** Selected chat provider. Unset in integrations without an agent/model context. */
+  modelProvider?: ProviderName;
+  /** Selected-provider image capability. Credentials stay behind the runtime binding. */
+  generateImage?: ImageGenerationFn;
+  /** Selected-model text capability. Unset in integrations without an agent/model context. */
+  generateText?: TextGenerationFn;
+  /** Current session when tools are assembled for a runtime agent. */
+  sessionId?: string;
+}
+
+export interface AgentLoopHookFactoryContext {
+  cwd: string;
+  agentKind: "main" | "child";
+  model: Model;
+  tools: readonly Tool[];
+  parentSessionId?: string;
+  sessionId?: string;
+  logger: Logger;
+}
+
+export type AgentLoopHookFactory = (context: AgentLoopHookFactoryContext) => readonly AgentLoopHook[];
+
+export interface BundledToolProvider {
+  id: string;
+  displayName?: string;
+  supersedesPluginPackages?: string[];
+  createTools(ctx: BundledToolProviderContext): Promise<Tool[]> | Tool[];
+  onUserPromptSubmit?: PluginHookFn;
+  /** External turn-completion lifecycle hook. Return values are ignored. */
+  onStop?: PluginHookFn;
+  /**
+   * Fired after each session entry is durably appended (hook_event_name "EntryAppended").
+   * Use `mode: "async"` for fire-and-forget side-effects (e.g. gateway transmission) — the
+   * runner detaches async hooks so they never block the write/turn path. Cannot block a write.
+   */
+  onEntryAppended?: PluginHookFn;
+  createAgentLoopHooks?: AgentLoopHookFactory;
+}
+
+export function createBundledAgentLoopHooks(
+  providers: readonly BundledToolProvider[] = [],
+  context: AgentLoopHookFactoryContext,
+): AgentLoopHook[] {
+  return providers.flatMap((provider) => provider.createAgentLoopHooks?.(context) ?? []);
+}
+
+/** Plugin packages that bundled providers replace; neither their tools nor their hooks may load. */
+export function collectSupersededPluginPackages(providers: readonly BundledToolProvider[] = []): Set<string> {
+  return new Set(providers.flatMap((provider) => provider.supersedesPluginPackages ?? []));
+}
+
+export interface CollectedBundledHooks {
+  onUserPromptSubmit: PluginHookFn[];
+  onStop: PluginHookFn[];
+  onEntryAppended: PluginHookFn[];
+}
+
+export function collectBundledHooks(providers: BundledToolProvider[] = []): CollectedBundledHooks {
+  const hooks: CollectedBundledHooks = { onUserPromptSubmit: [], onStop: [], onEntryAppended: [] };
+
+  for (const provider of providers) {
+    if (provider.onUserPromptSubmit) hooks.onUserPromptSubmit.push(provider.onUserPromptSubmit);
+    if (provider.onStop) hooks.onStop.push(provider.onStop);
+    if (provider.onEntryAppended) hooks.onEntryAppended.push(provider.onEntryAppended);
+  }
+
+  return hooks;
+}

@@ -1,0 +1,541 @@
+// @summary Tests for Anthropic thinking payload assembly across adaptive and budget-based models
+import { describe, expect, mock, test } from "bun:test";
+import { APIConnectionError, APIError } from "@anthropic-ai/sdk/core/error.mjs";
+import { resolveModel } from "../../../../src/llm/models";
+import { PROVIDER_RESPONSE_HEADER_TIMEOUT_MS } from "../../../../src/llm/provider/timeouts";
+import type { Model, StreamContext, StreamOptions, ToolDefinition } from "../../../../src/llm/types";
+
+const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
+
+const anthropicCalls: unknown[] = [];
+const anthropicConstructorOptions: unknown[] = [];
+const anthropicRequestOptions: unknown[] = [];
+const anthropicFileUploads: unknown[] = [];
+/** Decides per request whether Messages rejects it; unset means every request succeeds. */
+let rejectMessagesRequest: ((params: unknown) => Error | undefined) | undefined;
+
+class MockAnthropicStream {
+  constructor(private readonly rejection?: Error) {}
+
+  on() {
+    return this;
+  }
+
+  async finalMessage() {
+    if (this.rejection) throw this.rejection;
+    return {
+      id: "msg_123",
+      role: "assistant",
+      model: TEST_ANTHROPIC_MODEL_ID,
+      type: "message",
+      stop_reason: "end_turn",
+      usage: { input_tokens: 1, output_tokens: 1 },
+      content: [{ type: "text", text: "ok" }],
+    };
+  }
+}
+
+class MockAnthropicClient {
+  static APIError = APIError;
+  static APIConnectionError = APIConnectionError;
+
+  constructor(options: unknown) {
+    anthropicConstructorOptions.push(options);
+  }
+
+  messages = {
+    stream: (params: unknown, options: unknown) => {
+      anthropicCalls.push(params);
+      anthropicRequestOptions.push(options);
+      return new MockAnthropicStream(rejectMessagesRequest?.(params));
+    },
+  };
+
+  beta = {
+    files: {
+      upload: async (params: unknown) => {
+        anthropicFileUploads.push(params);
+        return { id: `file_${anthropicFileUploads.length}` };
+      },
+    },
+  };
+}
+
+mock.module("@anthropic-ai/sdk", () => ({
+  default: MockAnthropicClient,
+  APIError,
+  APIConnectionError,
+}));
+
+const { createAnthropicStream } = await import("../../../../src/llm/provider/anthropic");
+
+const EMPTY_CONTEXT: StreamContext = {
+  systemPrompt: [],
+  messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+  tools: [] satisfies ToolDefinition[],
+};
+
+function baseModel(overrides: Partial<Model>): Model {
+  return {
+    modelId: TEST_ANTHROPIC_MODEL_ID,
+    provider: "anthropic",
+    contextWindow: 300_000,
+    maxOutputTokens: 8_000,
+    supportsThinking: true,
+    supportsAdaptiveThinking: true,
+    ...overrides,
+  };
+}
+
+async function collectRequest(model: Model, options: StreamOptions = { effort: "medium" }) {
+  anthropicCalls.length = 0;
+  anthropicConstructorOptions.length = 0;
+  anthropicRequestOptions.length = 0;
+  const stream = createAnthropicStream("test-key")(model, EMPTY_CONTEXT, options);
+  await stream.result();
+  expect(anthropicCalls).toHaveLength(1);
+  return anthropicCalls[0] as Record<string, unknown>;
+}
+
+describe("createAnthropicStream", () => {
+  test("constructs the SDK client with explicit timeout and no retries", async () => {
+    await collectRequest(baseModel({}));
+
+    expect(anthropicConstructorOptions).toHaveLength(1);
+    expect(anthropicConstructorOptions[0]).toEqual({
+      apiKey: "test-key",
+      baseURL: "https://api.anthropic.com",
+      timeout: PROVIDER_RESPONSE_HEADER_TIMEOUT_MS,
+      maxRetries: 0,
+    });
+  });
+
+  test("passes through a custom base URL while keeping timeout and retries explicit", async () => {
+    anthropicCalls.length = 0;
+    anthropicConstructorOptions.length = 0;
+
+    const stream = createAnthropicStream("test-key", "https://example.anthropic.local/")(baseModel({}), EMPTY_CONTEXT, {
+      effort: "medium",
+    });
+
+    await stream.result();
+
+    expect(anthropicConstructorOptions).toHaveLength(1);
+    expect(anthropicConstructorOptions[0]).toEqual({
+      apiKey: "test-key",
+      baseURL: "https://example.anthropic.local",
+      timeout: PROVIDER_RESPONSE_HEADER_TIMEOUT_MS,
+      maxRetries: 0,
+    });
+  });
+
+  test("sends images by file_id with the Files beta on the official endpoint", async () => {
+    anthropicCalls.length = 0;
+    anthropicRequestOptions.length = 0;
+    anthropicFileUploads.length = 0;
+    const imageContext: StreamContext = {
+      ...EMPTY_CONTEXT,
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "b2ZmaWNpYWw=" } }],
+          timestamp: 1,
+        },
+      ],
+    };
+
+    await createAnthropicStream("files-key")(baseModel({}), imageContext, { effort: "medium" }).result();
+
+    const request = anthropicCalls[0] as { messages: Array<{ content: Array<{ source: unknown }> }> };
+    expect(anthropicFileUploads).toHaveLength(1);
+    expect(request.messages[0]?.content[0]?.source).toEqual({ type: "file", file_id: "file_1" });
+    expect(anthropicRequestOptions[0]).toMatchObject({ headers: { "anthropic-beta": "files-api-2025-04-14" } });
+  });
+
+  test("keeps images inline behind a custom base URL", async () => {
+    anthropicCalls.length = 0;
+    anthropicFileUploads.length = 0;
+    const imageContext: StreamContext = {
+      ...EMPTY_CONTEXT,
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "cHJveHk=" } }],
+          timestamp: 1,
+        },
+      ],
+    };
+
+    await createAnthropicStream("proxy-key", "https://gateway.example.com")(baseModel({}), imageContext, {
+      effort: "medium",
+    }).result();
+
+    const request = anthropicCalls[0] as { messages: Array<{ content: Array<{ source: unknown }> }> };
+    expect(anthropicFileUploads).toHaveLength(0);
+    expect(request.messages[0]?.content[0]?.source).toEqual({
+      type: "base64",
+      media_type: "image/png",
+      data: "cHJveHk=",
+    });
+  });
+
+  describe("when Messages rejects file image sources", () => {
+    const imageSource = (request: unknown) =>
+      (request as { messages: Array<{ content: Array<{ source: { type: string } }> }> }).messages[0]?.content[0]
+        ?.source;
+    const imageContext = (data: string): StreamContext => ({
+      ...EMPTY_CONTEXT,
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "image", source: { type: "base64", media_type: "image/png", data } }],
+          timestamp: 1,
+        },
+      ],
+    });
+    const fileRejection = () => new APIError(400, undefined, "file source not supported", new Headers());
+
+    test("retries the same request inline and sends later images inline without uploading", async () => {
+      anthropicCalls.length = 0;
+      anthropicRequestOptions.length = 0;
+      anthropicFileUploads.length = 0;
+      rejectMessagesRequest = (params) => (imageSource(params)?.type === "file" ? fileRejection() : undefined);
+      try {
+        const streamFn = createAnthropicStream("rejected-files-key");
+        const first = await streamFn(baseModel({}), imageContext("Zmlyc3Q="), { effort: "medium" }).result();
+        const second = await streamFn(baseModel({}), imageContext("c2Vjb25k"), { effort: "medium" }).result();
+
+        expect(first.message.stopReason).toBe("end_turn");
+        expect(second.message.stopReason).toBe("end_turn");
+        expect(anthropicCalls.map((call) => imageSource(call)?.type)).toEqual(["file", "base64", "base64"]);
+        expect(anthropicRequestOptions[1]).not.toMatchObject({ headers: { "anthropic-beta": expect.anything() } });
+        expect(anthropicFileUploads).toHaveLength(1);
+      } finally {
+        rejectMessagesRequest = undefined;
+      }
+    });
+
+    test("keeps file references when the inline retry fails too", async () => {
+      anthropicCalls.length = 0;
+      rejectMessagesRequest = () => fileRejection();
+      const streamFn = createAnthropicStream("unrelated-rejection-key");
+      try {
+        await expect(
+          streamFn(baseModel({}), imageContext("dW5yZWxhdGVk"), { effort: "medium" }).result(),
+        ).rejects.toThrow();
+      } finally {
+        rejectMessagesRequest = undefined;
+      }
+
+      await streamFn(baseModel({}), imageContext("dW5yZWxhdGVk"), { effort: "medium" }).result();
+
+      expect(anthropicCalls.map((call) => imageSource(call)?.type)).toEqual(["file", "base64", "file"]);
+    });
+  });
+
+  test("uses adaptive thinking without budget_tokens and sends output_config effort", async () => {
+    const request = await collectRequest(
+      baseModel({
+        supportsAdaptiveThinking: true,
+      }),
+      { effort: "high" },
+    );
+
+    expect(request.thinking).toEqual({ type: "adaptive", display: "summarized" });
+    expect(request.output_config).toEqual({ effort: "high" });
+    expect(request.temperature).toBeUndefined();
+  });
+
+  test("forwards max effort to current adaptive-thinking Claude models", async () => {
+    for (const modelId of ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5"]) {
+      const request = await collectRequest(resolveModel({ provider: "anthropic", modelId }), { effort: "max" });
+      expect(request.model).toBe(modelId);
+      expect(request.output_config).toEqual({ effort: "max" });
+    }
+  });
+
+  test.each([
+    "claude-sonnet-5-5",
+    "claude-haiku-5-5",
+  ])("serializes %s Messages requests with all documented efforts and image input", async (modelId) => {
+    const model = resolveModel({ provider: "anthropic", modelId });
+    for (const effort of ["low", "medium", "high", "xhigh", "max"] as const) {
+      const context: StreamContext = {
+        ...EMPTY_CONTEXT,
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" } }],
+            timestamp: 1,
+          },
+        ],
+        tools: [{ kind: "function", name: "read_file", description: "Read a file", inputSchema: { type: "object" } }],
+      };
+      await createAnthropicStream("test-key")(model, context, { effort, temperature: 0.5 }).result();
+      const request = anthropicCalls.at(-1) as Record<string, unknown>;
+      expect(request.model).toBe(modelId);
+      expect(request.max_tokens).toBe(128_000);
+      expect(request.output_config).toEqual({ effort });
+      expect(request.thinking).toMatchObject({ type: "adaptive", display: "summarized" });
+      expect(request.temperature).toBeUndefined();
+      expect(request.tool_choice).toBeUndefined();
+      expect(request.tools).toContainEqual(expect.objectContaining({ name: "read_file" }));
+      expect(request.messages).toContainEqual({
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "file", file_id: expect.any(String) },
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      });
+    }
+  });
+
+  test("uses always-on adaptive thinking for Claude Opus 5.5", async () => {
+    const request = await collectRequest(resolveModel({ provider: "anthropic", modelId: "claude-opus-5-5" }), {
+      effort: "medium",
+    });
+
+    expect(request.model).toBe("claude-opus-5-5");
+    expect(request.thinking).toEqual({
+      type: "adaptive",
+      display: "summarized",
+      block_binding: { prefix_mismatch_behavior: "drop_block" },
+    });
+    expect(request.output_config).toEqual({ effort: "medium" });
+  });
+
+  test.each([
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-haiku-5-5",
+    "claude-fable-5-1",
+  ])("requests stale-block dropping for %s when a replayed conversation prefix changes", async (modelId) => {
+    const model = resolveModel({ provider: "anthropic", modelId });
+    const context: StreamContext = {
+      systemPrompt: [{ label: "system", content: "Updated instructions" }],
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "Earlier reasoning", signature: "signed-block" },
+            { type: "text", text: "Earlier answer" },
+          ],
+          model,
+          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 1,
+        },
+        { role: "user", content: "Continue", timestamp: 2 },
+      ],
+      tools: [],
+    };
+
+    const stream = createAnthropicStream("test-key")(model, context, { effort: "medium" });
+    await stream.result();
+
+    const request = anthropicCalls.at(-1) as Record<string, unknown>;
+    expect(request.messages).toContainEqual({
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "Earlier reasoning", signature: "signed-block" },
+        { type: "text", text: "Earlier answer" },
+      ],
+    });
+    expect(request.thinking).toEqual({
+      type: "adaptive",
+      display: "summarized",
+      block_binding: { prefix_mismatch_behavior: "drop_block" },
+    });
+    expect(anthropicRequestOptions.at(-1)).toMatchObject({
+      headers: { "anthropic-beta": "thinking-binding-controls-2026-08-01" },
+    });
+  });
+
+  test("preserves xhigh for adaptive models with intrinsic xhigh support", async () => {
+    const request = await collectRequest(baseModel({ supportsAdaptiveThinking: true, supportsXhighEffort: true }), {
+      effort: "xhigh",
+    });
+
+    expect(request.output_config).toEqual({ effort: "xhigh" });
+  });
+
+  test("maps xhigh to max for adaptive models without xhigh support", async () => {
+    const request = await collectRequest(baseModel({ supportsAdaptiveThinking: true, supportsXhighEffort: false }), {
+      effort: "xhigh",
+    });
+
+    expect(request.output_config).toEqual({ effort: "max" });
+  });
+
+  test("defaults missing effort to medium adaptive thinking", async () => {
+    const request = await collectRequest(baseModel({ supportsAdaptiveThinking: true }), {});
+
+    expect(request.thinking).toEqual({ type: "adaptive", display: "summarized" });
+    expect(request.output_config).toEqual({ effort: "medium" });
+  });
+
+  test("uses budget_tokens for non-adaptive thinking models", async () => {
+    const request = await collectRequest(
+      baseModel({
+        modelId: "claude-haiku-4-5",
+        supportsAdaptiveThinking: false,
+        thinkingBudgets: { low: 1_024, medium: 3_000, high: 8_000, max: 16_000 },
+      }),
+      { effort: "medium" },
+    );
+
+    expect(request.thinking).toEqual({ type: "enabled", budget_tokens: 3_000, display: "summarized" });
+    expect(request.output_config).toBeUndefined();
+    expect(request.temperature).toBeUndefined();
+  });
+
+  test("uses the max budget when a non-adaptive model receives xhigh", async () => {
+    const request = await collectRequest(
+      baseModel({
+        maxOutputTokens: 64_000,
+        supportsAdaptiveThinking: false,
+        thinkingBudgets: { low: 1_024, medium: 3_000, high: 8_000, max: 16_000 },
+      }),
+      { effort: "xhigh" },
+    );
+
+    expect(request.thinking).toEqual({ type: "enabled", budget_tokens: 16_000, display: "summarized" });
+  });
+
+  test("rejects manual thinking budgets that are not below max_tokens", async () => {
+    const stream = createAnthropicStream("test-key")(
+      baseModel({
+        modelId: "claude-haiku-4-5",
+        supportsAdaptiveThinking: false,
+        thinkingBudgets: { low: 1_024, medium: 3_000, high: 8_000, max: 16_000 },
+      }),
+      EMPTY_CONTEXT,
+      { effort: "max", maxTokens: 16_000 },
+    );
+
+    await expect(stream.result()).rejects.toThrow("must be less than max_tokens");
+  });
+
+  test("rejects manual thinking models without explicit budgets", async () => {
+    const stream = createAnthropicStream("test-key")(
+      baseModel({ modelId: "claude-unknown", supportsAdaptiveThinking: false }),
+      EMPTY_CONTEXT,
+      { effort: "medium" },
+    );
+
+    await expect(stream.result()).rejects.toThrow("does not define thinking budgets");
+  });
+
+  test("uses caller temperature for models that do not support thinking", async () => {
+    const request = await collectRequest(
+      baseModel({
+        supportsThinking: false,
+      }),
+      { effort: "medium", temperature: 0.25 },
+    );
+
+    expect(request.thinking).toBeUndefined();
+    expect(request.output_config).toBeUndefined();
+    expect(request.temperature).toBe(0.25);
+  });
+
+  test("adds Anthropic native web_search tool for provider web capability", async () => {
+    await collectRequest(baseModel({}), {
+      effort: "medium",
+    });
+
+    const stream = createAnthropicStream("test-key")(
+      baseModel({}),
+      {
+        ...EMPTY_CONTEXT,
+        tools: [
+          {
+            kind: "provider_builtin",
+            capability: "web",
+            options: {
+              allowedDomains: ["example.com"],
+              maxUses: 2,
+              userLocation: { type: "approximate", country: "US", region: "CA" },
+            },
+          },
+        ],
+      },
+      { effort: "medium" },
+    );
+
+    await stream.result();
+    const lastRequest = anthropicCalls.at(-1) as Record<string, unknown>;
+    expect(lastRequest.tools).toEqual([
+      {
+        type: "web_search_20260209",
+        name: "web_search",
+        allowed_callers: ["direct"],
+        allowed_domains: ["example.com"],
+        max_uses: 2,
+        user_location: { type: "approximate", country: "US", region: "CA" },
+      },
+    ]);
+  });
+
+  test("adds Anthropic native web_fetch tool when maxContentTokens is configured", async () => {
+    const stream = createAnthropicStream("test-key")(
+      baseModel({}),
+      {
+        ...EMPTY_CONTEXT,
+        tools: [
+          {
+            kind: "provider_builtin",
+            capability: "web",
+            options: {
+              allowedDomains: ["example.com"],
+              maxContentTokens: 4000,
+              citationsEnabled: false,
+              userLocation: { type: "approximate", country: "US" },
+            },
+          },
+        ],
+      },
+      { effort: "medium" },
+    );
+
+    await stream.result();
+    const lastRequest = anthropicCalls.at(-1) as Record<string, unknown>;
+    expect(lastRequest.tools).toEqual([
+      {
+        type: "web_fetch_20260209",
+        name: "web_fetch",
+        allowed_callers: ["direct"],
+        allowed_domains: ["example.com"],
+        max_content_tokens: 4000,
+        citations: { enabled: false },
+      },
+    ]);
+  });
+
+  test("reuses compactionSummary as a synthetic user message in standard Anthropic requests", async () => {
+    anthropicCalls.length = 0;
+    const stream = createAnthropicStream("test-key")(
+      baseModel({}),
+      {
+        ...EMPTY_CONTEXT,
+        compactionSummary: { type: "compaction", content: "prior compacted context" },
+      },
+      { effort: "medium" },
+    );
+
+    await stream.result();
+    const request = anthropicCalls.at(-1) as { messages: Array<{ role: string; content: unknown[] }> };
+    expect(request.messages).toHaveLength(2);
+    expect(request.messages[0]).toEqual({
+      role: "user",
+      content: [{ type: "text", text: "prior compacted context" }],
+    });
+    expect(request.messages[1]?.role).toBe("user");
+    expect(request.messages[1]?.content).toEqual([
+      { type: "text", text: "hello", cache_control: { type: "ephemeral" } },
+    ]);
+  });
+});

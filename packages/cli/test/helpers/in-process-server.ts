@@ -1,0 +1,110 @@
+// @summary In-process DiligentAppServer + RpcClientSession adapter for CLI unit tests
+
+import type {
+  DiligentServerNotification,
+  DiligentServerRequest,
+  DiligentServerRequestResponse,
+  JSONRPCMessage,
+} from "@diligent/protocol";
+import { DILIGENT_SERVER_REQUEST_METHODS } from "@diligent/protocol";
+import type { DiligentPaths } from "@diligent/runtime";
+import { DiligentAppServer, RpcClientSession } from "@diligent/runtime";
+import type { AppConfig } from "../../src/config";
+import type { SpawnedAppServer } from "../../src/tui/rpc-client";
+import type { SpawnRpcClientOptions } from "../../src/tui/rpc-framed-client";
+
+/**
+ * Creates a factory that produces an in-process SpawnedAppServer backed by a
+ * real DiligentAppServer wired via RpcClientSession — no child process needed.
+ */
+export function createInProcessRpcClientFactory(
+  config: AppConfig,
+  paths: DiligentPaths,
+  cwd: string,
+): (options: SpawnRpcClientOptions) => Promise<SpawnedAppServer> {
+  return async (_options: SpawnRpcClientOptions): Promise<SpawnedAppServer> => {
+    const { RuntimeAgent } = await import("@diligent/runtime");
+    const server = new DiligentAppServer({
+      cwd,
+      resolvePaths: async () => paths,
+      createAgent: () =>
+        new RuntimeAgent(config.model, config.systemPrompt, [], {
+          effort: "medium",
+          llmMsgStreamFn: config.streamFunction,
+        }),
+    });
+
+    let notificationListener: ((notification: DiligentServerNotification) => void | Promise<void>) | null = null;
+    let serverRequestHandler:
+      | ((requestId: number | string, request: DiligentServerRequest) => Promise<DiligentServerRequestResponse>)
+      | null = null;
+
+    // Server-side message listener — captured during connect()
+    let serverMessageListener: ((msg: JSONRPCMessage) => void | Promise<void>) | null = null;
+
+    const rpcClient = new RpcClientSession(
+      {
+        send(message: JSONRPCMessage) {
+          // Client → server
+          if (serverMessageListener) {
+            void serverMessageListener(message);
+          }
+        },
+      },
+      {
+        onNotification(notification: DiligentServerNotification) {
+          void notificationListener?.(notification);
+        },
+        async onServerRequest(request: DiligentServerRequest) {
+          if (serverRequestHandler) {
+            return serverRequestHandler(0, request);
+          }
+          if (request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
+            return {
+              method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
+              result: { decision: "once" as const },
+            };
+          }
+          return {
+            method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
+            result: { answers: {} },
+          } as DiligentServerRequestResponse;
+        },
+      },
+    );
+
+    const disconnect = server.connect("test-cli", {
+      send(message: JSONRPCMessage) {
+        // Server → client
+        void rpcClient.handleMessage(message);
+      },
+      onMessage(listener) {
+        serverMessageListener = listener;
+      },
+      onClose() {
+        // no-op for tests
+      },
+    });
+
+    const adapter: SpawnedAppServer = {
+      async request(method, params) {
+        return rpcClient.request(method as never, params as never) as never;
+      },
+      notify(method, params) {
+        return rpcClient.notify(method, params);
+      },
+      setNotificationListener(listener) {
+        notificationListener = listener;
+      },
+      setServerRequestHandler(handler) {
+        serverRequestHandler = handler;
+      },
+      async dispose() {
+        rpcClient.close();
+        disconnect();
+      },
+    };
+
+    return adapter;
+  };
+}

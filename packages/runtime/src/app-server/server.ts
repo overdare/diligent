@@ -1,0 +1,1203 @@
+// @summary JSON-RPC app server mapping SessionManager/AgentEvent to shared protocol requests and notifications
+
+import { userInfo } from "node:os";
+import { toSerializableError } from "@diligent/core/agent";
+import { getDefaultModelRef, resolveModel, sameModelRef } from "@diligent/core/model-registry";
+import {
+  DEFAULT_PROVIDER,
+  type ModelRef,
+  type NativeCompactFn,
+  type ProviderManager,
+  type ProviderName,
+  type StreamFunction,
+} from "@diligent/core/provider-contract";
+import { createLogger } from "@diligent/logging";
+import type { RuntimeAgent } from "../agent/runtime-agent";
+import type { AgentEvent } from "../agent-event";
+import type { ApprovalRequest, ApprovalResponse, PermissionEngine } from "../approval/types";
+import { type AuthStoreOptions, loadOAuthTokens } from "../auth/auth-store";
+import type { ProviderAuthPresenter } from "../auth/provider-auth-presenter";
+import type { ChildStopInfo } from "../collab/types";
+import type { DiligentConfig } from "../config/schema";
+import { presentRuntimeError } from "../errors/presentation";
+import { resolveExperimentGates } from "../experiments";
+import { GoalController } from "../goals/controller";
+import { openGoalStore } from "../goals/store";
+import type { GoalToolHost } from "../goals/tools";
+import {
+  getLastAssistantMessage,
+  getTurnUsage,
+  type HookInput,
+  runLifecycleHooks,
+  runPluginHooks,
+} from "../hooks/runner";
+import type { DiligentPaths } from "../infrastructure";
+import {
+  AgentEventSchema,
+  DILIGENT_CLIENT_NOTIFICATION_METHODS,
+  DILIGENT_SERVER_NOTIFICATION_METHODS,
+  DILIGENT_VERSION,
+  DiligentClientRequestSchema,
+  type DiligentServerNotification,
+  type JSONRPCErrorResponse,
+  JSONRPCErrorResponseSchema,
+  JSONRPCRequestSchema,
+  type JSONRPCResponse,
+  JSONRPCResponseSchema,
+  type Mode,
+  ProviderNameSchema,
+  type ThinkingEffort,
+  type ThreadResumeResponse,
+} from "../protocol/index";
+import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "../rpc/channel";
+import { readSessionHeader } from "../session/history";
+import { SessionManager, type SessionManagerConfig } from "../session/manager";
+import type { AppendedEntryInfo, SessionRunOutcome } from "../session/types";
+import {
+  type BundledToolProvider,
+  collectBundledHooks,
+  collectSupersededPluginPackages,
+} from "../tools/bundled-provider";
+import { collectPluginHooks, type PluginDiscoveryMode } from "../tools/plugin-loader";
+import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
+import type { ConfigReloadResult } from "./config-handlers";
+import type { ExperimentConfigManager } from "./experiment-handlers";
+import { resolveFilePreviewCwd } from "./file-handlers";
+import { HistoryPriority } from "./history-priority";
+import { createKeyedSerializer } from "./keyed-serializer";
+import {
+  applySessionDefaults,
+  type ClientRequestDispatchContext,
+  type ConnectedPeer,
+  dispatchClientRequest,
+  type ModelConfig,
+  type ToolConfigManager,
+} from "./request-dispatcher";
+import {
+  handleServerResponseMessage,
+  type PendingServerRequest,
+  requestApprovalFromConnections,
+  requestUserInputFromConnections,
+} from "./server-requests";
+import type { SkillConfigManager } from "./skill-handlers";
+import type { SubagentConfigManager } from "./subagent-handlers";
+import { resetTurnRuntimeState, type ThreadListScan, type ThreadRuntime } from "./thread-handlers";
+import { handleTurnStart } from "./turn-handlers";
+
+export type { ConnectedPeer, ModelConfig, ToolConfigManager } from "./request-dispatcher";
+export type { SkillConfigManager } from "./skill-handlers";
+export type { SubagentConfigManager } from "./subagent-handlers";
+
+export interface CreateAgentArgs {
+  runObserved?: SessionManagerConfig["runObserved"];
+  observeModelAttempt?: import("@diligent/core/agent").AgentOptions["observeModelAttempt"];
+  goalHost?: GoalToolHost;
+  cwd: string;
+  mode: Mode;
+  effort: ThinkingEffort;
+  fastMode?: boolean;
+  model: ModelRef;
+  approve: (
+    request: ApprovalRequest,
+    options?: import("../tools/capabilities").RuntimeRequestOptions,
+  ) => Promise<ApprovalResponse>;
+  ask: (
+    request: UserInputRequest,
+    options?: import("../tools/capabilities").RuntimeRequestOptions,
+  ) => Promise<UserInputResponse>;
+  /** Lazily returns the current session ID for collab parent-session linking. */
+  getSessionId?: () => string | undefined;
+  /** The thread's current agent, if one already exists. Passed so createAgent can reuse the registry. */
+  existingAgent?: RuntimeAgent;
+  /** Called when a child agent's turn completes or is interrupted. Propagated to the collab registry. */
+  onChildStop?: (info: ChildStopInfo) => Promise<void>;
+  /** Routes durable child entries through the same host observers as parent entries. */
+  onChildEntryAppended?: (info: AppendedEntryInfo) => void;
+  /** Resolve the current turn owner when a retained registry spawns a child. */
+  getUserId?: () => string | undefined;
+  /** Authenticated user propagated to child persistence and lifecycle hooks. */
+  userId?: string;
+}
+
+export interface DiligentAppServerConfig {
+  getGoalsConfig?: () => DiligentConfig["goals"];
+  serverName?: string;
+  serverVersion?: string;
+  cwd?: string;
+  /** Assembly-owned plugin discovery behavior (default `global`). */
+  pluginDiscovery?: PluginDiscoveryMode;
+  getInitializeResult?: () => Record<string, unknown> | Promise<Record<string, unknown>>;
+  resolvePaths: (cwd: string) => Promise<DiligentPaths>;
+  createAgent: (args: CreateAgentArgs) => RuntimeAgent | Promise<RuntimeAgent>;
+  /** Refresh provider-dependent tools between turns without replacing the agent or its state. */
+  refreshAgentTools?: (agent: RuntimeAgent, args: CreateAgentArgs) => void | Promise<void>;
+  streamFunction?: StreamFunction;
+  createNativeCompaction?: (provider: ProviderName) => NativeCompactFn | undefined;
+  compaction?: SessionManagerConfig["compaction"];
+  runObserved?: SessionManagerConfig["runObserved"];
+  observeModelAttempt?: import("@diligent/core/agent").AgentOptions["observeModelAttempt"];
+  /** Config/model management — required for CONFIG_SET and AUTH_LIST */
+  modelConfig?: ModelConfig;
+  /** Tool config management — required for TOOLS_LIST and TOOLS_SET */
+  toolConfig?: ToolConfigManager;
+  /** Skill settings management — required for SKILLS_LIST and SKILLS_SET */
+  skillConfig?: SkillConfigManager;
+  experimentConfig?: ExperimentConfigManager;
+  /** Subagent settings management — required for SUBAGENTS_LIST and SUBAGENTS_SET */
+  subagentConfig?: SubagentConfigManager;
+  /** Provider manager — required for AUTH_* methods */
+  providerManager?: ProviderManager;
+  /** Runtime-owned provider authentication presentation state. */
+  providerAuthPresenter?: ProviderAuthPresenter;
+  /** Open a URL in the browser — defaults to the built-in openBrowser from @diligent/core */
+  openBrowser?: (url: string) => void;
+  /** Convert an absolute image path to a URL for web clients (omit if not needed) */
+  toImageUrl?: (absPath: string) => string | undefined;
+  /** Loaded skill names for slash-command disambiguation in turn/start. */
+  skillNames?: string[];
+  /** Default effort from config (defaults to "medium") */
+  defaultEffort?: ThinkingEffort;
+  /** Permission policy engine loaded from runtime config (yolo/rules). */
+  permissionEngine?: PermissionEngine;
+  /** Lifecycle hooks config (UserPromptSubmit, Stop). */
+  hooks?: DiligentConfig["hooks"];
+  /** Product-owned in-process bundled tool providers. */
+  bundledToolProviders?: BundledToolProvider[];
+  /** External MCP servers whose tools are exposed to the agent (P069). */
+  mcpServers?: DiligentConfig["mcpServers"];
+  /** User identifier included in hook inputs. Falls back to OS username if unset. */
+  userId?: string;
+  /** Called when a connection switches to a current thread. */
+  onCurrentThreadChange?: (threadId: string) => void;
+  /** Auth credential storage backend configuration. */
+  authStore?: AuthStoreOptions;
+  /**
+   * Re-discovers skills, agents, tools, and MCP servers from disk config and applies them
+   * in place, without restarting the process. Powers `config/reload` for hosts (e.g. Web)
+   * that run as a long-lived shared server and can't restart per client like the CLI TUI's
+   * `/reload` (which respawns its own app-server child process).
+   */
+  reloadConfig?: () => Promise<ConfigReloadResult>;
+}
+
+async function resolveProviderPlanType(
+  provider: string | undefined,
+  authStore: AuthStoreOptions | undefined,
+): Promise<string | undefined> {
+  if (provider !== "chatgpt" || !authStore) return undefined;
+  const tokens = await loadOAuthTokens(authStore).catch(() => undefined);
+  return tokens?.account_info?.chatgpt_plan_type;
+}
+
+export class DiligentAppServer {
+  private readonly serverName: string;
+  private readonly serverVersion: string;
+  private readonly threads = new Map<string, ThreadRuntime>();
+  private readonly pendingResumes = new Map<string, Promise<ThreadResumeResponse>>();
+  private readonly threadListScans = new Map<string, ThreadListScan>();
+  private readonly historyPriority = new HistoryPriority();
+  private readonly knownCwds = new Set<string>();
+  private activeThreadId: string | null = null;
+  private closing = false;
+
+  // New multi-connection infrastructure
+  private readonly connections = new Map<string, ConnectedPeer>();
+  private readonly subscriptionMap = new Map<string, { connectionId: string; threadId: string }>();
+  private readonly turnInitiators = new Map<string, string>(); // threadId → connectionId
+  private readonly pendingServerRequests = new Map<number, PendingServerRequest>();
+  // Serializes user-input prompts per thread so the agent fanning out several
+  // selectable searches in parallel never shows overlapping pickers (which a
+  // single-prompt client cannot resolve, deadlocking the turn).
+  private readonly userInputSerializer = createKeyedSerializer();
+  private serverRequestSeq = 0;
+
+  // Config/auth state
+  private currentModel: ModelRef | undefined;
+  private oauthPending: Promise<void> | null = null;
+  private oauthAbortController: AbortController | null = null;
+
+  // Per-cwd cache to avoid scanning session files on every new thread creation
+  private readonly lastUsedModelByCwd = new Map<string, ModelRef>();
+  private readonly lastUsedEffortByCwd = new Map<string, ThinkingEffort>();
+
+  constructor(private readonly config: DiligentAppServerConfig) {
+    this.serverName = config.serverName ?? "diligent-app-server";
+    this.serverVersion = config.serverVersion ?? DILIGENT_VERSION;
+    this.knownCwds.add(config.cwd ?? process.cwd());
+    this.currentModel = config.modelConfig?.currentModel;
+  }
+
+  // ─── New multi-connection API ───────────────────────────────────────────────
+
+  /** Resolve a host-owned read against a known thread project without creating or resuming a runtime. */
+  async resolveProjectCwd(threadId?: string): Promise<string> {
+    return resolveFilePreviewCwd(
+      { threads: this.threads, knownCwds: this.knownCwds, resolvePaths: this.config.resolvePaths },
+      threadId,
+      this.config.cwd ?? process.cwd(),
+    );
+  }
+
+  connect(connectionId: string, peer: RpcPeer, options?: { cwd?: string; mode?: Mode; userId?: string }): () => void {
+    const conn: ConnectedPeer = {
+      id: connectionId,
+      peer,
+      subscriptions: new Set(),
+      currentThreadId: null,
+      cwd: options?.cwd ?? this.config.cwd ?? process.cwd(),
+      mode: options?.mode ?? "default",
+      effort: this.config.defaultEffort ?? "medium",
+      userId: options?.userId,
+    };
+    this.connections.set(connectionId, conn);
+    for (const runtime of this.threads.values()) runtime.goal?.wake();
+
+    peer.onMessage(async (message) => {
+      if (!this.connections.has(connectionId)) return;
+
+      if (isRpcRequest(message)) {
+        const response = await this.handleRequest(connectionId, message);
+        await peer.send(response);
+        return;
+      }
+
+      if (isRpcNotification(message)) {
+        await this.handleNotification(message);
+        return;
+      }
+
+      if (isRpcResponse(message)) {
+        await handleServerResponseMessage({
+          connectionId,
+          message,
+          pendingServerRequests: this.pendingServerRequests,
+          getConnectionById: (id) => this.connections.get(id),
+        });
+      }
+    });
+
+    peer.onClose?.(() => {
+      this.disconnect(connectionId);
+    });
+
+    return () => this.disconnect(connectionId);
+  }
+
+  disconnect(connectionId: string): void {
+    const conn = this.connections.get(connectionId);
+    if (!conn) return;
+    for (const runtime of this.threads.values()) {
+      if (runtime.goalCreation?.connectionId === connectionId) runtime.goalCreation = undefined;
+    }
+    // A transport loss is not a user pause. Existing work and durable questions survive;
+    // new automatic runs wait for a connection and are woken by connect().
+
+    // Clean up subscriptions for this connection
+    for (const [subId, sub] of this.subscriptionMap) {
+      if (sub.connectionId === connectionId) {
+        this.subscriptionMap.delete(subId);
+      }
+    }
+
+    // Resolve pending server requests where this was the only remaining responder.
+    // Durable requests (user input, no timeout) are kept alive across the disconnect so a
+    // reconnecting or reloading client can still deliver the answer; they are re-delivered
+    // when a connection (re)subscribes to the thread.
+    for (const [reqId, pending] of this.pendingServerRequests) {
+      if (!pending.sentTo.has(connectionId)) continue;
+      pending.sentTo.delete(connectionId);
+      if (pending.sentTo.size > 0) continue;
+      if (pending.durable) continue;
+      if (pending.timeoutId !== null) clearTimeout(pending.timeoutId);
+      this.pendingServerRequests.delete(reqId);
+      pending.resolve(null);
+    }
+
+    this.connections.delete(connectionId);
+  }
+
+  /** Stop automatic work and durably pause goals before a host exits. */
+  async shutdown(): Promise<void> {
+    this.closing = true;
+    for (const runtime of this.threads.values()) {
+      runtime.goalCreation = undefined;
+      if (runtime.goalTimer) clearTimeout(runtime.goalTimer);
+    }
+    await Promise.all(
+      [...this.threads.values()].map(async (runtime) => {
+        await runtime.goal?.pause("shutdown");
+        // Normal turns and a completed goal's final reply may still be waiting
+        // for input. Cancel them before awaiting cleanup during host shutdown.
+        runtime.abortController?.abort();
+        await runtime.turnWork;
+        await runtime.agent?.registry?.shutdownAll();
+        await runtime.goal?.close();
+      }),
+    );
+  }
+
+  subscribeToThread(connectionId: string, threadId: string): string {
+    const conn = this.connections.get(connectionId);
+    if (!conn) throw new Error(`Unknown connection: ${connectionId}`);
+    const subscriptionId = `sub-${crypto.randomUUID().slice(0, 8)}`;
+    conn.subscriptions.add(threadId);
+    this.subscriptionMap.set(subscriptionId, { connectionId, threadId });
+    this.redeliverDurableRequests(connectionId, threadId);
+    return subscriptionId;
+  }
+
+  // Re-send any durable pending server requests (e.g. an unanswered user-input prompt) for
+  // this thread to a connection that just (re)subscribed. This restores the prompt after a
+  // page reload or reconnect that arrives with a fresh connection id. Delivery is idempotent
+  // per connection via `sentTo`, and the client suppresses re-prompting if it already answered.
+  private redeliverDurableRequests(connectionId: string, threadId: string): void {
+    const conn = this.connections.get(connectionId);
+    if (!conn) return;
+    for (const [reqId, pending] of this.pendingServerRequests) {
+      if (!pending.durable) continue;
+      if (pending.threadId !== threadId) continue;
+      if (pending.sentTo.has(connectionId)) continue;
+      pending.sentTo.add(connectionId);
+      void conn.peer.send({ id: reqId, method: pending.method, params: pending.params });
+    }
+  }
+
+  unsubscribeFromThread(subscriptionId: string): boolean {
+    const sub = this.subscriptionMap.get(subscriptionId);
+    if (!sub) return false;
+    this.subscriptionMap.delete(subscriptionId);
+    const conn = this.connections.get(sub.connectionId);
+    if (conn) conn.subscriptions.delete(sub.threadId);
+    return true;
+  }
+
+  // ─── Request handling ───────────────────────────────────────────────────────
+
+  async handleRequest(connectionId: string, raw: unknown): Promise<JSONRPCResponse> {
+    const request = JSONRPCRequestSchema.safeParse(raw);
+    if (!request.success) {
+      return this.errorResponse("unknown", -32600, "Invalid Request", request.error.message);
+    }
+    if (this.closing) return this.errorResponse(request.data.id, -32000, "Server is shutting down");
+
+    const rawParams = (request.data.params ?? {}) as Record<string, unknown>;
+    const params = applySessionDefaults(connectionId, request.data.method, rawParams, (id) => this.connections.get(id));
+
+    const parsed = DiligentClientRequestSchema.safeParse({
+      method: request.data.method,
+      params,
+    });
+
+    if (!parsed.success) {
+      return this.errorResponse(request.data.id, -32602, "Invalid params", parsed.error.message);
+    }
+
+    try {
+      const result = await dispatchClientRequest(this.buildRequestDispatchContext(), connectionId, parsed.data);
+      return JSONRPCResponseSchema.parse({ id: request.data.id, result });
+    } catch (error) {
+      const code =
+        error instanceof Error && typeof (error as unknown as { code?: unknown }).code === "number"
+          ? (error as unknown as { code: number }).code
+          : -32000;
+      const message = error instanceof Error ? error.message : String(error);
+      return this.errorResponse(request.data.id, code, message);
+    }
+  }
+
+  async handleNotification(raw: unknown): Promise<void> {
+    const notification = JSONRPCRequestSchema.omit({ id: true }).safeParse(raw);
+    if (!notification.success) {
+      return;
+    }
+
+    if (notification.data.method === DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED) {
+      return;
+    }
+  }
+
+  // ─── Turn consumption ────────────────────────────────────────────────────────
+
+  private async consumeTurn(
+    runtime: ThreadRuntime,
+    runPromise: Promise<void>,
+    turnId: string,
+  ): Promise<SessionRunOutcome | undefined> {
+    // Wire collab events from the registry into the notification stream.
+    const wiredRegistries = new Set<import("../collab/registry").AgentRegistry>();
+    const collabEventHandler = (event: AgentEvent) => {
+      void this.emitFromAgentEvent(runtime.id, turnId, event);
+    };
+    const wireCollabHandler = () => {
+      const currentRegistry = runtime.agent?.registry;
+      if (!currentRegistry || wiredRegistries.has(currentRegistry)) return;
+      currentRegistry.setCollabEventHandler(collabEventHandler);
+      wiredRegistries.add(currentRegistry);
+    };
+
+    // Subscribe to manager events BEFORE awaiting so we don't miss early events.
+    // Wire collab handler on each event — the agent (and its registry) is created
+    // lazily inside manager.run(), so we wire as soon as it becomes available.
+    const unsub = runtime.manager.subscribe((event) => {
+      wireCollabHandler();
+      void this.emitFromAgentEvent(runtime.id, turnId, event);
+    });
+
+    const controller = runtime.abortController;
+    let terminal: "completed" | "interrupted" | undefined;
+    try {
+      await runPromise;
+      await runtime.manager.waitForWrites();
+      if (runtime.currentTurnId === turnId) terminal = "completed";
+    } catch (error) {
+      const isAbort =
+        (error instanceof Error && (error.name === "AbortError" || error.message === "Aborted")) ||
+        controller?.signal.aborted === true;
+      if (runtime.currentTurnId === turnId) {
+        if (isAbort) terminal = "interrupted";
+        else
+          await this.emit({
+            method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
+            params: { threadId: runtime.id, error: toSerializableError(error), fatal: false },
+          });
+      }
+      // The goal coordinator must see cleanup failures as well as model outcomes.
+      return isAbort ? { status: "interrupted" } : { status: "failed", error: toSerializableError(error) };
+    } finally {
+      unsub();
+      for (const registry of wiredRegistries) registry.setCollabEventHandler(undefined);
+      if (runtime.currentTurnId === turnId) {
+        resetTurnRuntimeState(runtime);
+        if (terminal)
+          await this.emit({
+            method:
+              terminal === "completed"
+                ? DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED
+                : DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED,
+            params: { threadId: runtime.id, turnId },
+          });
+        // A client may already have started a replacement from the terminal notification.
+        if (runtime.currentTurnId === null)
+          await this.emit({
+            method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+            params: { threadId: runtime.id, status: "idle" },
+          });
+      }
+    }
+  }
+
+  private async emitFromAgentEvent(threadId: string, turnId: string, event: AgentEvent): Promise<void> {
+    const runtime = this.threads.get(threadId);
+    if (!runtime || runtime.currentTurnId !== turnId) return;
+    const outboundEvent =
+      event.type === "error"
+        ? {
+            ...event,
+            error: presentRuntimeError(event.error, {
+              provider: this.resolveRuntimeProvider(runtime),
+              operation: "agent_turn",
+              retrySafe: true,
+            }),
+          }
+        : event;
+    const parsedAgentEvent = AgentEventSchema.safeParse(outboundEvent);
+    if (parsedAgentEvent.success) {
+      await this.emit({
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT,
+        params: {
+          threadId,
+          turnId,
+          event: parsedAgentEvent.data,
+          ...(runtime?.isRunning === true ? { threadStatus: "busy" as const } : {}),
+        },
+      });
+    }
+  }
+
+  // ─── Notification routing ───────────────────────────────────────────────────
+
+  private async emit(notification: DiligentServerNotification): Promise<void> {
+    if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR) {
+      const runtime = notification.params.threadId ? this.threads.get(notification.params.threadId) : undefined;
+      notification = {
+        ...notification,
+        params: {
+          ...notification.params,
+          error: presentRuntimeError(notification.params.error, {
+            provider: this.resolveRuntimeProvider(runtime),
+            operation: runtime?.currentTurnId ? "agent_turn" : "app_server",
+            retrySafe: runtime?.currentTurnId != null,
+          }),
+        },
+      };
+    }
+
+    // Collab debugging: always-on server-side log for collab/* notifications.
+    // Intentionally redact large prompt fields to avoid noisy logs.
+    if (notification.method.startsWith("collab/")) {
+      const params = notification.params as Record<string, unknown>;
+      const safeParams: Record<string, unknown> = { ...params };
+      if (typeof safeParams.prompt === "string") {
+        const prompt = safeParams.prompt as string;
+        safeParams.prompt = `${prompt.slice(0, 120)}${prompt.length > 120 ? "…" : ""}`;
+        safeParams.promptLength = prompt.length;
+      }
+    }
+
+    // Clear turn initiator when turn ends
+    if (
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED ||
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED
+    ) {
+      const params = notification.params as { threadId?: string };
+      if (params.threadId) {
+        this.turnInitiators.delete(params.threadId);
+      }
+    }
+
+    // New: multi-connection routing
+    if (this.connections.size === 0) return;
+
+    const threadId = (notification.params as { threadId?: string } | undefined)?.threadId;
+
+    if (!threadId) {
+      // No threadId → broadcast to all connections
+      await Promise.all([...this.connections.values()].map((conn) => this.deliverNotification(conn, notification)));
+      return;
+    }
+
+    const isTurnLifecycle =
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED ||
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED ||
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED ||
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED;
+    const turnAtEmission = this.threads.get(threadId)?.currentTurnId;
+
+    // Thread-scoped: route to subscribed connections; fallback to all if none subscribed
+    const subscribers = [...this.connections.values()].filter((c) => c.subscriptions.has(threadId));
+    const targets = subscribers.length > 0 ? subscribers : [...this.connections.values()];
+
+    const deliveries: Promise<void>[] = [];
+    for (const conn of targets) {
+      if (isTurnLifecycle && this.threads.get(threadId)?.currentTurnId !== turnAtEmission) continue;
+      // Skip the turn initiator's own user-message echo. Structured context
+      // notices are separate events, so they still reach every subscriber.
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT) {
+        if (this.threads.get(threadId)?.currentTurnId !== notification.params.turnId) continue;
+        const params = notification.params as {
+          event?: { type?: string; message?: { content?: unknown } };
+          threadId?: string;
+        };
+        if (
+          params.event?.type === "user_message" &&
+          params.threadId &&
+          this.turnInitiators.get(params.threadId) === conn.id
+        ) {
+          continue;
+        }
+      }
+      deliveries.push(this.deliverNotification(conn, notification));
+    }
+    await Promise.all(deliveries);
+  }
+
+  private resolveRuntimeProvider(runtime: ThreadRuntime | undefined): ProviderName | undefined {
+    const provider = runtime?.agent?.model?.provider;
+    const parsedProvider = ProviderNameSchema.safeParse(provider);
+    if (parsedProvider.success) return parsedProvider.data;
+    const model = runtime?.runningModelSnapshot ?? runtime?.model;
+    return model ? model.provider : undefined;
+  }
+
+  private readonly stalledNotificationPeers = new WeakMap<ConnectedPeer, Set<Promise<void>>>();
+
+  private async deliverNotification(conn: ConnectedPeer, notification: DiligentServerNotification): Promise<void> {
+    if (this.stalledNotificationPeers.has(conn)) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const sending = Promise.resolve(conn.peer.send(notification));
+      // Do not accumulate more notifications behind a transport that has stopped
+      // draining. Resume delivery when it recovers; clients reconcile snapshots.
+      const settled = () => {
+        const stalled = this.stalledNotificationPeers.get(conn);
+        stalled?.delete(sending);
+        if (stalled?.size === 0) this.stalledNotificationPeers.delete(conn);
+      };
+      void sending.then(settled, settled);
+      await Promise.race([
+        sending,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            const stalled = this.stalledNotificationPeers.get(conn) ?? new Set<Promise<void>>();
+            stalled.add(sending);
+            this.stalledNotificationPeers.set(conn, stalled);
+            reject(new Error("Notification delivery timed out"));
+          }, 5_000);
+        }),
+      ]);
+    } catch (error) {
+      // A failed UI transport cannot interrupt agent execution or starve other
+      // subscribers. Clients rehydrate history and reconcile goal snapshots.
+      createLogger({ scope: "runtime.app-server" }).warn("notification.failed", {
+        message: "Client notification could not be delivered",
+        fields: { connectionId: conn.id, method: notification.method },
+        error,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // ─── Server request broadcasting ────────────────────────────────────────────
+
+  private allocateServerRequestId(): number {
+    this.serverRequestSeq += 1;
+    return this.serverRequestSeq;
+  }
+
+  private async requestApproval(
+    threadId: string,
+    request: ApprovalRequest,
+    options?: import("../tools/capabilities").RuntimeRequestOptions,
+  ): Promise<ApprovalResponse> {
+    const runtime = this.threads.get(threadId);
+    const signal = options?.signal ?? runtime?.goalScope?.signal;
+    signal?.throwIfAborted();
+    const policyAction = this.config.permissionEngine?.evaluate(request);
+    if (policyAction === "allow") {
+      return "once";
+    }
+    if (policyAction === "deny") {
+      return "reject";
+    }
+
+    const decision = await requestApprovalFromConnections({
+      threadId,
+      request,
+      connections: this.connections,
+      pendingServerRequests: this.pendingServerRequests,
+      allocateServerRequestId: () => this.allocateServerRequestId(),
+      signal,
+      onUnavailable:
+        runtime?.goalScope || runtime?.goal?.hasChildren
+          ? () => runtime.goal!.pause("interaction_unavailable")
+          : undefined,
+      waitForConnection: !!runtime?.goalScope || !!runtime?.goal?.hasChildren,
+    });
+
+    if (decision === "always") {
+      this.config.permissionEngine?.remember(request, "allow");
+    }
+
+    runtime?.goal?.wake();
+
+    return decision;
+  }
+
+  private async requestUserInput(
+    threadId: string,
+    request: UserInputRequest,
+    options?: import("../tools/capabilities").RuntimeRequestOptions,
+  ): Promise<UserInputResponse> {
+    const signal = options?.signal ?? this.threads.get(threadId)?.goalScope?.signal;
+    // Serialize per thread: if the agent issues several user-input prompts at once
+    // (e.g. parallel selectable asset searches), present them one at a time so each
+    // is resolved before the next is broadcast.
+    return this.userInputSerializer(threadId, () =>
+      requestUserInputFromConnections({
+        threadId,
+        request,
+        connections: this.connections,
+        pendingServerRequests: this.pendingServerRequests,
+        allocateServerRequestId: () => this.allocateServerRequestId(),
+        signal,
+        waitForConnection: !!this.threads.get(threadId)?.goalScope || !!this.threads.get(threadId)?.goal?.hasChildren,
+      }),
+    ).finally(() => this.threads.get(threadId)?.goal?.wake());
+  }
+
+  // ─── Thread runtime utilities ────────────────────────────────────────────────
+
+  private async ensureGoal(runtime: ThreadRuntime): Promise<GoalController> {
+    if (runtime.goal) return runtime.goal;
+    runtime.goalLoading ??= (async () => {
+      const paths = await this.config.resolvePaths(runtime.cwd);
+      if (runtime.manager.sessionPath) {
+        const header = await readSessionHeader(runtime.manager.sessionPath);
+        runtime.isChildSession = !!header.parentSession;
+      }
+      const store = await openGoalStore(paths.sessions, runtime.id);
+      runtime.goal = await GoalController.open(store, runtime.id, {
+        changed: (snapshot) => {
+          if (snapshot.goal?.status !== "active" && runtime.goalTimer) {
+            clearTimeout(runtime.goalTimer);
+            runtime.goalTimer = undefined;
+          }
+          return this.emit({
+            method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_GOAL_UPDATED,
+            params: { threadId: runtime.id, ...snapshot },
+          });
+        },
+        wake: (delay) => this.scheduleGoal(runtime, delay),
+      });
+      return runtime.goal;
+    })();
+    return runtime.goalLoading;
+  }
+
+  private scheduleGoal(runtime: ThreadRuntime, delayMs = 0): void {
+    if (this.closing) return;
+    const version = (runtime.goalWakeVersion ?? 0) + 1;
+    runtime.goalWakeVersion = version;
+    if (runtime.goalTimer) clearTimeout(runtime.goalTimer);
+    runtime.goalTimer = setTimeout(() => {
+      runtime.goalTimer = undefined;
+      void (async () => {
+        await runtime.turnWork;
+        if (runtime.goalWakeVersion !== version || runtime.pendingUserStarts) return;
+        if ([...this.pendingServerRequests.values()].some((request) => request.threadId === runtime.id)) return;
+        if (
+          this.closing ||
+          !this.threads.has(runtime.id) ||
+          runtime.goal?.read().goal?.status !== "active" ||
+          runtime.isRunning ||
+          runtime.goal.hasChildren
+        )
+          return;
+        if (this.connections.size === 0) return;
+        if (this.config.getGoalsConfig?.()?.enabled === false || runtime.mode === "plan") {
+          await runtime.goal.pause("execution_unavailable");
+          return;
+        }
+        await handleTurnStart(
+          this.buildThreadHandlersContext(),
+          {
+            threadId: runtime.id,
+            message: "Continue working toward the active goal. Verify results before reporting completion.",
+          },
+          undefined,
+          this.turnInitiators,
+          { goal: runtime.goal, isCurrent: () => !this.closing && runtime.goalWakeVersion === version },
+        );
+      })().catch(async (error: unknown) => {
+        await runtime.goal?.pause("runtime_error").catch(() => {});
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
+          params: { threadId: runtime.id, error: toSerializableError(error), fatal: false },
+        });
+      });
+    }, delayMs);
+  }
+
+  private async createThreadRuntime(
+    threadId: string,
+    cwd: string,
+    mode: Mode,
+    createNew: boolean,
+    effort: ThinkingEffort = this.config.defaultEffort ?? "medium",
+    model?: ModelRef,
+  ): Promise<ThreadRuntime> {
+    const runtime: ThreadRuntime = {
+      id: threadId,
+      cwd,
+      mode,
+      effort,
+      model: model ?? this.currentModel ?? getDefaultModelRef(DEFAULT_PROVIDER),
+      runningEffortSnapshot: undefined,
+      runningModelSnapshot: undefined,
+      manager: null as unknown as SessionManager,
+      abortController: null,
+      currentTurnId: null,
+      isRunning: false,
+    };
+
+    const paths = await this.config.resolvePaths(cwd);
+    // Track the resolved selection independently from config/set's immediate model update.
+    let lastResolvedModel: ModelRef | undefined;
+    runtime.manager = new SessionManager({
+      cwd,
+      paths,
+      getUserId: () => runtime.currentTurnUserId,
+      runObserved: this.config.runObserved,
+      agent: async () => {
+        const selectedModel = runtime.runningModelSnapshot ?? runtime.model;
+        const request: CreateAgentArgs = {
+          goalHost: {
+            controller: () => runtime.goal,
+            scope: () => runtime.goalScope,
+            create: async (input, signal) => {
+              if (this.closing || this.connections.size === 0)
+                throw new Error("Goal creation requires a connected host");
+              if (!runtime.goalCreation) throw new Error("Goal creation requires an active ordinary user turn");
+              return runtime.goalCreation.create(input, signal);
+            },
+          },
+          cwd,
+          mode: runtime.mode,
+          effort: runtime.runningEffortSnapshot ?? runtime.effort,
+          fastMode: runtime.runningFastModeSnapshot ?? runtime.fastMode ?? false,
+          model: selectedModel,
+          approve: (request, options) => this.requestApproval(runtime.id, request, options),
+          ask: (request, options) => this.requestUserInput(runtime.id, request, options),
+          getSessionId: () => runtime.manager.sessionId,
+          existingAgent: runtime.agent,
+          onChildStop: (info) => this.runStopHooksFor(info),
+          onChildEntryAppended: (info) => this.runEntryAppendedHooks(info),
+          getUserId: () => runtime.currentTurnUserId,
+          userId: runtime.currentTurnUserId,
+          runObserved: this.config.runObserved,
+          observeModelAttempt: this.config.observeModelAttempt,
+        };
+        let agent = runtime.agent;
+        if (!agent) {
+          agent = await this.config.createAgent(request);
+          runtime.agent = agent;
+          for (const histAgent of runtime.manager.getHistoricalCollabAgents()) {
+            agent.registry?.restoreAgent(histAgent.threadId, histAgent.nickname, histAgent.policy);
+          }
+        } else {
+          // Defer catalog/registry updates until the active turn has finished using them.
+          if (!sameModelRef(lastResolvedModel, selectedModel) || agent.fastMode !== request.fastMode) {
+            await this.config.refreshAgentTools?.(agent, request);
+          }
+          if (!sameModelRef(lastResolvedModel, selectedModel) && !sameModelRef(agent.model, selectedModel)) {
+            agent.setModel(
+              resolveModel(selectedModel),
+              this.config.streamFunction,
+              this.config.createNativeCompaction?.(selectedModel.provider),
+            );
+          }
+          agent.setEffort(request.effort);
+        }
+        agent.setFastMode(request.fastMode ?? false);
+        lastResolvedModel = selectedModel;
+        return agent;
+      },
+      compaction: this.config.compaction,
+      knowledgePath: paths.knowledge,
+      onStop: (context) =>
+        this.runStopHooksFor({
+          sessionId: runtime.manager.sessionId,
+          sessionPath: runtime.manager.sessionPath ?? "",
+          cwd: runtime.cwd,
+          model: runtime.runningModelSnapshot ?? runtime.model,
+          provider: runtime.agent?.model?.provider,
+          effort: runtime.runningEffortSnapshot ?? runtime.effort,
+          permissionMode: runtime.mode,
+          userId: runtime.currentTurnUserId,
+          context,
+        }),
+      onEntryAppended: (info) => this.runEntryAppendedHooks(info),
+    });
+
+    if (createNew) {
+      await runtime.manager.create();
+    }
+
+    return runtime;
+  }
+
+  private async resolveThreadRuntime(threadId?: string): Promise<ThreadRuntime> {
+    const id = threadId ?? this.activeThreadId;
+    if (!id) throw new Error("No active thread");
+    await this.pendingResumes.get(id);
+
+    const existing = this.threads.get(id);
+    if (existing) {
+      return existing;
+    }
+
+    for (const cwd of this.knownCwds) {
+      const runtime = await this.createThreadRuntime(id, cwd, "default", false);
+      const resumed = await runtime.manager.resume({ sessionId: id });
+      if (!resumed) continue;
+
+      runtime.mode = runtime.manager.getCurrentMode() ?? runtime.mode;
+      runtime.effort = runtime.manager.getCurrentEffort() ?? runtime.effort;
+      runtime.fastMode = runtime.manager.getCurrentFastMode() ?? false;
+      runtime.model = runtime.manager.getCurrentModel() ?? runtime.model;
+      this.threads.set(id, runtime);
+      this.activeThreadId = id;
+
+      return runtime;
+    }
+
+    throw new Error(`Thread not found: ${id}`);
+  }
+
+  private async getLatestEffortForCwd(cwd: string): Promise<ThinkingEffort> {
+    const fallback = this.config.defaultEffort ?? "medium";
+    for (const runtime of this.threads.values()) {
+      if (runtime.cwd === cwd) {
+        const effort = runtime.manager.getCurrentEffort() ?? runtime.effort;
+        if (effort) {
+          this.lastUsedEffortByCwd.set(cwd, effort);
+          return effort;
+        }
+      }
+    }
+    return this.lastUsedEffortByCwd.get(cwd) ?? fallback;
+  }
+
+  private async getLatestModelForCwd(cwd: string): Promise<ModelRef | undefined> {
+    for (const runtime of this.threads.values()) {
+      if (runtime.cwd === cwd) {
+        const model = runtime.manager.getCurrentModel() ?? runtime.model;
+        if (model) {
+          this.lastUsedModelByCwd.set(cwd, model);
+          return model;
+        }
+      }
+    }
+    return this.lastUsedModelByCwd.get(cwd) ?? this.currentModel;
+  }
+
+  private async resolveToolsContext(
+    threadId?: string,
+  ): Promise<{ cwd: string; tools: DiligentConfig["tools"] | undefined; modelProvider?: ProviderName }> {
+    const manager = this.config.toolConfig;
+    if (!manager) throw Object.assign(new Error("Tool config not available"), { code: -32601 });
+
+    if (threadId || this.activeThreadId) {
+      try {
+        const runtime = await this.resolveThreadRuntime(threadId);
+        return { cwd: runtime.cwd, tools: manager.getTools(), modelProvider: runtime.model.provider as ProviderName };
+      } catch {
+        // A stale thread pointer (e.g. a deleted thread still referenced by the
+        // connection or the global active id) must not break the read-only tools
+        // listing — tool config is global, so fall back to the default cwd.
+      }
+    }
+
+    const cwd = this.config.cwd ?? process.cwd();
+    this.knownCwds.add(cwd);
+    return { cwd, tools: manager.getTools(), modelProvider: this.currentModel?.provider as ProviderName | undefined };
+  }
+
+  private async resolveSkillSettingsCwd(threadId?: string): Promise<string> {
+    if (threadId || this.activeThreadId) {
+      try {
+        const runtime = await this.resolveThreadRuntime(threadId);
+        return this.assertStartupSkillSettingsCwd(runtime.cwd);
+      } catch (error) {
+        if (threadId) throw error;
+      }
+    }
+
+    const cwd = this.config.cwd ?? process.cwd();
+    this.knownCwds.add(cwd);
+    return this.assertStartupSkillSettingsCwd(cwd);
+  }
+
+  private async resolveSubagentSettingsCwd(threadId?: string): Promise<string> {
+    if (threadId || this.activeThreadId) {
+      try {
+        const runtime = await this.resolveThreadRuntime(threadId);
+        return this.assertStartupSubagentSettingsCwd(runtime.cwd);
+      } catch (error) {
+        if (threadId) throw error;
+      }
+    }
+    const cwd = this.config.cwd ?? process.cwd();
+    this.knownCwds.add(cwd);
+    return this.assertStartupSubagentSettingsCwd(cwd);
+  }
+
+  private assertStartupSkillSettingsCwd(cwd: string): string {
+    const startupCwd = this.config.cwd ?? process.cwd();
+    if (cwd !== startupCwd) {
+      throw Object.assign(
+        new Error(`Skill settings are only available for the app-server startup cwd: ${startupCwd}`),
+        { code: -32602 },
+      );
+    }
+    return cwd;
+  }
+
+  private assertStartupSubagentSettingsCwd(cwd: string): string {
+    const startupCwd = this.config.cwd ?? process.cwd();
+    if (cwd !== startupCwd) {
+      throw Object.assign(
+        new Error(`Subagent settings are only available for the app-server startup cwd: ${startupCwd}`),
+        { code: -32602 },
+      );
+    }
+    return cwd;
+  }
+
+  /** Dispatch generic EntryAppended hooks off the write path; per-append hooks cannot block writes. */
+  private runEntryAppendedHooks(info: AppendedEntryInfo): void {
+    const { onEntryAppended: entryHooks } = collectBundledHooks(this.config.bundledToolProviders);
+    if (entryHooks.length === 0) return;
+
+    const input: HookInput = {
+      session_id: info.sessionId,
+      transcript_path: info.sessionPath ?? "",
+      cwd: info.cwd,
+      hook_event_name: "EntryAppended",
+      user_id: info.userId,
+      seq: info.seq,
+      entry: info.entry,
+    };
+    // Fire-and-forget: never await on the write path. mode:"async" hooks detach inside the runner.
+    void runPluginHooks(entryHooks, input);
+  }
+
+  /**
+   * Unified Stop hook runner — called by SessionManager.onStop for both parent and child agents.
+   * Stop is an external lifecycle event: sync handlers are awaited, async handlers detach,
+   * and all handler output is ignored rather than fed back to the model.
+   */
+  private async runStopHooksFor(info: ChildStopInfo & { permissionMode?: string; userId?: string }): Promise<void> {
+    const stopShellHandlers = this.config.hooks?.Stop ?? [];
+    const { onStop: stopPluginHandlers } = await collectPluginHooks(this.config.toolConfig?.getTools(), info.cwd, {
+      pluginDiscovery: this.config.pluginDiscovery ?? "global",
+      supersededPackages: collectSupersededPluginPackages(this.config.bundledToolProviders),
+    });
+    const { onStop: stopBundledHandlers } = collectBundledHooks(this.config.bundledToolProviders);
+    const stopHandlers = [...stopPluginHandlers, ...stopBundledHandlers];
+
+    if (stopShellHandlers.length === 0 && stopHandlers.length === 0) return;
+
+    const providerPlanType = await resolveProviderPlanType(info.provider, this.config.authStore);
+
+    const stopInput = {
+      session_id: info.sessionId,
+      transcript_path: info.sessionPath,
+      cwd: info.cwd,
+      hook_event_name: "Stop",
+      permission_mode: info.permissionMode,
+      last_assistant_message: getLastAssistantMessage(info.context),
+      usage: getTurnUsage(info.context),
+      model: info.model,
+      provider: info.provider,
+      ...(providerPlanType ? { provider_plan_type: providerPlanType } : {}),
+      effort: info.effort,
+      user_id: info.userId,
+    };
+
+    await runLifecycleHooks(stopShellHandlers, stopHandlers, stopInput, info.cwd);
+  }
+
+  private buildRequestDispatchContext(): ClientRequestDispatchContext {
+    return {
+      serverName: this.serverName,
+      serverVersion: this.serverVersion,
+      getInitializeResult: this.config.getInitializeResult,
+      getConnection: (id) => this.connections.get(id),
+      setConnectionCurrentThreadId: (connectionId, threadId) => {
+        const conn = this.connections.get(connectionId);
+        if (conn) conn.currentThreadId = threadId;
+        if (threadId) this.config.onCurrentThreadChange?.(threadId);
+      },
+      threadHandlersCtx: this.buildThreadHandlersContext(),
+      turnInitiators: this.turnInitiators,
+      toolConfig: this.config.toolConfig,
+      skillConfig: this.config.skillConfig,
+      experimentConfig: this.config.experimentConfig,
+      subagentConfig: this.config.subagentConfig,
+      reloadConfig: this.config.reloadConfig,
+      subscribeToThread: (connectionId, threadId) => this.subscribeToThread(connectionId, threadId),
+      unsubscribeFromThread: (subscriptionId) => this.unsubscribeFromThread(subscriptionId),
+      resolveThreadRuntime: (threadId) => this.resolveThreadRuntime(threadId),
+      modelConfig: this.config.modelConfig,
+      currentModel: this.currentModel,
+      setCurrentModel: (model) => {
+        this.currentModel = model;
+      },
+      streamFunction: this.config.streamFunction,
+      createNativeCompaction: this.config.createNativeCompaction,
+      lastUsedModelByCwd: this.lastUsedModelByCwd,
+      lastUsedEffortByCwd: this.lastUsedEffortByCwd,
+      providerManager: this.config.providerManager,
+      providerAuthPresenter: this.config.providerAuthPresenter,
+      authStore: this.config.authStore,
+      oauthPending: this.oauthPending,
+      setOAuthPending: (value) => {
+        this.oauthPending = value;
+      },
+      oauthAbortController: this.oauthAbortController,
+      setOAuthAbortController: (controller) => {
+        this.oauthAbortController = controller;
+      },
+      openBrowser: this.config.openBrowser,
+      emit: (notification) => this.emit(notification),
+      toImageUrl: this.config.toImageUrl,
+      cwd: this.config.cwd,
+    };
+  }
+
+  private buildThreadHandlersContext() {
+    return {
+      ensureGoal: (runtime: ThreadRuntime) => this.ensureGoal(runtime),
+      getGoalsConfig: () => this.config.getGoalsConfig?.(),
+      activeThreadId: this.activeThreadId,
+      threads: this.threads,
+      pendingResumes: this.pendingResumes,
+      threadListScans: this.threadListScans,
+      historyPriority: this.historyPriority,
+      knownCwds: this.knownCwds,
+      hooks: this.config.hooks,
+      getUserId: (connectionId: string | undefined): string => {
+        if (connectionId) {
+          const conn = this.connections.get(connectionId);
+          if (conn?.userId) return conn.userId;
+        }
+        return this.config.userId ?? userInfo().username;
+      },
+      getPluginHooks: async (cwd: string) => {
+        const pluginHooks = await collectPluginHooks(this.config.toolConfig?.getTools(), cwd, {
+          pluginDiscovery: this.config.pluginDiscovery ?? "global",
+          supersededPackages: collectSupersededPluginPackages(this.config.bundledToolProviders),
+        });
+        const bundledHooks = collectBundledHooks(this.config.bundledToolProviders);
+        return {
+          onUserPromptSubmit: [...pluginHooks.onUserPromptSubmit, ...bundledHooks.onUserPromptSubmit],
+          onStop: [...pluginHooks.onStop, ...bundledHooks.onStop],
+        };
+      },
+      resolvePaths: this.config.resolvePaths,
+      createThreadRuntime: (
+        threadId: string,
+        cwd: string,
+        mode: Mode,
+        createNew: boolean,
+        effort?: ThinkingEffort,
+        model?: ModelRef,
+      ) => this.createThreadRuntime(threadId, cwd, mode, createNew, effort, model),
+      resolveThreadRuntime: (threadId?: string) => this.resolveThreadRuntime(threadId),
+      getLatestEffortForCwd: (cwd: string) => this.getLatestEffortForCwd(cwd),
+      getLatestModelForCwd: (cwd: string) => this.getLatestModelForCwd(cwd),
+      emit: (notification: DiligentServerNotification) => this.emit(notification),
+      consumeTurn: (runtime: ThreadRuntime, runPromise: Promise<void>, turnId: string) =>
+        this.consumeTurn(runtime, runPromise, turnId),
+      resolveToolsContext: (threadId?: string) => this.resolveToolsContext(threadId),
+      resolveSkillSettingsCwd: (threadId?: string) => this.resolveSkillSettingsCwd(threadId),
+      resolveSubagentSettingsCwd: (threadId?: string) => this.resolveSubagentSettingsCwd(threadId),
+      getBundledToolProviders: () => this.config.bundledToolProviders ?? [],
+      getDisabledToolNames: () =>
+        resolveExperimentGates(this.config.experimentConfig?.getExperiments() ?? []).disabledToolNames,
+      getMcpServers: () => this.config.mcpServers,
+      getSkillNames: () => this.getSkillNames(),
+      setActiveThreadId: (threadId: string | null) => {
+        this.activeThreadId = threadId;
+      },
+    };
+  }
+
+  private getSkillNames(): string[] {
+    return this.config.skillNames ?? [];
+  }
+
+  private errorResponse(
+    id: string | number | "unknown",
+    code: number,
+    message: string,
+    data?: unknown,
+  ): JSONRPCErrorResponse {
+    return JSONRPCErrorResponseSchema.parse({
+      id: id === "unknown" ? "unknown" : id,
+      error: { code, message, data },
+    });
+  }
+}

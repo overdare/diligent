@@ -1,0 +1,41 @@
+# Reference projects are now git submodules (tracked via .gitmodules)
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build
+node_modules/
+dist/
+.bin/
+*.tsbuildinfo
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Terminal Bench job outputs
+jobs/
+
+# Local evaluation reports
+artifacts/
+
+# Test temp directories
+**/tmp-watcher-test/
+
+# Runtime state outside the repository root
+**/.diligent/
+!/.diligent/
+
+# Understand-Anything generated knowledge graph
+.ua/
+
+# Python bytecode
+__pycache__/
+*.py[cod]

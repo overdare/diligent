@@ -1,0 +1,18 @@
+name: Title Lint
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  title-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install
+
+      - name: Validate PR title
+        run: bun run validate:title --title "${{ github.event.pull_request.title }}"

@@ -1,0 +1,18 @@
+{
+  "name": "@diligent/evals",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/cli.ts",
+  "dependencies": {
+    "@diligent/core": "workspace:*",
+    "@diligent/logging": "workspace:*",
+    "@diligent/protocol": "workspace:*",
+    "@diligent/runtime": "workspace:*",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.0",
+    "typescript": "^5.7.0"
+  }
+}

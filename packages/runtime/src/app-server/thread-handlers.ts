@@ -1,0 +1,342 @@
+// @summary App-server thread lifecycle handlers: start, read, compact, mode/effort
+
+import { toSerializableError } from "@diligent/core/agent";
+import { normalizeThinkingEffort, resolveModel, supportsThinkingEffort } from "@diligent/core/model-registry";
+import type { ProviderName } from "@diligent/core/provider-contract";
+import type { RuntimeAgent } from "../agent/runtime-agent";
+import type { DiligentConfig } from "../config/schema";
+import { calculateUsageCost } from "../cost";
+import type { GoalController, GoalWorkScope } from "../goals/controller";
+import type { GoalCreateInput, GoalToolHost } from "../goals/tools";
+import type { DiligentPaths } from "../infrastructure";
+import {
+  DILIGENT_SERVER_NOTIFICATION_METHODS,
+  type DiligentServerNotification,
+  type Mode,
+  type ModelRef,
+  type ThinkingEffort,
+  type ThreadItem,
+  type ThreadResumeResponse,
+} from "../protocol/index";
+import type { SessionManager } from "../session/manager";
+import { generateSessionId, type SessionRunOutcome } from "../session/types";
+import type { BundledToolProvider } from "../tools/bundled-provider";
+import type { CollectedPluginHooks } from "../tools/plugin-loader";
+import type { HistoryPriority } from "./history-priority";
+import {
+  applyLiveCollabStatusesToSnapshot,
+  buildThreadReadItems,
+  type ThreadReadTranscriptEntry,
+} from "./thread-read-builder";
+
+export interface ThreadRuntime {
+  pendingUserStarts?: number;
+  isChildSession?: boolean;
+  goal?: GoalController;
+  goalLoading?: Promise<GoalController>;
+  goalScope?: GoalWorkScope;
+  goalTimer?: ReturnType<typeof setTimeout>;
+  goalWakeVersion?: number;
+  /** Revocable creation capability belonging only to the current ordinary user turn. */
+  goalCreation?: {
+    connectionId?: string;
+    create: NonNullable<GoalToolHost["create"]>;
+    pending?: GoalCreateInput;
+  };
+  id: string;
+  cwd: string;
+  mode: Mode;
+  effort: ThinkingEffort;
+  fastMode?: boolean;
+  model: ModelRef;
+  runningEffortSnapshot?: ThinkingEffort;
+  runningFastModeSnapshot?: boolean;
+  runningModelSnapshot?: ModelRef;
+  /** User ID of the connection that started the current turn (set at turn start, cleared on end). */
+  currentTurnUserId?: string;
+  manager: SessionManager;
+  abortController: AbortController | null;
+  currentTurnId: string | null;
+  isRunning: boolean;
+  /** Serializes session execution/cleanup after a logically interrupted turn. */
+  turnWork?: Promise<void>;
+  /** Cached agent — cleared when mode/effort/model changes to force a rebuild on the next turn. */
+  agent?: RuntimeAgent;
+}
+
+/** Agent rebuilds must wait until goal-owned work can no longer reference the old registry. */
+export function hasGoalOwnedCleanupPending(runtime: ThreadRuntime, goalWasActive = false): boolean {
+  return !!runtime.goalScope || !!runtime.goal?.hasChildren || (goalWasActive && !!runtime.turnWork);
+}
+
+/**
+ * Reset all turn-lifecycle state on a ThreadRuntime after a turn ends (normally, via abort, or via
+ * hook block before the agent loop starts). Centralises the field list so both the normal finally
+ * path in server.ts and the pre-agent hook-blocked path stay in sync.
+ */
+export function resetTurnRuntimeState(runtime: ThreadRuntime): void {
+  runtime.abortController = null;
+  runtime.currentTurnId = null;
+  runtime.currentTurnUserId = undefined;
+  runtime.runningEffortSnapshot = undefined;
+  runtime.runningFastModeSnapshot = undefined;
+  runtime.runningModelSnapshot = undefined;
+  runtime.isRunning = false;
+}
+
+export interface ThreadListScan {
+  /** Session files sorted by descending `${name}\0${cwd}` key. */
+  files: Array<{ key: string; path: string }>;
+  expiresAt: number;
+}
+
+export interface ThreadHandlersContext {
+  ensureGoal?: (runtime: ThreadRuntime) => Promise<GoalController>;
+  getGoalsConfig?: () => DiligentConfig["goals"];
+  activeThreadId: string | null;
+  threads: Map<string, ThreadRuntime>;
+  pendingResumes: Map<string, Promise<ThreadResumeResponse>>;
+  /** Directory listings shared by the pages of one `thread/list` pass, keyed by the cursor's scan id. */
+  threadListScans?: Map<string, ThreadListScan>;
+  /** `thread/history` reads run ahead of `thread/list` file reads. */
+  historyPriority?: HistoryPriority;
+  knownCwds: Set<string>;
+  hooks?: DiligentConfig["hooks"];
+  /** Returns the user ID for a given connection, falling back to config userId or OS username. */
+  getUserId: (connectionId: string | undefined) => string;
+  /** Collect lifecycle hook handlers exported by enabled plugins for the given cwd. */
+  getPluginHooks: (cwd: string) => Promise<CollectedPluginHooks>;
+  resolvePaths: (cwd: string) => Promise<DiligentPaths>;
+  createThreadRuntime: (
+    threadId: string,
+    cwd: string,
+    mode: Mode,
+    createNew: boolean,
+    effort?: ThinkingEffort,
+    model?: ModelRef,
+  ) => Promise<ThreadRuntime>;
+  resolveThreadRuntime: (threadId?: string) => Promise<ThreadRuntime>;
+  getLatestEffortForCwd: (cwd: string) => Promise<ThinkingEffort>;
+  getLatestModelForCwd: (cwd: string) => Promise<ModelRef | undefined>;
+  emit: (notification: DiligentServerNotification) => Promise<void>;
+  consumeTurn: (
+    runtime: ThreadRuntime,
+    runPromise: Promise<void>,
+    turnId: string,
+  ) => Promise<SessionRunOutcome | undefined>;
+  resolveToolsContext: (threadId?: string) => Promise<{
+    cwd: string;
+    tools: DiligentConfig["tools"] | undefined;
+    modelProvider?: ProviderName;
+  }>;
+  resolveSkillSettingsCwd: (threadId?: string) => Promise<string>;
+  resolveSubagentSettingsCwd: (threadId?: string) => Promise<string>;
+  getBundledToolProviders: () => BundledToolProvider[];
+  getDisabledToolNames?: () => ReadonlySet<string>;
+  getMcpServers: () => DiligentConfig["mcpServers"];
+  getSkillNames: () => string[];
+  setActiveThreadId: (threadId: string | null) => void;
+}
+
+export async function handleThreadStart(
+  ctx: ThreadHandlersContext,
+  params: { cwd: string; mode?: Mode; effort?: ThinkingEffort; fastMode?: boolean; model?: ModelRef },
+): Promise<{ threadId: string }> {
+  const mode = params.mode ?? "default";
+  const tempId = generateSessionId();
+  const effort = params.effort ?? (await ctx.getLatestEffortForCwd(params.cwd));
+  const model = params.model ?? (await ctx.getLatestModelForCwd(params.cwd));
+  const runtime = await ctx.createThreadRuntime(tempId, params.cwd, mode, true, effort, model);
+  runtime.effort = normalizeThinkingEffort(resolveModel(runtime.model), runtime.effort);
+  runtime.fastMode = params.fastMode ?? false;
+  if (runtime.fastMode) runtime.manager.appendFastModeChange(true);
+  const threadId = runtime.manager.sessionId;
+  runtime.id = threadId;
+
+  ctx.threads.set(threadId, runtime);
+  ctx.setActiveThreadId(threadId);
+  ctx.knownCwds.add(params.cwd);
+
+  await ctx.emit({ method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED, params: { threadId } });
+  return { threadId };
+}
+
+export async function handleThreadRead(
+  ctx: ThreadHandlersContext,
+  threadId?: string,
+  includeItems = true,
+): Promise<{
+  cwd: string;
+  items: ThreadItem[];
+  hasFollowUp: boolean;
+  pendingSteers: Array<{ id: string; content: string }>;
+  entryCount: number;
+  isRunning: boolean;
+  currentMode: Mode;
+  currentEffort: ThinkingEffort;
+  currentFastMode: boolean;
+  currentModel?: ModelRef;
+  totalCost?: number;
+  goal?: import("@diligent/protocol").ThreadGoal | null;
+  goalSequence?: number;
+}> {
+  const runtime = await ctx.resolveThreadRuntime(threadId);
+
+  const goal = await ctx.ensureGoal?.(runtime);
+  const goalSnapshot = await goal?.snapshot();
+
+  // If runtime memory drifts from persisted JSONL, refresh from disk for read consistency.
+  // Do this only when idle to avoid mutating active turn state mid-stream.
+  if (includeItems && !runtime.isRunning && !runtime.turnWork) {
+    await runtime.manager.reconcileFromDisk();
+  }
+
+  const messages = includeItems ? runtime.manager.getContext() : [];
+  const items = includeItems
+    ? applyLiveCollabStatusesToSnapshot(
+        buildThreadReadItems(runtime.manager.getTranscript() as ThreadReadTranscriptEntry[]),
+        runtime,
+      )
+    : [];
+
+  let totalCost = includeItems ? 0 : undefined;
+  for (const msg of messages) {
+    const m = msg as {
+      role?: string;
+      model?: ModelRef;
+      usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
+    };
+    if (m.role === "assistant" && m.usage && m.model) {
+      try {
+        totalCost = (totalCost ?? 0) + calculateUsageCost(resolveModel(m.model), m.usage);
+      } catch {
+        // Retired model cards remain readable but no longer have pricing metadata.
+      }
+    }
+  }
+
+  return {
+    cwd: runtime.cwd,
+    goal: goalSnapshot?.goal,
+    goalSequence: goalSnapshot?.sequence,
+    items,
+    hasFollowUp: runtime.manager.hasPendingMessages(),
+    pendingSteers: runtime.manager.getPendingSteers(),
+    entryCount: runtime.manager.entryCount,
+    isRunning: runtime.isRunning,
+    currentMode: includeItems ? (runtime.manager.getCurrentMode() ?? runtime.mode) : runtime.mode,
+    currentEffort: includeItems ? (runtime.manager.getCurrentEffort() ?? runtime.effort) : runtime.effort,
+    currentFastMode: includeItems
+      ? (runtime.manager.getCurrentFastMode() ?? runtime.fastMode ?? false)
+      : (runtime.fastMode ?? false),
+    currentModel: includeItems ? (runtime.manager.getCurrentModel() ?? runtime.model) : runtime.model,
+    totalCost,
+  };
+}
+
+export async function handleThreadCompactStart(
+  ctx: ThreadHandlersContext,
+  threadId?: string,
+): Promise<{ compacted: boolean; entryCount: number; tokensBefore: number; tokensAfter: number; summary: string }> {
+  const runtime = await ctx.resolveThreadRuntime(threadId);
+  if (runtime.isRunning || runtime.turnWork) throw new Error("Cannot compact while a turn is running");
+
+  runtime.isRunning = true;
+  try {
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+      params: { threadId: runtime.id, status: "busy" },
+    });
+    const result = await runtime.manager.compactNow();
+    if (result.compacted) {
+      await ctx.emit({
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTION_STARTED,
+        params: { threadId: runtime.id, estimatedTokens: result.tokensBefore },
+      });
+      await ctx.emit({
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTED,
+        params: {
+          threadId: runtime.id,
+          entryCount: result.entryCount,
+          tokensBefore: result.tokensBefore,
+          tokensAfter: result.tokensAfter,
+          summary: result.summary,
+        },
+      });
+    }
+    return result;
+  } catch (error) {
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
+      params: {
+        threadId: runtime.id,
+        error: toSerializableError(error),
+        fatal: false,
+      },
+    });
+    throw error;
+  } finally {
+    runtime.isRunning = false;
+    try {
+      await ctx.emit({
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+        params: { threadId: runtime.id, status: "idle" },
+      });
+    } finally {
+      // A scheduled wake may have been consumed while compaction owned the thread.
+      // Release it even if a peer disconnects during notification delivery.
+      // wake() preserves explicit pauses and any remaining retry backoff.
+      runtime.goal?.wake();
+    }
+  }
+}
+
+export async function handleModeSet(
+  ctx: ThreadHandlersContext,
+  threadId: string | undefined,
+  mode: Mode,
+): Promise<{ mode: Mode }> {
+  const runtime = await ctx.resolveThreadRuntime(threadId);
+  const goalWasActive = runtime.goal?.read().goal?.status === "active";
+  runtime.goalCreation = undefined;
+  if (mode === "plan") await runtime.goal?.pause("plan_mode");
+  if (hasGoalOwnedCleanupPending(runtime, goalWasActive)) {
+    throw new Error("Wait for goal-owned work cleanup before changing mode");
+  }
+  runtime.mode = mode;
+  runtime.agent = undefined; // force agent rebuild on next turn
+  runtime.manager.appendModeChange(mode, "command");
+  return { mode };
+}
+
+export async function handleEffortSet(
+  ctx: ThreadHandlersContext,
+  threadId: string | undefined,
+  effort: ThinkingEffort,
+): Promise<{ effort: ThinkingEffort }> {
+  const runtime = await ctx.resolveThreadRuntime(threadId);
+  runtime.goalCreation = undefined;
+  const modelRef = runtime.manager.getCurrentModel() ?? runtime.model;
+  const model = modelRef ? resolveModel(modelRef) : undefined;
+  const unsupportedEffort = model?.supportsThinking && !supportsThinkingEffort(model, effort);
+  if (unsupportedEffort) {
+    throw Object.assign(new Error(`Thinking effort "${effort}" is not supported for this model.`), { code: -32602 });
+  }
+  runtime.effort = effort;
+  runtime.agent?.setEffort(effort);
+  runtime.manager.appendEffortChange(effort, "command");
+  return { effort };
+}
+
+export async function handleFastModeSet(
+  ctx: ThreadHandlersContext,
+  threadId: string | undefined,
+  fastMode: boolean,
+): Promise<{ fastMode: boolean }> {
+  const runtime = await ctx.resolveThreadRuntime(threadId);
+  runtime.goalCreation = undefined;
+  // The active turn keeps its snapshot; the next turn picks up the new preference.
+  runtime.fastMode = fastMode;
+  runtime.manager.appendFastModeChange(fastMode);
+  return { fastMode };
+}

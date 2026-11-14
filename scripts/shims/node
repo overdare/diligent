@@ -1,0 +1,3 @@
+#!/bin/sh
+# Shim: delegate node calls to bun (bun-only project)
+exec bun "$@"

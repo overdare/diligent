@@ -1,0 +1,48 @@
+{
+  "name": "diligent",
+  "private": true,
+  "packageManager": "bun@1.3.14",
+  "diligent": {
+    "projectName": "Diligent"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "overrides": {
+    "@types/node": "25.3.0",
+    "zod": "^4.6.6"
+  },
+  "scripts": {
+    "postinstall": "lefthook install --force && bash scripts/patch-hooks.sh",
+    "validate:title": "bun scripts/validate-title.ts",
+    "test": "NO_COLOR=1 FORCE_COLOR=0 bun test",
+    "test:e2e": "bun test packages/e2e/",
+    "eval": "bun run packages/evals/src/cli.ts",
+    "debug-viewer:build": "bun run --cwd packages/debug-viewer build",
+    "debug-viewer:start": "bun run --cwd packages/debug-viewer start",
+    "debug-viewer:windows-exe": "bun run --cwd packages/debug-viewer build:windows-exe",
+    "lint": "NO_COLOR=1 FORCE_COLOR=0 bunx biome check AGENTS.md ARCHITECTURE.md README.md biome.json bunfig.toml package.json tsconfig.json .diligent .github packages scripts docs/guide thirdparty/examples thirdparty/terminal-bench",
+    "lint:fix": "NO_COLOR=1 FORCE_COLOR=0 bunx biome check --write AGENTS.md ARCHITECTURE.md README.md biome.json bunfig.toml package.json tsconfig.json .diligent .github packages scripts docs/guide thirdparty/examples thirdparty/terminal-bench",
+    "build": "bun scripts/build-cli.ts --outfile dist/diligent",
+    "build:linux-x64": "bun scripts/build-cli.ts --target bun-linux-x64 --outfile dist/diligent-linux-x64",
+    "build:linux-arm64": "bun scripts/build-cli.ts --target bun-linux-arm64 --outfile dist/diligent-linux-arm64",
+    "build:darwin-arm64": "bun scripts/build-cli.ts --target bun-darwin-arm64 --outfile dist/diligent-darwin-arm64",
+    "build:darwin-x64": "bun scripts/build-cli.ts --target bun-darwin-x64 --outfile dist/diligent-darwin-x64",
+    "build:windows-x64": "bun scripts/build-cli.ts --target bun-windows-x64 --outfile dist/diligent-windows-x64.exe",
+    "build:all": "bun run build:linux-x64 && bun run build:linux-arm64 && bun run build:darwin-arm64 && bun run build:darwin-x64 && bun run build:windows-x64",
+    "typecheck": "NO_COLOR=1 FORCE_COLOR=0 ./packages/protocol/node_modules/.bin/tsc --pretty false --noEmit -p packages/protocol/tsconfig.json && NO_COLOR=1 FORCE_COLOR=0 ./packages/plugin-sdk/node_modules/.bin/tsc --pretty false --noEmit -p packages/plugin-sdk/tsconfig.json && NO_COLOR=1 FORCE_COLOR=0 ./packages/logging/node_modules/.bin/tsc --pretty false --noEmit -p packages/logging/tsconfig.json && NO_COLOR=1 FORCE_COLOR=0 ./packages/core/node_modules/.bin/tsc --pretty false --noEmit -p packages/core/tsconfig.json && NO_COLOR=1 FORCE_COLOR=0 ./packages/core/node_modules/.bin/tsc --pretty false -p packages/core/tsconfig.test.json && NO_COLOR=1 FORCE_COLOR=0 ./packages/evals/node_modules/.bin/tsc --pretty false --noEmit -p packages/evals/tsconfig.json && NO_COLOR=1 FORCE_COLOR=0 ./packages/evals/node_modules/.bin/tsc --pretty false -p packages/evals/tsconfig.json && NO_COLOR=1 FORCE_COLOR=0 ./packages/runtime/node_modules/.bin/tsc --pretty false --noEmit -p packages/runtime/tsconfig.json && NO_COLOR=1 FORCE_COLOR=0 ./packages/runtime/node_modules/.bin/tsc --pretty false -p packages/e2e/tsconfig.json && NO_COLOR=1 FORCE_COLOR=0 ./packages/cli/node_modules/.bin/tsc --pretty false --noEmit -p packages/cli/tsconfig.json",
+    "typecheck:examples": "NO_COLOR=1 FORCE_COLOR=0 ./thirdparty/examples/external-tool-plugin/node_modules/.bin/tsc --pretty false --noEmit -p thirdparty/examples/external-tool-plugin/tsconfig.json",
+    "verify": "bun run typecheck && bun run test",
+    "vscode:build": "bun run --cwd apps/vscode-extension build",
+    "vscode:test": "bun run --cwd apps/vscode-extension test",
+    "vscode:package": "bun run --cwd apps/vscode-extension package"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
+    "@types/node": "25.3.0",
+    "bun-types": "^1.3.10",
+    "lefthook": "^2.1.2",
+    "typescript": "^5.7.0"
+  }
+}

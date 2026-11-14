@@ -1,0 +1,115 @@
+name: Release
+
+# Diligent CLI release. Tags are cli-v<version>.
+# Preserve the latest-release pointer for compatibility with older consumers.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "CLI version, e.g. 0.3.0"
+        required: true
+        type: string
+
+concurrency:
+  group: release-cli
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - name: Resolve version
+        id: resolve
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          VERSION="${INPUT_VERSION#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9.+-]+)?$ ]]; then
+            echo "Invalid version '$VERSION'" >&2
+            exit 1
+          fi
+          TAG="cli-v$VERSION"
+          if gh release view "$TAG" -R "$REPO" --json id >/dev/null 2>&1; then
+            echo "Release $TAG already exists." >&2
+            exit 1
+          fi
+          {
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build CLI (${{ matrix.target }})
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        target: [linux-x64, linux-arm64, darwin-arm64, darwin-x64, windows-x64]
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - name: Build
+        shell: bash
+        run: |
+          bun run "build:$TARGET"
+          ext=""
+          [ "$TARGET" = "windows-x64" ] && ext=".exe"
+          mv "dist/diligent-$TARGET$ext" "dist/diligent-$VERSION-$TARGET$ext"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diligent-${{ matrix.target }}
+          path: dist/diligent-${{ env.VERSION }}-${{ matrix.target }}*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        shell: bash
+        run: |
+          cd dist
+          sha256sum diligent-* > "checksums-cli-$VERSION.sha256"
+          cat "checksums-cli-$VERSION.sha256"
+      - name: Create release
+        shell: bash
+        run: |
+          flags=(--title "$TAG" --target "$GITHUB_SHA" --generate-notes --latest=false)
+          # Use the previous CLI release as the notes baseline.
+          prev=$(gh release list --limit 100 --json tagName,isDraft \
+            --jq '[.[] | select(.isDraft | not) | .tagName | select(startswith("cli-v"))][0] // empty')
+          [ -n "$prev" ] && flags+=(--notes-start-tag "$prev")
+          gh release create "$TAG" "${flags[@]}" dist/diligent-* dist/checksums-cli-*.sha256

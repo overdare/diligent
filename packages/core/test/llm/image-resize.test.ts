@@ -1,0 +1,320 @@
+// @summary Tests for downscaleImageIfNeeded — caps long edge, preserves aspect, passes through
+// small/undecodable/GIF images unchanged.
+import { beforeAll, describe, expect, test } from "bun:test";
+import type { ImageBlock } from "@diligent/core/message-contract";
+import type { Tool, ToolContext } from "@diligent/core/tool-contract";
+// @ts-expect-error -- file import yields a path string at runtime
+import jpegEncWasm from "@jsquash/jpeg/codec/enc/mozjpeg_enc.wasm" with { type: "file" };
+import encodeJpeg, { init as initJpegEncode } from "@jsquash/jpeg/encode";
+// @ts-expect-error -- file import yields a path string at runtime
+import pngWasm from "@jsquash/png/codec/pkg/squoosh_png_bg.wasm" with { type: "file" };
+import decodePng, { init as initPngDecode } from "@jsquash/png/decode";
+import encodePng, { init as initPngEncode } from "@jsquash/png/encode";
+import { z } from "zod";
+import {
+  DEFAULT_MAX_LONG_EDGE,
+  downscaleImageIfNeeded,
+  imageDimensionsFromHeader,
+  inspectImageAlpha,
+  resizeImageToSquarePng,
+  splitImageGrid,
+  withImageDownscaling,
+} from "../../src/llm/image-resize";
+
+// Build a solid-white image of the given size and encode it to a real PNG for use as a fixture.
+function solidImage(width: number, height: number): ImageData {
+  const data = new Uint8ClampedArray(width * height * 4);
+  data.fill(255);
+  return { data, width, height } as ImageData;
+}
+
+// Deterministic pseudo-random noise (LCG) — incompressible pixels for byte-backstop fixtures.
+function noiseImage(width: number, height: number): ImageData {
+  const data = new Uint8ClampedArray(width * height * 4);
+  let seed = 0x12345678;
+  for (let i = 0; i < data.length; i++) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    data[i] = seed & 0xff;
+  }
+  return { data, width, height } as ImageData;
+}
+
+let smallPng: ArrayBuffer;
+let largePng: ArrayBuffer;
+
+beforeAll(async () => {
+  const mod = await WebAssembly.compile(await Bun.file(pngWasm).arrayBuffer());
+  await initPngDecode(mod);
+  await initPngEncode(mod);
+  smallPng = await encodePng(solidImage(100, 80));
+  largePng = await encodePng(solidImage(3000, 2000));
+});
+
+describe("resizeImageToSquarePng", () => {
+  test.each([
+    [7, 3],
+    [3, 7],
+  ])("center crops %ix%i without stretching or changing retained pixels", async (width, height) => {
+    const source = solidImage(width, height);
+    for (let i = 0; i < width * height; i++) source.data.set([i, i * 2, i * 3, 255], i * 4);
+    const result = await resizeImageToSquarePng(await encodePng(source), "image/png", 3);
+    const x = Math.floor((width - 3) / 2);
+    const y = Math.floor((height - 3) / 2);
+    expect(result.crop).toEqual({ x, y, width: 3, height: 3 });
+    expect(result.source).toEqual({ width, height });
+    const decoded = await decodePng(result.bytes);
+    expect([decoded.width, decoded.height]).toEqual([3, 3]);
+    for (let row = 0; row < 3; row++) {
+      const start = ((y + row) * width + x) * 4;
+      expect(decoded.data.slice(row * 12, row * 12 + 12)).toEqual(source.data.slice(start, start + 12));
+    }
+  });
+
+  test.each([8, 1254])("resizes a %ipx source to exactly 1080px PNG in both directions", async (size) => {
+    const result = await resizeImageToSquarePng(await encodePng(solidImage(size, size)), "image/png", 1080);
+    const decoded = await decodePng(result.bytes);
+    expect([decoded.width, decoded.height]).toEqual([1080, 1080]);
+    // Resampling can round a white channel down by one; it must retain the image content.
+    expect(decoded.data.every((value) => value >= 254)).toBe(true);
+    expect([...new Uint8Array(result.bytes).slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  });
+
+  test("reencodes WebP as real PNG rather than just changing a filename", async () => {
+    const webp = Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEAAUAmJaQAA3AA/v89WAAAAA==", "base64");
+    const result = await resizeImageToSquarePng(Uint8Array.from(webp).buffer, "image/webp", 16);
+    const decoded = await decodePng(result.bytes);
+    expect([decoded.width, decoded.height]).toEqual([16, 16]);
+    expect(result.source).toEqual({ width: 1, height: 1 });
+  });
+
+  test("crops JPEG input and returns decoded PNG pixels", async () => {
+    await initJpegEncode({ wasmBinary: await Bun.file(jpegEncWasm).arrayBuffer() });
+    const jpeg = await encodeJpeg(solidImage(6, 4));
+    const result = await resizeImageToSquarePng(jpeg, "image/jpeg", 4);
+    const decoded = await decodePng(result.bytes);
+    expect(result.source).toEqual({ width: 6, height: 4 });
+    expect(result.crop).toEqual({ x: 1, y: 0, width: 4, height: 4 });
+    expect([decoded.width, decoded.height]).toEqual([4, 4]);
+    expect(decoded.data.every((value) => value >= 254)).toBe(true);
+  });
+
+  test("rejects invalid input, excessive allocation, and cancellation", async () => {
+    for (const size of [0, -1, 1.5, NaN, 100000]) {
+      await expect(resizeImageToSquarePng(smallPng, "image/png", size)).rejects.toThrow();
+    }
+    await expect(resizeImageToSquarePng(new ArrayBuffer(0), "image/png", 1080)).rejects.toThrow();
+    await expect(resizeImageToSquarePng(pngHeaderOnly(20000, 20000), "image/png", 1080)).rejects.toThrow();
+    await expect(resizeImageToSquarePng(pngHeaderOnly(10, 10), "image/png", 1080)).rejects.toThrow();
+    await expect(
+      resizeImageToSquarePng(smallPng, "image/png", 1080, {
+        signal: AbortSignal.abort(new Error("cancel thumbnail")),
+      }),
+    ).rejects.toThrow("cancel thumbnail");
+  });
+});
+
+describe("downscaleImageIfNeeded", () => {
+  test("grid crops cover every pixel once in row-major order and preserve RGBA at uneven boundaries", async () => {
+    const image = solidImage(7, 5);
+    for (let i = 0; i < 35; i++) image.data.set([i, 2 * i, 3 * i, i % 3 === 0 ? 0 : 128], i * 4);
+    const result = await splitImageGrid(await encodePng(image), "image/png", { rows: 2, columns: 3 });
+    expect(result.width).toBe(7);
+    expect(result.height).toBe(5);
+    expect(result.cells).toHaveLength(6);
+    const restored = new Uint8ClampedArray(image.data.length);
+    const visits = new Uint8Array(35);
+    for (const [index, cell] of result.cells.entries()) {
+      expect(cell.row).toBe(Math.floor(index / 3) + 1);
+      expect(cell.column).toBe((index % 3) + 1);
+      const decoded = await decodePng(cell.bytes);
+      expect([decoded.width, decoded.height]).toEqual([cell.width, cell.height]);
+      for (let y = 0; y < cell.height; y++) {
+        for (let x = 0; x < cell.width; x++) {
+          const target = (cell.y + y) * image.width + cell.x + x;
+          visits[target]++;
+          restored.set(decoded.data.subarray((y * cell.width + x) * 4, (y * cell.width + x + 1) * 4), target * 4);
+        }
+      }
+    }
+    expect([...visits].every((count) => count === 1)).toBe(true);
+    expect(restored).toEqual(image.data);
+  });
+
+  test("grid cropping rejects invalid geometry and honors cancellation", async () => {
+    for (const grid of [
+      { rows: 0, columns: 2 },
+      { rows: 1.5, columns: 2 },
+      { rows: 81, columns: 1 },
+    ]) {
+      await expect(splitImageGrid(smallPng, "image/png", grid)).rejects.toThrow();
+    }
+    await expect(splitImageGrid(new ArrayBuffer(0), "image/png", { rows: 1, columns: 1 })).rejects.toThrow();
+    const controller = new AbortController();
+    controller.abort(new Error("cancel grid"));
+    await expect(
+      splitImageGrid(smallPng, "image/png", { rows: 1, columns: 1 }, { signal: controller.signal }),
+    ).rejects.toThrow("cancel grid");
+  });
+
+  test("alpha inspection counts real pixel alpha rather than the presence of a channel", async () => {
+    const image = solidImage(3, 1);
+    image.data[3] = 0;
+    image.data[7] = 128;
+    const encoded = await encodePng(image);
+    expect(await inspectImageAlpha(encoded, "image/png")).toEqual({
+      width: 3,
+      height: 1,
+      transparentPixels: 1,
+      partialPixels: 1,
+      opaquePixels: 1,
+    });
+    expect(await inspectImageAlpha(smallPng, "image/png")).toEqual({
+      width: 100,
+      height: 80,
+      transparentPixels: 0,
+      partialPixels: 0,
+      opaquePixels: 8000,
+    });
+  });
+
+  test("alpha inspection reports unknown without decoding oversized or invalid images", async () => {
+    expect(await inspectImageAlpha(pngHeaderOnly(20000, 20000), "image/png")).toBeNull();
+    expect(await inspectImageAlpha(new ArrayBuffer(0), "image/png")).toBeNull();
+  });
+  test("returns the original bytes unchanged when the long edge is under the cap", async () => {
+    const result = await downscaleImageIfNeeded(smallPng, "image/png");
+    expect(result.bytes).toBe(smallPng);
+    expect(result.mediaType).toBe("image/png");
+  });
+
+  test("downscales an oversized PNG so the long edge equals the cap", async () => {
+    const result = await downscaleImageIfNeeded(largePng, "image/png");
+    expect(result.bytes).not.toBe(largePng);
+    expect(result.mediaType).toBe("image/png");
+    const decoded = await decodePng(result.bytes);
+    expect(Math.max(decoded.width, decoded.height)).toBe(DEFAULT_MAX_LONG_EDGE);
+  });
+
+  test("preserves aspect ratio when downscaling (3000x2000 -> 1568x1045)", async () => {
+    const result = await downscaleImageIfNeeded(largePng, "image/png");
+    const decoded = await decodePng(result.bytes);
+    expect(decoded.width).toBe(1568);
+    expect(decoded.height).toBe(1045);
+  });
+
+  test("honors a custom maxLongEdge", async () => {
+    const result = await downscaleImageIfNeeded(largePng, "image/png", 800);
+    const decoded = await decodePng(result.bytes);
+    expect(Math.max(decoded.width, decoded.height)).toBe(800);
+  });
+
+  test("passes GIF bytes through unchanged (no codec; preserve animation)", async () => {
+    const gif = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x10, 0x27, 0x10, 0x27]).buffer;
+    const result = await downscaleImageIfNeeded(gif, "image/gif");
+    expect(result.bytes).toBe(gif);
+    expect(result.mediaType).toBe("image/gif");
+  });
+
+  test("passes through bytes that the codec cannot decode", async () => {
+    const garbage = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00, 0x00, 0x00]).buffer;
+    const result = await downscaleImageIfNeeded(garbage, "image/png");
+    expect(result.bytes).toBe(garbage);
+  });
+
+  test("does not crash on an extreme aspect ratio (short edge clamps to 1, not 0)", async () => {
+    const wide = await encodePng(solidImage(3200, 1));
+    const result = await downscaleImageIfNeeded(wide, "image/png");
+    const decoded = await decodePng(result.bytes);
+    expect(decoded.width).toBe(DEFAULT_MAX_LONG_EDGE);
+    expect(decoded.height).toBe(1); // clamped up from round(0.49)=0
+  });
+
+  test("refuses to decode an image past the pixel ceiling (passes original through)", async () => {
+    // A 24-byte PNG header claiming 20000x20000 (400 MP) — no real pixels. The header guard must
+    // return it untouched WITHOUT attempting a (here impossible, otherwise OOM-y) decode.
+    const header = pngHeaderOnly(20000, 20000);
+    const result = await downscaleImageIfNeeded(header, "image/png");
+    expect(result.bytes).toBe(header);
+  });
+
+  test("byte backstop: converts an in-cap but multi-MB PNG to lossy WebP", async () => {
+    // Deterministic noise defeats PNG compression: 1200x1200 RGBA noise encodes to ~5.7 MB while
+    // staying within the 1568px pixel cap, so only the byte trigger can catch it.
+    const noise = await encodePng(noiseImage(1200, 1200));
+    expect(noise.byteLength).toBeGreaterThan(2 * 1024 * 1024);
+
+    const result = await downscaleImageIfNeeded(noise, "image/png");
+    expect(result.mediaType).toBe("image/webp");
+    expect(result.bytes.byteLength).toBeLessThan(2 * 1024 * 1024);
+  });
+
+  test("byte backstop: keeps the original when a re-encode cannot shrink it", async () => {
+    // A small solid PNG is already tiny; nothing to do on either trigger.
+    const result = await downscaleImageIfNeeded(smallPng, "image/png");
+    expect(result.bytes).toBe(smallPng);
+  });
+});
+
+describe("imageDimensionsFromHeader", () => {
+  test("reads PNG dimensions from the header", () => {
+    expect(imageDimensionsFromHeader(new Uint8Array(pngHeaderOnly(3000, 2000)), "image/png")).toEqual({
+      width: 3000,
+      height: 2000,
+    });
+  });
+
+  test("reads real encoded-PNG dimensions", async () => {
+    const png = await encodePng(solidImage(640, 480));
+    expect(imageDimensionsFromHeader(new Uint8Array(png), "image/png")).toEqual({ width: 640, height: 480 });
+  });
+
+  test("returns null for a truncated header", () => {
+    const tiny = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    expect(imageDimensionsFromHeader(tiny, "image/png")).toBeNull();
+  });
+});
+
+describe("withImageDownscaling", () => {
+  function toolReturning(images: ImageBlock[] | undefined): Tool {
+    return {
+      name: "fake",
+      description: "",
+      parameters: z.object({}),
+      async execute() {
+        return { output: "ok", ...(images ? { outputImages: images } : {}) };
+      },
+    } as unknown as Tool;
+  }
+
+  test("downscales oversized images a tool returns", async () => {
+    const block: ImageBlock = {
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: Buffer.from(largePng).toString("base64") },
+    };
+    const wrapped = withImageDownscaling(toolReturning([block]));
+    const result = await wrapped.execute({}, {} as ToolContext);
+    const out = result.outputImages?.[0];
+    expect(out).toBeDefined();
+    const decoded = await decodePng(Buffer.from(out!.source.data, "base64").buffer as ArrayBuffer);
+    expect(Math.max(decoded.width, decoded.height)).toBe(DEFAULT_MAX_LONG_EDGE);
+  });
+
+  test("passes through a tool that returns no images", async () => {
+    const wrapped = withImageDownscaling(toolReturning(undefined));
+    const result = await wrapped.execute({}, {} as ToolContext);
+    expect(result.output).toBe("ok");
+    expect(result.outputImages).toBeUndefined();
+  });
+});
+
+// Build only a PNG header (signature + IHDR with width/height); no pixel data.
+function pngHeaderOnly(width: number, height: number): ArrayBuffer {
+  const b = new Uint8Array(26);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  b.set([0x00, 0x00, 0x00, 0x0d], 8); // IHDR chunk length
+  b.set([0x49, 0x48, 0x44, 0x52], 12); // "IHDR"
+  const dv = new DataView(b.buffer);
+  dv.setUint32(16, width);
+  dv.setUint32(20, height);
+  return b.buffer;
+}

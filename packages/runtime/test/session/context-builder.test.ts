@@ -1,0 +1,483 @@
+// @summary Tests for building context from session entries
+import { describe, expect, it } from "bun:test";
+import type { Message } from "@diligent/core/message-contract";
+import type { CompactionEntry, SessionEntry } from "@diligent/runtime/session";
+import { buildSessionContext, buildSessionTranscript } from "@diligent/runtime/session";
+
+function msgContent(msg: Message): string {
+  if (msg.role === "user") return typeof msg.content === "string" ? msg.content : "";
+  if (msg.role === "assistant") {
+    const t = msg.content.find((b) => b.type === "text");
+    return t?.type === "text" ? t.text : "";
+  }
+  return "";
+}
+
+function makeMsg(id: string, parentId: string | null, role: "user" | "assistant", text: string): SessionEntry {
+  if (role === "user") {
+    return {
+      type: "message",
+      id,
+      parentId,
+      timestamp: "2026-02-25T10:00:00.000Z",
+      message: { role: "user", content: text, timestamp: 1708900000000 },
+    };
+  }
+  return {
+    type: "message",
+    id,
+    parentId,
+    timestamp: "2026-02-25T10:00:00.000Z",
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text }],
+      model: { provider: "anthropic", modelId: "test" },
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      stopReason: "end_turn",
+      timestamp: 1708900000000,
+    },
+  };
+}
+
+describe("buildSessionContext", () => {
+  it("returns empty messages for empty entries", () => {
+    const ctx = buildSessionContext([]);
+    expect(ctx.messages).toEqual([]);
+  });
+
+  it("extracts linear message chain", () => {
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "hello"),
+      makeMsg("a2", "a1", "assistant", "hi"),
+      makeMsg("a3", "a2", "user", "how?"),
+    ];
+
+    const ctx = buildSessionContext(entries);
+    expect(ctx.messages).toHaveLength(3);
+    expect(ctx.messages[0].role).toBe("user");
+    expect(ctx.messages[1].role).toBe("assistant");
+    expect(ctx.messages[2].role).toBe("user");
+  });
+
+  it("rebuilds local compaction from the summary without retained user messages", () => {
+    const compaction: CompactionEntry = {
+      type: "compaction",
+      id: "compact",
+      parentId: "old",
+      timestamp: "2026-02-25T10:00:01.000Z",
+      summary: "summary only",
+      tokensBefore: 100_000,
+      tokensAfter: 100,
+    };
+    const fresh = makeMsg("fresh", "compact", "user", "fresh request");
+
+    const context = buildSessionContext([makeMsg("old", null, "user", "old request"), compaction, fresh]);
+
+    expect(context.providerMessages.map(msgContent)).toEqual(["summary only", "fresh request"]);
+  });
+
+  it("follows correct branch in tree structure", () => {
+    // Tree:
+    //   a1 (user: hello)
+    //   ├── a2 (assistant: branch A)
+    //   └── a3 (assistant: branch B)
+    //        └── a4 (user: continue B)
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "hello"),
+      makeMsg("a2", "a1", "assistant", "branch A"),
+      makeMsg("a3", "a1", "assistant", "branch B"),
+      makeMsg("a4", "a3", "user", "continue B"),
+    ];
+
+    // Default (last entry = a4) → follows a1 → a3 → a4
+    const ctx = buildSessionContext(entries);
+    expect(ctx.messages).toHaveLength(3);
+    if (ctx.messages[1].role === "assistant") {
+      const content = ctx.messages[1].content;
+      expect(content[0].type === "text" && content[0].text).toBe("branch B");
+    }
+
+    // Explicit leaf at a2 → follows a1 → a2
+    const ctxA = buildSessionContext(entries, "a2");
+    expect(ctxA.messages).toHaveLength(2);
+  });
+
+  it("tracks model and effort changes", () => {
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "hi"),
+      {
+        type: "model_change",
+        id: "a2",
+        parentId: "a1",
+        timestamp: "2026-02-25T10:00:01.000Z",
+        provider: "anthropic",
+        modelId: "claude-opus-4-20250514",
+      },
+      {
+        type: "effort_change",
+        id: "a3",
+        parentId: "a2",
+        timestamp: "2026-02-25T10:00:02.000Z",
+        effort: "medium",
+        changedBy: "command",
+      },
+      makeMsg("a4", "a3", "assistant", "hello"),
+    ];
+
+    const ctx = buildSessionContext(entries);
+    expect(ctx.currentModel?.provider).toBe("anthropic");
+    expect(ctx.currentModel?.modelId).toBe("claude-opus-4-20250514");
+    expect(ctx.currentEffort).toBe("medium");
+    expect(ctx.messages).toHaveLength(2); // non-message changes don't produce messages
+  });
+
+  it("preserves xhigh effort changes for GPT-5.6 sessions", () => {
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "hi"),
+      {
+        type: "model_change",
+        id: "a2",
+        parentId: "a1",
+        timestamp: "2026-07-10T10:00:01.000Z",
+        provider: "openai",
+        modelId: "gpt-6-sol",
+      },
+      {
+        type: "effort_change",
+        id: "a3",
+        parentId: "a2",
+        timestamp: "2026-07-10T10:00:02.000Z",
+        effort: "xhigh",
+        changedBy: "command",
+      },
+    ];
+
+    const ctx = buildSessionContext(entries);
+    expect(ctx.currentModel?.modelId).toBe("gpt-6-sol");
+    expect(ctx.currentEffort).toBe("xhigh");
+  });
+
+  it("tracks latest mode change without adding transcript messages", () => {
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "hi"),
+      {
+        type: "mode_change",
+        id: "a2",
+        parentId: "a1",
+        timestamp: "2026-02-25T10:00:01.000Z",
+        mode: "plan",
+        changedBy: "command",
+      },
+      {
+        type: "mode_change",
+        id: "a3",
+        parentId: "a2",
+        timestamp: "2026-02-25T10:00:02.000Z",
+        mode: "execute",
+        changedBy: "command",
+      },
+      makeMsg("a4", "a3", "assistant", "hello"),
+    ];
+
+    const ctx = buildSessionContext(entries);
+    expect(ctx.currentMode).toBe("execute");
+    expect(ctx.messages).toHaveLength(2);
+  });
+
+  it("returns empty for unknown leafId", () => {
+    const entries: SessionEntry[] = [makeMsg("a1", null, "user", "hi")];
+    const ctx = buildSessionContext(entries, "nonexistent");
+    expect(ctx.messages).toEqual([]);
+  });
+
+  it("ignores legacy retained user messages and rebuilds summary plus new turns", () => {
+    const recentUserMsg = { role: "user" as const, content: "kept user msg", timestamp: 1708900000000 };
+    const compaction = {
+      type: "compaction",
+      id: "c1",
+      parentId: "a2",
+      timestamp: "2026-02-25T10:01:00.000Z",
+      summary: "## Goal\nRefactor config module",
+      recentUserMessages: [recentUserMsg],
+      tokensBefore: 50000,
+      tokensAfter: 5000,
+    } as CompactionEntry;
+
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "old message 1"),
+      makeMsg("a2", "a1", "assistant", "old response 1"),
+      compaction,
+      makeMsg("a3", "c1", "user", "new message"),
+      makeMsg("a4", "a3", "assistant", "new response"),
+    ];
+
+    const ctx = buildSessionContext(entries);
+    expect(ctx.messages).toHaveLength(3);
+    expect(msgContent(ctx.messages[0])).toContain("Refactor config module");
+    expect(ctx.messages[1].role).toBe("user");
+    expect(ctx.messages[2].role).toBe("assistant");
+  });
+
+  it("preserves mode changes that happened before the latest compaction", () => {
+    const compaction: CompactionEntry = {
+      type: "compaction",
+      id: "c1",
+      parentId: "a2",
+      timestamp: "2026-02-25T10:01:00.000Z",
+      summary: "## Summary",
+      tokensBefore: 50000,
+      tokensAfter: 5000,
+    };
+
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "old message"),
+      {
+        type: "mode_change",
+        id: "a2",
+        parentId: "a1",
+        timestamp: "2026-02-25T10:00:01.000Z",
+        mode: "plan",
+        changedBy: "command",
+      },
+      compaction,
+      makeMsg("a3", "c1", "user", "new message"),
+    ];
+
+    const ctx = buildSessionContext(entries);
+    expect(ctx.currentMode).toBe("plan");
+  });
+
+  it("uses latest CompactionEntry when multiple exist", () => {
+    const compaction1: CompactionEntry = {
+      type: "compaction",
+      id: "c1",
+      parentId: "a2",
+      timestamp: "2026-02-25T10:01:00.000Z",
+      summary: "First summary",
+      tokensBefore: 50000,
+      tokensAfter: 5000,
+    };
+    const compaction2: CompactionEntry = {
+      type: "compaction",
+      id: "c2",
+      parentId: "a4",
+      timestamp: "2026-02-25T10:02:00.000Z",
+      summary: "Second summary",
+      tokensBefore: 30000,
+      tokensAfter: 3000,
+    };
+
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "very old"),
+      makeMsg("a2", "a1", "assistant", "very old response"),
+      compaction1,
+      makeMsg("a3", "c1", "user", "middle message"),
+      makeMsg("a4", "a3", "assistant", "middle response"),
+      compaction2,
+      makeMsg("a5", "c2", "user", "latest"),
+    ];
+
+    const ctx = buildSessionContext(entries);
+    expect(ctx.messages).toHaveLength(2);
+    const summaryContent = msgContent(ctx.messages[0]);
+    expect(summaryContent).toContain("Second summary");
+    expect(summaryContent).not.toContain("First summary");
+    expect(ctx.messages[1].role).toBe("user");
+  });
+
+  it("returns provider replacement history separately for native compaction entries", () => {
+    const compactionSummary = {
+      type: "diligent_openai_compaction_state",
+      items: [
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "compacted state" }],
+        },
+      ],
+    };
+    const compaction: CompactionEntry = {
+      type: "compaction",
+      id: "c1",
+      parentId: "a2",
+      timestamp: "2026-02-25T10:01:00.000Z",
+      displaySummary: "Compacted",
+      compactionSummary,
+      tokensBefore: 50000,
+      tokensAfter: 5000,
+    };
+
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "old message 1"),
+      makeMsg("a2", "a1", "assistant", "old response 1"),
+      compaction,
+      makeMsg("a3", "c1", "user", "new message"),
+    ];
+
+    const ctx = buildSessionContext(entries);
+    expect(ctx.compactionSummary).toEqual(compactionSummary);
+    expect(ctx.messages).toHaveLength(2);
+    expect(ctx.providerMessages).toHaveLength(1);
+    expect(msgContent(ctx.messages[0])).toBe("Compacted");
+    expect(msgContent(ctx.messages[1])).toBe("new message");
+    expect(msgContent(ctx.providerMessages[0])).toBe("new message");
+  });
+
+  it("no compaction — existing behavior unchanged", () => {
+    const entries: SessionEntry[] = [makeMsg("a1", null, "user", "hello"), makeMsg("a2", "a1", "assistant", "hi")];
+    const ctx = buildSessionContext(entries);
+    expect(ctx.messages).toHaveLength(2);
+    expect(ctx.messages[0].role).toBe("user");
+    expect(ctx.messages[1].role).toBe("assistant");
+  });
+
+  it("replays internal messages to providers while excluding them from visible context and transcript", () => {
+    const internal = {
+      ...makeMsg("a2", "a1", "user", "internal policy"),
+      visibility: "internal" as const,
+      source: "test-hook",
+    };
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "visible"),
+      internal,
+      makeMsg("a3", "a2", "assistant", "done"),
+    ];
+    const context = buildSessionContext(entries);
+
+    expect(context.messages.map(msgContent)).toEqual(["visible", "done"]);
+    expect(context.providerMessages.map(msgContent)).toEqual(["visible", "internal policy", "done"]);
+    expect(buildSessionTranscript(entries).filter((entry) => entry.type === "message")).toHaveLength(2);
+  });
+
+  it("replays presentable internal messages to providers and exposes only their structured notice", () => {
+    const internal = {
+      ...makeMsg("a2", "a1", "user", "human edit model context"),
+      visibility: "internal" as const,
+      source: "host-document-changes",
+      presentation: {
+        kind: "document-changes",
+        title: "Document changes detected",
+        content: "Added: Ramp",
+      },
+    };
+    const entries: SessionEntry[] = [makeMsg("a1", null, "user", "move it"), internal];
+
+    const context = buildSessionContext(entries);
+    expect(context.messages.map(msgContent)).toEqual(["move it"]);
+    expect(context.providerMessages.map(msgContent)).toEqual(["move it", "human edit model context"]);
+    expect(buildSessionTranscript(entries)).toEqual([
+      expect.objectContaining({ type: "message" }),
+      expect.objectContaining({
+        type: "context",
+        source: "host-document-changes",
+        presentation: internal.presentation,
+      }),
+    ]);
+  });
+
+  it("keeps legacy untagged reminder messages visible", () => {
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "visible"),
+      makeMsg("a2", "a1", "user", "<system-reminder>\nlegacy\n</system-reminder>"),
+    ];
+    const context = buildSessionContext(entries);
+    expect(context.messages.map(msgContent)).toEqual(["visible", "<system-reminder>\nlegacy\n</system-reminder>"]);
+    expect(context.providerMessages).toHaveLength(2);
+    expect(buildSessionTranscript(entries)).toHaveLength(2);
+  });
+});
+
+describe("buildSessionTranscript", () => {
+  it("preserves full visible conversation history across compaction", () => {
+    const compaction: CompactionEntry = {
+      type: "compaction",
+      id: "c1",
+      parentId: "a2",
+      timestamp: "2026-02-25T10:01:00.000Z",
+      displaySummary: "Compacted summary",
+      tokensBefore: 50000,
+      tokensAfter: 5000,
+    };
+
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "old user"),
+      makeMsg("a2", "a1", "assistant", "old assistant"),
+      compaction,
+      makeMsg("a3", "c1", "user", "new user"),
+    ];
+
+    const transcript = buildSessionTranscript(entries);
+    expect(transcript).toHaveLength(4);
+    expect(transcript[0]).toMatchObject({ type: "message" });
+    expect(transcript[1]).toMatchObject({ type: "message" });
+    expect(transcript[2]).toMatchObject({ type: "compaction" });
+    expect(transcript[3]).toMatchObject({ type: "message" });
+    expect(transcript[2] && transcript[2].type === "compaction" ? transcript[2].summary : "").toContain(
+      "Compacted summary",
+    );
+  });
+
+  it("preserves detailed native compaction summary separately from display label", () => {
+    const compaction: CompactionEntry = {
+      type: "compaction",
+      id: "c1",
+      parentId: "a2",
+      timestamp: "2026-02-25T10:01:00.000Z",
+      summary: "## Goal\nRecover Anthropic compacted details",
+      displaySummary: "Compacted",
+      compactionSummary: { type: "compaction", encrypted_content: "opaque" },
+      tokensBefore: 50000,
+      tokensAfter: 5000,
+    };
+
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "old user"),
+      makeMsg("a2", "a1", "assistant", "old assistant"),
+      compaction,
+      makeMsg("a3", "c1", "user", "new user"),
+    ];
+
+    const transcript = buildSessionTranscript(entries);
+    expect(transcript[2]).toMatchObject({ type: "compaction" });
+    expect(transcript[2] && transcript[2].type === "compaction" ? transcript[2].summary : "").toContain(
+      "Recover Anthropic compacted details",
+    );
+    expect(transcript[2] && transcript[2].type === "compaction" ? transcript[2].displaySummary : "").toBe("Compacted");
+  });
+
+  it("attributes each persisted error to the provider active on its path, not a later switch", () => {
+    const entries: SessionEntry[] = [
+      {
+        type: "model_change",
+        id: "m1",
+        parentId: null,
+        timestamp: "2026-02-25T10:00:00.000Z",
+        provider: "anthropic",
+        modelId: "claude",
+      },
+      makeMsg("u1", "m1", "user", "first"),
+      {
+        type: "error",
+        id: "e1",
+        parentId: "u1",
+        timestamp: "2026-02-25T10:00:05.000Z",
+        fatal: false,
+        error: { name: "ProviderError", message: "rejected", providerErrorType: "auth" },
+      },
+      {
+        type: "model_change",
+        id: "m2",
+        parentId: "e1",
+        timestamp: "2026-02-25T10:01:00.000Z",
+        provider: "openai",
+        modelId: "gpt",
+      },
+      makeMsg("u2", "m2", "user", "second"),
+    ];
+
+    const transcript = buildSessionTranscript(entries);
+
+    expect(transcript.map((entry) => entry.type)).toEqual(["message", "error", "message"]);
+    expect(transcript[1]).toMatchObject({ type: "error", id: "e1", provider: "anthropic" });
+  });
+});

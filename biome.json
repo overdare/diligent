@@ -1,0 +1,120 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.4/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 120
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all",
+      "arrowParentheses": "always"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "complexity": {
+        "noForEach": "off"
+      },
+      "a11y": {
+        "noRedundantAlt": "off",
+        "noStaticElementInteractions": "off",
+        "useKeyWithClickEvents": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "off",
+        "useNodejsImportProtocol": "off",
+        "noParameterAssign": "off"
+      },
+      "suspicious": {
+        "noExplicitAny": "warn",
+        "noAssignInExpressions": "off",
+        "noControlCharactersInRegex": "off",
+        "useIterableCallbackReturn": "off",
+        "noArrayIndexKey": "warn"
+      },
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "warn"
+      }
+    }
+  },
+  "files": {
+    "includes": ["**", "!**/node_modules", "!**/dist", "!**/*.d.ts", "!research"]
+  },
+  "overrides": [
+    {
+      "includes": [
+        "packages/evals/src/task.ts",
+        "packages/evals/src/runner/execution.ts",
+        "packages/evals/src/runner/invariants.ts",
+        "packages/evals/src/tasks/core/**/*.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@diligent/runtime", "@diligent/runtime/*"],
+                    "message": "Core eval tasks and execution adapters must not depend on runtime assembly."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/runtime/**/*.{ts,tsx}"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "@diligent/core",
+                      "@diligent/core/*",
+                      "!@diligent/core/agent",
+                      "!@diligent/core/auth",
+                      "!@diligent/core/auth/chatgpt-oauth",
+                      "!@diligent/core/event-stream",
+                      "!@diligent/core/image-contract",
+                      "!@diligent/core/message-contract",
+                      "!@diligent/core/model-registry",
+                      "!@diligent/core/prompt-contract",
+                      "!@diligent/core/provider-contract",
+                      "!@diligent/core/providers/chatgpt",
+                      "!@diligent/core/providers/anthropic",
+                      "!@diligent/core/providers/gemini",
+                      "!@diligent/core/providers/openai",
+                      "!@diligent/core/providers/vertex",
+                      "!@diligent/core/tool-contract"
+                    ],
+                    "message": "Runtime may only import intentional @diligent/core public boundaries."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
