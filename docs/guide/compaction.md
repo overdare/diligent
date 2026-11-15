@@ -95,13 +95,19 @@ For local compaction, the stored summary is prefixed with handoff framing so the
 
 Native compaction allows the provider to return provider-owned compaction state instead of the same rebuilt summary-message form.
 
+The subscription-backed Responses adapter requests native compaction through a normal Responses stream, with a final
+`compaction_trigger` input item. It adopts exactly one non-empty encrypted checkpoint only after `response.completed`.
+Other streamed output and the request trigger are not persisted as checkpoint content. Failed, incomplete, truncated,
+or malformed compaction streams report an error without replacing the existing context.
+
 Current behavior:
 
 - native compaction is used only when a native compaction function is available
 - all compaction modes use `COMPACTION_MIN_INPUT_TOKENS` (`50000`) as the standard candidate minimum
 - when native compaction succeeds, Diligent can persist provider compaction state as `compactionSummary`
 - when the native adapter reports `unsupported` (endpoint unavailable or no usable summary item), Diligent falls
-  back to local summarization instead of failing the turn; genuine call failures still propagate as errors
+  back to local summarization only when there is no existing native compaction state; genuine call failures still
+  propagate as errors
 - OpenAI-family compact endpoints return a replacement `output` history; Diligent preserves every response item in
   that history, including retained messages and opaque `compaction` items
 - ChatGPT Responses Lite replacement histories containing the provider's `compaction_summary` item are valid native
@@ -111,6 +117,11 @@ Current behavior:
 When `compactionSummary` exists, the rebuilt provider-visible context is restored from that provider-owned state
 rather than from a local summary message chain. OpenAI-family replacement histories are expanded ahead of messages
 added after compaction so a follow-up request sees the complete provider-produced checkpoint.
+
+Local summarization cannot consume an existing provider-owned checkpoint. If native compaction times out, reports
+`unsupported`, or has no available adapter while that state exists, compaction fails before local summarization runs.
+The original context and checkpoint remain intact. Proactive compaction failure lets the turn continue with that
+context; manual compaction reports the error, and overflow recovery resurfaces the original context-overflow failure.
 
 ## Eligibility, adoption, and rejection
 

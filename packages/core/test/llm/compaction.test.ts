@@ -302,6 +302,50 @@ describe("compact", () => {
     }
   });
 
+  it.each([
+    "unavailable",
+    "unsupported",
+    "timeout",
+    "cached unsupported",
+  ] as const)("rejects local fallback with existing native state when the adapter is %s", async (scenario) => {
+    const nativeState = { type: "compaction", encrypted_content: "previous checkpoint" };
+    const llmCompactionFn: NativeCompactFn | undefined =
+      scenario === "unavailable"
+        ? undefined
+        : async (input) => {
+            if (scenario === "timeout") return rejectOnAbort(input.signal);
+            return { status: "unsupported", reason: "status_404" };
+          };
+    const input = {
+      model: TEST_MODEL,
+      messages: [userMsg("follow-up after compaction")],
+      systemPrompt: [],
+      config: { reservePercent: 16, timeoutMs: 30_000 },
+      llmCompactionFn,
+    };
+    if (scenario === "cached unsupported") {
+      await compact({ ...input, streamFn: makeStreamFn("first local summary") });
+    }
+    let localCalls = 0;
+    if (scenario === "timeout") jest.useFakeTimers();
+    try {
+      const pending = compact({
+        ...input,
+        compactionSummary: nativeState,
+        streamFn: (model, context, options) => {
+          localCalls += 1;
+          return makeStreamFn("tail-only summary")(model, context, options);
+        },
+      });
+      if (scenario === "timeout") jest.advanceTimersByTime(input.config.timeoutMs);
+
+      await expect(pending).rejects.toThrow("native compaction state");
+      expect(localCalls).toBe(0);
+    } finally {
+      if (scenario === "timeout") jest.useRealTimers();
+    }
+  });
+
   it("does not fall back to local summarization when the caller aborts native compaction", async () => {
     const controller = new AbortController();
     let localCalls = 0;

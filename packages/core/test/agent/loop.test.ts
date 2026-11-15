@@ -657,7 +657,7 @@ describe("Agent loop", () => {
     expect(toolEvents).toEqual(["tool_start", "tool_end", "tool_start", "tool_end"]);
   });
 
-  test("parallel abort request stops after first emitted result", async () => {
+  test("parallel abort preserves completed results and stops before another model response", async () => {
     const abortTool = createParallelAbortTool("abort_tool");
     const toolB = createParallelTool("ptool_b", 10);
 
@@ -679,13 +679,11 @@ describe("Agent loop", () => {
 
     expect(events.filter((event) => event.type === "turn_start")).toHaveLength(1);
     expect(events.filter((event) => event.type === "tool_start")).toHaveLength(2);
-    // Every tool_use must be paired: the aborting call plus a synthesized aborted
-    // result for the dropped one, so the conversation stays valid for the next turn.
     expect(events.filter((event) => event.type === "tool_end")).toHaveLength(2);
     const toolResults = result.filter((message) => message.role === "tool_result");
-    expect(toolResults.map((message) => (message as { toolCallId: string }).toolCallId).sort()).toEqual([
-      "tc_1",
-      "tc_2",
+    expect(toolResults).toMatchObject([
+      { toolCallId: "tc_1", output: "abort_tool:stop" },
+      { toolCallId: "tc_2", output: "ptool_b:later" },
     ]);
   });
 
