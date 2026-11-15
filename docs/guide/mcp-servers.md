@@ -86,6 +86,26 @@ Notes:
 - Per-server `enabled` and per-tool `tools` toggles still apply in both modes — disabled tools never appear in search results or become callable.
 - Lazy mode uses proxy execution (the model calls `mcp_run_tool`), so provider-native tool-schema validation is deferred to the server; the schema returned by `mcp_search_tools` tells the model the exact argument shape.
 
+## Tool results
+
+MCP tool calls preserve the canonical server result in `metadata.mcpResult`, using
+the shared `McpToolResult` contract. This includes ordered content blocks, audio
+and binary resource payloads, structured output, extension fields, and private
+`_meta`. The canonical result survives session persistence and replay, including
+calls made inside `exec`. Clients can retrieve it from completed tool items through
+`thread/read` or `thread/history` without running the tool again.
+
+Model-facing output preserves text whitespace, includes resource-link names,
+URIs, MIME types and descriptions, and continues to include supported images and
+structured output. Audio, binary resources, unsupported images and future content
+kinds show an explicit fallback with an identifying reference into the saved
+result. The TUI displays these references as ordinary tool output; audio playback
+and binary rendering are unavailable.
+
+Private `_meta` stays outside model-facing output and rendering. Detailed
+diagnostics omit the canonical result and private metadata; the full result is
+retained in local session data.
+
 ## Output size
 
 Large tool outputs are capped so a single call cannot flood the context window. Each MCP tool's output is limited to roughly `maxOutputTokens` (default 25,000, matching Claude Code) and a console warning is logged past `warnOutputTokens` (default 10,000). Output over the cap is truncated by the executor's safety net (full output is still saved to disk). A server can raise the cap for a legitimately large tool by advertising `anthropic/maxResultSizeChars` in that tool's MCP `_meta`.

@@ -90,7 +90,13 @@ describe("applyCodeMode exposure", () => {
 
 describe("exec", () => {
   test("runs nested tools, emits nested events, and records them for history", async () => {
-    const echo = makeTool("echo", async (args) => ({ output: `echo:${args.value}` }));
+    const metadata = {
+      mcpResult: {
+        content: [{ type: "audio", data: "YXVkaW8=", mimeType: "audio/wav" }],
+        _meta: { private: "private-value" },
+      },
+    };
+    const echo = makeTool("echo", async (args) => ({ output: `echo:${args.value}`, metadata }));
     const { exec } = setup([echo]);
     const events: NestedToolEvent[] = [];
 
@@ -106,8 +112,9 @@ describe("exec", () => {
     ]);
     expect(result.metadata?.codeMode).toMatchObject({
       status: "completed",
-      nestedCalls: [{ toolCallId: "call-1#1", toolName: "echo", input: { value: "a" }, output: "echo:a" }],
+      nestedCalls: [{ toolCallId: "call-1#1", toolName: "echo", input: { value: "a" }, output: "echo:a", metadata }],
     });
+    expect(result.output).not.toContain("private-value");
   });
 
   test("rejects the guest promise for failed nested tools and reports script errors with line numbers", async () => {

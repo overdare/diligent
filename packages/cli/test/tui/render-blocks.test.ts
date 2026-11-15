@@ -7,6 +7,20 @@ import type { Component } from "../../src/tui/framework/types";
 import { renderToolPayload } from "../../src/tui/render-blocks";
 
 describe("renderToolPayload", () => {
+  test("keeps MCP links and unavailable media references visible in the text fallback", () => {
+    const output = [
+      "[resource link: name: report.csv; uri: https://example.test/report.csv; mimeType: text/csv; description: Generated report]",
+      "[audio audio/wav; playback unavailable; payload preserved in metadata.mcpResult.content[1]]",
+      "[binary resource: uri: file:///report.bin; mimeType: application/octet-stream; rendering unavailable; payload preserved in metadata.mcpResult.content[2].resource]",
+      "[unsupported MCP content: video; uri: file:///clip; payload preserved in metadata.mcpResult.content[3]]",
+    ].join("\n");
+    const lines = renderToolPayload({ blocks: [{ type: "text", title: "Output", text: output }] });
+    const rendered = lines.join("\n");
+    for (const line of output.split("\n")) expect(rendered).toContain(line);
+    expect(rendered).not.toContain("unsupported block");
+    expect(lines.length).toBeGreaterThan(1);
+  });
+
   test("preserves an opaque viewer resource reference without a browser", () => {
     const lines = renderToolPayload({
       blocks: [

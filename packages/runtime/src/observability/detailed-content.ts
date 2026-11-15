@@ -119,7 +119,11 @@ function clean(value: unknown, state: CleanState, depth = 0, media = false, ance
   const entries = Object.entries(source);
   if (entries.length > 1024) state.truncated = true;
   for (const [key, item] of entries.slice(0, 1024)) {
-    if (credentialKey(key)) result[key] = "[REDACTED]";
+    if (key === "_meta") continue;
+    // Canonical MCP results may contain future binary formats and private extension
+    // fields. Diagnostics already capture the projected output; keep this copy local.
+    if (key === "mcpResult") result[key] = OMITTED;
+    else if (credentialKey(key)) result[key] = "[REDACTED]";
     else if (
       (mediaNode && BINARY.test(key)) ||
       RAW_BINARY.test(key.replace(/[^a-z0-9]/gi, "")) ||

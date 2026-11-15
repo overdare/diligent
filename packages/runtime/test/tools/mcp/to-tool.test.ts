@@ -46,6 +46,23 @@ describe("mcpToolName", () => {
 });
 
 describe("mcpToolToDiligentTool", () => {
+  test("carries the canonical result outside model-facing output", () => {
+    const rawResult = {
+      content: [{ type: "audio", data: "YXVkaW8=", mimeType: "audio/wav" }],
+      _meta: { private: "private-value" },
+      isError: true,
+    };
+    const mapped = mapMcpCallResult(
+      { text: "Audio playback unavailable", images: [], isError: true, rawResult },
+      "server",
+      "audio",
+    );
+    expect(mapped.metadata?.mcpResult).toEqual(rawResult);
+    expect(mapped.metadata).toMatchObject({ isError: true, error: true });
+    expect(mapped.output).toBe("Audio playback unavailable");
+    expect(mapped.output).not.toContain("YXVkaW8=");
+  });
+
   test("advertises MCP inputSchema verbatim", () => {
     const tool = mcpToolToDiligentTool({
       serverName: "github",

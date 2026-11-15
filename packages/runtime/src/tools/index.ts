@@ -52,6 +52,7 @@ export {
   getMcpManager,
   McpConnectionManager,
   mcpToolName,
+  mcpToolToDiligentTool,
 } from "./mcp";
 export { createPlanTool } from "./plan";
 export type { PluginLoadResult, PluginManifest } from "./plugin-loader";

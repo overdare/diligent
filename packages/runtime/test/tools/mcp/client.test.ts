@@ -34,6 +34,22 @@ function countingFactory(): { factory: McpTransportFactory; connects: () => numb
 
 const stdioConfig: McpServerConfig = { command: "irrelevant", args: [] };
 
+/** Return a wire result verbatim, including extensions the fixture server's SDK does not know yet. */
+function managerReturning(raw: Record<string, unknown>): McpConnectionManager {
+  return new McpConnectionManager(async () => {
+    const server = buildServer("results");
+    const [client, transport] = InMemoryTransport.createLinkedPair();
+    const send = transport.send.bind(transport);
+    transport.send = (message, options) =>
+      send(
+        "result" in message && Array.isArray(message.result.content) ? { ...message, result: raw } : message,
+        options,
+      );
+    await server.connect(transport);
+    return client;
+  });
+}
+
 describe("McpConnectionManager.sync", () => {
   test("connects once and lists tools", async () => {
     const f = countingFactory();
@@ -252,6 +268,155 @@ describe("McpConnectionManager.logout", () => {
 });
 
 describe("McpConnectionManager.call", () => {
+  test("preserves future content kinds received over the transport with an identifying fallback", async () => {
+    const raw = {
+      content: [
+        {
+          type: "video",
+          uri: "data://clip",
+          title: "Clip",
+          data: "opaque-payload",
+          _meta: { private: "hidden-value" },
+        },
+        { type: "text", text: "known content", extension: { retained: true } },
+      ],
+      extension: { retained: true },
+    };
+    const manager = managerReturning(raw);
+    try {
+      await manager.sync({ future: stdioConfig });
+      const result = await manager.call("future", "echo", { text: "ignored" }, new AbortController().signal);
+      expect(result.rawResult).toEqual(raw);
+      for (const value of ["unsupported", "video", "data://clip", "Clip", "metadata.mcpResult.content[0]"])
+        expect(result.text).toContain(value);
+      expect(result.text).not.toContain("opaque-payload");
+      expect(result.text).not.toContain("hidden-value");
+    } finally {
+      await manager.disposeAll();
+    }
+  });
+
+  test("continues to reject malformed known content instead of treating it as a future kind", async () => {
+    const manager = managerReturning({ content: [{ type: "text", text: 42 }] });
+    try {
+      await manager.sync({ malformed: stdioConfig });
+      await expect(
+        manager.call("malformed", "echo", { text: "ignored" }, new AbortController().signal),
+      ).rejects.toThrow();
+    } finally {
+      await manager.disposeAll();
+    }
+  });
+
+  test("preserves resource links, mixed payloads and private metadata before projecting output", async () => {
+    const raw = {
+      content: [
+        { type: "text" as const, text: "  leading\ntrailing  " },
+        { type: "image" as const, data: "aW1hZ2U=", mimeType: "image/png" },
+        {
+          type: "resource_link" as const,
+          uri: "https://example.test/report.csv",
+          name: "report.csv",
+          mimeType: "text/csv",
+          description: "Generated report",
+        },
+        { type: "audio" as const, data: "YXVkaW8=", mimeType: "audio/wav", _meta: { private: "block-private" } },
+        {
+          type: "resource" as const,
+          resource: { uri: "data://report", mimeType: "application/octet-stream", blob: "YmluYXJ5" },
+        },
+        { type: "resource" as const, resource: { uri: "data://text", text: "  resource text  " } },
+        { type: "image" as const, data: "dGlmZg==", mimeType: "image/tiff" },
+      ],
+      structuredContent: { count: 2, _meta: { private: "structured-private" } },
+      isError: true,
+      _meta: { private: "result-private" },
+    };
+    const manager = new McpConnectionManager(async () => {
+      const server = new McpServer({ name: "results", version: "1" });
+      server.registerTool("result", {}, async () => raw);
+      const [client, transport] = InMemoryTransport.createLinkedPair();
+      await server.connect(transport);
+      return client;
+    });
+    try {
+      await manager.sync({ results: stdioConfig });
+      const result = await manager.call("results", "result", {}, new AbortController().signal);
+      expect(result.rawResult).toEqual(raw);
+      expect(result.isError).toBe(true);
+      expect(result.images).toEqual([
+        { data: "aW1hZ2U=", mimeType: "image/png" },
+        { data: "dGlmZg==", mimeType: "image/tiff" },
+      ]);
+      expect(result.text.startsWith("  leading\ntrailing  ")).toBe(true);
+      for (const text of [
+        "report.csv",
+        "https://example.test/report.csv",
+        "text/csv",
+        "Generated report",
+        "audio/wav",
+        "playback unavailable",
+        "data://report",
+        "application/octet-stream",
+        "metadata.mcpResult.content[3]",
+        "  resource text  ",
+        "Structured output:",
+        '"count": 2',
+        "image/tiff; rendering unavailable",
+      ])
+        expect(result.text).toContain(text);
+      for (const text of ["YXVkaW8=", "YmluYXJ5", "block-private", "result-private", "structured-private"])
+        expect(result.text).not.toContain(text);
+    } finally {
+      await manager.disposeAll();
+    }
+  });
+
+  test("does not trim text-only results", async () => {
+    const manager = new McpConnectionManager(async () => {
+      const server = new McpServer({ name: "text", version: "1" });
+      server.registerTool("text", {}, async () => ({ content: [{ type: "text", text: "  exact text\n\n" }] }));
+      const [client, transport] = InMemoryTransport.createLinkedPair();
+      await server.connect(transport);
+      return client;
+    });
+    try {
+      await manager.sync({ text: stdioConfig });
+      expect((await manager.call("text", "text", {}, new AbortController().signal)).text).toBe("  exact text\n\n");
+    } finally {
+      await manager.disposeAll();
+    }
+  });
+
+  test("resource-link-only output is visible", async () => {
+    const manager = new McpConnectionManager(async () => {
+      const server = new McpServer({ name: "links", version: "1" });
+      server.registerTool("link", {}, async () => ({
+        content: [
+          {
+            type: "resource_link",
+            uri: "https://example.test/report.csv",
+            name: "report.csv",
+            mimeType: "text/csv",
+            description: "Generated report",
+          },
+        ],
+      }));
+      const [client, transport] = InMemoryTransport.createLinkedPair();
+      await server.connect(transport);
+      return client;
+    });
+    try {
+      await manager.sync({ links: stdioConfig });
+      const result = await manager.call("links", "link", {}, new AbortController().signal);
+      expect(result.isError).toBe(false);
+      for (const value of ["https://example.test/report.csv", "report.csv", "text/csv", "Generated report"])
+        expect(result.text).toContain(value);
+    } finally {
+      await manager.disposeAll();
+    }
+  });
+
   test("routes a call and normalizes the result", async () => {
     const f = countingFactory();
     const manager = new McpConnectionManager(f.factory);

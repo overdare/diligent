@@ -4,6 +4,29 @@ import { projectModelMessages, sanitizeDetailedValue } from "../../src/observabi
 const mask = (text: string) => text.replaceAll("synthetic-secret", "[MASKED]");
 
 describe("detailed observation content", () => {
+  test("omits private MCP metadata and binary payloads from detailed diagnostics", () => {
+    const result = sanitizeDetailedValue(
+      {
+        output: "Visible output",
+        metadata: {
+          mcpResult: {
+            _meta: { arbitrary: "private-result" },
+            content: [
+              { type: "audio", mimeType: "audio/wav", data: "audio-bytes", _meta: { arbitrary: "private-block" } },
+              { type: "resource", resource: { uri: "data://blob", blob: "blob-bytes" } },
+              { type: "future", payload: "future-payload" },
+            ],
+          },
+        },
+      },
+      mask,
+    );
+    for (const value of ["private-result", "private-block", "audio-bytes", "blob-bytes", "future-payload"])
+      expect(result.value).not.toContain(value);
+    expect(result.value).toContain("[MEDIA OMITTED]");
+    expect(result.value).toContain("Visible output");
+  });
+
   test("exports ordered SDK system, history, tool calls and response text without original media", () => {
     const request = {
       system: "system instructions",
