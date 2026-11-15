@@ -95,6 +95,11 @@ For local compaction, the stored summary is prefixed with handoff framing so the
 
 Native compaction allows the provider to return provider-owned compaction state instead of the same rebuilt summary-message form.
 
+The subscription-backed Responses adapter requests native compaction through a normal Responses stream, with a final
+`compaction_trigger` input item. It adopts exactly one non-empty encrypted checkpoint only after `response.completed`.
+Other streamed output and the request trigger are not persisted as checkpoint content. Failed, incomplete, truncated,
+or malformed compaction streams report an error without replacing the existing context.
+
 Current behavior:
 
 - native compaction is used only when a native compaction function is available
