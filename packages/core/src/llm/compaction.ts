@@ -291,6 +291,10 @@ export async function compactMessages(
 export async function compact(input: LLMCompactInput): Promise<LLMCompactResult> {
   const nativeCompactFn = input.llmCompactionFn;
   const modelKey = `${input.model.provider}/${input.model.modelId}`;
+  const fallbackAction =
+    input.compactionSummary !== undefined
+      ? "preserving existing native compaction state"
+      : "falling back to local summarization";
 
   if (nativeCompactFn && nativeUnsupportedModels.get(nativeCompactFn)?.has(modelKey) !== true) {
     const nativeTimeoutMs = input.config.timeoutMs ?? DEFAULT_NATIVE_COMPACTION_TIMEOUT_MS;
@@ -310,7 +314,7 @@ export async function compact(input: LLMCompactInput): Promise<LLMCompactResult>
     } catch (error) {
       if (!(error instanceof CompactionTimeoutError)) throw error;
       compactionLogger.warn("native_compaction_timeout", {
-        message: `[llm:compaction] native compaction timed out after ${nativeTimeoutMs}ms for provider=${input.model.provider} model=${input.model.modelId}; falling back to local summarization`,
+        message: `[llm:compaction] native compaction timed out after ${nativeTimeoutMs}ms for provider=${input.model.provider} model=${input.model.modelId}; ${fallbackAction}`,
         sessionId: input.sessionId,
         fields: { provider: input.model.provider, model: input.model.modelId, timeoutMs: nativeTimeoutMs },
       });
@@ -331,11 +335,15 @@ export async function compact(input: LLMCompactInput): Promise<LLMCompactResult>
       unsupported.add(modelKey);
       nativeUnsupportedModels.set(nativeCompactFn, unsupported);
       compactionLogger.warn("native_compaction_unsupported", {
-        message: `[llm:compaction] native compaction unsupported for provider=${input.model.provider} model=${input.model.modelId}${nativeResult.reason ? ` reason=${nativeResult.reason}` : ""}; falling back to local summarization`,
+        message: `[llm:compaction] native compaction unsupported for provider=${input.model.provider} model=${input.model.modelId}${nativeResult.reason ? ` reason=${nativeResult.reason}` : ""}; ${fallbackAction}`,
         sessionId: input.sessionId,
         fields: { provider: input.model.provider, model: input.model.modelId, reason: nativeResult.reason },
       });
     }
+  }
+
+  if (input.compactionSummary !== undefined) {
+    throw new Error("Local summarization cannot preserve existing native compaction state.");
   }
 
   const streamFunction = input.streamFn ?? resolveStream(input.model.provider as ProviderName);

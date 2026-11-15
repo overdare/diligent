@@ -4,7 +4,13 @@ import type { CoreAgentEvent } from "@diligent/core/agent";
 import { Agent } from "@diligent/core/agent";
 import { EventStream } from "@diligent/core/event-stream";
 import type { AssistantMessage } from "@diligent/core/message-contract";
-import type { Model, ProviderEvent, ProviderResult, ToolDefinition } from "@diligent/core/provider-contract";
+import type {
+  Model,
+  ProviderEvent,
+  ProviderResult,
+  StreamContext,
+  ToolDefinition,
+} from "@diligent/core/provider-contract";
 import { CONTEXT_OVERFLOW_ERROR_MESSAGE, ProviderError } from "@diligent/core/provider-contract";
 import { z } from "zod";
 
@@ -101,6 +107,34 @@ describe("Agent", () => {
     );
 
     expect(agent.getMessages()).toEqual([restoredMessage]);
+  });
+
+  test("failed native compaction preserves the checkpoint and history for the next model response", async () => {
+    const checkpoint = { type: "compaction", encrypted_content: "previous checkpoint" };
+    const previous = makeAssistant("work since checkpoint");
+    previous.usage.inputTokens = 90_000;
+    const contexts: StreamContext[] = [];
+    const events: CoreAgentEvent[] = [];
+    const response = makeAssistant("continued");
+    const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, [], {
+      compaction: { reservePercent: 16 },
+      llmCompactionFn: async () => ({ status: "unsupported", reason: "status_404" }),
+      llmMsgStreamFn: (_model, context, _options) => {
+        contexts.push(context);
+        return makeStreamFn(response)();
+      },
+    });
+    agent.restoreCompactionState([previous], checkpoint);
+    agent.subscribe((event) => events.push(event));
+    const user = { role: "user", content: "continue", timestamp: Date.now() } as const;
+
+    const messages = await agent.prompt(user);
+
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]?.compactionSummary).toBe(checkpoint);
+    expect(contexts[0]?.messages.slice(0, 2)).toEqual([previous, user]);
+    expect(messages).toEqual([previous, user, response]);
+    expect(events.some((event) => event.type === "compaction_end")).toBe(false);
   });
 
   test("prompt() passes signal to streamFunction", async () => {

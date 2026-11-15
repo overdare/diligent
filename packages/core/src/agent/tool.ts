@@ -56,7 +56,7 @@ export async function runToolCalls(
   const itemIds = toolCalls.map(() => generateItemId());
 
   if (signal?.aborted) {
-    fillAbortedExecutions(toolCalls, itemIds, executions, signal, stream, false);
+    fillAbortedExecutions(toolCalls, itemIds, executions, signal, stream);
     return { executions };
   }
 
@@ -79,11 +79,8 @@ export async function runToolCalls(
 
     for (let index = 0; index < toolCalls.length; index++) {
       executions.push(toToolCallExecution(toolCalls[index], itemIds[index], results[index], stream));
-      if (signal?.aborted) break;
     }
 
-    // Parallel: tool_start was already emitted for every call above.
-    fillAbortedExecutions(toolCalls, itemIds, executions, signal, stream, true);
     return { executions };
   }
 
@@ -108,17 +105,14 @@ export async function runToolCalls(
   }
 
   // Sequential: only executed calls emitted tool_start, so unexecuted ones still need it.
-  fillAbortedExecutions(toolCalls, itemIds, executions, signal, stream, false);
+  fillAbortedExecutions(toolCalls, itemIds, executions, signal, stream);
   return { executions };
 }
 
 /**
- * When a turn is aborted mid-batch, some tool calls may never run (parallel: results
- * after the first are dropped; sequential: later calls never start). Every tool_use
- * still needs a matching tool_result, or the next provider request sends an orphaned
- * tool_use. Synthesize an aborted result for each unexecuted call, emitting tool_start
- * (if not already emitted) + tool_end so the stream, persisted session, and in-memory
- * conversation all stay consistent.
+ * Calls skipped by a pre-aborted batch or sequential cancellation still need a
+ * matching tool_result for provider replay. Synthesize tool_start and tool_end
+ * only for calls that never executed; settled parallel calls retain their results.
  */
 function fillAbortedExecutions(
   toolCalls: ToolCallBlock[],
@@ -126,7 +120,6 @@ function fillAbortedExecutions(
   executions: Array<{ toolCall: ToolCallBlock; toolResult: ToolResultMessage }>,
   signal: AbortSignal | undefined,
   stream: AgentStream,
-  allStarted: boolean,
 ): void {
   if (!signal?.aborted) return;
   const executed = new Set(executions.map((execution) => execution.toolCall.id));
@@ -135,15 +128,13 @@ function fillAbortedExecutions(
     const toolCall = toolCalls[index];
     if (executed.has(toolCall.id)) continue;
 
-    if (!allStarted) {
-      stream.emit({
-        type: "tool_start",
-        itemId: itemIds[index],
-        toolCallId: toolCall.id,
-        toolName: toolCall.name,
-        input: toolCall.input,
-      });
-    }
+    stream.emit({
+      type: "tool_start",
+      itemId: itemIds[index],
+      toolCallId: toolCall.id,
+      toolName: toolCall.name,
+      input: toolCall.input,
+    });
 
     const toolResult: ToolResultMessage = {
       role: "tool_result",
