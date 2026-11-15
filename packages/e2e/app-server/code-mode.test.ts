@@ -126,7 +126,8 @@ describe("code mode", () => {
     const threadId = await client.initAndStartThread(tmpDir);
     const notifications = await client.sendTurnAndWait(threadId, "write the marker in the background");
 
-    expect(await Bun.file(markerPath).text()).toBe("bg");
+    // Shell redirection may append trailing whitespace to the marker.
+    expect((await Bun.file(markerPath).text()).trimEnd()).toBe("bg");
     const events = agentEvents(notifications);
     const order = events.flatMap((event) =>
       event.type === "tool_start" || event.type === "tool_end" ? [`${event.type}:${event.toolCallId}`] : [],
