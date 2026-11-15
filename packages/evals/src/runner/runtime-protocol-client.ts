@@ -67,24 +67,29 @@ export function createRuntimeProtocolClient(
         { clientName: "diligent-runtime-eval", clientVersion: DILIGENT_VERSION, protocolVersion: 1 } as never,
       );
     },
-    async waitForTerminal(startIndex: number, timeoutMs: number): Promise<DiligentServerNotification[]> {
+    async waitForTerminal(startIndex: number, signal: AbortSignal): Promise<DiligentServerNotification[]> {
+      signal.throwIfAborted();
       const terminal = () =>
         notifications
           .slice(startIndex)
           .find((item) => item.method === "turn/completed" || item.method === "turn/interrupted");
       if (!terminal()) {
         await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => {
+          const cleanup = () => {
             waiters.delete(check);
-            reject(new Error(`Runtime turn exceeded ${timeoutMs}ms.`));
-          }, timeoutMs);
+            signal.removeEventListener("abort", onAbort);
+          };
+          const onAbort = () => {
+            cleanup();
+            reject(signal.reason);
+          };
           const check = () => {
             if (!terminal()) return;
-            clearTimeout(timer);
-            waiters.delete(check);
+            cleanup();
             resolve();
           };
           waiters.add(check);
+          signal.addEventListener("abort", onAbort, { once: true });
         });
       }
       return notifications.slice(startIndex);

@@ -72,11 +72,9 @@ Many source files start with a `@summary` annotation. Use it as a routing hint w
 
 ### Test Design
 
-- Test behavior and stable invariants, not volatile configuration snapshots.
-- A test must assert an observable that would fail under a plausible incorrect implementation of the named behavior. Successful completion alone is insufficient unless completion or liveness is itself the contract.
-- Prompts and mocked model responses are test inputs, not evidence of model behavior. Tests using them must assert runtime-owned propagation, filtering, persistence, or state transitions; prompt-content tests may assert only the rendered or injected prompt contract.
-- Avoid tests whose result is determined entirely by the fixture or an imported dependency unless the test verifies an otherwise-unobservable integration boundary.
-- Do not assert concrete configuration values merely to mirror the current state. Examples include exact default model IDs, complete supported-model or provider lists, catalog counts, feature-flag defaults, and the presence or absence of a particular configured entry.
-- When testing configuration-driven behavior, derive expectations from the configuration under test instead of duplicating its concrete values in the test.
-- Prefer inline synthetic fixtures when testing generic capability, policy, selection, or normalization logic. Model effort and model-class routing are examples, not special cases.
-- Exact configuration values are appropriate when they are part of an external compatibility contract, request transformation, protocol shape, or a targeted regression. Make that behavior explicit in the test name.
+- Test observable behavior and stable contracts. Assertions must catch a plausible incorrect implementation of the named behavior, including relevant side effects or ordering.
+- Exercise production code. Avoid fixture-only roundtrips, dependency self-tests, and smoke checks unless completion or liveness is the contract or an integration boundary otherwise cannot be observed.
+- Use regression tests to reproduce bugs and verify fixes. Retain them only when they serve as a valuable specification or guard particularly error-prone behavior; otherwise delete them after verifying the fix. Keep retained tests aligned with the current contract and consolidate duplicate coverage.
+- Prompt tests verify assembly, propagation, filtering, and injected data. Fixed wording and scripted model responses do not establish model behavior; use behavioral evals to assess that.
+- Derive configuration-driven expectations from the configuration under test. Use synthetic fixtures for generic capability and policy logic; avoid copying current defaults, model/provider catalogs, counts, or feature-flag values.
+- Assert exact values or wording only for explicit compatibility, protocol, transformation, or regression contracts. Name the contract being protected, and allow implementation changes that preserve it.

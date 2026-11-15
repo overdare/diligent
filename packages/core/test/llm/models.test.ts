@@ -6,137 +6,55 @@ import {
   getModelInfoList,
   listModels,
   MODEL_CARD_SCHEMA_VERSION,
+  type ModelCard,
   resolveModel,
   resolveModelSelector,
   sameModelRef,
   UnknownModelError,
 } from "../../src/llm/models";
-import { getDefaultModelRef } from "../../src/llm/provider-model-policy";
+import { getDefaultModelRef, PROVIDER_MODEL_POLICIES } from "../../src/llm/provider-model-policy";
 
 describe("provider-scoped model catalog", () => {
-  it("offers GPT-6.1 Sol and Luna in the ChatGPT OAuth model list", () => {
-    for (const modelId of ["gpt-6.1-sol", "gpt-6-luna"]) {
-      expect(listModels("chatgpt").some((model) => model.modelId === modelId)).toBe(true);
-      expect(getModelInfoList().some((model) => model.provider === "chatgpt" && model.modelId === modelId)).toBe(true);
-      expect(resolveModel({ provider: "chatgpt", modelId }).modelId).toBe(modelId);
+  it("lists each provider-scoped identity once and resolves it to its catalog card", () => {
+    const cards = listModels();
+    expect(cards.length).toBeGreaterThan(0);
+    const identities = cards.map((card) => `${card.provider}/${card.modelId}`);
+    expect(new Set(identities).size).toBe(cards.length);
+    for (const card of cards) {
+      expect(resolveModel(card)).toBe(card);
+      expect(resolveModelSelector(`${card.provider}/${card.modelId}`)).toBe(card);
+      for (const alias of card.aliases ?? []) {
+        expect(resolveModel({ provider: card.provider, modelId: alias })).toBe(card);
+        expect(resolveModelSelector(`${card.provider}/${alias}`)).toBe(card);
+      }
+    }
+    for (const provider of Object.keys(PROVIDER_MODEL_POLICIES) as ModelCard["provider"][]) {
+      expect(listModels(provider)).toEqual(cards.filter((card) => card.provider === provider));
+      const ref = getDefaultModelRef(provider);
+      expect(ref).toEqual({ provider, modelId: PROVIDER_MODEL_POLICIES[provider].defaultModel });
+      expect(resolveModel(ref).provider).toBe(provider);
     }
   });
 
-  it("registers GPT-6.1 Sol and Luna for the OpenAI API", () => {
-    expect(resolveModel({ provider: "openai", modelId: "gpt-6.1-sol" })).toMatchObject({
-      display: "GPT-6.1 Sol",
-      contextWindow: 500_000,
-      maxOutputTokens: 128_000,
-      inputCostPer1M: 2,
-      outputCostPer1M: 10,
-      cacheReadCostPer1M: 0.1,
-      cacheWriteCostPer1M: 2.5,
-      supportsThinking: true,
-      supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
-      supportsVision: true,
-    });
-    expect(resolveModel({ provider: "openai", modelId: "gpt-6-luna" })).toMatchObject({
-      display: "GPT-6 Luna",
-      contextWindow: 500_000,
-      maxOutputTokens: 128_000,
-      inputCostPer1M: 0.1,
-      outputCostPer1M: 0.5,
-      cacheReadCostPer1M: 0.01,
-      cacheWriteCostPer1M: 0.125,
-      supportsThinking: true,
-      supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
-      supportsVision: true,
-    });
+  it("selects synthetic aliases, rejects ambiguous identities, and deduplicates repeated cards", () => {
+    const first: ModelCard = {
+      schemaVersion: MODEL_CARD_SCHEMA_VERSION,
+      provider: "openai",
+      modelId: "synthetic-model",
+      aliases: ["synthetic-alias"],
+      contextWindow: 1000,
+      maxOutputTokens: 100,
+      supportsThinking: false,
+    };
+    const second: ModelCard = { ...first, provider: "chatgpt" };
+    expect(resolveModelSelector("synthetic-alias", [first])).toBe(first);
+    expect(resolveModelSelector(first.modelId, [first, first])).toBe(first);
+    expect(() => resolveModelSelector(first.modelId, [first, second])).toThrow(AmbiguousModelError);
+    expect(() => resolveModelSelector("synthetic-alias", [first, second])).toThrow(AmbiguousModelError);
+    expect(() => resolveModelSelector("missing-model", [first])).toThrow("Unknown model");
   });
 
-  it("registers Claude Opus 5.5 with always-on adaptive thinking capabilities", () => {
-    const model = resolveModel({ provider: "anthropic", modelId: "claude-opus-5-5" });
-
-    expect(model).toMatchObject({
-      display: "Claude Opus 5.5",
-      contextWindow: 500_000,
-      maxOutputTokens: 128_000,
-      inputCostPer1M: 4,
-      outputCostPer1M: 20,
-      cacheReadCostPer1M: 0.2,
-      cacheWriteCostPer1M: 5,
-      supportsThinking: true,
-      supportsVision: true,
-      supportsAdaptiveThinking: true,
-      supportsXhighEffort: true,
-      aliases: ["claude-opus", "opus", "opus-5-5"],
-    });
-  });
-
-  it("selects current replacement defaults", () => {
-    expect(getDefaultModelRef("openai")).toEqual({ provider: "openai", modelId: "gpt-6.1-sol" });
-    expect(getDefaultModelRef("chatgpt")).toEqual({ provider: "chatgpt", modelId: "gpt-6.1-sol" });
-    expect(getDefaultModelRef("anthropic")).toEqual({ provider: "anthropic", modelId: "claude-opus-5-5" });
-  });
-
-  it("rejects retired model IDs and version aliases in selection and protocol lists", () => {
-    const retired = [
-      ...["gpt-6-sol", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6"].map((modelId) => ({
-        provider: "openai" as const,
-        modelId,
-      })),
-      ...["gpt-5.5", "gpt-5.6"].map((modelId) => ({ provider: "chatgpt" as const, modelId })),
-      ...["claude-opus-5", "claude-opus-4-8", "claude-fable-5", "opus-5", "opus-4-8", "fable-5"].map((modelId) => ({
-        provider: "anthropic" as const,
-        modelId,
-      })),
-    ];
-    for (const ref of retired) {
-      expect(findModel(ref)).toBeUndefined();
-      expect(() => resolveModel(ref)).toThrow(UnknownModelError);
-      expect(getModelInfoList().some((model) => model.provider === ref.provider && model.modelId === ref.modelId)).toBe(
-        false,
-      );
-    }
-  });
-
-  it("keeps previous-generation ChatGPT models selectable for plans that lag the latest rollout", () => {
-    for (const modelId of ["gpt-6-sol", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
-      const ref = { provider: "chatgpt" as const, modelId };
-      expect(resolveModel(ref).modelId).toBe(modelId);
-      expect(getModelInfoList().some((model) => model.provider === "chatgpt" && model.modelId === modelId)).toBe(true);
-    }
-  });
-
-  it("resolves every newly added model by its provider-scoped ref", () => {
-    const refs = [
-      { provider: "anthropic", modelId: "claude-fable-5-1" },
-      { provider: "openai", modelId: "gpt-6-astra" },
-      { provider: "chatgpt", modelId: "gpt-6-astra" },
-      { provider: "gemini", modelId: "gemini-3.8-flash" },
-    ] as const;
-
-    for (const ref of refs) {
-      expect(resolveModel(ref).modelId).toBe(ref.modelId);
-    }
-  });
-
-  it("routes bare aliases to the remaining latest family models", () => {
-    expect(resolveModelSelector("opus").modelId).toBe("claude-opus-5-5");
-    expect(resolveModelSelector("claude-opus").modelId).toBe("claude-opus-5-5");
-    expect(resolveModelSelector("fable").modelId).toBe("claude-fable-5-1");
-  });
-
-  it("resolves version-bearing aliases to their own model", () => {
-    expect(resolveModelSelector("opus-5-5").modelId).toBe("claude-opus-5-5");
-    expect(resolveModelSelector("fable-5-1").modelId).toBe("claude-fable-5-1");
-  });
-
-  it("leaves the bare Gemini alias on Gemini 3.6 Flash", () => {
-    expect(resolveModelSelector("gemini").modelId).toBe("gemini-3.6-flash");
-  });
-
-  it("requires a provider qualifier for aliases shared by openai and chatgpt", () => {
-    expect(() => resolveModelSelector("astra")).toThrow(AmbiguousModelError);
-    expect(resolveModelSelector("chatgpt/gpt-6-astra").provider).toBe("chatgpt");
-  });
-
-  it("exposes the current Gemini models and defaults to Gemini 3.6 Flash", () => {
+  it("keeps the routed Gemini 3.7 ID compatible without a stale picker entry", () => {
     expect(listModels("gemini").map((model) => model.modelId)).not.toContain("gemini-3.7-flash");
     expect(
       getModelInfoList()
@@ -147,12 +65,6 @@ describe("provider-scoped model catalog", () => {
     expect(resolveModel({ provider: "gemini", modelId: "gemini-3.7-flash" })).toBe(replacement);
     expect(resolveModelSelector("gemini/gemini-3.7-flash")).toBe(replacement);
     expect(resolveModelSelector("gemini-3.7-flash")).toBe(replacement);
-    expect(getDefaultModelRef("gemini")).toEqual({ provider: "gemini", modelId: "gemini-3.6-flash" });
-    expect(resolveModel({ provider: "gemini", modelId: "gemini" }).modelId).toBe("gemini-3.6-flash");
-
-    for (const removedModelId of ["gemini-3.1-pro-preview", "gemini-3.1-flash-lite"]) {
-      expect(findModel({ provider: "gemini", modelId: removedModelId })).toBeUndefined();
-    }
   });
 
   it("resolves the routed Gemini 3.5 ID to the served 3.6 card without adding a stale picker entry", () => {
@@ -199,6 +111,24 @@ describe("provider-scoped model catalog", () => {
 
   it("maps catalog cards to protocol model info", () => {
     for (const card of listModels()) expect(card.schemaVersion).toBe(MODEL_CARD_SCHEMA_VERSION);
-    expect(getModelInfoList().every((model) => model.modelId.length > 0 && model.provider.length > 0)).toBe(true);
+    const cards = listModels();
+    const infos = getModelInfoList();
+    expect(infos).toHaveLength(cards.length);
+    for (const card of cards) {
+      expect(infos.find((info) => sameModelRef(info, card))).toEqual({
+        modelId: card.modelId,
+        display: card.display,
+        provider: card.provider,
+        aliases: card.aliases,
+        contextWindow: card.contextWindow,
+        maxOutputTokens: card.maxOutputTokens,
+        inputCostPer1M: card.inputCostPer1M,
+        outputCostPer1M: card.outputCostPer1M,
+        supportsThinking: card.supportsThinking,
+        supportedEfforts: card.supportedEfforts,
+        supportsVision: card.supportsVision,
+        supportsFastMode: card.supportsFastMode,
+      });
+    }
   });
 });

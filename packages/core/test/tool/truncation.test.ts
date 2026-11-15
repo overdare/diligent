@@ -32,6 +32,7 @@ describe("truncation", () => {
       const result = truncateHead(big, 100);
       expect(result.truncated).toBe(true);
       expect(new TextEncoder().encode(result.output).length).toBeLessThanOrEqual(100);
+      expect(result.output).toBe("x".repeat(100));
       expect(result.originalBytes).toBe(1000);
     });
 
@@ -50,10 +51,7 @@ describe("truncation", () => {
       const result = truncateHead(emojis, 50);
       expect(result.truncated).toBe(true);
       expect(new TextEncoder().encode(result.output).length).toBeLessThanOrEqual(50);
-      // Should not have broken emoji sequences
-      for (const char of result.output) {
-        expect(char.codePointAt(0)).toBeGreaterThan(0);
-      }
+      expect(result.output).toBe("😀".repeat(12));
     });
   });
 
@@ -68,8 +66,8 @@ describe("truncation", () => {
       const big = "a".repeat(500) + "b".repeat(500);
       const result = truncateTail(big, 100);
       expect(result.truncated).toBe(true);
-      // Tail truncation: should contain mostly b's
-      expect(result.output).toContain("b");
+      expect(result.output).toBe("b".repeat(100));
+      expect(result.originalBytes).toBe(1000);
     });
 
     test("char-based truncation handles pathological case", () => {
@@ -127,10 +125,9 @@ describe("truncation", () => {
       const big = "H".repeat(500) + "T".repeat(500);
       const result = truncateHeadTail(big, 200);
       expect(result.truncated).toBe(true);
-      // Head portion should have H's
-      expect(result.output).toContain("H");
-      // Tail portion should have T's
-      expect(result.output).toContain("T");
+      expect(result.output.match(/^H+/)?.[0]).toBe("H".repeat(80));
+      expect(result.output.match(/T+$/)?.[0]).toBe("T".repeat(120));
+      expect(result.output).toContain("800 bytes omitted");
     });
   });
 });

@@ -42,7 +42,6 @@ describe("renderSkillsSection", () => {
     expect(result).toContain("**my-skill**");
     expect(result).not.toContain("Does something useful");
     expect(result).not.toContain("/project/.diligent/skills/my-skill/SKILL.md");
-    expect(result).toContain("The skill tool contains");
   });
 
   it("renders multiple skills", () => {
@@ -66,20 +65,5 @@ describe("renderSkillsSection", () => {
       makeSkill({ name: "b", disableModelInvocation: true }),
     ];
     expect(renderSkillsSection(skills)).toBe("");
-  });
-
-  it("includes 'Available Skills' header", () => {
-    const skills = [makeSkill()];
-    const result = renderSkillsSection(skills);
-    expect(result).toContain("## Available Skills");
-  });
-
-  it("includes 'How to use skills' section", () => {
-    const skills = [makeSkill()];
-    const result = renderSkillsSection(skills);
-    expect(result).toContain("### How to use skills");
-    expect(result).toContain("call the skill tool");
-    expect(result).toContain("Never use read to open SKILL.md directly");
-    expect(result).toContain("Resolve relative paths against the skill's base directory");
   });
 });

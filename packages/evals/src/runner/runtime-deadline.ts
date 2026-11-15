@@ -32,11 +32,11 @@ export class RuntimeDeadline {
     return Math.max(0, this.timeoutMs - (performance.now() - this.started));
   }
 
-  async run<T>(phase: string, operation: Promise<T> | (() => Promise<T>), phaseTimeoutMs?: number): Promise<T> {
+  async run<T>(phase: string, operation: () => Promise<T>, phaseTimeoutMs?: number): Promise<T> {
     if (this.signal.aborted) throw this.abortReason();
-    const promise = typeof operation === "function" ? operation() : operation;
     const cap = phaseTimeoutMs === undefined ? this.remainingMs() : Math.min(this.remainingMs(), phaseTimeoutMs);
     if (cap <= 0) throw this.expire(phase, phaseTimeoutMs);
+    const promise = operation();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let abortListener: (() => void) | undefined;
     try {

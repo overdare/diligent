@@ -1,4 +1,4 @@
-// @summary Deterministic end-to-end test for the in-process runtime eval adapter and cleanup
+// @summary Runtime eval adapter contracts exercised with scripted model streams and real runtime boundaries
 
 import { describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
@@ -72,7 +72,7 @@ describe("runRuntimeEvalExecution", () => {
       createConfig.mockRestore();
     }
   });
-  test("discovers, advertises, and executes the uniquely matching task-local skill", async () => {
+  test("records skill discovery, advertisement, and scripted tool execution", async () => {
     const seed = "shared-seed-123";
     const ruleToken = seededToken(seed, "HANDOFF_RULE");
     let scripted: StreamFunction | undefined;
@@ -127,7 +127,7 @@ describe("runRuntimeEvalExecution", () => {
     expect(JSON.stringify(result.execution.providerCalls[0]?.systemPrompt.items)).toContain("incident-brief");
   });
 
-  test("advertises irrelevant task-local skills while completing a direct edit without loading them", async () => {
+  test("records advertised skills and a scripted edit without skill loading", async () => {
     const seed = "shared-seed-123";
     const requestedContent = `status=${seededToken(seed, "READY")}\n`;
     let scripted: StreamFunction | undefined;
@@ -331,7 +331,7 @@ describe("runRuntimeEvalExecution", () => {
     expect(result.execution.advertisedTools.map((snapshot) => snapshot.mode)).toEqual(["plan", "execute"]);
   });
 
-  test("records original and hook-augmented prompts while following synchronous injected context", async () => {
+  test("records original and hook-augmented prompts during scripted execution", async () => {
     const seed = "shared-seed-123";
     const hookFact = seededToken(seed, "HOOK_FACT");
     const result = await runRuntimeEvalExecution({
@@ -362,7 +362,7 @@ describe("runRuntimeEvalExecution", () => {
     expect(result.execution.toolCalls.map((call) => call.name)).toEqual(["apply_patch"]);
   });
 
-  test("converges in plan mode after exact reads and one scripted bounded question", async () => {
+  test("records scripted plan-mode reads and user input for the task grader", async () => {
     const seed = "shared-seed-123";
     const apiFact = seededToken(seed, "API_FACT");
     const uiFact = seededToken(seed, "UI_FACT");
@@ -420,7 +420,7 @@ describe("runRuntimeEvalExecution", () => {
     expect(result.execution.advertisedTools[0]?.mode).toBe("plan");
   });
 
-  test("assembles both instruction layers for a nested task cwd and follows their hidden transformations", async () => {
+  test("records nested instruction layers and grades scripted output", async () => {
     const seed = "shared-seed-123";
     const target = seededToken(seed, "PAYLOAD");
     const rootMarker = seededToken(seed, "ROOT_RULE");

@@ -1623,7 +1623,7 @@ describe("DiligentAppServer", () => {
     ).resolves.toMatchObject({ error: { code: -32602, message: "Invalid params" } });
   });
 
-  it("accepts and restores xhigh effort for GPT-5.6", async () => {
+  it("sets and reads each effort supported by the configured model", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
     const server = new DiligentAppServer(
       createAppServerConfig({
@@ -1640,51 +1640,23 @@ describe("DiligentAppServer", () => {
     });
     const threadId = (readResult(started) as { threadId: string }).threadId;
 
-    const changed = await server.handleRequest(TEST_CONNECTION_ID, {
-      id: 1521,
-      method: "effort/set",
-      params: { threadId, effort: "xhigh" },
-    });
-    expect(readResult(changed)).toEqual({ effort: "xhigh" });
+    const model = resolveModel({ provider: "openai", modelId: "gpt-6.1-sol" });
+    expect(model.supportedEfforts?.length).toBeGreaterThan(0);
+    for (const effort of model.supportedEfforts ?? []) {
+      const changed = await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 1521,
+        method: "effort/set",
+        params: { threadId, effort },
+      });
+      expect(readResult(changed)).toEqual({ effort });
 
-    const read = await server.handleRequest(TEST_CONNECTION_ID, {
-      id: 1522,
-      method: "thread/read",
-      params: { threadId },
-    });
-    expect((readResult(read) as { currentEffort: string }).currentEffort).toBe("xhigh");
-  });
-
-  it("accepts xhigh and max effort for GPT-6.1 Sol", async () => {
-    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
-    const server = new DiligentAppServer(
-      createAppServerConfig({
-        cwd: projectRoot,
-        runtimeConfig: makeFactoryRuntimeConfig({ model: { provider: "openai", modelId: "gpt-6.1-sol" } }),
-      }),
-    );
-
-    connectTestPeer(server);
-    const started = await server.handleRequest(TEST_CONNECTION_ID, {
-      id: 1530,
-      method: "thread/start",
-      params: { cwd: projectRoot },
-    });
-    const threadId = (readResult(started) as { threadId: string }).threadId;
-
-    const changed = await server.handleRequest(TEST_CONNECTION_ID, {
-      id: 1531,
-      method: "effort/set",
-      params: { threadId, effort: "xhigh" },
-    });
-    expect(readResult(changed)).toEqual({ effort: "xhigh" });
-
-    const maxChanged = await server.handleRequest(TEST_CONNECTION_ID, {
-      id: 1532,
-      method: "effort/set",
-      params: { threadId, effort: "max" },
-    });
-    expect(readResult(maxChanged)).toEqual({ effort: "max" });
+      const read = await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 1522,
+        method: "thread/read",
+        params: { threadId },
+      });
+      expect((readResult(read) as { currentEffort: string }).currentEffort).toBe(effort);
+    }
   });
 
   it("preserves existing effort/set behavior for non-thinking models", async () => {
@@ -2833,6 +2805,7 @@ describe("DiligentAppServer", () => {
       { permission: "execute", pattern: "rm **", action: "deny" },
     ]);
 
+    let approvalDecision: unknown;
     const config = createAppServerConfig({ cwd: projectRoot, runtimeConfig: runtimeConfig as never });
     const server = new DiligentAppServer({
       ...config,
@@ -2855,6 +2828,7 @@ describe("DiligentAppServer", () => {
                 description: "run rm",
                 details: { command: "rm -rf tmp" },
               });
+              approvalDecision = decision;
               stream.push({
                 type: "done",
                 stopReason: "end_turn",
@@ -2905,6 +2879,7 @@ describe("DiligentAppServer", () => {
     });
 
     await turnDone;
+    expect(approvalDecision).toBe("reject");
     expect(approvalRequestCount).toBe(0);
   });
 

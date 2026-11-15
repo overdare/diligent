@@ -29,22 +29,34 @@ describe("buildDefaultTools MCP OAuth wiring", () => {
     __resetMcpManagerForTest();
   });
 
-  // Regression: HTTP OAuth MCP servers connected tokenless (invalid_token) at startup because the
-  // tool build could run before the app-server wired OAuth deps. buildDefaultTools must guarantee
-  // the deps are set on the very manager it syncs.
   test("wires OAuth deps on the manager before syncing MCP servers", async () => {
-    const factory: McpTransportFactory = async (name): Promise<Transport> => {
+    const connections: { name: string; hasOAuthDeps: boolean; hasAuthProvider: boolean }[] = [];
+    const factory: McpTransportFactory = async (name, _config, authProvider): Promise<Transport> => {
+      connections.push({ name, hasOAuthDeps: manager.hasOAuthDeps(), hasAuthProvider: authProvider !== undefined });
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-      await new McpServer({ name, version: "1.0.0" }).connect(serverTransport);
+      const server = new McpServer({ name, version: "1.0.0" });
+      server.registerTool("echo", { inputSchema: { text: z.string() } }, async ({ text }) => ({
+        content: [{ type: "text", text }],
+      }));
+      await server.connect(serverTransport);
       return clientTransport;
     };
     const manager = new McpConnectionManager(factory);
     __setMcpManagerForTest(manager);
     expect(manager.hasOAuthDeps()).toBe(false);
 
-    await buildDefaultTools({ cwd: "/tmp", mcpServers: { atlassian: { url: "https://example.test/mcp" } } });
+    try {
+      const result = await buildDefaultTools({
+        cwd: "/tmp",
+        mcpServers: { remote: { url: "https://example.test/mcp" } },
+        mcpToolLoading: "eager",
+      });
 
-    expect(manager.hasOAuthDeps()).toBe(true);
+      expect(connections).toEqual([{ name: "remote", hasOAuthDeps: true, hasAuthProvider: true }]);
+      expect(toolNamesFor(result)).toContain("mcp__remote__echo");
+    } finally {
+      await manager.disposeAll();
+    }
   });
 });
 

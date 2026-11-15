@@ -99,52 +99,6 @@ describe("spawn_agent tool", () => {
     expect(parsed.nickname).toBe("LegacyAgent");
   });
 
-  it("exposes detailed role guidance in tool description", () => {
-    const { tools } = createCollabTools(makeCollabDeps());
-    const spawnTool = tools.find((t) => t.name === "spawn_agent")!;
-    expect(spawnTool.description).toBe(formatSpawnAgentToolDescription());
-    expect(spawnTool.description).toContain("Role selection guide:");
-    expect(spawnTool.description).toContain("wait for them before yielding");
-    expect(spawnTool.description).toContain("Nested subagents are disabled by default");
-    expect(spawnTool.description).toContain(
-      "act as the coordinator: monitor, synthesize, and decide the next step instead of doing the same work in parallel",
-    );
-    expect(spawnTool.description).toContain("Prompt contract:");
-    expect(spawnTool.description).toContain("Result contract:");
-    expect(spawnTool.description).toContain("Do not ask a child agent to spawn or coordinate additional sub-agents");
-    expect(spawnTool.description).toContain("'general':");
-    expect(spawnTool.description).toContain("'explore':");
-    expect(spawnTool.description).not.toContain("'planner':");
-  });
-
-  it("lists role names in the parameter while keeping detailed guidance in the tool description", () => {
-    const { tools } = createCollabTools(makeCollabDeps());
-    const spawnTool = tools.find((t) => t.name === "spawn_agent")!;
-    const shape = (spawnTool.parameters as { shape: Record<string, { description?: string }> }).shape;
-    expect(shape.agent_type.description).toBe(formatAgentTypeParameterDescription());
-    expect(shape.agent_type.description).toContain("general");
-    expect(shape.agent_type.description).toContain("explore");
-    expect(shape.agent_type.description).toContain("See the tool description");
-    expect(shape.agent_type.description).not.toContain("Never delegate code review");
-    expect(shape.allow_nested_agents.description).toContain("Explicit opt-in");
-    expect(shape.message.description).toContain("full worker brief");
-    expect(shape.message.description).toContain("expected deliverable or result shape");
-  });
-
-  it("limits the built-in explore agent to code location lookups", () => {
-    const explore = getBuiltinAgentDefinitions().find((agent) => agent.name === "explore");
-    expect(explore).toBeDefined();
-    expect(explore?.description).toContain("codebase orientation agent");
-    expect(explore?.systemPromptPrefix).toContain("not an investigator or reviewer");
-    expect(explore?.systemPromptPrefix).toContain("Treat your findings as pointers");
-
-    const description = formatSpawnAgentToolDescription();
-    expect(description).toContain("file, symbol, definition, and reference lookups");
-    expect(description).toContain("Never delegate code review, audit, correctness analysis");
-    expect(description).not.toContain("authoritative codebase Q&A");
-    expect(description).not.toContain("Trust explorer results without re-verification");
-  });
-
   it("includes custom agents in tool description and schema description", () => {
     const agentDefinitions = resolveAvailableAgentDefinitions(getBuiltinAgentDefinitions(), [
       {

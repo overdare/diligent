@@ -13,14 +13,6 @@ function makeCtx(): ToolContext {
 }
 
 describe("plan tool", () => {
-  it("describes plan cleanup on intent changes and deferrals", () => {
-    const tool = createPlanTool();
-
-    expect(tool.description).toContain("Cancel steps the user defers or abandons");
-    expect(tool.description).toContain("do not mix a new request into an obsolete plan");
-    expect(tool.description).toContain("keep unfinished work distinct from completed or cancelled work");
-  });
-
   it("returns JSON with title and steps", async () => {
     const tool = createPlanTool();
     const result = await tool.execute(

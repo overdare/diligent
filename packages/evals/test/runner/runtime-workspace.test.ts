@@ -86,12 +86,18 @@ describe("runtime workspace", () => {
     }
   });
 
-  test("records symlinks so fixture validation can reject them", async () => {
+  test("records linked directories without following them outside the workspace", async () => {
     const root = await mkdtemp(join(tmpdir(), "diligent-runtime-eval-"));
+    const workspace = join(root, "workspace");
+    const target = join(root, "outside");
     try {
-      await writeFile(join(root, "target"), "value");
-      await symlink("target", join(root, "link"));
-      expect((await captureWorkspace(root)).entries.find((entry) => entry.path === "link")?.kind).toBe("symlink");
+      await mkdir(workspace);
+      await mkdir(target);
+      await writeFile(join(target, "private.txt"), "Must stay outside the workspace snapshot");
+      await symlink(target, join(workspace, "link"), process.platform === "win32" ? "junction" : "dir");
+      expect((await captureWorkspace(workspace)).entries).toEqual([
+        expect.objectContaining({ path: "link", kind: "symlink" }),
+      ]);
     } finally {
       await removeTemporaryRoot(root);
     }

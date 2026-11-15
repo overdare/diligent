@@ -20,7 +20,6 @@ import {
   shouldCompact,
 } from "../../src/agent/compaction";
 import { AgentStream } from "../../src/agent/types";
-import { DEFAULT_COMPACTION_PROMPTS } from "../../src/llm/compaction";
 
 // --- Helper factories ---
 
@@ -75,16 +74,6 @@ const TEST_MODEL: Model = {
   maxOutputTokens: 40_000,
   supportsThinking: false,
 };
-
-it("default compaction prompt preserves non-secret references, corrections, and authority without exempting secrets", () => {
-  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("non-secret opaque identifiers");
-  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("Do not copy credentials");
-  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("latest user corrections");
-  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("explicit denials");
-  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("do not become user authorization");
-  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("Do not execute the task");
-  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("empty tool list");
-});
 
 // --- estimateTokens ---
 

@@ -94,40 +94,37 @@ export async function runRuntimeEvalExecution(input: {
   let currentClientPrompt = "";
   let stateRoots = [".diligent"];
   try {
-    root = await deadline.run("fixture root creation", mkdtemp(join(tmpdir(), `diligent-runtime-eval-${task.id}-`)));
+    root = await deadline.run("fixture root creation", () =>
+      mkdtemp(join(tmpdir(), `diligent-runtime-eval-${task.id}-`)),
+    );
     if (process.platform === "win32")
-      root = await deadline.run("fixture root canonicalization", canonicalizeTemporaryRoot(root));
-    outputRoot = await deadline.run(
-      "output root creation",
+      root = await deadline.run("fixture root canonicalization", () => canonicalizeTemporaryRoot(root));
+    outputRoot = await deadline.run("output root creation", () =>
       mkdtemp(join(tmpdir(), `diligent-runtime-eval-output-${task.id}-`)),
     );
     const evalOutputStore = createRuntimeEvalOutputStore(outputRoot);
     outputStore = evalOutputStore;
-    world = await deadline.run("setup", task.setup(seed, root, deadline.signal));
-    initial = await deadline.run("initial fixture capture", captureWorkspace(root));
+    world = await deadline.run("setup", () => task.setup(seed, root, deadline.signal));
+    initial = await deadline.run("initial fixture capture", () => captureWorkspace(root));
     if (initial.entries.some((entry) => entry.kind === "symlink"))
       throw new Error("configuration.invalid_fixture: symlinks are forbidden.");
     try {
       threadCwd = task.resolveThreadCwd
         ? resolveWorkspacePath(
             root,
-            await deadline.run("thread cwd resolution", Promise.resolve(task.resolveThreadCwd(world, root))),
+            await deadline.run("thread cwd resolution", () => Promise.resolve(task.resolveThreadCwd!(world, root))),
           )
         : root;
     } catch (error) {
       throw new Error(`configuration.invalid_thread_cwd: ${error instanceof Error ? error.message : String(error)}`);
     }
-    const threadCwdStat = await deadline.run(
-      "thread cwd validation",
-      lstat(threadCwd).catch(() => undefined),
-    );
+    const threadCwdStat = await deadline.run("thread cwd validation", () => lstat(threadCwd).catch(() => undefined));
     if (!threadCwdStat?.isDirectory())
       throw new Error("configuration.invalid_thread_cwd: thread cwd must be an existing fixture directory.");
     const threadRelativePath = relative(root, threadCwd).split(sep).filter(Boolean).join("/");
     stateRoots = [".diligent", ...(threadRelativePath ? [`${threadRelativePath}/.diligent`] : [])];
     const bundledToolProviders = [
-      ...(await deadline.run(
-        "bundled provider setup",
+      ...(await deadline.run("bundled provider setup", () =>
         Promise.resolve(task.createBundledToolProviders?.(world) ?? []),
       )),
     ];
@@ -135,7 +132,7 @@ export async function runRuntimeEvalExecution(input: {
       logs.push(structuredClone(record));
     });
     logSinkInstalled = true;
-    let config = await deadline.run("runtime config setup", task.createRuntimeConfig(world, profile));
+    let config = await deadline.run("runtime config setup", () => task.createRuntimeConfig(world, profile));
     input.configureProviderManager?.(profile, config.providerManager);
     const makeServer = () => {
       config.streamFunction = clampOutputTokens(
@@ -226,7 +223,7 @@ export async function runRuntimeEvalExecution(input: {
       });
     let server = makeServer();
     client = makeClient(server);
-    await deadline.run("client initialization", client.initialize());
+    await deadline.run("client initialization", () => client!.initialize());
     for (const [stepIndex, step] of task.createSteps(world).entries()) {
       if (task.prepareStep)
         await deadline.run(`task step ${stepIndex} preparation`, () =>
@@ -235,21 +232,20 @@ export async function runRuntimeEvalExecution(input: {
       if (step.kind === "restart_and_resume") {
         serverRequests.push(...client.serverRequests);
         client.close();
-        config = await deadline.run("restart runtime config setup", task.createRuntimeConfig(world, profile));
+        config = await deadline.run("restart runtime config setup", () => task.createRuntimeConfig(world, profile));
         input.configureProviderManager?.(profile, config.providerManager);
         server = makeServer();
         client = makeClient(server);
-        await deadline.run("restart client initialization", client.initialize());
-        const resumed = (await deadline.run("thread resume", client.request("thread/resume", { threadId }))) as {
+        await deadline.run("restart client initialization", () => client!.initialize());
+        const resumed = (await deadline.run("thread resume", () => client!.request("thread/resume", { threadId }))) as {
           found?: boolean;
         };
         if (!resumed.found) throw new Error(`runtime_contract.resume_failed: ${threadId}`);
-        await deadline.run("thread subscribe", client.request("thread/subscribe", { threadId }));
+        await deadline.run("thread subscribe", () => client!.request("thread/subscribe", { threadId }));
         threadReads.push({
           phase: "after_resume",
-          response: (await deadline.run(
-            "resumed thread evidence",
-            client.request("thread/read", { threadId }),
+          response: (await deadline.run("resumed thread evidence", () =>
+            client!.request("thread/read", { threadId }),
           )) as ThreadReadResponse,
         });
         continue;
@@ -257,9 +253,8 @@ export async function runRuntimeEvalExecution(input: {
       if (step.kind === "compact") {
         if (!threadId) throw new Error("runtime_contract.compact_without_thread: compact requires an active thread.");
         const notificationIndex = client.notifications.length;
-        const response = (await deadline.run(
-          "thread compaction",
-          client.request("thread/compact/start", { threadId }),
+        const response = (await deadline.run("thread compaction", () =>
+          client!.request("thread/compact/start", { threadId }),
         )) as {
           compacted: boolean;
           entryCount: number;
@@ -275,9 +270,8 @@ export async function runRuntimeEvalExecution(input: {
         continue;
       }
       if (!threadId) {
-        const startedThread = (await deadline.run(
-          "thread start",
-          client.request("thread/start", {
+        const startedThread = (await deadline.run("thread start", () =>
+          client!.request("thread/start", {
             cwd: threadCwd,
             mode: step.mode ?? "default",
             model: { provider: profile.provider, modelId: profile.model },
@@ -285,9 +279,9 @@ export async function runRuntimeEvalExecution(input: {
           }),
         )) as { threadId: string };
         threadId = startedThread.threadId;
-        await deadline.run("thread subscribe", client.request("thread/subscribe", { threadId }));
+        await deadline.run("thread subscribe", () => client!.request("thread/subscribe", { threadId }));
       } else if (step.mode)
-        await deadline.run("mode update", client.request("mode/set", { threadId, mode: step.mode }));
+        await deadline.run("mode update", () => client!.request("mode/set", { threadId, mode: step.mode }));
       const notificationIndex = client.notifications.length;
       const turnStarted = performance.now();
       currentTurnNotificationIndex = notificationIndex;
@@ -305,13 +299,11 @@ export async function runRuntimeEvalExecution(input: {
           executionStarted: started,
         },
       );
-      await deadline.run("turn start", client.request("turn/start", { threadId, message: step.message }));
-      const notifications = await deadline.run(
-        "turn completion",
-        client.waitForTerminal(notificationIndex, Math.max(1, Math.ceil(deadline.remainingMs()))),
+      await deadline.run("turn start", () => client!.request("turn/start", { threadId, message: step.message }));
+      const notifications = await deadline.run("turn completion", () =>
+        client!.waitForTerminal(notificationIndex, deadline.signal),
       );
-      await deadline.run(
-        "protocol actions",
+      await deadline.run("protocol actions", () =>
         Promise.all(activeActions.flatMap((action) => (action.pending ? [action.pending] : []))),
       );
       for (const action of activeActions) {
@@ -357,9 +349,8 @@ export async function runRuntimeEvalExecution(input: {
         threadReads.push({
           phase: "after_turn",
           turnIndex: turns.length - 1,
-          response: (await deadline.run(
-            "post-turn evidence",
-            client.request("thread/read", { threadId }),
+          response: (await deadline.run("post-turn evidence", () =>
+            client!.request("thread/read", { threadId }),
           )) as ThreadReadResponse,
         });
       }
@@ -389,12 +380,12 @@ export async function runRuntimeEvalExecution(input: {
       );
     }
     const sessionPath = join(
-      (await deadline.run("session path capture", ensureDiligentDir(threadCwd))).sessions,
+      (await deadline.run("session path capture", () => ensureDiligentDir(threadCwd))).sessions,
       `${threadId}.jsonl`,
     );
-    const sessionLines = await deadline.run("session evidence", readSessionLines(sessionPath));
-    const childSessions = await deadline.run("child session evidence", captureChildSessions(threadCwd, threadId));
-    final = await deadline.run("final workspace capture", captureWorkspace(root));
+    const sessionLines = await deadline.run("session evidence", () => readSessionLines(sessionPath));
+    const childSessions = await deadline.run("child session evidence", () => captureChildSessions(threadCwd, threadId));
+    final = await deadline.run("final workspace capture", () => captureWorkspace(root));
     const normalizedTurns = normalizeWorkspaceEvidence(turns, root, outputRoot);
     annotateToolTraceActors(traces, normalizedTurns, threadId);
     const execution = normalizeWorkspaceEvidence<RuntimeEvalExecution<unknown>>(

@@ -185,9 +185,4 @@ describe("TextInput", () => {
     expect(plain).toContain("Enter to submit");
     expect(plain).toContain("Escape to cancel");
   });
-
-  test("invalidate does not throw", () => {
-    const { input } = createInput();
-    expect(() => input.invalidate()).not.toThrow();
-  });
 });
