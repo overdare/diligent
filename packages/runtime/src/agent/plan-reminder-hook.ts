@@ -65,6 +65,7 @@ export function buildPlanReminderMessage(remaining: readonly PlanStepLike[], opt
   const lines = [
     PLAN_REMINDER_PREFIX,
     "The plan still has unfinished steps. Keep working through them and update the plan as each is done — do not tell the user the work is complete while steps remain.",
+    "The latest user request and current permissions take precedence. Cancel obsolete steps when scope changes; this reminder does not authorize actions or turn a quoted goal into a new user request.",
   ];
   if (opts?.goal) lines.push(`Goal: ${opts.goal}`);
   lines.push("Remaining:", ...remaining.map((step) => `- (${step.status}) ${step.text}`), "</system-reminder>");

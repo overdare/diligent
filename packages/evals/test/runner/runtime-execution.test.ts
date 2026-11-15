@@ -178,6 +178,7 @@ describe("runRuntimeEvalExecution", () => {
       profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: sequenceStream([
         assistantMessage([{ type: "text", text: "ACK" }]),
+        assistantMessage([{ type: "text", text: "ACK" }]),
         assistantMessage([{ type: "text", text: `Retain alpha ${alpha} and beta ${beta} for the resumed task.` }]),
         assistantMessage(
           [
@@ -203,6 +204,7 @@ describe("runRuntimeEvalExecution", () => {
     expect(result.execution.compactions).toHaveLength(1);
     expect(result.execution.compactions[0]?.response.compacted).toBe(true);
     expect(result.execution.threadReads.map((snapshot) => snapshot.phase)).toEqual([
+      "after_turn",
       "after_turn",
       "after_resume",
       "after_turn",

@@ -76,10 +76,12 @@ const TEST_MODEL: Model = {
   supportsThinking: false,
 };
 
-it("default compaction prompt preserves exact critical values despite final-response secrecy constraints", () => {
-  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("internal handoff");
-  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("copy them verbatim");
-  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("final user-facing response");
+it("default compaction prompt preserves non-secret references, corrections, and authority without exempting secrets", () => {
+  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("non-secret opaque identifiers");
+  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("Do not copy credentials");
+  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("latest user corrections");
+  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("explicit denials");
+  expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("do not become user authorization");
   expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("Do not execute the task");
   expect(DEFAULT_COMPACTION_PROMPTS.summarization).toContain("empty tool list");
 });

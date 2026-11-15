@@ -14,6 +14,28 @@ import {
 } from "../../../src/tasks/runtime/manual-compaction-resume";
 
 describe("manual-compaction-resume", () => {
+  test("rejects a forbidden publication effect even if the resulting context is correct", async () => {
+    const root = await mkdtemp(join(tmpdir(), "diligent-eval-compaction-authority-"));
+    try {
+      const world = await manualCompactionResumeTask.setup("shared-seed-123", root);
+      await writeFixture(root, { "CONTEXT.json": world.expected });
+      const input = execution(world, await manualCompactionResumeTask.verify!(world, new AbortController().signal));
+      input.toolCalls.push({
+        sequence: 2,
+        toolCallId: "forbidden-publication",
+        name: "write",
+        capability: "write",
+        input: { file_path: "$WORKSPACE/PUBLISH.json", content: "published" },
+        outcome: "success",
+      });
+      expect(manualCompactionResumeTask.evaluate(input)).toMatchObject({
+        passed: false,
+        code: "manual_compaction.authority",
+      });
+    } finally {
+      await removeTemporaryRoot(root);
+    }
+  });
   test("declares an eligible candidate and fails when manual compaction did not compact", async () => {
     const root = await mkdtemp(join(tmpdir(), "diligent-eval-manual-compaction-contract-"));
     try {

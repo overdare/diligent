@@ -16,6 +16,7 @@ import type { ResolvedAgentDefinition } from "../agent/resolved-agent";
 import { resolveAgentDefinition } from "../agent/resolved-agent";
 import { RuntimeAgent } from "../agent/runtime-agent";
 import { createLocalImageLoader, toolOutputStore } from "../infrastructure";
+import { withToolInstructions } from "../prompt/tool-instructions";
 import { SessionManager } from "../session/manager";
 import { isSafeSessionId } from "../session/types";
 import { forkToolForChild } from "../tools/child-fork";
@@ -190,6 +191,8 @@ export class AgentRegistry {
       fastMode: next.fastMode,
       agentDefinitions: next.agentDefinitions,
       parentTools: next.parentTools,
+      parentSystemPrompt: next.parentSystemPrompt,
+      mode: next.mode,
       getParentSessionId: next.getParentSessionId,
       approve: next.approve,
       ask: next.ask,
@@ -320,6 +323,9 @@ export class AgentRegistry {
       ? "Nested sub-agent tools were explicitly enabled for this run. Use them only if the parent instruction clearly requires further delegation; otherwise do the work yourself."
       : "Nested sub-agent delegation is disabled for this run. Do not call spawn_agent, wait, send_input, or close_agent, and do not attempt to coordinate additional sub-agents.";
     const childSystemPrompt = [
+      ...(this.deps.parentSystemPrompt ?? []).filter((section) =>
+        ["base", "instructions", "additional", "knowledge", "skills", "skill_usage_guardrail"].includes(section.label),
+      ),
       ...(agentDefinition.systemPromptPrefix
         ? [{ label: "agent_role", content: agentDefinition.systemPromptPrefix }]
         : []),
@@ -331,6 +337,23 @@ export class AgentRegistry {
         label: "nested_subagent_policy",
         content: nestedAgentPolicy,
       },
+      ...(this.deps.mode === "plan"
+        ? [
+            {
+              label: "mode",
+              content:
+                "The parent is in Plan Mode. Remain read-only, including when using external tools. Do not implement changes or mutate files, services, or user data. Return findings for the parent's plan.",
+            },
+          ]
+        : this.deps.mode === "execute"
+          ? [
+              {
+                label: "mode",
+                content:
+                  "The parent is in Execute Mode. Work autonomously on the assigned scope. Make routine implementation choices, but do not guess essential targets or authority. If required information is missing, finish independent work and report the blocker to the parent.",
+              },
+            ]
+          : []),
     ];
 
     // Only an explicit class selects another model; classless children inherit the parent directly.
@@ -385,6 +408,7 @@ export class AgentRegistry {
 
         const childDeps = {
           ...this.deps,
+          parentSystemPrompt: childSystemPrompt,
           userId,
           getUserId: () => userId,
           onChildEntryAppended: onEntryAppended,
@@ -427,7 +451,7 @@ export class AgentRegistry {
 
         return new RuntimeAgent(
           childModel,
-          childSystemPrompt,
+          withToolInstructions(childSystemPrompt, filteredTools),
           exposedTools,
           {
             effort: childEffort,

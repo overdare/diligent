@@ -112,10 +112,10 @@ export function createEditTool(host?: RuntimeToolHost): Tool<typeof EditParams> 
     description: `Performs exact string replacements in files.
 
 Usage:
-- You must use your Read tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
+- Inspect the file before editing unless the exact current text and sufficient context are already available from this conversation or tool output. The tool matches current contents; it does not track prior read calls.
 - To create a new file when explicitly required, set old_string to an empty string and new_string to the complete file content. This create mode fails if the file already exists.
 - When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: spaces + line number + tab. Everything after that tab is the actual file content to match. Never include any part of the line number prefix in the old_string or new_string.
-- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
+- Prefer a focused edit to an existing file. Create a new file when the requested implementation needs it.
 - The edit will FAIL if old_string is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use replace_all to change every instance of old_string.
 - Use replace_all for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.`,
     parameters: EditParams,
@@ -264,7 +264,7 @@ WARNING:
 When making edits:
 - Ensure all edits result in idiomatic, correct code
 - Do not leave the code in a broken state
-- Always use absolute file paths (starting with /)
+- Always use absolute file paths, including drive-qualified paths on Windows.
 - Use replace_all for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.
 `,
     parameters: MultiEditParams,

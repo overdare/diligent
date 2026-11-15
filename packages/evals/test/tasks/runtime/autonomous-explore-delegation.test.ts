@@ -16,29 +16,36 @@ type Execution = RuntimeEvalExecution<AutonomousExploreDelegationWorld>;
 const SEED = "shared-seed-123";
 
 describe("autonomous-explore-delegation", () => {
+  test("accepts grounded direct lookup and reports delegation as a cost diagnostic", async () => {
+    const execution = await assembledExecution("direct");
+    execution.toolCalls = execution.toolCalls.filter((call) => call.name === "read");
+    for (const call of execution.toolCalls) {
+      call.threadId = execution.session.threadId;
+      delete call.childThreadId;
+    }
+    expect(autonomousExploreDelegationTask.evaluate(execution)).toEqual({ passed: true });
+    const delegated = autonomousExploreDelegationTask.evaluate(await assembledExecution("direct"));
+    expect(delegated).toMatchObject({
+      passed: true,
+      diagnostics: [{ code: "autonomous_explore.delegation", impact: "info" }],
+    });
+  });
   test("passes when one explore child reads every region with direct reads or in one exec script", async () => {
     for (const transport of ["direct", "exec"] as const) {
       const execution = await assembledExecution(transport);
-      expect(autonomousExploreDelegationTask.evaluate(execution), transport).toEqual({ passed: true });
+      expect(autonomousExploreDelegationTask.evaluate(execution).passed, transport).toBe(true);
     }
   });
 
-  test("fails a parent source read, a non-explore delegate, missing values, or misordered values", async () => {
+  test("fails ungrounded values, missing values, or misordered values", async () => {
     const baseline = await assembledExecution("direct");
     const cases: Array<[string, string, (value: Execution) => void]> = [
       [
-        "parent read",
-        "autonomous_explore.parent_read",
+        "missing grounding",
+        "autonomous_explore.coverage",
         (value) => {
-          const read = value.toolCalls.find((call) => call.name === "read")!;
-          read.threadId = value.session.threadId;
-          delete read.childThreadId;
+          value.toolCalls = value.toolCalls.filter((call) => call.name !== "read");
         },
-      ],
-      [
-        "general delegate",
-        "autonomous_explore.spawn",
-        (value) => (value.toolCalls.find((call) => call.name === "spawn_agent")!.input = { message: "find" }),
       ],
       [
         "value omitted",

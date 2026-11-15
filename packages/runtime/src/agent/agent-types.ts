@@ -158,6 +158,7 @@ export function formatSpawnAgentToolDescription(
     builtinLines +
     customSection +
     "\n\nDelegation rules:\n" +
+    "- Delegate only independent, sizeable work whose benefit exceeds context and coordination costs. Do small bounded lookups, edits, and checks yourself; do not delegate based on read-call counts.\n" +
     "- Once you delegate work, act as the coordinator: monitor, synthesize, and decide the next step instead of doing the same work in parallel.\n" +
     "- Split work into distinct scopes so child agents do not overlap each other or you.\n" +
     "- Do not duplicate child work. If a child is researching a subsystem or directory, do not search the same area yourself unless you are intentionally taking ownership back. If a child owns a scoped implementation area, do not edit the same area in parallel.\n" +
@@ -179,15 +180,5 @@ export function formatSpawnAgentToolDescription(
 export function formatAgentTypeParameterDescription(
   agentDefinitions: ResolvedAgentDefinition[] = getBuiltinAgentDefinitions(),
 ): string {
-  const availableBuiltins = BUILTIN_AGENT_TYPE_NAMES.filter((name) =>
-    agentDefinitions.some((agent) => agent.name === name),
-  );
-  const builtinLines = availableBuiltins.map((name) => `- ${formatGuidanceLine(BUILTIN_AGENT_TYPES[name])}`).join("\n");
-  const customLines = agentDefinitions
-    .filter((agent) => agent.source === "user")
-    .map((agent) => `- ${formatCustomAgentLine(agent)}`)
-    .join("\n");
-  return customLines
-    ? `Agent type to run. Available built-in and custom roles:\n${builtinLines}\n${customLines}`
-    : `Agent type to run. Available built-in roles:\n${builtinLines}`;
+  return `Agent type to run. Available roles: ${agentDefinitions.map((agent) => agent.name).join(", ")}. See the tool description for role scope and constraints.`;
 }

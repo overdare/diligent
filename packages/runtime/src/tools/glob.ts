@@ -24,8 +24,7 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
   return {
     name: "glob",
     description:
-      "Find files matching a glob pattern. The optional path must be absolute (relative paths like '.' are rejected). Returns file paths sorted by modification time (newest first). " +
-      "For a multi-round file-location lookup across naming variants, use spawn_agent with agent_type='explore'; do not use it for review, audit, or open-ended analysis.",
+      "Find files matching a relative glob pattern within an absolute search directory. Relative directory paths like '.' are rejected. Returns file paths sorted by modification time (newest first).",
     parameters: GlobParams,
     supportParallel: true,
     async execute(args, ctx): Promise<ToolResult> {

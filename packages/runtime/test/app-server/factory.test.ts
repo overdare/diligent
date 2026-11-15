@@ -89,6 +89,49 @@ afterEach(async () => {
 });
 
 describe("createAppServerConfig", () => {
+  it("refreshes knowledge guidance from the mode-filtered catalog and propagates shared instructions to children", async () => {
+    const root = await mkdtemp(join(tmpdir(), "prompt-assembly-"));
+    tempHomes.push(root);
+    const observed: string[] = [];
+    const shared = { label: "instructions", content: "Synthetic repository rule: preserve the anchor." };
+    const stream = makeStreamFn([makeAssistant("inspected")]);
+    const runtimeConfig = makeRuntimeConfig({
+      agentDefinitions: getBuiltinAgentDefinitions(),
+      systemPrompt: [
+        { label: "base", content: "Shared baseline" },
+        shared,
+        { label: "knowledge_instruction", content: "Stale write instruction" },
+      ],
+      streamFunction: (model, context, options) => {
+        observed.push(context.systemPrompt.map((section) => section.content).join("\n"));
+        return stream(model, context, options);
+      },
+    });
+    const config = createAppServerConfig({ cwd: root, runtimeConfig });
+    const agent = await config.createAgent({
+      cwd: root,
+      mode: "plan",
+      effort: "medium",
+      model: runtimeConfig.model,
+      approve: async () => "once",
+      ask: async () => null,
+    });
+    const instruction = agent.systemPrompt.find((section) => section.label === "knowledge_instruction")?.content ?? "";
+    expect(instruction).toContain("search_knowledge");
+    expect(instruction).not.toContain("update_knowledge");
+    expect(instruction).not.toContain("Stale write instruction");
+    const child = agent.registry!.spawn({
+      prompt: "Inspect the requested files",
+      description: "Inspection",
+      agentType: "general",
+    });
+    await agent.registry!.wait([child.threadId], 5000);
+    expect(observed).toHaveLength(1);
+    expect(observed[0]).toContain(shared.content);
+    expect(observed[0]).toContain("Plan Mode");
+    expect(observed[0]).not.toContain("update_knowledge");
+  });
+
   it("produces a valid config from a minimal RuntimeConfig", () => {
     const runtimeConfig = makeRuntimeConfig();
     const config = createAppServerConfig({ cwd: "/tmp/test", runtimeConfig });
@@ -591,7 +634,9 @@ describe("createAppServerConfig", () => {
       ],
       transformTools: (tools, { provider }) => {
         transformedProviders.push(provider);
-        return tools.filter((tool) => tool.name !== "read");
+        return tools.filter(
+          (tool) => tool.name !== "read" && !(provider === "chatgpt" && tool.name === "search_knowledge"),
+        );
       },
     });
     const request = {
@@ -605,6 +650,7 @@ describe("createAppServerConfig", () => {
     const agent = await config.createAgent(request);
     const previousTools = agent.tools;
     const prompt = agent.systemPrompt;
+    expect(prompt.find((section) => section.label === "knowledge_instruction")?.content).toContain("search_knowledge");
     const registry = agent.registry!;
     registry.restoreAgent("existing-child", "Child");
     const children = registry.getKnownAgents();
@@ -619,7 +665,10 @@ describe("createAppServerConfig", () => {
     expect(agent.tools.find((tool) => tool.name === "provider_tool")?.description).toBe("Tool for chatgpt");
     expect(previousTools.find((tool) => tool.name === "provider_tool")?.description).toBe("Tool for anthropic");
     expect(transformedProviders).toEqual(["anthropic", "chatgpt"]);
-    expect(agent.systemPrompt).toBe(prompt);
+    expect(agent.systemPrompt.filter((section) => section.label !== "knowledge_instruction")).toEqual(
+      prompt.filter((section) => section.label !== "knowledge_instruction"),
+    );
+    expect(agent.systemPrompt.some((section) => section.label === "knowledge_instruction")).toBe(false);
     expect(agent.registry).toBe(registry);
     expect(registry.getKnownAgents()).toEqual(children);
   });

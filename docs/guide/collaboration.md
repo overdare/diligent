@@ -47,6 +47,8 @@ Important current behavior:
 - The parent cannot override the child model class per spawn. A custom role's configured `model_class` wins; otherwise the child uses the exact parent model and effort without inferring a class. On resume, a saved class is reused; when no class was saved, the child uses the current parent model and effort.
 - The parent cannot override child tools per spawn. Configure a custom role's `tools` list to narrow its inherited parent-visible tools.
 - Child tool access is filtered from the parent-visible tool set; nested collaboration tools remain excluded unless nested delegation was explicitly enabled.
+- Children inherit the parent's base instructions, repository rules, additional instructions, knowledge, and skill discovery context. Parent-only goals and mode text are excluded; the runtime adds child-specific mode constraints and derives knowledge-tool instructions from the child's filtered tools.
+- Plan-mode restrictions apply to child work and external tools as well as built-in tools. Tool visibility alone does not authorize a mutation.
 
 ### `wait`
 

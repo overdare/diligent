@@ -9,8 +9,37 @@ const UI_PATH = "facts/ui.txt";
 const THREAD_ID = "thread-1";
 
 describe("plan-converge runtime eval", () => {
+  test("does not reveal the hidden rollout preference in response to an unrelated question", async () => {
+    const world = directExecution().world;
+    const response = await planConvergeTask.respondToServerRequest!(world, {
+      method: "userInput/request",
+      params: {
+        threadId: THREAD_ID,
+        request: {
+          questions: [
+            { ...question(), id: "arbitrary_rollout_id", question: "What color should the button use?" },
+            { ...question(), id: "chosen_by_agent" },
+          ],
+        },
+      },
+    });
+    expect(response).toMatchObject({
+      result: {
+        answers: {
+          arbitrary_rollout_id: "That question does not determine my rollout preference.",
+          chosen_by_agent: world.preference,
+        },
+      },
+    });
+  });
   test("passes direct discovery, one clarification, and a complete plan", () => {
     expect(planConvergeTask.evaluate(directExecution())).toEqual({ passed: true });
+  });
+
+  test("accepts a model-selected question id when its answer supplies the missing preference", () => {
+    const execution = directExecution();
+    (execution.toolCalls.at(-1)!.input as { questions: Array<{ id: string }> }).questions[0]!.id = "chosen_by_agent";
+    expect(planConvergeTask.evaluate(execution)).toEqual({ passed: true });
   });
 
   test("accepts failed path probes, relative reads, and extra safe reads with informational notes", () => {
@@ -44,10 +73,9 @@ describe("plan-converge runtime eval", () => {
         (execution) => (execution.toolCalls.at(-1)!.outcome = "policy_rejection"),
       ],
       [
-        "question about something else",
+        "answer did not supply the missing preference",
         "plan_converge.question",
-        (execution) =>
-          ((execution.toolCalls.at(-1)!.input as { questions: Array<{ id: string }> }).questions[0]!.id = "other"),
+        (execution) => (execution.toolCalls.at(-1)!.output = { output: "Answer: unrelated value" }),
       ],
       [
         "preference omitted from plan",

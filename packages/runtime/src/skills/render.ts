@@ -13,20 +13,20 @@ export function renderSkillsSection(skills: SkillMetadata[]): string {
   const lines = [
     "## Available Skills",
     "",
-    "Skills are local instruction sets you can use when a task matches their description.",
+    "The skill tool contains the task descriptions and full catalog. Load a skill only when its workflow fits the request or the user names it.",
     "",
     "### Skills",
     "",
   ];
 
   for (const skill of implicitSkills) {
-    lines.push(`- **${skill.name}**: ${skill.description} (file: ${skill.path})`);
+    lines.push(`- **${skill.name}**`);
   }
 
   lines.push("");
   lines.push("### How to use skills");
   lines.push("");
-  lines.push("1. When a user's task matches a skill description, or the user mentions a skill by name, use it.");
+  lines.push("1. Match the actual task to the catalog; mentioning a related topic alone does not require a skill.");
   lines.push("2. To load a skill, call the skill tool with the selected skill name.");
   lines.push("3. Never use read to open SKILL.md directly; skill loading must go through the skill tool.");
   lines.push(

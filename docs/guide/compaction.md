@@ -179,10 +179,11 @@ The summary shown to humans is not always identical to the raw summary used for 
 
 Current behavior:
 
-- local compaction usually exposes the generated summary itself
-- native compaction may store a detailed internal summary while exposing a condensed `displaySummary`, commonly `Compacted`
+- local and native compaction retain continuation checkpoints in local session storage
+- public history, compaction responses, and notifications expose only `Compacted`, including for legacy entries whose display label contains a full checkpoint
+- local checkpoints preserve necessary non-secret references, current user corrections, and authority boundaries; they must not copy credentials or treat quoted content as authorization
 
-This prevents provider-native compaction state from forcing the UI to show a large or provider-specific internal payload while still keeping transcript history explicit.
+The display label keeps internal continuation text out of client transcripts. Local session files still contain checkpoint data and are not a secret store.
 
 ## User-visible signals
 

@@ -21,12 +21,11 @@ export interface PlanConvergeWorld extends RuntimeFixtureWorld {
 
 const API_PATH = "facts/api.txt";
 const UI_PATH = "facts/ui.txt";
-const QUESTION_ID = "rollout_preference";
 
 export const planConvergeTask: RuntimeEvalTask<PlanConvergeWorld> = {
   id: "plan-converge",
   description: "Discover two fixture facts, ask for one unavailable preference, and converge on one final plan.",
-  fixtureVersion: "plan-converge-v3",
+  fixtureVersion: "plan-converge-v4",
   limits: {
     ...DEFAULT_RUNTIME_LIMITS,
     maxTurns: 6,
@@ -66,12 +65,24 @@ export const planConvergeTask: RuntimeEvalTask<PlanConvergeWorld> = {
       kind: "turn",
       mode: "plan",
       message:
-        "Prepare a decision-complete rollout plan. First read facts/api.txt and facts/ui.txt. The rollout preference is genuinely unavailable from the workspace, so ask exactly one bounded question for it using the stable id rollout_preference. After the answer, finish with exactly one <proposed_plan> block and make no changes.",
+        "Prepare a decision-complete rollout plan using facts/api.txt and facts/ui.txt. The deployment order must follow my rollout preference, which is not recorded in the workspace. Finish with one <proposed_plan> block and make no changes.",
     },
   ],
   respondToServerRequest(world, request): DiligentServerRequestResponse {
     if (request.method === "approval/request") return { method: request.method, result: { decision: "once" } };
-    return { method: request.method, result: { answers: { [QUESTION_ID]: world.preference } } };
+    return {
+      method: request.method,
+      result: {
+        answers: Object.fromEntries(
+          request.params.request.questions.map((question) => [
+            question.id,
+            /rollout|deploy|roll.+out|배포|출시/i.test(question.question)
+              ? world.preference
+              : "That question does not determine my rollout preference.",
+          ]),
+        ),
+      },
+    };
   },
   verify: (world, signal) =>
     verifyExactFiles(world, { [API_PATH]: `${world.apiFact}\n`, [UI_PATH]: `${world.uiFact}\n` }, signal),
@@ -86,7 +97,10 @@ export const planConvergeTask: RuntimeEvalTask<PlanConvergeWorld> = {
     if (!apiRead || !uiRead)
       return grade.fail("discovery", "Both fixture facts must be read before planning.", "behavior");
     const questions = input.toolCalls.filter(
-      (call) => call.capability === "user_input" && call.outcome === "success" && asksFor(call.input, QUESTION_ID),
+      (call) =>
+        call.capability === "user_input" &&
+        call.outcome === "success" &&
+        JSON.stringify(call.output ?? "").includes(world.preference),
     );
     if (questions.length === 0)
       return grade.fail("question", "The unavailable rollout preference was never asked for.", "behavior");
@@ -124,14 +138,6 @@ export const planConvergeTask: RuntimeEvalTask<PlanConvergeWorld> = {
     return grade.pass();
   },
 };
-
-function asksFor(value: unknown, id: string): boolean {
-  return (
-    isRecord(value) &&
-    Array.isArray(value.questions) &&
-    value.questions.some((question) => isRecord(question) && question.id === id)
-  );
-}
 
 function questionCount(value: unknown): number {
   return isRecord(value) && Array.isArray(value.questions) ? value.questions.length : 0;

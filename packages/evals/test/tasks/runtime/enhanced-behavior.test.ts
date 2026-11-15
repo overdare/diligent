@@ -111,7 +111,7 @@ describe("enhanced runtime eval behaviors", () => {
       expect(new Set(explore.sourcePaths.map((path) => path.split(".").at(-1))).size).toBeGreaterThan(1);
       expect(explore.clientPrompt).toContain("region_marker");
       expect(explore.clientPrompt).toContain("filename variants");
-      expect(explore.clientPrompt).toContain("main task must not directly read");
+      expect(explore.clientPrompt).toContain("Do not modify the files");
       expect(explore.clientPrompt.toLowerCase()).not.toContain("review");
       expect(explore.clientPrompt.toLowerCase()).not.toContain("audit");
       expect(explore.clientPrompt.toLowerCase()).not.toContain("agent");

@@ -528,11 +528,12 @@ describe("runtime eval tasks", () => {
     expect(readImagePairTask.evaluate(leaked)).toMatchObject({ passed: false, code: "read_image_pair.base64" });
   });
 
-  test("defines manual compaction as turn, compact, restart, and resumed turn", async () => {
+  test("defines manual compaction with a correction before compaction, restart, and resumed work", async () => {
     const root = await mkdtemp(join(tmpdir(), "diligent-runtime-manual-compaction-"));
     try {
       const world = await manualCompactionResumeTask.setup("shared-seed-123", root);
       expect(manualCompactionResumeTask.createSteps(world).map((step) => step.kind)).toEqual([
+        "turn",
         "turn",
         "compact",
         "restart_and_resume",

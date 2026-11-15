@@ -85,16 +85,8 @@ export function buildSystemPrompt(
   return sections;
 }
 
-const KNOWLEDGE_INSTRUCTION = `
-You have access to search_knowledge and update_knowledge tools. Use search_knowledge to find existing knowledge entries by exact id, id_prefix, or query text before revising or deleting them, and use update_knowledge to save, revise, or delete durable user preferences that should persist across sessions. Knowledge ids may be stable caller-defined keys or generated UUIDs; use stable ids for recurring entries that should be updated in place.
-Persist only user preferences, using type \`preference\`. Do not create knowledge entries for patterns, discoveries, corrections, or backlog items.
-When the user says they want to do or build something, think carefully about whether it expresses a durable preference or is simply the work to do right now; in most cases it is immediate task intent, not knowledge.
-Before your final response on a substantive task, do a brief wrap-up check: if this turn produced a durable user preference, update knowledge before replying.
-Do not save transient current-turn intent or immediate implementation plans as knowledge.
-Anti-pattern: storing “user wants to build X” right before implementing X in the same turn.`;
-
 /**
- * Build system prompt with knowledge section, skills section, and autonomous recording instruction.
+ * Build system prompt sections. Tool-specific instructions are added after tool filtering.
  */
 export function buildSystemPromptWithKnowledge(
   basePrompt: string,
@@ -133,8 +125,6 @@ export function buildSystemPromptWithKnowledge(
       sections.push({ label: "additional", content: inst });
     }
   }
-
-  sections.push({ label: "knowledge_instruction", content: KNOWLEDGE_INSTRUCTION });
 
   return sections;
 }

@@ -1,9 +1,8 @@
-// @summary Runtime eval for autonomous delegation of a multi-file known-key reference lookup
+// @summary Runtime eval for grounded multi-file lookup with autonomous delegation choice
 
 import type { RuntimeEvalTask } from "../../runtime-task";
 import type { EvalProfile } from "../../task";
-import { isRecord } from "../core/helpers";
-import { finalAssistantText, RuntimeGrade, traceTargets } from "./grading";
+import { finalAssistantText, RuntimeGrade } from "./grading";
 import {
   createIsolatedFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
@@ -23,8 +22,8 @@ export interface AutonomousExploreDelegationWorld extends RuntimeFixtureWorld {
 
 export const autonomousExploreDelegationTask: RuntimeEvalTask<AutonomousExploreDelegationWorld> = {
   id: "autonomous-explore-delegation",
-  description: "Choose one read-only explore agent for a multi-file known-key lookup without being told to delegate.",
-  fixtureVersion: "autonomous-explore-delegation-v3",
+  description: "Resolve a bounded multi-file lookup, choosing direct work or delegation without a prescribed strategy.",
+  fixtureVersion: "autonomous-explore-delegation-v4",
   limits: {
     ...DEFAULT_RUNTIME_LIMITS,
     maxTurns: 20,
@@ -54,8 +53,7 @@ export const autonomousExploreDelegationTask: RuntimeEvalTask<AutonomousExploreD
       clientPrompt:
         "Locate every definition of the known key region_marker across the regional subdirectories and filename " +
         "variants under reference-map/. Report the six values in region-number order with their defining file paths. " +
-        "Complete this as one isolated read-only exploration: the main task must not directly read regional source " +
-        "files and should only synthesize the exploration result. Do not interpret the values.",
+        "Do not modify the files or interpret the values.",
       expected: facts.join("\n"),
       protectedPaths: [...SOURCE_PATHS],
       allowedChanges: [],
@@ -67,24 +65,17 @@ export const autonomousExploreDelegationTask: RuntimeEvalTask<AutonomousExploreD
   evaluate(input) {
     const grade = new RuntimeGrade("autonomous_explore");
     const { world } = input;
-    const rootId = input.session.threadId;
     const spawns = input.toolCalls.filter((call) => call.name === "spawn_agent" && call.outcome === "success");
-    if (!spawns.some((call) => isRecord(call.input) && call.input.agent_type === "explore"))
-      return grade.fail("spawn", "The multi-file lookup was not delegated to an explore agent.", "behavior");
-    const parentSourceReads = input.toolCalls.filter(
-      (call) =>
-        call.threadId === rootId &&
-        call.capability === "read" &&
-        call.outcome === "success" &&
-        (world.sourcePaths.some((path) => traceTargets(call, path)) ||
-          world.facts.some((fact) => JSON.stringify(call.output ?? "").includes(fact))),
-    );
-    if (parentSourceReads.length > 0)
-      return grade.fail("parent_read", "The main task read regional source content directly.", "runtime_policy");
-    const childOutputs = input.toolCalls
-      .filter((call) => call.threadId !== rootId && call.capability === "read" && call.outcome === "success")
+    if (spawns.length > 0)
+      grade.note(
+        "delegation",
+        "The bounded lookup used delegation; compare its latency and token cost with direct lookup.",
+        { impact: "info" },
+      );
+    const readOutputs = input.toolCalls
+      .filter((call) => call.capability === "read" && call.outcome === "success")
       .map((call) => JSON.stringify(call.output ?? ""));
-    if (!world.facts.every((fact) => childOutputs.some((output) => output.includes(fact))))
+    if (!world.facts.every((fact) => readOutputs.some((output) => output.includes(fact))))
       return grade.fail("coverage", "The exploration did not ground every regional value.", "semantic_goal");
     const text = finalAssistantText(input);
     const positions = world.facts.map((fact) => text.indexOf(fact));

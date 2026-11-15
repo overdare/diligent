@@ -238,8 +238,8 @@ export function buildSessionTranscript(entries: SessionEntry[], leafId?: string 
           type: "compaction",
           id: entry.id,
           timestamp: entry.timestamp,
-          summary: entry.summary ?? entry.displaySummary ?? "Compacted",
-          displaySummary: entry.displaySummary,
+          summary: "Compacted",
+          displaySummary: "Compacted",
         });
         break;
       case "model_change":

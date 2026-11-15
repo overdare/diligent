@@ -219,7 +219,7 @@ export class TurnOrchestrator {
       if (event.type === "compaction_end") {
         this.persistCompactionEntry({
           summary: event.summary,
-          displaySummary: event.compactionSummary ? "Compacted" : event.summary,
+          displaySummary: "Compacted",
           compactionSummary: event.compactionSummary,
           tokensBefore: event.tokensBefore,
           tokensAfter: event.tokensAfter,
@@ -240,7 +240,7 @@ export class TurnOrchestrator {
       entryCount: this.ctx.state.entryCount,
       tokensBefore: compactionResult.tokensBefore,
       tokensAfter: compactionResult.tokensAfter,
-      summary: compactionResult.summary,
+      summary: compactionResult.compacted ? "Compacted" : "",
     };
   }
 
@@ -485,7 +485,7 @@ export class TurnOrchestrator {
       parentId: this.ctx.state.getCommittedLeafId(),
       timestamp: new Date().toISOString(),
       summary: event.summary,
-      displaySummary: event.compactionSummary ? "Compacted" : event.displaySummary,
+      displaySummary: "Compacted",
       compactionSummary: event.compactionSummary,
       tokensBefore: event.tokensBefore,
       tokensAfter: event.tokensAfter,

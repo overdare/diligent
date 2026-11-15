@@ -499,7 +499,9 @@ export class DiligentAppServer {
               retrySafe: true,
             }),
           }
-        : event;
+        : event.type === "compaction_end"
+          ? { ...event, summary: "Compacted" }
+          : event;
     const parsedAgentEvent = AgentEventSchema.safeParse(outboundEvent);
     if (parsedAgentEvent.success) {
       await this.emit({

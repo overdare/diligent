@@ -117,15 +117,15 @@ describe("spawn_agent tool", () => {
     expect(spawnTool.description).not.toContain("'planner':");
   });
 
-  it("exposes detailed role guidance in agent_type schema description", () => {
+  it("lists role names in the parameter while keeping detailed guidance in the tool description", () => {
     const { tools } = createCollabTools(makeCollabDeps());
     const spawnTool = tools.find((t) => t.name === "spawn_agent")!;
     const shape = (spawnTool.parameters as { shape: Record<string, { description?: string }> }).shape;
     expect(shape.agent_type.description).toBe(formatAgentTypeParameterDescription());
-    expect(shape.agent_type.description).toContain("Available built-in roles");
-    expect(shape.agent_type.description).toContain("'general':");
-    expect(shape.agent_type.description).toContain("'explore':");
-    expect(shape.agent_type.description).not.toContain("'planner':");
+    expect(shape.agent_type.description).toContain("general");
+    expect(shape.agent_type.description).toContain("explore");
+    expect(shape.agent_type.description).toContain("See the tool description");
+    expect(shape.agent_type.description).not.toContain("Never delegate code review");
     expect(shape.allow_nested_agents.description).toContain("Explicit opt-in");
     expect(shape.message.description).toContain("full worker brief");
     expect(shape.message.description).toContain("expected deliverable or result shape");

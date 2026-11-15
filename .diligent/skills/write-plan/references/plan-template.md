@@ -1,6 +1,6 @@
 # Implementation Plan Template
 
-Plans are written to `docs/plan/{type}/{name}.md`. Every plan starts with a frontmatter status block.
+When a persisted plan is requested, use `docs/plan/{type}/{name}.md` and a frontmatter status block. Scale the sections below to the task; omit sections that add no implementation decision.
 
 ---
 
@@ -53,7 +53,7 @@ Agent → "example output"
 
 ## File Manifest
 
-[Every file created or modified. Grouped by directory. Serves as a progress checklist.]
+[Known files and ownership boundaries. Group by directory when useful; leave routine file discovery to implementation.]
 
 ### packages/core/src/example/
 
@@ -62,7 +62,7 @@ Agent → "example output"
 | `handler.ts` | CREATE | Request handler implementation |
 | `types.ts` | MODIFY | Add new event types |
 
-[Continue for all directories touched]
+[Add other relevant areas.]
 
 ## Implementation Tasks
 
@@ -73,7 +73,7 @@ Agent → "example output"
 **Files:** `path/to/file.ts`, `path/to/other.ts`
 **Decisions:** D0XX (if applicable)
 
-[Description. Include TypeScript code sketches — actual interfaces, function signatures.]
+[Description. Include interface or signature sketches only when they resolve a consequential design choice.]
 
 \```typescript
 // Code sketch — copy-paste and fill in the body
@@ -92,7 +92,7 @@ export interface NewThing {
 
 [Numbered list. Each criterion is binary — passes or fails.]
 
-1. `bun test` — all tests pass
+1. [Relevant automated checks pass]
 2. [Specific functional criterion]
 3. [Integration criterion]
 4. No `any` type escape hatches in new code
@@ -135,5 +135,5 @@ Update status as work progresses.
 - **File Manifest** answers "how big is this?" at a glance and doubles as a checklist
 - **Implementation Tasks** give a dependency-aware work order — task N builds on task N-1
 - **Negative scope** is as important as positive scope — it prevents "while I'm here" creep
-- **Code sketches** are real TypeScript, not pseudocode — the implementor copy-pastes and fills in
-- **Decisions** are cited inline (D0XX) so rationale is traceable
+- **Code sketches** clarify interfaces when needed; they do not prescribe routine implementation details
+- **Decisions** cite existing records when relevant; do not invent decision IDs

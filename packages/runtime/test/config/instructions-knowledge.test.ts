@@ -10,16 +10,7 @@ describe("buildSystemPromptWithKnowledge", () => {
     expect(flat).toContain("Base prompt");
     expect(flat).toContain("## Project Knowledge");
     expect(flat).toContain("[pattern] Use Bun");
-    expect(flat).toContain("search_knowledge and update_knowledge tools");
-    expect(flat).toContain("exact id, id_prefix, or query text");
-    expect(flat).toContain("Knowledge ids may be stable caller-defined keys or generated UUIDs");
-    expect(flat).toContain("use stable ids for recurring entries");
-    expect(flat).toContain("update_knowledge tool");
-    expect(flat).toContain("Persist only user preferences");
-    expect(flat).toContain("type `preference`");
-    expect(flat).toContain("Do not create knowledge entries for patterns, discoveries, corrections, or backlog items");
-    expect(flat).toContain("Do not save transient current-turn intent");
-    expect(flat).toContain("in most cases it is immediate task intent, not knowledge");
+    expect(result.some((section) => section.label === "knowledge_instruction")).toBe(false);
   });
 
   it("includes instructions after knowledge section", () => {
@@ -39,7 +30,7 @@ describe("buildSystemPromptWithKnowledge", () => {
     const result = buildSystemPromptWithKnowledge("Base", [], "");
     const flat = flattenSections(result);
     expect(flat).not.toContain("## Project Knowledge");
-    expect(flat).toContain("search_knowledge and update_knowledge tools");
+    expect(result.some((section) => section.label === "knowledge_instruction")).toBe(false);
   });
 
   it("includes additional instructions", () => {

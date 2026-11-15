@@ -26,6 +26,8 @@ describe("MODE_SYSTEM_PROMPT_SUFFIXES", () => {
 
   test("plan mode prompt says visible tools are not mutation permission", () => {
     expect(MODE_SYSTEM_PROMPT_SUFFIXES.plan).toContain("Tool availability is **not** permission to mutate");
-    expect(MODE_SYSTEM_PROMPT_SUFFIXES.plan).toContain("do not use any visible tool in a way that causes mutation");
+    expect(MODE_SYSTEM_PROMPT_SUFFIXES.plan.toLowerCase()).toContain(
+      "do not use any visible tool in a way that causes mutation",
+    );
   });
 });

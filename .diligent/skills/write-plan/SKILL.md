@@ -1,102 +1,26 @@
 ---
 name: write-plan
-description: Create implementation plans for any development work. Use this skill whenever the user says "/write-plan", asks to create an implementation plan, wants to plan a feature/refactor/fix/infra task, or asks "how should we implement X?". Also use when the user wants to break down a task into implementable steps.
+description: Draft an implementation plan when the user requests a plan for a feature, fix, refactor, or infrastructure change.
 ---
 
-# Implementation Plan Writer
+# Implementation Plan
 
-Creates detailed, implementable plans for development work on the diligent project. Plans are organized by type under `docs/plan/` and bridge the gap between "what we want" and "what we build."
+Turn the requested outcome into a plan another engineer can implement. Resolve consequential unknowns while leaving routine implementation choices to that engineer.
 
-## Plan Types
+Use the current collaboration mode and available tools. This skill does not switch modes or grant permission to edit files. In Plan Mode, explore read-only and return the plan in the required response format. Save a plan only when the user requests a file and the current mode permits writing.
 
-| Type | Folder | When to use |
-|------|--------|-------------|
-| `feature` | `docs/plan/feature/` | New user-facing capability |
-| `refactor` | `docs/plan/refactor/` | Structural improvement, code reorganization |
-| `fix` | `docs/plan/fix/` | Complex bug fix that needs investigation and planning |
-| `infra` | `docs/plan/infra/` | Build, CI, deployment, test infrastructure |
+## Context
 
-## Context Sources
+Use `ARCHITECTURE.md` for affected package boundaries and `docs/guide/` for relevant behavior. Inspect current code and tests. Consult existing plans or decisions only when they exist and matter to the task; plans are not proof of implemented behavior.
 
-Before generating any plan, read these project files to build context:
+Discover facts from the repository before asking. Ask about preferences or missing requirements only when they materially change the scope, design, or acceptance criteria. Do not store task plans or backlog items as persistent user preferences.
 
-| File | What it provides |
-|------|-----------------|
-| `ARCHITECTURE.md` | System architecture, layer overview, design principles |
-| Project knowledge backlog entries | Pending work items — check whether the task is already tracked there |
-| `docs/plan/decisions.md` | Design decisions (D001-D078+) with rationale |
+## Plan content
 
-Then read source code relevant to the task. Use `/explore-aug` to explore unfamiliar areas efficiently.
+Cover the intended outcome, affected contracts and ownership, implementation sequence, meaningful regression scenarios, and material assumptions. Include migrations or compatibility work only when needed. Name known affected files without pretending the list cannot evolve.
 
-## Workflow
+Read `references/plan-template.md` when saving a substantial plan, and omit sections that do not help the task.
 
-**Enter plan mode first.** Use the EnterPlanMode tool before starting. Plan mode gives you read-only access to explore the codebase without making changes, which is exactly what you need for Steps 1–3. Write the final plan file in Step 4 after exiting plan mode.
+When the user requests a saved plan, follow existing naming conventions under `docs/plan/{feature|refactor|fix|infra}/`. Use the next existing plan ID when that convention is present; otherwise use a descriptive kebab-case filename. Create directories only when writing is authorized.
 
-### Step 1: Identify the Target
-
-Determine what to plan. The user might say:
-- `/write-plan mcp-client` — explicit topic
-- `/write-plan` — ask what they want to plan
-- "Let's plan how to add X" — infer from conversation
-
-Determine the plan type (feature/refactor/fix/infra). If unclear, ask.
-
-### Step 2: Read Context
-
-1. Read `ARCHITECTURE.md` for relevant architectural context
-2. Read source code in the areas this plan will touch
-3. Read `docs/plan/decisions.md` for referenced design decisions
-4. Read existing plans in the same category for format consistency
-
-This reading step is not optional. Plans that don't account for existing architecture create contradictions.
-
-### Step 3: Interactive Scoping
-
-Before writing anything, resolve ambiguity with the user. Goal: zero assumptions before drafting.
-
-**Scope boundaries:**
-- "This touches X and Y. Anything you want to defer or prioritize?"
-- "Should this cover both TUI and Web, or one first?"
-
-**Implementation approach:**
-- "decisions.md says [D0XX] for this. Still the plan, or has thinking changed?"
-- "I see two approaches: A and B. Preference?"
-
-**Definition of done:**
-- "What does 'done' look like? What would you demo?"
-- "Any edge cases you're worried about?"
-
-Use judgment — skip what's obvious, dig into what's ambiguous.
-
-### Step 4: Draft the Plan
-
-**Assign the next plan ID:** Grep all `docs/plan/` files for `id: P` to find the highest existing number, then increment by 1.
-
-Write the plan to the appropriate folder with the ID prefix:
-- `docs/plan/{type}/PNNN-{name}.md`
-
-File naming: `PNNN-` prefix + lowercase kebab-case. Examples:
-- `docs/plan/feature/P016-mcp-client.md`
-- `docs/plan/refactor/P017-provider-abstraction.md`
-- `docs/plan/fix/P018-compaction-token-drift.md`
-
-Read `references/plan-template.md` before writing — it contains the full template.
-
-Key principles:
-- **Every file touched gets listed.** No guessing "what else?"
-- **Code sketches, not pseudocode.** Actual TypeScript interfaces and signatures.
-- **Decisions cited inline.** Reference as (D0XX) where used.
-- **Negative scope is explicit.** What this plan does NOT include.
-- **Tasks are ordered.** Dependency-aware sequence.
-
-### Step 5: Review and Iterate
-
-After generating the draft:
-1. Highlight uncertain decisions or ambiguous areas
-2. Ask the user to review — focus on scope and task ordering
-3. Iterate until the plan is followable without questions
-
-## References
-
-### references/plan-template.md
-Full plan template with section descriptions. Read before generating any plan.
+Finish when consequential decisions and acceptance criteria are clear. Surface unresolved essential inputs explicitly rather than guessing or requiring approval for routine details.

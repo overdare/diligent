@@ -145,8 +145,8 @@ export function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): T
       items.push({
         type: "compaction",
         itemId: entry.id,
-        summary: typeof entry.summary === "string" ? entry.summary : "",
-        displaySummary: entry.displaySummary,
+        summary: "Compacted",
+        displaySummary: "Compacted",
         timestamp: entryTimestamp,
         tokensBefore: 0,
         tokensAfter: 0,

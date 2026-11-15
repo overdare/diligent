@@ -21,7 +21,7 @@ Read only what your task requires.
 
 ## Code Explore System
 
-Most source files include a `@summary` annotation on the first line: `// @summary <desc>` (or `# @summary` for .py). Use it as a quick routing hint, but do not assume it is universal. Skip index.ts, types.ts, and config files first.
+Many source files start with a `@summary` annotation. Use it as a routing hint when present; inspect public entrypoints, types, and configuration when they are relevant to the task.
 
 ## Documentation Routing
 
@@ -33,11 +33,13 @@ Most source files include a `@summary` annotation on the first line: `// @summar
 ## Rules
 
 - English only in all files
+- Diligent is an independent framework, separate from the products and organization that develop and maintain it. Keep project content and design product- and company-neutral.
+- Do not mention the maintaining organization or other companies in documentation, commit messages, pull requests, issues, or other project records.
 - Do not spawn more than one subagent for a task.
-- Clarify requirements fully before implementing — no assumptions
+- Resolve discoverable facts from the repository. Ask when missing information would materially change scope, behavior, or authority; make routine implementation choices yourself.
 - When implementing new features or modifying existing behavior, write or strengthen tests first whenever possible.
-- Run tests after code changes
-- Plan before implementing when a task involves multiple files or architectural changes
+- Run relevant tests and required checks after behavior changes. Repeat or broaden passing checks only for new changes, failures, or unresolved concerns.
+- Plan work that changes architecture, ownership boundaries, or has meaningful dependencies; scale the plan to the task.
 - When creating or renaming branches, follow the repository's existing Git branch naming convention (for example `fix/...`, `feat/...`, `docs/...`). Repository branch rules override generic agent defaults: do not create agent-prefixed branches such as `codex/...` unless the user explicitly requests that exact prefix.
 - User-facing Diligent features are implemented through the shared protocol. Keep the protocol client-neutral and update the clients in this repository (see `ARCHITECTURE.md` "Frontend Protocol Philosophy").
 - Distinguish naming clearly: `Config` is for configuration values, while `Options` is for optional function arguments. Do not put runtime control arguments like `signal` into `Config`.
@@ -78,10 +80,3 @@ Most source files include a `@summary` annotation on the first line: `// @summar
 - When testing configuration-driven behavior, derive expectations from the configuration under test instead of duplicating its concrete values in the test.
 - Prefer inline synthetic fixtures when testing generic capability, policy, selection, or normalization logic. Model effort and model-class routing are examples, not special cases.
 - Exact configuration values are appropriate when they are part of an external compatibility contract, request transformation, protocol shape, or a targeted regression. Make that behavior explicit in the test name.
-
-### Why this convention
-
-- One obvious place for tests reduces decision overhead.
-- Clear separation between runtime source (`src`) and verification code (`test`).
-- Predictable paths improve review quality and refactoring safety.
-- Simpler include/exclude patterns for tooling and CI.

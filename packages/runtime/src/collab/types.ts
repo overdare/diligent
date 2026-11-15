@@ -2,8 +2,9 @@
 
 import type { Message } from "@diligent/core/message-contract";
 import type { ModelClass } from "@diligent/core/model-registry";
-import type { ModelRef, ThinkingEffort } from "@diligent/core/provider-contract";
+import type { ModelRef, SystemSection, ThinkingEffort } from "@diligent/core/provider-contract";
 import type { Tool, ToolOutputFileStore } from "@diligent/core/tool-contract";
+import type { Mode } from "../agent/mode";
 import type { ResolvedAgentDefinition } from "../agent/resolved-agent";
 import type { AgentEvent, ChildAgentEvent } from "../agent-event";
 import type { ApprovalRequest, ApprovalResponse } from "../approval/types";
@@ -71,6 +72,8 @@ export interface CollabToolDeps {
   fastMode?: boolean;
   agentDefinitions: ResolvedAgentDefinition[];
   parentTools: Tool[];
+  parentSystemPrompt?: SystemSection[];
+  mode?: Mode;
   maxAgents?: number; // default 8
   /**
    * Maximum nesting depth for child agents. Decremented on each spawn.

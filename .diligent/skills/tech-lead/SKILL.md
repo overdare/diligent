@@ -1,6 +1,6 @@
 ---
 name: tech-lead
-description: Review Diligent's current architecture and recent change range for evidence-backed risks to correctness, ownership, delivery speed, and future evolution. Use for full or scoped tech-lead reviews, architecture sustainability checks, project health assessments, recurring 50-commit reviews, or questions about whether the repository can keep changing safely. Produces a review artifact and, only when explicitly requested, a small set of implementation-ready GitHub Issues.
+description: Review architecture and a specified change range for evidence-backed correctness and maintenance risks when the user requests a tech-lead or project-health review.
 ---
 
 # Tech Lead Review
@@ -22,7 +22,7 @@ Use sources in this order:
 
 1. Current implementation and tests
 2. `ARCHITECTURE.md` and current guides in `docs/guide/`
-3. Durable decisions in `docs/plan/decisions.md`
+3. Existing decisions directly relevant to the reviewed change
 4. Active plans relevant to the reviewed range
 5. Previous reviews and session/corpus evidence
 

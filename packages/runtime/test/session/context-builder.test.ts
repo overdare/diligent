@@ -412,12 +412,10 @@ describe("buildSessionTranscript", () => {
     expect(transcript[1]).toMatchObject({ type: "message" });
     expect(transcript[2]).toMatchObject({ type: "compaction" });
     expect(transcript[3]).toMatchObject({ type: "message" });
-    expect(transcript[2] && transcript[2].type === "compaction" ? transcript[2].summary : "").toContain(
-      "Compacted summary",
-    );
+    expect(transcript[2]).toMatchObject({ summary: "Compacted", displaySummary: "Compacted" });
   });
 
-  it("preserves detailed native compaction summary separately from display label", () => {
+  it("does not expose the detailed native checkpoint through the transcript", () => {
     const compaction: CompactionEntry = {
       type: "compaction",
       id: "c1",
@@ -439,9 +437,7 @@ describe("buildSessionTranscript", () => {
 
     const transcript = buildSessionTranscript(entries);
     expect(transcript[2]).toMatchObject({ type: "compaction" });
-    expect(transcript[2] && transcript[2].type === "compaction" ? transcript[2].summary : "").toContain(
-      "Recover Anthropic compacted details",
-    );
+    expect(JSON.stringify(transcript)).not.toContain(compaction.summary!);
     expect(transcript[2] && transcript[2].type === "compaction" ? transcript[2].displaySummary : "").toBe("Compacted");
   });
 

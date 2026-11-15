@@ -84,7 +84,7 @@ export class TurnStager {
     if (event.type === "compaction_end") {
       this.stageCompactionBeforePending({
         summary: event.summary,
-        displaySummary: event.compactionSummary ? "Compacted" : event.summary,
+        displaySummary: "Compacted",
         compactionSummary: event.compactionSummary,
         tokensBefore: event.tokensBefore,
         tokensAfter: event.tokensAfter,

@@ -1,6 +1,6 @@
 ---
 name: prompt-writing
-description: Write, review, or trim prompts for current frontier LLMs — system prompts, skills (SKILL.md and descriptions), AGENTS.md, and agent or subagent prompts. Use when authoring or auditing one of these, not for ordinary docs or code comments.
+description: Write or audit system prompts, tool descriptions, skills, repository instructions, and agent prompts; exclude ordinary documentation and code comments.
 ---
 
 # Prompt Writing
@@ -11,6 +11,7 @@ Read [references/guide.md](references/guide.md) and apply the sections that matc
 |---|---|
 | Any prompt | §1 (instructions age with the LLM), §4 (redundant verification), §5 (scope, boundaries, completion) |
 | System prompt | §3.2, §6, §7, §8 if reasoning is disabled |
+| Tool description | §3.3 (actual capability, parameters, results, and constraints) |
 | Skill | §3.1 (descriptions, progressive disclosure, guidance over itineraries) |
 | `AGENTS.md` | §3.2, §5.2 |
 | Agent or subagent prompt | §2, §5.4, §6 |

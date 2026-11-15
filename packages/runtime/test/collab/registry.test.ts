@@ -80,6 +80,76 @@ function makeInspectingSessionManagerFactory(observer: (agent: RuntimeAgent) => 
 }
 
 describe("AgentRegistry", () => {
+  it("uses refreshed shared instructions and mode for new children on the same registry", async () => {
+    const observed: string[] = [];
+    const deps = makeCollabDeps({
+      mode: "default",
+      parentSystemPrompt: [{ label: "instructions", content: "Obsolete rule" }],
+      parentTools: [makeTool("external_mutation")],
+      sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
+        observed.push(agent.systemPrompt.map((section) => section.content).join("\n"));
+      }),
+    });
+    const registry = new AgentRegistry(deps);
+    for (const mode of ["plan", "execute"] as const) {
+      registry.updateDeps({
+        ...deps,
+        mode,
+        parentSystemPrompt: [{ label: "instructions", content: `Current ${mode} rule` }],
+      });
+      const child = registry.spawn({ prompt: "Inspect", description: "Inspection", agentType: "general" });
+      await registry.wait([child.threadId], 5000);
+    }
+    expect(observed[0]).toContain("Current plan rule");
+    expect(observed[0]).toContain("Plan Mode");
+    expect(observed[1]).toContain("Current execute rule");
+    expect(observed[1]).toContain("Execute Mode");
+    expect(observed[1]).not.toContain("Plan Mode");
+    expect(observed.join("\n")).not.toContain("Obsolete rule");
+  });
+  it("passes shared instructions and plan constraints to a child without parent-only context", async () => {
+    let inspected: RuntimeAgent | undefined;
+    const shared = {
+      label: "instructions",
+      tag: "user_instructions",
+      tagAttributes: { path: "/repo/AGENTS.md" },
+      content: "Keep project records neutral.",
+    };
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        mode: "plan",
+        parentSystemPrompt: [
+          { label: "base", content: "Common execution boundaries" },
+          shared,
+          { label: "goal", content: "Parent-only goal controls" },
+          { label: "mode", content: "Parent-only final plan format" },
+          { label: "skills", content: "Call skill to load a workflow" },
+          { label: "skill_usage_guardrail", content: "Load SKILL.md only through skill" },
+        ],
+        parentTools: [makeTool("read"), makeTool("external_mutation")],
+        sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
+          inspected = agent;
+        }),
+      }),
+    );
+    const child = registry.spawn({
+      prompt: "Inspect the requested area",
+      description: "Inspection",
+      agentType: "general",
+    });
+    await registry.wait([child.threadId], 5000);
+    expect(inspected?.systemPrompt).toContainEqual(shared);
+    expect(inspected?.systemPrompt).toContainEqual({ label: "base", content: "Common execution boundaries" });
+    const content = inspected?.systemPrompt.map((section) => section.content).join("\n") ?? "";
+    expect(content).toContain("Plan Mode");
+    expect(content).toContain("external tools");
+    expect(content).not.toContain("Parent-only");
+    expect(inspected?.tools.some((tool) => tool.name === "external_mutation")).toBe(true);
+    expect(inspected?.systemPrompt.some((section) => ["skills", "skill_usage_guardrail"].includes(section.label))).toBe(
+      false,
+    );
+  });
+
   it("passes observation scope and user identity to a child session", () => {
     let config: SessionManagerConfig | undefined;
     const runObserved: NonNullable<SessionManagerConfig["runObserved"]> = (_context, run) => run();

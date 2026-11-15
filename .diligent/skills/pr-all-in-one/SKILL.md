@@ -1,6 +1,6 @@
 ---
 name: pr-all-in-one
-description: Prepare or update a Diligent pull request from the current work, preserving user intent, decision context, verification logs, and useful review notes, written in clear Korean or English. Use when the user invokes pr-all-in-one, asks to open a PR, update an existing PR, prepare PR text, or wants a Korean-friendly PR workflow for this repository.
+description: Prepare PR text or create or update a pull request when the user requests that workflow; preserve intent, relevant verification, and existing attachments.
 ---
 
 # PR All In One

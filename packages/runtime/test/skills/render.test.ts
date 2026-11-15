@@ -30,7 +30,7 @@ describe("renderSkillsSection", () => {
     expect(result).not.toContain("hidden");
   });
 
-  it("renders single skill with name, description, and path", () => {
+  it("lists skill names while leaving the full catalog in the skill tool", () => {
     const skills = [
       makeSkill({
         name: "my-skill",
@@ -40,8 +40,9 @@ describe("renderSkillsSection", () => {
     ];
     const result = renderSkillsSection(skills);
     expect(result).toContain("**my-skill**");
-    expect(result).toContain("Does something useful");
-    expect(result).toContain("/project/.diligent/skills/my-skill/SKILL.md");
+    expect(result).not.toContain("Does something useful");
+    expect(result).not.toContain("/project/.diligent/skills/my-skill/SKILL.md");
+    expect(result).toContain("The skill tool contains");
   });
 
   it("renders multiple skills", () => {
@@ -54,9 +55,9 @@ describe("renderSkillsSection", () => {
     expect(result).toContain("**skill-a**");
     expect(result).toContain("**skill-b**");
     expect(result).toContain("**skill-c**");
-    expect(result).toContain("First skill");
-    expect(result).toContain("Second skill");
-    expect(result).toContain("Third skill");
+    expect(result).not.toContain("First skill");
+    expect(result).not.toContain("Second skill");
+    expect(result).not.toContain("Third skill");
   });
 
   it("returns empty string when all skills have disableModelInvocation=true", () => {

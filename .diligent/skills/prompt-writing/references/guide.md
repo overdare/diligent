@@ -100,16 +100,23 @@ _Prompting the model to read files before every edit is a great way to burn cont
 
 ---
 
-## 4. Remove redundant verification and re-check instructions
+### 3.3 Tool descriptions
 
-*Current LLMs test, verify, and self-correct without being asked. Legacy "verify", "double-check", and "run the
-tests" instructions now compound with built-in behavior and waste tokens.*
+Describe when the tool fits, its actual input and output contract, and the constraints the runtime enforces. Distinguish recommendations from enforced preconditions. Do not claim unavailable tools, approval modes, shell behavior, or prior-read checks.
 
-Previous models needed encouragement to run tests and check their work. The LLM does that on its own, so the same instructions can lead to unnecessary testing.
+Keep detailed syntax where the model needs it to make a valid call. Put a catalog in one surface every relevant agent can access; avoid repeating full descriptions in system sections, tool bodies, and parameter documentation. Check child agents and alternate tool-exposure modes before removing a catalog.
 
-The LLM verifies its own work without being told to. If your prompt contains explicit verification instructions ("include a final verification step for any non-trivial task," "use a subagent to verify"), remove them: instructions like these cause over-verification, and removing them reduces wasted tokens with no loss in quality. The same applies to legacy harness scaffolding that adds separate verification steps.
+State authority and availability separately. A tool being visible does not grant permission to use it for an unrelated action, and a mode may forbid mutations even through external tools. Build availability-dependent guidance from the final tool set.
 
-The LLM catches and fixes its own mistakes well without prompting. Avoid instructing re-checks it already performs ("double-check your answer," "re-verify before responding"); like verification instructions, these compound with the model's own behavior and add cost without improving results.
+## 4. Keep necessary verification; remove redundant re-checks
+
+*Keep concrete validation requirements and completion evidence. Repeated generic demands to double-check can add work without increasing confidence; evaluate that effect for the models and tasks you actually run.*
+
+Tell the agent which checks establish correctness and any repository-specific commands or prerequisites it cannot readily discover. Runtime-enforced evidence requirements, tool syntax, and regression contracts are not redundant verification prose.
+
+Once relevant checks pass, repeat or expand them only for new changes, failures, or an unresolved concern. Avoid mandatory extra reviewers and broad test loops that add no independent evidence. Do not infer a quality or efficiency improvement from shorter prompts alone; compare representative behavioral evaluations.
+
+Prompt-content tests establish what instructions are supplied, not how a model behaves. Behavioral evaluations should assert outcomes and real boundaries without telling the model the exact decisions being evaluated. Record unnecessary questions, delegation, repeated checks, latency, and usage separately from correctness.
 
 ---
 
@@ -246,8 +253,7 @@ Summary of the sections above, organized by artifact type. Each item points back
 ### Every prompt
 
 - [ ] Each instruction is still needed for the target LLM; legacy scaffolding is removed (§1, §4).
-- [ ] No explicit "verify", "double-check", "re-verify", or "run tests to check your work" instructions that the
-      LLM already performs (§4).
+- [ ] Necessary checks and evidence contracts are retained; redundant re-checks have a concrete reason (§4).
 - [ ] Scope and definition of done are stated explicitly (§5.1, §5.4).
 - [ ] Boundary language is calibrated for the current LLM, not inherited from an LLM that overstepped (§5.3).
 - [ ] Desired behavior is shown with positive examples rather than only "do not" rules (§7.2).

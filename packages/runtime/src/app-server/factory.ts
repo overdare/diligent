@@ -20,6 +20,7 @@ import { getGlobalConfigPath, saveGlobalModel } from "../config/writer";
 import { createGoalContextHook } from "../goals/tools";
 import { createLocalImageLoader, type DiligentPaths, ensureDiligentDir, toolOutputStore } from "../infrastructure";
 import { loadKnowledgeSection } from "../knowledge";
+import { withToolInstructions } from "../prompt/tool-instructions";
 import { discoverSkills } from "../skills";
 import {
   type BundledToolProvider,
@@ -49,7 +50,7 @@ function withSkillGuardrail(runtimeConfig: RuntimeConfig) {
       content: [
         "Skills must be loaded through the skill tool.",
         "Do not use read to open SKILL.md directly.",
-        "When the user mentions a skill by name or requests a skill-like workflow, call skill first.",
+        "When the user names an available skill or the task matches its cataloged workflow, call skill first. Related keywords alone are not a match.",
       ].join("\n"),
     },
   ];
@@ -122,7 +123,7 @@ interface AgentAssemblyOptions {
   toolOutputStore?: ToolOutputFileStore;
 }
 
-async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
+async function buildRuntimeAgentTools(args: AgentAssemblyOptions, parentSystemPrompt: SystemSection[]) {
   const {
     request,
     runtimeConfig,
@@ -180,6 +181,8 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
     cwd,
     paths,
     collabDeps: {
+      parentSystemPrompt,
+      mode: mode ?? "default",
       getGoalScope: request.goalHost?.scope,
       model: modelRef,
       effort,
@@ -231,6 +234,8 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
     : modeFilteredTools;
   if (toolsResult.registry) {
     toolsResult.registry.updateDeps({
+      parentSystemPrompt,
+      mode: activeMode,
       getGoalScope: request.goalHost?.scope,
       model: modelRef,
       effort,
@@ -257,7 +262,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
     session: codeModeSession,
     outputStore: selectedOutputStore ?? toolOutputStore,
   });
-  return { tools, registry: toolsResult.registry, codeModeSession };
+  return { tools, registry: toolsResult.registry, codeModeSession, availableTools: filteredTools };
 }
 
 async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAgent> {
@@ -270,7 +275,7 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
     await getPaths(),
     runtimeConfig.diligent.knowledge,
   );
-  const { tools, registry, codeModeSession } = await buildRuntimeAgentTools(args);
+  const { tools, registry, codeModeSession, availableTools } = await buildRuntimeAgentTools(args, systemPrompt);
   // Tool assembly syncs MCP auth first; read that same cached status for the prompt note.
   const promptSections = await appendMcpNeedsAuthNote(systemPrompt, runtimeConfig.diligent.mcpServers);
   const llmCompactionFn = runtimeConfig.providerManager.createNativeCompactionForProvider(
@@ -293,7 +298,7 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
   ];
   return new RuntimeAgent(
     model,
-    applyModeToPrompt(activeMode, promptSections),
+    applyModeToPrompt(activeMode, withToolInstructions(promptSections, availableTools)),
     tools,
     {
       effort,
@@ -404,11 +409,15 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
     createAgent: (args: CreateAgentArgs): Promise<RuntimeAgent> =>
       createRuntimeAgent({ ...assemblyOptions, request: args }),
     refreshAgentTools: async (agent, request) => {
-      const { tools } = await buildRuntimeAgentTools({
-        ...assemblyOptions,
-        request: { ...request, existingAgent: agent },
-      });
+      const { tools, availableTools } = await buildRuntimeAgentTools(
+        {
+          ...assemblyOptions,
+          request: { ...request, existingAgent: agent },
+        },
+        agent.systemPrompt,
+      );
       agent.tools = tools;
+      agent.systemPrompt = withToolInstructions(agent.systemPrompt, availableTools);
     },
     getGoalsConfig: () => runtimeConfig.diligent.goals,
     streamFunction: runtimeConfig.streamFunction,

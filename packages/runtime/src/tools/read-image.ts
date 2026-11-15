@@ -89,7 +89,7 @@ export function createReadImageTool(): Tool<typeof ReadImageParams> {
     description:
       "Read an image file (PNG, JPEG, GIF, WebP) from disk so you can see it. " +
       "Use this — not the `read` tool — for any image path. " +
-      "Do not describe an image's contents without calling this first. " +
+      "Use it before describing a local image you have not seen. Images already supplied as attachments or tool image content do not need another read. " +
       "Requires an absolute path.",
     parameters: ReadImageParams,
     supportParallel: true,
