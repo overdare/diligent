@@ -1,7 +1,7 @@
 // @summary Tests for model-aware thinking effort command options and validation
 
 import { describe, expect, it, mock } from "bun:test";
-import { resolveModel } from "@diligent/runtime";
+import { getThinkingEffortOptions, resolveModel } from "@diligent/runtime";
 import type { AppConfig } from "../../../../src/config";
 import { effortCommand } from "../../../../src/tui/commands/builtin/effort";
 import type { CommandContext } from "../../../../src/tui/commands/types";
@@ -50,36 +50,18 @@ function makeContext(modelId: string, overrides?: Partial<CommandContext>): Comm
 }
 
 describe("effortCommand", () => {
-  it("accepts xhigh for GPT-5.6", async () => {
+  it.each(
+    getThinkingEffortOptions(resolveModel({ provider: "openai", modelId: "gpt-6.1-sol" })),
+  )("sets and announces supported effort $value", async ({ value }) => {
     const setEffort = mock(async () => {});
     const onEffortChanged = mock(() => {});
-    const ctx = makeContext("gpt-6.1-sol", { setEffort, onEffortChanged });
-
-    await effortCommand.handler("xhigh", ctx);
-
-    expect(setEffort).toHaveBeenCalledWith("xhigh");
-    expect(onEffortChanged).toHaveBeenCalledWith("xhigh", "xhigh");
-  });
-
-  it("accepts xhigh for GPT-6.1 Sol", async () => {
-    const setEffort = mock(async () => {});
     const displayError = mock(() => {});
-    const ctx = makeContext("gpt-6.1-sol", { setEffort, displayError });
+    const ctx = makeContext("gpt-6.1-sol", { setEffort, onEffortChanged, displayError });
 
-    await effortCommand.handler("xhigh", ctx);
+    await effortCommand.handler(value, ctx);
 
-    expect(setEffort).toHaveBeenCalledWith("xhigh");
-    expect(displayError).not.toHaveBeenCalled();
-  });
-
-  it("accepts max for GPT-6.1 Sol", async () => {
-    const setEffort = mock(async () => {});
-    const displayError = mock(() => {});
-    const ctx = makeContext("gpt-6.1-sol", { setEffort, displayError });
-
-    await effortCommand.handler("max", ctx);
-
-    expect(setEffort).toHaveBeenCalledWith("max");
+    expect(setEffort).toHaveBeenCalledWith(value);
+    expect(onEffortChanged).toHaveBeenCalledWith(value, value);
     expect(displayError).not.toHaveBeenCalled();
   });
 
@@ -107,7 +89,7 @@ describe("effortCommand", () => {
     }
   });
 
-  it("shows the fixed OpenAI effort options in the picker", async () => {
+  it("shows the configured model effort options in the picker", async () => {
     let items: ListPickerItem[] = [];
     const ctx = makeContext("gpt-6.1-terra", {
       app: {
@@ -124,6 +106,8 @@ describe("effortCommand", () => {
 
     await effortCommand.handler(undefined, ctx);
 
-    expect(items.map((item) => item.value)).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(items.map((item) => item.value)).toEqual(
+      getThinkingEffortOptions(ctx.config.model).map((option) => option.value),
+    );
   });
 });

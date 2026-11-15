@@ -834,137 +834,41 @@ describe("TUIRenderer — cursor position after renders", () => {
   });
 });
 
-describe("TUIRenderer — original tests", () => {
-  function createMockTerminal(): Terminal & { output: string[]; syncOutput: string[] } {
-    const output: string[] = [];
-    const syncOutput: string[] = [];
-    return {
-      output,
-      syncOutput,
-      columns: 80,
-      rows: 24,
-      isKittyEnabled: false,
-      write(data: string) {
-        output.push(data);
-      },
-      writeSynchronized(data: string) {
-        syncOutput.push(data);
-      },
-      hideCursor() {
-        output.push("HIDE_CURSOR");
-      },
-      showCursor() {
-        output.push("SHOW_CURSOR");
-      },
-      moveCursorTo(_row: number, _col: number) {},
-      clearLine() {},
-      clearFromCursor() {},
-      clearScreen() {
-        output.push("CLEAR_SCREEN");
-      },
-      moveBy(_lines: number) {},
-      start() {},
-      stop() {},
-    } as unknown as Terminal & { output: string[]; syncOutput: string[] };
-  }
-
-  test("renders initial content", () => {
-    const terminal = createMockTerminal();
-    const component = createStaticComponent(["Hello", "World"]);
-    const renderer = new TUIRenderer(terminal, component);
-
-    renderer.start();
-
-    const rendered = terminal.syncOutput.join("");
-    expect(rendered).toContain("Hello");
-    expect(rendered).toContain("World");
-  });
-
-  test("re-renders all lines on update (full redraw — no diff)", () => {
-    const terminal = createMockTerminal();
+describe("TUIRenderer — screen updates", () => {
+  test("preserves unchanged lines and cursor position when a line changes", () => {
+    const { terminal, sim } = createSim();
     let lines = ["Line 1", "Line 2", "Line 3"];
-    const component: Component = {
-      render(_width: number) {
-        return [...lines];
-      },
-      invalidate() {},
-    };
-
-    const renderer = new TUIRenderer(terminal, component);
+    const root = new Container();
+    root.addChild({ render: () => [...lines], invalidate() {} });
+    root.addChild(createInputComponent("hello", 2));
+    const renderer = new TUIRenderer(terminal, root);
     renderer.start();
-    terminal.syncOutput.length = 0;
 
     lines = ["Line 1", "Changed", "Line 3"];
     renderer.forceRender();
 
-    const update = terminal.syncOutput.join("");
-    // Changed line is present
-    expect(update).toContain("Changed");
-    // Unchanged lines are also re-emitted (full redraw, not diff)
-    expect(update).toContain("Line 1");
-    expect(update).toContain("Line 3");
+    expect(sim.visibleLines()).toEqual(["Line 1", "Changed", "Line 3", "prompt> hello"]);
+    expect(sim.cursorRow).toBe(3);
+    expect(sim.cursorCol).toBe("prompt> ".length + 2);
   });
 
-  test("re-renders all lines when content grows", () => {
-    const terminal = createMockTerminal();
+  test("preserves existing content when lines are added and removes stale content when lines are removed", () => {
+    const { terminal, sim } = createSim();
     let lines = ["Line 1"];
-    const component: Component = {
-      render(_width: number) {
-        return [...lines];
-      },
-      invalidate() {},
-    };
-
-    const renderer = new TUIRenderer(terminal, component);
+    const renderer = new TUIRenderer(terminal, { render: () => [...lines], invalidate() {} });
     renderer.start();
-    terminal.syncOutput.length = 0;
+    expect(sim.visibleLines()).toEqual(lines);
 
     lines = ["Line 1", "Line 2", "Line 3"];
     renderer.forceRender();
-
-    const update = terminal.syncOutput.join("");
-    // All lines present — including the original one
-    expect(update).toContain("Line 1");
-    expect(update).toContain("Line 2");
-    expect(update).toContain("Line 3");
-  });
-
-  test("re-renders all remaining lines when content shrinks", () => {
-    const terminal = createMockTerminal();
-    let lines = ["Line 1", "Line 2", "Line 3"];
-    const component: Component = {
-      render(_width: number) {
-        return [...lines];
-      },
-      invalidate() {},
-    };
-
-    const renderer = new TUIRenderer(terminal, component);
-    renderer.start();
-    terminal.syncOutput.length = 0;
+    expect(sim.visibleLines()).toEqual(lines);
 
     lines = ["Line 1"];
     renderer.forceRender();
-
-    const update = terminal.syncOutput.join("");
-    // Remaining line is present; removed lines are not
-    expect(update).toContain("Line 1");
-    expect(update).not.toContain("Line 2");
-    expect(update).not.toContain("Line 3");
-  });
-
-  test("every render re-emits all content", () => {
-    const terminal = createMockTerminal();
-    const component = createStaticComponent(["Static line"]);
-
-    const renderer = new TUIRenderer(terminal, component);
-    renderer.start();
-    terminal.syncOutput.length = 0;
+    expect(sim.visibleLines()).toEqual(lines);
 
     renderer.forceRender();
-
-    const update = terminal.syncOutput.join("");
-    expect(update).toContain("Static line");
+    expect(sim.visibleLines()).toEqual(lines);
   });
 });
 

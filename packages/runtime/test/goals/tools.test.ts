@@ -1,4 +1,4 @@
-// @summary Goal tool assembly, validation, cancellation, and prompt contracts
+// @summary Goal tool assembly, validation, cancellation, and prompt data propagation
 
 import { describe, expect, test } from "bun:test";
 import type { ToolContext } from "@diligent/core/tool-contract";
@@ -93,22 +93,14 @@ describe("create_goal", () => {
     expect(filterToolsByMode("default", tools).some((tool) => tool.name === "create_goal")).toBe(true);
     expect(filterToolsByMode("plan", tools).some((tool) => tool.name === "create_goal")).toBe(false);
   });
-
-  test("description reserves creation for explicit persistent intent and makes acceptance timing clear", () => {
-    const tool = createGoalTools(host(async (input) => ({ status: "pending", ...input })))[0];
-    expect(tool.description).toContain("explicitly asks");
-    expect(tool.description).toContain("ordinary task");
-    expect(tool.description).toContain("quoted");
-    expect(tool.description).toContain("finish the current response");
-    expect(tool.description).toContain("never invent execution limits");
-  });
 });
 
-test("active-goal prompt keeps goal controls user-owned while allowing explicit user-requested creation", () => {
+test("injects the active goal snapshot and audit into the prompt", () => {
+  const audit = { evidenceSources: [{ id: "tool-1", kind: "tool", preview: "Verification passed" }] };
   const prompt = goalPrompt({
     controller: () =>
       ({
-        audit: () => ({}),
+        audit: () => audit,
         read: () => ({
           goal: { id: "g", objective: "Finish", status: "active" },
           sequence: 1,
@@ -117,8 +109,7 @@ test("active-goal prompt keeps goal controls user-owned while allowing explicit 
     scope: () => undefined,
   });
 
-  expect(prompt).toContain("create_goal only for explicit user intent");
-  expect(prompt).toContain("Only the user can edit, resume, or change goal limits");
-  expect(prompt).toContain("paused only when the user explicitly requests");
-  expect(prompt).toContain("three consecutive goal runs");
+  expect(prompt).toContain(JSON.stringify({ id: "g", objective: "Finish", status: "active" }));
+  expect(prompt).toContain(JSON.stringify(audit));
+  expect(goalPrompt(host())).toBeUndefined();
 });

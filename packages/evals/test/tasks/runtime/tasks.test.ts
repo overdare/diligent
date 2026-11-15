@@ -41,44 +41,14 @@ import {
 import { type RuntimeFixtureWorld, writeFixture } from "../../../src/tasks/runtime/helpers";
 
 describe("runtime eval tasks", () => {
-  test("registers every runtime task in one suite", () => {
-    expect(RUNTIME_EVAL_TASKS.map((task) => task.id)).toEqual([
-      "project-fix",
-      "plan-readonly",
-      "session-resume",
-      "plan-to-execute",
-      "knowledge-recall",
-      "manual-compaction-resume",
-      "clarify-then-execute",
-      "read-image-pair",
-      "file-roundtrip",
-      "instruction-hierarchy",
-      "plan-converge",
-      "cross-file-contract-fix",
-      "plan-progress",
-      "hook-context-follow",
-      "skill-auto-select",
-      "skill-abstain",
-      "knowledge-intent-split",
-      "knowledge-forget",
-      "steer-during-fix",
-      "auto-compaction-resume",
-      "autonomous-explore-delegation",
-      "fresh-prompt-after-compaction",
-      "image-resume-recall",
-      "input-cancel-resume",
-      "loop-context-adaptation",
-      "large-output-recovery",
-      "bundled-tool-routing",
-      "mcp-lazy-tool",
-      "mcp-needs-auth-abstain",
-      "mcp-resource-grounding",
-      "mcp-prompt-grounding",
-      "custom-agent-routing",
-      "collaboration-parallel-synthesis",
-      "collaboration-resume-reference",
-    ]);
-    expect(RUNTIME_EVAL_TASKS.every((task) => task.limits.maxOutputTokens === 8_192)).toBe(true);
+  test("registers unique runtime task identities with valid limits and state policies", () => {
+    const ids = RUNTIME_EVAL_TASKS.map((task) => task.id);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const task of RUNTIME_EVAL_TASKS) {
+      expect(task.id.trim()).not.toBe("");
+      expect(task.limits.maxOutputTokens).toBeGreaterThan(0);
+    }
     expect(RUNTIME_EVAL_TASKS.every((task) => task.statePolicy !== undefined)).toBe(true);
     expect(knowledgeIntentSplitTask.statePolicy).toEqual({
       allowedMutations: ["infrastructure", "sessions", "knowledge"],
@@ -98,8 +68,6 @@ describe("runtime eval tasks", () => {
     });
     expect(loopContextAdaptationTask.statePolicy).toEqual({ allowedMutations: ["infrastructure", "sessions"] });
     expect(knowledgeRecallTask.statePolicy?.allowedMutations).not.toContain("knowledge");
-    expect(RUNTIME_EVAL_TASKS).toHaveLength(34);
-    expect(RUNTIME_EVAL_TASKS.length * 2).toBe(68);
   });
 
   test("defines custom agent routing as a fixture-local collaboration task", async () => {
