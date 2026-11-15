@@ -2,13 +2,19 @@
 
 import { createHash } from "node:crypto";
 import { createLogger } from "@diligent/logging";
-import { DILIGENT_VERSION } from "@diligent/protocol";
+import {
+  DILIGENT_VERSION,
+  type McpToolResult,
+  McpToolResultSchema,
+  SUPPORTED_IMAGE_MEDIA_TYPES,
+} from "@diligent/protocol";
 import { auth, type OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { type CallToolResultSchema, ContentBlockSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { McpOAuthDeps } from "./oauth";
 import {
   clearStoredOAuth,
@@ -36,6 +42,17 @@ import {
 } from "./types";
 
 const logger = createLogger({ scope: "runtime.mcp.client" });
+
+const KNOWN_CONTENT_TYPES = new Set(["text", "image", "audio", "resource", "resource_link"]);
+const callResultSchema = McpToolResultSchema.superRefine((result, ctx) => {
+  for (const [index, part] of result.content.entries()) {
+    if (!KNOWN_CONTENT_TYPES.has(part.type)) continue;
+    const parsed = ContentBlockSchema.safeParse(part);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) ctx.addIssue({ ...issue, path: ["content", index, ...issue.path] });
+    }
+  }
+});
 
 interface ActiveConnection {
   signature: string;
@@ -337,10 +354,13 @@ export class McpConnectionManager {
 
     const result = await conn.client.callTool(
       { name: toolName, arguments: (args ?? {}) as Record<string, unknown> },
-      undefined,
+      // The SDK accepts a runtime result schema but types this argument as only its
+      // bundled schemas. Validate known kinds without stripping extension fields,
+      // and retain future kinds so normalization can provide an explicit fallback.
+      callResultSchema as unknown as typeof CallToolResultSchema,
       { signal, timeout: conn.toolTimeoutMs },
     );
-    return normalizeCallResult(result);
+    return normalizeCallResult(McpToolResultSchema.parse(result));
   }
 
   /** True when a connected server advertises the `resources` capability. */
@@ -540,30 +560,63 @@ export class McpConnectionManager {
   }
 }
 
-function normalizeCallResult(result: Awaited<ReturnType<Client["callTool"]>>): McpCallResult {
+function normalizeCallResult(result: McpToolResult): McpCallResult {
+  const rawResult = structuredClone(result);
   const textParts: string[] = [];
   const images: { data: string; mimeType: string }[] = [];
-  const content = Array.isArray(result.content) ? result.content : [];
+  const content = rawResult.content;
 
-  for (const part of content) {
+  for (const [index, part] of content.entries()) {
+    const reference = `metadata.mcpResult.content[${index}]`;
     if (part.type === "text") {
-      textParts.push(part.text);
+      textParts.push(part.text as string);
     } else if (part.type === "image") {
-      images.push({ data: part.data, mimeType: part.mimeType });
+      images.push({ data: part.data as string, mimeType: part.mimeType as string });
+      if (!(SUPPORTED_IMAGE_MEDIA_TYPES as readonly string[]).includes(part.mimeType as string)) {
+        textParts.push(`[image ${part.mimeType}; rendering unavailable; payload preserved in ${reference}]`);
+      }
     } else if (part.type === "audio") {
-      textParts.push(`[audio ${part.mimeType} omitted]`);
+      textParts.push(`[audio ${part.mimeType}; playback unavailable; payload preserved in ${reference}]`);
+    } else if (part.type === "resource_link") {
+      textParts.push(`[resource link: ${describeContent(part)}]`);
     } else if (part.type === "resource") {
-      const resource = part.resource as { text?: string; uri?: string };
+      const resource = part.resource as { text?: string; uri: string; mimeType?: string };
       if (typeof resource.text === "string") textParts.push(resource.text);
-      else if (typeof resource.uri === "string") textParts.push(`[resource ${resource.uri}]`);
+      else
+        textParts.push(
+          `[binary resource: ${describeContent(resource)}; rendering unavailable; payload preserved in ${reference}.resource]`,
+        );
+    } else {
+      textParts.push(
+        `[unsupported MCP content: ${part.type}; ${describeContent(part)}; payload preserved in ${reference}]`,
+      );
     }
   }
 
-  if (result.structuredContent && Object.keys(result.structuredContent).length > 0) {
-    textParts.push(`Structured output:\n${JSON.stringify(result.structuredContent, null, 2)}`);
+  if (rawResult.structuredContent && Object.keys(rawResult.structuredContent).length > 0) {
+    textParts.push(`Structured output:\n${JSON.stringify(withoutPrivateMeta(rawResult.structuredContent), null, 2)}`);
   }
 
-  return { text: textParts.join("\n").trim(), images, isError: result.isError === true };
+  return { rawResult, text: textParts.join("\n"), images, isError: rawResult.isError === true };
+}
+
+/** Only identifying fields belong in fallbacks; never serialize arbitrary private or binary data. */
+function describeContent(part: Record<string, unknown>): string {
+  return ["name", "title", "uri", "mimeType", "description"]
+    .flatMap((key) => (typeof part[key] === "string" ? [`${key}: ${part[key]}`] : []))
+    .join("; ");
+}
+
+function withoutPrivateMeta(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutPrivateMeta);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => key !== "_meta")
+        .map(([key, item]) => [key, withoutPrivateMeta(item)]),
+    );
+  }
+  return value;
 }
 
 /**

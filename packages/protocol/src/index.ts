@@ -5,6 +5,7 @@ export * from "./conversation-state";
 export * from "./data-model";
 export * from "./goals";
 export * from "./jsonrpc";
+export * from "./mcp-result";
 export * from "./methods";
 export * from "./notification-adapter";
 export * from "./server-notifications";

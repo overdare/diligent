@@ -40,6 +40,8 @@ export interface CodeModeNestedCallRecord {
   output: string;
   /** Where the complete output was saved when `output` is capped. */
   fullOutputPath?: string;
+  /** Tool-owned result data, including canonical MCP payloads; never sent to guest scripts. */
+  metadata?: Record<string, unknown>;
   isError: boolean;
   startedAt: number;
   durationMs: number;
@@ -336,6 +338,7 @@ class CodeModeCell {
         toolName: call.name,
         input: call.input,
         ...history,
+        ...(result.metadata ? { metadata: result.metadata } : {}),
         isError,
         startedAt,
         durationMs: Date.now() - startedAt,

@@ -1,5 +1,6 @@
 // @summary Internal runtime types for the MCP client (connection manager + tool bridge)
 
+import type { McpToolResult } from "@diligent/protocol";
 import type {
   McpGlobalConfig,
   McpHttpServerConfig,
@@ -136,6 +137,8 @@ export interface McpServerStatus {
 
 /** Normalized result of a single MCP tool call. */
 export interface McpCallResult {
+  /** Canonical MCP result, retained outside model text. Absent only for legacy adapters. */
+  rawResult?: McpToolResult;
   text: string;
   images: { data: string; mimeType: string }[];
   isError: boolean;

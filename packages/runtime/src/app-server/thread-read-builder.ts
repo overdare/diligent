@@ -275,7 +275,9 @@ function insertNestedCodeModeItems(items: ThreadItem[], message: ToolResultMessa
           isError: call.isError,
         }),
       ),
-      ...(call.fullOutputPath ? { metadata: { fullOutputPath: call.fullOutputPath } } : {}),
+      ...(call.metadata || call.fullOutputPath
+        ? { metadata: { ...call.metadata, ...(call.fullOutputPath ? { fullOutputPath: call.fullOutputPath } : {}) } }
+        : {}),
       parentToolCallId,
     };
     if (parentIndex >= 0) items.splice(parentIndex + 1, 0, item);
