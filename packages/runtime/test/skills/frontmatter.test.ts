@@ -24,6 +24,27 @@ describe("parseFrontmatter", () => {
     expect(result.body).toBe("# Body content\nSome instructions here.");
   });
 
+  // Files checked out or written on Windows use CRLF. A quoted YAML scalar followed by "\r"
+  // used to fail to parse, so every such skill was silently dropped.
+  it("parses CRLF frontmatter, including quoted values, the same as LF", () => {
+    const lines = [
+      "---",
+      "name: my-skill",
+      'description: "Quoted, with: a colon. Use for X, not Y."',
+      "---",
+      "# Body content",
+      "Some instructions here.",
+    ];
+    const lf = parseFrontmatter(lines.join("\n"), "/test/SKILL.md");
+    const crlf = parseFrontmatter(lines.join("\r\n"), "/test/SKILL.md");
+
+    expect("error" in crlf).toBe(false);
+    if ("error" in crlf || "error" in lf) return;
+    expect(crlf.frontmatter).toEqual(lf.frontmatter);
+    expect(crlf.frontmatter.description).toBe("Quoted, with: a colon. Use for X, not Y.");
+    expect(crlf.body).toBe(lf.body);
+  });
+
   it("returns error when name is missing", () => {
     const content = ["---", "description: A useful skill", "---", "body"].join("\n");
 
