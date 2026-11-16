@@ -7,7 +7,8 @@ export interface ParsedYamlFrontmatter {
 }
 
 export function parseYamlFrontmatter(content: string, filePath: string): ParsedYamlFrontmatter | { error: string } {
-  const lines = content.split("\n");
+  // Accept CRLF (Windows checkouts and editors): a trailing "\r" breaks quoted YAML scalars.
+  const lines = content.split(/\r?\n/);
 
   if (lines[0]?.trim() !== "---") {
     return { error: `${filePath}: missing frontmatter (no opening ---)` };
@@ -51,7 +52,7 @@ export function parseYamlFrontmatter(content: string, filePath: string): ParsedY
 }
 
 export function extractMarkdownBody(content: string): string {
-  const lines = content.split("\n");
+  const lines = content.split(/\r?\n/);
   if (lines[0]?.trim() !== "---") return content;
 
   for (let index = 1; index < lines.length; index++) {
