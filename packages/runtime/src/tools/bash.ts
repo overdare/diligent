@@ -16,6 +16,41 @@ const BashParams = z.object({
 
 const DEFAULT_TIMEOUT = 120_000;
 
+/** Live output is coalesced into at most one tool update per interval. */
+const LIVE_UPDATE_INTERVAL_MS = 250;
+/** Characters per live update; a larger burst keeps its head and tail and marks what it skipped. */
+const LIVE_UPDATE_MAX_CHARS = 8 * 1024;
+
+/**
+ * Coalesces process output into `tool_update` deltas. Clients append each delta to the live tool view, so every
+ * update carries only output produced since the previous one. `close` flushes what is left.
+ */
+function createLiveOutput(onUpdate: (partial: string) => void): { push: (text: string) => void; close: () => void } {
+  let pending = "";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const flush = () => {
+    timer = undefined;
+    if (!pending) return;
+    let text = pending;
+    pending = "";
+    if (text.length > LIVE_UPDATE_MAX_CHARS) {
+      const half = LIVE_UPDATE_MAX_CHARS / 2;
+      text = `${text.slice(0, half)}\n[… ${text.length - 2 * half} characters …]\n${text.slice(-half)}`;
+    }
+    onUpdate(text);
+  };
+  return {
+    push(text) {
+      pending += text;
+      timer ??= setTimeout(flush, LIVE_UPDATE_INTERVAL_MS);
+    },
+    close() {
+      clearTimeout(timer);
+      flush();
+    },
+  };
+}
+
 const SENSITIVE_PATTERNS = [/(_API_KEY|_TOKEN|_PASSWORD)$/, /_SECRET/, /^(API_KEY|SECRET_KEY|TOKEN|PASSWORD)$/];
 
 /**
@@ -116,8 +151,17 @@ export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof
 
       const stdoutChunks: Buffer[] = [];
       const stderrChunks: Buffer[] = [];
-      proc.stdout?.on("data", (c: Buffer) => stdoutChunks.push(c));
-      proc.stderr?.on("data", (c: Buffer) => stderrChunks.push(c));
+      const live = ctx.onUpdate ? createLiveOutput(ctx.onUpdate) : undefined;
+      const stdoutDecoder = new TextDecoder();
+      const stderrDecoder = new TextDecoder();
+      proc.stdout?.on("data", (c: Buffer) => {
+        stdoutChunks.push(c);
+        live?.push(stdoutDecoder.decode(c, { stream: true }));
+      });
+      proc.stderr?.on("data", (c: Buffer) => {
+        stderrChunks.push(c);
+        live?.push(stderrDecoder.decode(c, { stream: true }));
+      });
 
       let exitCode: number | null = null;
       try {
@@ -127,6 +171,7 @@ export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof
       } finally {
         clearTimeout(timer);
         ctx.signal.removeEventListener("abort", onAbort);
+        live?.close();
       }
 
       const stdout = Buffer.concat(stdoutChunks).toString();

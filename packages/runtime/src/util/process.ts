@@ -1,4 +1,4 @@
-// @summary Cross-platform child process spawn with abort, timeout, and Windows process-tree kill
+// @summary Cross-platform child process spawn with abort, timeout, and process-tree kill (process group on POSIX)
 
 import { type ChildProcess, spawn as nodeSpawn } from "node:child_process";
 
@@ -15,13 +15,41 @@ export interface SpawnOptions {
 
 export type Child = ChildProcess & { exited: Promise<number> };
 
-/** Kill the process and its entire process tree. On Windows uses taskkill /F /T. */
+/**
+ * Kill the process and its entire process tree. On Windows uses taskkill /F /T. On POSIX the child leads its own
+ * process group (see `detached` below), so signalling the negative PID also reaches the commands it started.
+ */
 function killTree(proc: ChildProcess): void {
   if (process.platform === "win32" && proc.pid !== undefined) {
     nodeSpawn("taskkill", ["/F", "/T", "/PID", String(proc.pid)], { stdio: "ignore" });
-  } else {
+    return;
+  }
+  try {
+    if (proc.pid === undefined) throw new Error("no pid");
+    process.kill(-proc.pid, "SIGKILL");
+  } catch {
     proc.kill("SIGKILL");
   }
+}
+
+/**
+ * Detached POSIX children no longer share the runtime's process group, so a terminal Ctrl-C or the host exiting
+ * does not reach them. Track the running ones and kill their groups when the runtime process exits.
+ */
+const runningGroups = new Set<ChildProcess>();
+let exitCleanupInstalled = false;
+
+function killGroupOnRuntimeExit(proc: ChildProcess): void {
+  if (!exitCleanupInstalled) {
+    exitCleanupInstalled = true;
+    process.once("exit", () => {
+      for (const running of runningGroups) killTree(running);
+    });
+  }
+  runningGroups.add(proc);
+  const forget = () => runningGroups.delete(proc);
+  proc.once("exit", forget);
+  proc.once("error", forget);
 }
 
 export function spawnProcess(cmd: string[], opts: SpawnOptions = {}): Child {
@@ -32,7 +60,11 @@ export function spawnProcess(cmd: string[], opts: SpawnOptions = {}): Child {
     cwd: opts.cwd,
     env: opts.env,
     stdio: [opts.stdin ?? "ignore", opts.stdout ?? "ignore", opts.stderr ?? "ignore"],
+    // POSIX: start a new process group (and session) so killTree can terminate grandchildren, and so a command
+    // cannot read the host's controlling terminal.
+    detached: process.platform !== "win32",
   });
+  if (process.platform !== "win32") killGroupOnRuntimeExit(proc);
 
   const abort = () => {
     if (proc.exitCode !== null || proc.signalCode !== null) return;
