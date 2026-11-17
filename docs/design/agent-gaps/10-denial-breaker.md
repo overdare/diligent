@@ -94,3 +94,19 @@ hard stop set `denialBreakerThreshold: 1`, which ends the turn at the second con
   aborts.
 - `packages/e2e/app-server/policy-deny.test.ts`: a deny rule over JSON-RPC yields a tool item with the rule text and the
   turn continues to `turn/completed`.
+
+## Wave 1 implementation notes
+
+Shipped on `fix/policy-deny-continues`. Differences from the design above:
+
+- `RuntimeToolHost.approve` keeps returning `ApprovalResponse` because product tools compare it with `"reject"`; a new
+  optional `approveWithOutcome` carries the source, and `createRuntimeToolHost` builds both from one handler.
+  `CreateAgentArgs.approve` and collab deps now pass the outcome handler.
+- The count is per root thread and shared with its children, because child approvals route through the parent thread.
+  It resets on any allowed approval and at the end of each turn.
+- Config key: `approvals.denialBreakerThreshold` (`permissions` is already a rule array).
+- No new goal pause reason. At twice the threshold the tool aborts the turn, and goal mode pauses as it does for any
+  interrupted run.
+- MCP tools keep letting the turn continue after a user rejection, as before; only rule denials use the new text.
+- Tests: `packages/runtime/test/tools/approval-denial.test.ts`, `packages/runtime/test/approval/engine.test.ts`
+  (`decidingRule`), `packages/e2e/app-server/permission-denials.test.ts`.

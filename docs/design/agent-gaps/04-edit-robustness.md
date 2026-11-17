@@ -126,3 +126,15 @@ anchored_edit {
   fail as specified; CRLF file edited with LF `old_string` keeps CRLF.
 - `packages/runtime/test/tools/file-view-tracker.test.ts`: never-read / changed-since-read / own-write cases.
 - `packages/evals`: edit-success suite run with L4 on and off.
+
+## Wave 1 implementation notes
+
+Shipped on `fix/edit-tolerant-match`: L1 and L2. Differences from the design above:
+
+- The stale-write guard covers `edit` and `multi_edit` only. `apply_patch` already reads files after approval, and
+  `write` replaces the whole file by design.
+- Writes still use `Bun.write`. Temp-file + rename was dropped: it replaces symlinks with regular files and loses file
+  modes unless both are handled explicitly.
+- Non-unique exact matches now list their line numbers, and replacements no longer interpret `$` patterns in
+  `new_string`.
+- Tests: `packages/runtime/test/tools/edit-matching.test.ts`.

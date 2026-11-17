@@ -91,3 +91,16 @@ instance to code mode, replacing the per-`CodeModeSession` gate. Then:
   queued yields synthesized results for `w` and the trailing `r` only.
 - Gate tests in `packages/runtime/test/tools/code-mode/tools.test.ts` move to `packages/core/test/agent/` with the gate.
 - Existing code-mode tests prove direct/nested interleaving still serializes exclusive calls.
+
+## Wave 1 implementation notes
+
+Shipped on `feat/tool-call-concurrency`. Differences from the design above:
+
+- The loop uses a **batch-local** `ToolGate`; code mode keeps its own per-agent gate and the wrapper around direct
+  nestable tools. Sharing one per-agent gate with the loop would make `exec_wait` (and collab `wait`) hold the gate
+  that the cell they wait on needs, so the code-mode guide's no-deadlock rule would break. `ToolGate` itself moved to
+  core, so both scopes use one implementation.
+- `tool_end` is emitted as each call settles; provider-visible results stay in model order.
+- The shared reducer tracks the live item with `liveToolItemId` rather than a map: updates and ends of other
+  overlapping calls leave the live slot alone.
+- The optional per-call `concurrency(args)` resolver is not added yet; it arrives with its first user (`bash_wait`, `lsp`).

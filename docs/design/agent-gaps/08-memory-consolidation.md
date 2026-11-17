@@ -135,3 +135,9 @@ bounds runaway cost.
   job; watermark advances only after a successful apply.
 - `packages/runtime/test/agent/knowledge-nudge-hook.test.ts`: M0 cadence and reset on `update_knowledge`.
 - `packages/evals`: precision of extracted entries on recorded sessions (human-labelled set) before enabling by default.
+
+## Wave 1 implementation notes
+
+Shipped on `feat/knowledge-nudge`: M0 as designed. "Turn" means an agent turn (one model call), the same unit the plan
+reminder counts. Tests: `packages/runtime/test/agent/knowledge-nudge-hook.test.ts` and a factory test proving the model
+sees the reminder after the configured turns.

@@ -144,3 +144,15 @@ process is emitted by the `bash_wait` call that observes the exit.
 - `packages/runtime/test/util/process.test.ts`: process-group kill on POSIX.
 - `packages/e2e/app-server/bash-background.test.ts`: `tool_update` notifications arrive before `item/completed`.
 - PTY test guarded by `process.platform !== "win32"`: `tty` returns a TTY name.
+
+## Wave 1 implementation notes
+
+Shipped on `fix/bash-process-group-streaming`: process-group kill and live output. `yield_time_ms`, `bash_wait`, and
+PTY remain Wave 2. Differences from the design above:
+
+- The group is killed with `SIGKILL` at once, as the single-process kill was before; there is no `SIGTERM` grace yet.
+- Detached groups no longer receive the terminal's signals, so `spawnProcess` also kills every running group when the
+  runtime process exits.
+- The skipped-content marker counts characters: `[… N characters …]`.
+- Tests: `packages/runtime/test/tools/bash-streaming.test.ts` (timeout and abort kill a background grandchild; first
+  update arrives before exit; per-update cap and marker).
