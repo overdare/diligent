@@ -105,3 +105,19 @@ here" and "rewind to here" on user messages. Both clients are updated in the sam
 - `packages/runtime/test/collab/fork-children.test.ts`: resuming a source child from a fork is rejected.
 - `packages/e2e/app-server/thread-fork-rename.test.ts`: `thread/name/set` → `thread/list` shows the name; `thread/fork`
   → `thread/read` of the fork returns the copied turns; `thread/rewind` on a running thread is rejected.
+
+## Wave 1 implementation notes
+
+`thread/name/set` shipped on `feat/thread-rename`, but not as an appended `session_info` entry. `thread/list` reads
+only the start of each session file (`readSessionPreview` stops at the first user message), so a name appended later
+would never be listed. Decision: keep the name in the session header.
+
+- Renaming rewrites the file once through a temp file and an atomic rename. For a loaded thread the rewrite is queued
+  behind pending writes; a running thread is refused, and turn cleanup is awaited after a turn.
+- No storage layout change and no version bump: the header parser ignores unknown fields.
+- Open history cursors stop working after the rewrite (they check the inode) and ask the client to reload.
+- `session_info` entries are no longer read for names; nothing ever wrote them.
+- Clients: TUI `/rename`, VS Code `Diligent: Rename Thread` (command palette only, because the extension deliberately
+  has no thread context menu).
+- Tests: `packages/e2e/app-server/thread-rename.test.ts`, `packages/cli/test/tui/commands/builtin/session.test.ts`,
+  `apps/vscode-extension/test/runtime/thread-session.test.ts`.
