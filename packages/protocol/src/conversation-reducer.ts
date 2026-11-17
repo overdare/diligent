@@ -66,8 +66,10 @@ export function applyAgentEvents<T extends ConversationLiveState>(state: T, even
         };
         break;
       case "tool_start":
+        // Overlapping calls: the live slot follows the most recently started call.
         nextState = {
           ...nextState,
+          liveToolItemId: event.itemId,
           liveToolName: event.toolName,
           liveToolInput:
             event.render?.inputSummary?.trim() ||
@@ -77,6 +79,7 @@ export function applyAgentEvents<T extends ConversationLiveState>(state: T, even
         };
         break;
       case "tool_update":
+        if (nextState.liveToolItemId !== null && nextState.liveToolItemId !== event.itemId) break;
         nextState = {
           ...nextState,
           liveToolName: event.toolName,
@@ -85,8 +88,10 @@ export function applyAgentEvents<T extends ConversationLiveState>(state: T, even
         };
         break;
       case "tool_end":
+        if (nextState.liveToolItemId !== null && nextState.liveToolItemId !== event.itemId) break;
         nextState = {
           ...nextState,
+          liveToolItemId: null,
           liveToolName: null,
           liveToolInput: null,
           liveToolOutput: "",
@@ -105,6 +110,7 @@ export function applyAgentEvents<T extends ConversationLiveState>(state: T, even
           overlayStatus: null,
           liveText: "",
           liveThinking: "",
+          liveToolItemId: null,
           liveToolName: null,
           liveToolInput: null,
           liveToolOutput: "",

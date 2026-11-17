@@ -111,7 +111,12 @@ describe("runToolCalls", () => {
       { toolCallId: "fail", ...failed, isError: true },
     ];
     expect(result.executions.map((execution) => execution.toolResult)).toMatchObject(expected);
-    expect(events.filter((event) => event.type === "tool_end")).toMatchObject(expected);
+    // tool_end is emitted as each call settles; the provider-visible executions above keep model order.
+    const ends = events.filter((event) => event.type === "tool_end");
+    for (const expectedEnd of expected) {
+      expect(ends.find((event) => event.toolCallId === expectedEnd.toolCallId)).toMatchObject(expectedEnd);
+    }
+    expect(ends).toHaveLength(expected.length);
   });
 
   test("pre-aborted parallel batch executes no tools and pairs every call", async () => {
@@ -140,5 +145,118 @@ describe("runToolCalls", () => {
     expect(result.toolCallIds).toEqual(["call-1", "call-2"]);
     expect(result.events.filter((event) => event.type === "tool_start")).toHaveLength(2);
     expect(result.events.filter((event) => event.type === "tool_end")).toHaveLength(2);
+  });
+
+  describe("mixed shared and exclusive batches", () => {
+    // Asserting that a queued call has NOT started needs every pending continuation to run first; one macrotask
+    // turn drains the microtask queue, and no fixed duration is involved.
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Each call blocks until finish(id); `id` comes from the call input so one tool can serve several calls.
+    function startBatch(calls: Array<{ id: string; shared: boolean }>) {
+      const started: string[] = [];
+      const waiting = new Map<string, () => void>();
+      const blockingTool = (name: string, supportParallel: boolean): Tool => ({
+        name,
+        description: name,
+        parameters: z.object({ id: z.string() }),
+        supportParallel,
+        async execute(args: { id: string }) {
+          started.push(args.id);
+          const { promise, resolve } = Promise.withResolvers<void>();
+          waiting.set(args.id, resolve);
+          await promise;
+          return { output: `done ${args.id}` };
+        },
+      });
+      const registry: ToolRegistry = new Map([
+        ["shared", blockingTool("shared", true)],
+        ["exclusive", blockingTool("exclusive", false)],
+      ]);
+      const controller = new AbortController();
+      const stream = new AgentStream();
+      const events: CoreAgentEvent[] = [];
+      stream.subscribe((event) => events.push(event));
+      let itemId = 0;
+      const run = runToolCalls(
+        calls.map(({ id, shared }) => ({
+          type: "tool_call",
+          id,
+          name: shared ? "shared" : "exclusive",
+          input: { id },
+        })),
+        controller.signal,
+        registry,
+        stream,
+        () => `item-${++itemId}`,
+        () => controller.abort(),
+      );
+      const finish = (id: string) => {
+        const resolve = waiting.get(id);
+        if (!resolve) throw new Error(`call ${id} is not running`);
+        resolve();
+      };
+      return { started, finish, run, events, controller };
+    }
+
+    test("shared calls overlap, an exclusive call runs alone, and later calls wait their turn", async () => {
+      const batch = startBatch([
+        { id: "r1", shared: true },
+        { id: "r2", shared: true },
+        { id: "w", shared: false },
+        { id: "r3", shared: true },
+      ]);
+
+      await flush();
+      expect(batch.started).toEqual(["r1", "r2"]);
+
+      batch.finish("r1");
+      await flush();
+      expect(batch.started).toEqual(["r1", "r2"]);
+
+      batch.finish("r2");
+      await flush();
+      expect(batch.started).toEqual(["r1", "r2", "w"]);
+
+      batch.finish("w");
+      await flush();
+      expect(batch.started).toEqual(["r1", "r2", "w", "r3"]);
+
+      batch.finish("r3");
+      const result = await batch.run;
+      expect(result.executions.map((execution) => execution.toolResult.output)).toEqual([
+        "done r1",
+        "done r2",
+        "done w",
+        "done r3",
+      ]);
+      const startOrder = batch.events.filter((event) => event.type === "tool_start").map((event) => event.toolCallId);
+      expect(startOrder).toEqual(["r1", "r2", "w", "r3"]);
+    });
+
+    test("aborting while calls are queued pairs the queued calls without running them", async () => {
+      const batch = startBatch([
+        { id: "r1", shared: true },
+        { id: "w", shared: false },
+        { id: "r2", shared: true },
+      ]);
+
+      await flush();
+      expect(batch.started).toEqual(["r1"]);
+      batch.controller.abort();
+      batch.finish("r1");
+      const result = await batch.run;
+
+      expect(batch.started).toEqual(["r1"]);
+      expect(result.executions.map((execution) => [execution.toolCall.id, execution.toolResult.output])).toEqual([
+        ["r1", "done r1"],
+        ["w", "[Aborted by user]"],
+        ["r2", "[Aborted by user]"],
+      ]);
+      const starts = batch.events.filter((event) => event.type === "tool_start").map((event) => event.toolCallId);
+      const ends = batch.events.filter((event) => event.type === "tool_end").map((event) => event.toolCallId);
+      expect(starts.sort()).toEqual(["r1", "r2", "w"]);
+      expect(ends.sort()).toEqual(["r1", "r2", "w"]);
+    });
   });
 });

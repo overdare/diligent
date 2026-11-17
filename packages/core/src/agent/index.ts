@@ -11,6 +11,7 @@ export type {
   AgentLoopHookToolResultContext,
 } from "./loop-hooks";
 export { updateUserMessageContent } from "./message-content";
+export { ToolGate } from "./tool-gate";
 export type {
   AgentListener,
   AgentOptions,
