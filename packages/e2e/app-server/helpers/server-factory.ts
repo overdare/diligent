@@ -60,6 +60,7 @@ export function createTestServer(opts: {
     effort: "medium",
     mode: "default",
     planReminderIntervalTurns: 0,
+    knowledgeNudgeIntervalTurns: 0,
     systemPrompt: [],
     streamFunction: streamFn,
     diligent: { tools: opts.runtimeToolsConfig },

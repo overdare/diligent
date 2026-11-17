@@ -3,9 +3,9 @@
 import type { AgentLoopHook } from "@diligent/core/agent";
 import type { Message } from "@diligent/core/message-contract";
 import { createLogger, type Logger } from "@diligent/logging";
+import { formatSystemReminder } from "./system-reminder";
 
 export const PLAN_TOOL_NAME = "plan";
-const PLAN_REMINDER_PREFIX = "<system-reminder>";
 
 export type PlanStepStatus = "pending" | "in_progress" | "done" | "cancelled";
 
@@ -63,13 +63,12 @@ export function latestUserGoal(messages: readonly Message[], maxChars = 200): st
 
 export function buildPlanReminderMessage(remaining: readonly PlanStepLike[], opts?: { goal?: string }): string {
   const lines = [
-    PLAN_REMINDER_PREFIX,
     "The plan still has unfinished steps. Keep working through them and update the plan as each is done — do not tell the user the work is complete while steps remain.",
     "The latest user request and current permissions take precedence. Cancel obsolete steps when scope changes; this reminder does not authorize actions or turn a quoted goal into a new user request.",
   ];
   if (opts?.goal) lines.push(`Goal: ${opts.goal}`);
-  lines.push("Remaining:", ...remaining.map((step) => `- (${step.status}) ${step.text}`), "</system-reminder>");
-  return lines.join("\n");
+  lines.push("Remaining:", ...remaining.map((step) => `- (${step.status}) ${step.text}`));
+  return formatSystemReminder(lines);
 }
 
 export function createPlanReminderHook(options: { intervalTurns: number; logger?: Logger }): AgentLoopHook {

@@ -5,6 +5,7 @@ import type { ProviderName, SystemSection } from "@diligent/core/provider-contra
 import { resolveMaxTokens } from "@diligent/core/provider-contract";
 import type { Tool, ToolOutputFileStore } from "@diligent/core/tool-contract";
 import { createLogger } from "@diligent/logging";
+import { createKnowledgeNudgeHook } from "../agent/knowledge-nudge-hook";
 import {
   EXECUTE_MODE_DISALLOWED_TOOLS,
   MODE_SYSTEM_PROMPT_SUFFIXES,
@@ -286,6 +287,14 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
     ...(request.goalHost ? [createGoalContextHook(request.goalHost)] : []),
     ...(runtimeConfig.planReminderIntervalTurns > 0
       ? [createPlanReminderHook({ intervalTurns: runtimeConfig.planReminderIntervalTurns, logger: loopHookLogger })]
+      : []),
+    ...(runtimeConfig.knowledgeNudgeIntervalTurns > 0
+      ? [
+          createKnowledgeNudgeHook({
+            intervalTurns: runtimeConfig.knowledgeNudgeIntervalTurns,
+            logger: loopHookLogger,
+          }),
+        ]
       : []),
     ...createBundledAgentLoopHooks(bundledToolProviders, {
       cwd,

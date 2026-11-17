@@ -67,6 +67,7 @@ export async function createFixtureRuntimeConfigForCwd(
     effort: profile.effort,
     mode: "default",
     planReminderIntervalTurns: 0,
+    knowledgeNudgeIntervalTurns: 0,
     systemPrompt,
     streamFunction: () => {
       throw new Error("Runtime eval runner did not install the profile stream.");
