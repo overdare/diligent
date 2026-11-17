@@ -1,3 +1,4 @@
+export type { ApprovalOutcome } from "../approval/types";
 export type { CollabToolDeps } from "../collab";
 // Collab tools (non-blocking multi-agent)
 export { AgentRegistry, createCollabTools } from "../collab";
@@ -15,8 +16,14 @@ export type {
   TextGenerationOptions,
 } from "./bundled-provider";
 export { collectBundledHooks, createBundledAgentLoopHooks } from "./bundled-provider";
-export type { RuntimeToolHost } from "./capabilities";
-export { requestToolApproval, requestToolUserInput } from "./capabilities";
+export type { ApprovalHandler, RejectedApproval, RuntimeToolHost } from "./capabilities";
+export {
+  createRuntimeToolHost,
+  requestToolApproval,
+  requestToolApprovalOutcome,
+  requestToolUserInput,
+  resolveRejectedApproval,
+} from "./capabilities";
 // Tool catalog (P032)
 export type {
   BuildToolCatalogOptions,

@@ -2739,7 +2739,7 @@ describe("DiligentAppServer", () => {
 
             queueMicrotask(async () => {
               stream.push({ type: "start" });
-              const decision = await approve({
+              const { decision } = await approve({
                 permission: "execute",
                 toolName: "bash",
                 description: "run ls",
@@ -2822,7 +2822,7 @@ describe("DiligentAppServer", () => {
 
             queueMicrotask(async () => {
               stream.push({ type: "start" });
-              const decision = await approve({
+              const { decision } = await approve({
                 permission: "execute",
                 toolName: "bash",
                 description: "run rm",

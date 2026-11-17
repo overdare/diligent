@@ -7,7 +7,7 @@ import type { ImageBlock } from "@diligent/protocol";
 import { SUPPORTED_IMAGE_MEDIA_TYPES } from "@diligent/protocol";
 import { z } from "zod";
 import type { RuntimeToolHost } from "../capabilities";
-import { requestToolApproval } from "../capabilities";
+import { requestToolApprovalOutcome, resolveRejectedApproval } from "../capabilities";
 import type { McpConnectionManager } from "./client";
 import type { McpCallResult, McpOutputLimit, McpToolDef } from "./types";
 
@@ -108,7 +108,7 @@ export async function callMcpToolWithApproval(args: {
   outputLimit?: McpOutputLimit;
 }): Promise<ToolResult> {
   const { manager, host, serverName, toolName, approvalToolName, rawArgs, ctx, outputLimit } = args;
-  const decision = await requestToolApproval(
+  const decision = await requestToolApprovalOutcome(
     host,
     {
       permission: "execute",
@@ -118,8 +118,10 @@ export async function callMcpToolWithApproval(args: {
     },
     { signal: ctx.signal },
   );
-  if (decision === "reject") {
-    return { output: "Tool call rejected by user." };
+  if (decision.decision === "reject") {
+    // MCP calls have always let the turn continue after a user rejection.
+    if (decision.source === "user") return { output: "Tool call rejected by user." };
+    return resolveRejectedApproval(decision, ctx);
   }
 
   const result = await manager.call(serverName, toolName, rawArgs, ctx.signal);

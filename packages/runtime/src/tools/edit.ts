@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { isAbsolute, stripExtendedLengthPrefix } from "../util/path";
-import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
+import { type RuntimeToolHost, requestToolApprovalOutcome, resolveRejectedApproval } from "./capabilities";
 import {
   createEditDiffRenderPayload,
   createMultiEditDiffRenderPayload,
@@ -139,7 +139,7 @@ Usage:
           };
         }
 
-        const approval = await requestToolApproval(
+        const approval = await requestToolApprovalOutcome(
           host,
           {
             permission: "write",
@@ -149,10 +149,7 @@ Usage:
           },
           { signal: ctx.signal },
         );
-        if (approval === "reject") {
-          ctx.abort();
-          return { output: "[Rejected by user]", metadata: { error: true } };
-        }
+        if (approval.decision === "reject") return resolveRejectedApproval(approval, ctx);
 
         try {
           await mkdir(dirname(file_path), { recursive: true });
@@ -198,7 +195,7 @@ Usage:
         };
       }
 
-      const approval = await requestToolApproval(
+      const approval = await requestToolApprovalOutcome(
         host,
         {
           permission: "write",
@@ -208,10 +205,7 @@ Usage:
         },
         { signal: ctx.signal },
       );
-      if (approval === "reject") {
-        ctx.abort();
-        return { output: "[Rejected by user]", metadata: { error: true } };
-      }
+      if (approval.decision === "reject") return resolveRejectedApproval(approval, ctx);
 
       try {
         await Bun.write(file_path, result);
@@ -306,7 +300,7 @@ When making edits:
         }
       }
 
-      const approval = await requestToolApproval(
+      const approval = await requestToolApprovalOutcome(
         host,
         {
           permission: "write",
@@ -316,10 +310,7 @@ When making edits:
         },
         { signal: ctx.signal },
       );
-      if (approval === "reject") {
-        ctx.abort();
-        return { output: "[Rejected by user]", metadata: { error: true } };
-      }
+      if (approval.decision === "reject") return resolveRejectedApproval(approval, ctx);
 
       try {
         await Bun.write(file_path, current);

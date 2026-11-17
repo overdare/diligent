@@ -3,7 +3,7 @@ import { mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { dirnameCrossPlatform, isAbsolute, relativeCrossPlatform, resolveCrossPlatformPath } from "../util/path";
-import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
+import { type RuntimeToolHost, requestToolApprovalOutcome, resolveRejectedApproval } from "./capabilities";
 import { createPatchDiffRenderPayload, createTextRenderPayload } from "./render-payload";
 
 const ApplyPatchParams = z.object({
@@ -151,7 +151,7 @@ It is important to remember:
       }
 
       const previewPath = touchedPaths[0]?.targetPath ?? touchedPaths[0]?.sourcePath ?? "(none)";
-      const approval = await requestToolApproval(
+      const approval = await requestToolApprovalOutcome(
         host,
         {
           permission: "write",
@@ -164,12 +164,12 @@ It is important to remember:
         },
         { signal: ctx.signal },
       );
-      if (approval === "reject") {
-        ctx.abort();
+      if (approval.decision === "reject") {
+        const rejection = resolveRejectedApproval(approval, ctx);
         return {
-          output: "[Rejected by user]",
-          render: createTextRenderPayload(args.patch, "[Rejected by user]", true),
-          metadata: { error: true },
+          output: rejection.output,
+          render: createTextRenderPayload(args.patch, rejection.output, true),
+          metadata: rejection.metadata,
         };
       }
 

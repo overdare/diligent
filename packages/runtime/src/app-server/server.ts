@@ -14,11 +14,11 @@ import {
 import { createLogger } from "@diligent/logging";
 import type { RuntimeAgent } from "../agent/runtime-agent";
 import type { AgentEvent } from "../agent-event";
-import type { ApprovalRequest, ApprovalResponse, PermissionEngine } from "../approval/types";
+import type { ApprovalOutcome, ApprovalRequest, PermissionEngine } from "../approval/types";
 import { type AuthStoreOptions, loadOAuthTokens } from "../auth/auth-store";
 import type { ProviderAuthPresenter } from "../auth/provider-auth-presenter";
 import type { ChildStopInfo } from "../collab/types";
-import type { DiligentConfig } from "../config/schema";
+import { DEFAULT_DENIAL_BREAKER_THRESHOLD, type DiligentConfig } from "../config/schema";
 import { presentRuntimeError } from "../errors/presentation";
 import { resolveExperimentGates } from "../experiments";
 import { GoalController } from "../goals/controller";
@@ -58,6 +58,7 @@ import {
   collectBundledHooks,
   collectSupersededPluginPackages,
 } from "../tools/bundled-provider";
+import type { ApprovalHandler, RuntimeRequestOptions } from "../tools/capabilities";
 import { collectPluginHooks, type PluginDiscoveryMode } from "../tools/plugin-loader";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
 import type { ConfigReloadResult } from "./config-handlers";
@@ -97,10 +98,8 @@ export interface CreateAgentArgs {
   effort: ThinkingEffort;
   fastMode?: boolean;
   model: ModelRef;
-  approve: (
-    request: ApprovalRequest,
-    options?: import("../tools/capabilities").RuntimeRequestOptions,
-  ) => Promise<ApprovalResponse>;
+  /** Resolves approvals with their source; tool hosts are built from it with `createRuntimeToolHost`. */
+  approve: ApprovalHandler;
   ask: (
     request: UserInputRequest,
     options?: import("../tools/capabilities").RuntimeRequestOptions,
@@ -159,6 +158,11 @@ export interface DiligentAppServerConfig {
   defaultEffort?: ThinkingEffort;
   /** Permission policy engine loaded from runtime config (yolo/rules). */
   permissionEngine?: PermissionEngine;
+  /**
+   * Consecutive permission-rule denials in a thread before the model is told to stop retrying; at twice this
+   * value the turn ends. 0 disables the breaker. Defaults to DEFAULT_DENIAL_BREAKER_THRESHOLD.
+   */
+  denialBreakerThreshold?: number;
   /** Lifecycle hooks config (UserPromptSubmit, Stop). */
   hooks?: DiligentConfig["hooks"];
   /** Product-owned in-process bundled tool providers. */
@@ -660,17 +664,26 @@ export class DiligentAppServer {
   private async requestApproval(
     threadId: string,
     request: ApprovalRequest,
-    options?: import("../tools/capabilities").RuntimeRequestOptions,
-  ): Promise<ApprovalResponse> {
+    options?: RuntimeRequestOptions,
+  ): Promise<ApprovalOutcome> {
     const runtime = this.threads.get(threadId);
     const signal = options?.signal ?? runtime?.goalScope?.signal;
     signal?.throwIfAborted();
-    const policyAction = this.config.permissionEngine?.evaluate(request);
-    if (policyAction === "allow") {
-      return "once";
-    }
+    const engine = this.config.permissionEngine;
+    const policyAction = engine?.evaluate(request);
     if (policyAction === "deny") {
-      return "reject";
+      // Children route approvals through the parent thread, so they share its count.
+      const consecutiveDenials = (runtime?.consecutivePolicyDenials ?? 0) + 1;
+      if (runtime) runtime.consecutivePolicyDenials = consecutiveDenials;
+      const threshold = this.config.denialBreakerThreshold ?? DEFAULT_DENIAL_BREAKER_THRESHOLD;
+      let breaker: "none" | "warn" | "stop" = "none";
+      if (threshold > 0 && consecutiveDenials >= threshold * 2) breaker = "stop";
+      else if (threshold > 0 && consecutiveDenials >= threshold) breaker = "warn";
+      return { decision: "reject", source: "policy", rule: engine?.decidingRule(request), consecutiveDenials, breaker };
+    }
+    if (runtime) runtime.consecutivePolicyDenials = 0;
+    if (policyAction === "allow") {
+      return { decision: "once" };
     }
 
     const decision = await requestApprovalFromConnections({
@@ -693,7 +706,7 @@ export class DiligentAppServer {
 
     runtime?.goal?.wake();
 
-    return decision;
+    return decision === "reject" ? { decision, source: "user" } : { decision };
   }
 
   private async requestUserInput(

@@ -236,6 +236,34 @@ describe("PermissionEngine.evaluate", () => {
   });
 });
 
+describe("PermissionEngine.decidingRule", () => {
+  const request = {
+    permission: "execute" as const,
+    toolName: "bash",
+    description: "run",
+    details: { command: "rm -rf build" },
+  };
+
+  it("returns the last matching rule, which is the one evaluate applies", () => {
+    const broad: PermissionRule = { permission: "execute", pattern: "**", action: "allow" };
+    const narrow: PermissionRule = { permission: "execute", pattern: "rm **", action: "deny" };
+    const engine = createPermissionEngine([broad, narrow]);
+    expect(engine.decidingRule(request)).toEqual(narrow);
+    expect(engine.evaluate(request)).toBe("deny");
+  });
+
+  it("includes rules remembered during the session", () => {
+    const engine = createPermissionEngine([{ permission: "execute", pattern: "rm **", action: "deny" }]);
+    engine.remember(request, "allow");
+    expect(engine.decidingRule(request)).toMatchObject({ pattern: "rm **", action: "allow" });
+  });
+
+  it("returns undefined when no rule matches or in yolo mode", () => {
+    expect(createPermissionEngine([]).decidingRule(request)).toBeUndefined();
+    expect(createYoloPermissionEngine().decidingRule(request)).toBeUndefined();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // PermissionEngine.remember — session cache
 // ---------------------------------------------------------------------------

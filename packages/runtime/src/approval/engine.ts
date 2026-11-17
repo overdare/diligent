@@ -37,6 +37,7 @@ export function generatePattern(request: ApprovalRequest): string {
 export function createYoloPermissionEngine(): PermissionEngine {
   return {
     evaluate: () => "allow",
+    decidingRule: () => undefined,
     remember: () => {},
   };
 }
@@ -45,16 +46,19 @@ export function createPermissionEngine(configRules: PermissionRule[]): Permissio
   // Session-scoped rules added by "always" responses (D029)
   const sessionRules: PermissionRule[] = [];
 
-  function evaluate(request: ApprovalRequest): PermissionAction {
+  function decidingRule(request: ApprovalRequest): PermissionRule | undefined {
     // Config rules first, then session rules — last-match-wins (D027)
-    const allRules = [...configRules, ...sessionRules];
-    let result: PermissionAction = "prompt"; // default when no rule matches
     const subject = extractSubject(request);
-    for (const rule of allRules) {
+    let decided: PermissionRule | undefined;
+    for (const rule of [...configRules, ...sessionRules]) {
       if (rule.permission !== request.permission) continue;
-      if (wildcardMatch(rule.pattern, subject)) result = rule.action;
+      if (wildcardMatch(rule.pattern, subject)) decided = rule;
     }
-    return result;
+    return decided;
+  }
+
+  function evaluate(request: ApprovalRequest): PermissionAction {
+    return decidingRule(request)?.action ?? "prompt";
   }
 
   function remember(request: ApprovalRequest, action: "allow" | "deny"): void {
@@ -62,7 +66,7 @@ export function createPermissionEngine(configRules: PermissionRule[]): Permissio
     sessionRules.push({ permission: request.permission, pattern, action });
   }
 
-  return { evaluate, remember };
+  return { evaluate, decidingRule, remember };
 }
 
 /**

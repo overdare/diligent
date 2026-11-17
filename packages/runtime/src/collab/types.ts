@@ -7,10 +7,10 @@ import type { Tool, ToolOutputFileStore } from "@diligent/core/tool-contract";
 import type { Mode } from "../agent/mode";
 import type { ResolvedAgentDefinition } from "../agent/resolved-agent";
 import type { AgentEvent, ChildAgentEvent } from "../agent-event";
-import type { ApprovalRequest, ApprovalResponse } from "../approval/types";
 import type { DiligentPaths } from "../infrastructure";
 import type { SessionManager } from "../session/manager";
 import type { AgentLoopHookFactory } from "../tools/bundled-provider";
+import type { ApprovalHandler } from "../tools/capabilities";
 import type { CodeMode } from "../tools/code-mode/tools";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
 import type { AgentProgressTracker } from "./progress";
@@ -90,10 +90,7 @@ export interface CollabToolDeps {
     options?: import("../tools/capabilities").RuntimeRequestOptions,
   ) => Promise<UserInputResponse>;
   /** Routes sub-agent approval requests up to the parent session's approval handler. */
-  approve?: (
-    request: ApprovalRequest,
-    options?: import("../tools/capabilities").RuntimeRequestOptions,
-  ) => Promise<ApprovalResponse>;
+  approve?: ApprovalHandler;
   /** Stream function for child agents — when omitted, falls back to the global stream resolver. */
   streamFn?: import("@diligent/core/provider-contract").StreamFunction;
   /** Parent-selected full-output store, retained by every nested collaboration registry. */

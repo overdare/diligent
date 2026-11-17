@@ -42,7 +42,7 @@ import { buildDefaultTools } from "../tools/defaults";
 import { buildSystemPromptWithKnowledge, discoverInstructions } from "./instructions";
 import type { DiligentConfigLayers } from "./loader";
 import { loadDiligentConfig } from "./loader";
-import { DEFAULT_PLAN_REMINDER_INTERVAL_TURNS, type DiligentConfig } from "./schema";
+import { DEFAULT_DENIAL_BREAKER_THRESHOLD, DEFAULT_PLAN_REMINDER_INTERVAL_TURNS, type DiligentConfig } from "./schema";
 import { resolveConfiguredUserId } from "./user-id";
 
 const logger = createLogger({ scope: "runtime.config" });
@@ -87,6 +87,8 @@ export interface RuntimeConfig {
     timeoutMs: number;
   };
   permissionEngine: PermissionEngine;
+  /** Consecutive permission-rule denials before the breaker warns; the turn ends at twice this. 0 disables. */
+  denialBreakerThreshold: number;
   providerManager: ProviderManager;
   providerAuthPresenter?: ProviderAuthPresenter;
   authStore: AuthStoreOptions;
@@ -294,6 +296,7 @@ export async function loadRuntimeConfig(
       timeoutMs: config.compaction?.timeoutMs ?? 180_000,
     },
     permissionEngine: config.yolo ? createYoloPermissionEngine() : createPermissionEngine(config.permissions ?? []),
+    denialBreakerThreshold: config.approvals?.denialBreakerThreshold ?? DEFAULT_DENIAL_BREAKER_THRESHOLD,
     providerManager,
     providerAuthPresenter,
     authStore,

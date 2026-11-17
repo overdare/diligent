@@ -5,7 +5,7 @@ import { MAX_OUTPUT_BYTES, truncateTail } from "@diligent/core/tool-contract";
 import { existsSync } from "fs";
 import { z } from "zod";
 import { spawnProcess } from "../util/process";
-import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
+import { type RuntimeToolHost, requestToolApprovalOutcome, resolveRejectedApproval } from "./capabilities";
 import { createCommandRenderPayload } from "./render-payload";
 
 const BashParams = z.object({
@@ -64,7 +64,7 @@ export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof
       "Execute a shell command. Use this to run programs, install packages, manage files, or interact with the system.",
     parameters: BashParams,
     async execute(args, ctx): Promise<ToolResult> {
-      const approval = await requestToolApproval(
+      const approval = await requestToolApprovalOutcome(
         host,
         {
           permission: "execute",
@@ -74,12 +74,12 @@ export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof
         },
         { signal: ctx.signal },
       );
-      if (approval === "reject") {
-        ctx.abort();
+      if (approval.decision === "reject") {
+        const rejection = resolveRejectedApproval(approval, ctx);
         return {
-          output: "[Rejected by user]",
-          render: createCommandRenderPayload(args.command, "[Rejected by user]", true),
-          metadata: { error: true },
+          output: rejection.output,
+          render: createCommandRenderPayload(args.command, rejection.output, true),
+          metadata: rejection.metadata,
         };
       }
 
