@@ -284,6 +284,20 @@ On failure, runtime emits `error` and still restores idle status.
 - clears active thread when deleting the active one
 - returns `{ deleted: boolean }`
 
+## Renaming threads
+
+`thread/name/set { threadId, name }`:
+
+- trims `name`; an empty result clears the name, and more than 120 characters is rejected as invalid params
+- works for loaded threads and for threads that exist only on disk (found across known cwd session roots)
+- rejects a loaded thread whose turn is running; after a turn it waits for turn cleanup, then for queued writes
+- stores the name in the session header, because `thread/list` reads only the start of each file; the file is
+  rewritten once through a temp file and an atomic rename
+- emits `thread/name/updated { threadId, name? }` and returns `{}`
+- open history cursors for that thread stop working after the rewrite and ask the client to reload
+
+Clients: TUI `/rename <name>` (no name clears it) and the VS Code `Diligent: Rename Thread` command.
+
 ## Subscription and notification fanout
 
 Thread lifecycle notifications are runtime-owned and shared by all clients.

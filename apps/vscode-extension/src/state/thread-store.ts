@@ -110,6 +110,15 @@ export class ThreadStore {
         this.setThreadStatus(notification.params.threadId, notification.params.threadStatus ?? "idle");
         return;
       }
+      case "thread/name/updated": {
+        const { threadId, name } = notification.params;
+        this.state = {
+          ...this.state,
+          threads: this.state.threads.map((thread) => (thread.id === threadId ? { ...thread, name } : thread)),
+        };
+        this.emit();
+        return;
+      }
       default:
         return;
     }

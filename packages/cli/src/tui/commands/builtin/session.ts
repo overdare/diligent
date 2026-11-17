@@ -32,7 +32,7 @@ export const resumeCommand: Command = {
         await ctx.listThreads((threads) =>
           update(
             threads.map((thread) => ({
-              label: thread.firstUserMessage ?? thread.id,
+              label: thread.name ?? thread.firstUserMessage ?? thread.id,
               description: thread.modified,
               value: thread.id,
             })),
@@ -85,7 +85,7 @@ export const deleteCommand: Command = {
         await ctx.listThreads((threads) =>
           update(
             threads.map((thread) => ({
-              label: thread.firstUserMessage ?? thread.id,
+              label: thread.name ?? thread.firstUserMessage ?? thread.id,
               description: thread.modified,
               value: thread.id,
             })),
@@ -95,6 +95,26 @@ export const deleteCommand: Command = {
     });
     if (value) {
       await doDelete(value);
+    }
+  },
+};
+
+export const renameCommand: Command = {
+  name: "rename",
+  description: "Rename the current thread (empty name clears it)",
+  supportsArgs: true,
+  handler: async (args, ctx) => {
+    const rpc = ctx.app.getRpcClient?.();
+    if (!ctx.threadId || !rpc) {
+      ctx.displayError("No active thread to rename");
+      return;
+    }
+    const name = args?.trim() ?? "";
+    try {
+      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_NAME_SET, { threadId: ctx.threadId, name });
+      ctx.displayLines([`  ${t.dim}${name ? `Thread renamed: ${name}` : "Thread name cleared"}${t.reset}`]);
+    } catch (error) {
+      ctx.displayError(error instanceof Error ? error.message : String(error));
     }
   },
 };

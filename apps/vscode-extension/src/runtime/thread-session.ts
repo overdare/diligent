@@ -122,6 +122,11 @@ export class ThreadSession {
     return result.interrupted;
   }
 
+  /** Rename a thread; an empty name clears it. The thread list updates from the thread/name/updated notification. */
+  async renameThread(threadId: string, name: string): Promise<void> {
+    await this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_NAME_SET, { threadId, name });
+  }
+
   async dispose(): Promise<void> {
     await this.rpc.dispose();
     await this.process.dispose();

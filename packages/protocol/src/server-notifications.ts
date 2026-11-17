@@ -66,6 +66,16 @@ export const ThreadCompactedNotificationSchema = z.object({
 });
 export type ThreadCompactedNotification = z.infer<typeof ThreadCompactedNotificationSchema>;
 
+/** A thread's display name changed; `name` is absent when the name was cleared. */
+export const ThreadNameUpdatedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_NAME_UPDATED),
+  params: z.object({
+    threadId: z.string(),
+    name: z.string().optional(),
+  }),
+});
+export type ThreadNameUpdatedNotification = z.infer<typeof ThreadNameUpdatedNotificationSchema>;
+
 export const ThreadCompactionStartedNotificationSchema = z.object({
   method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTION_STARTED),
   params: z.object({
@@ -356,6 +366,7 @@ export const DiligentServerNotificationSchema = z.union([
   ThreadCompactedNotificationSchema,
   ThreadCompactionStartedNotificationSchema,
   ThreadStatusChangedNotificationSchema,
+  ThreadNameUpdatedNotificationSchema,
   TurnStartedNotificationSchema,
   ItemStartedNotificationSchema,
   ItemDeltaNotificationSchema,

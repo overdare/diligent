@@ -1,4 +1,4 @@
-// @summary Session management request handlers: thread list, resume, and delete
+// @summary Session management request handlers: thread list, resume, rename, and delete
 
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -6,11 +6,13 @@ import { z } from "zod";
 import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   type SessionSummary,
+  THREAD_NAME_MAX_LENGTH,
   type ThreadHistoryResponse,
+  type ThreadNameSetParams,
 } from "../protocol/index";
 import { buildSessionTranscript } from "../session/context-builder";
 import { findSessionPath, readSessionHistoryPage, readSessionPreview } from "../session/history";
-import { deleteSession } from "../session/persistence";
+import { deleteSession, writeSessionName } from "../session/persistence";
 import { generateSessionId, isSafeSessionId } from "../session/types";
 import type { ThreadHandlersContext, ThreadListScan } from "./thread-handlers";
 import { buildThreadReadItems, type ThreadReadTranscriptEntry } from "./thread-read-builder";
@@ -208,6 +210,41 @@ async function readThreadHistory(
     };
   }
   throw new Error(`Thread not found: ${params.threadId}`);
+}
+
+/**
+ * Rename a thread whether or not it is loaded. A loaded thread must be idle: the rename rewrites the session file,
+ * so it is queued behind the thread's pending writes and refused while a turn can still append.
+ */
+export async function handleThreadNameSet(ctx: ThreadHandlersContext, params: ThreadNameSetParams): Promise<object> {
+  const name = params.name.trim();
+  if (name.length > THREAD_NAME_MAX_LENGTH) {
+    throw Object.assign(new Error(`Thread name is longer than ${THREAD_NAME_MAX_LENGTH} characters`), {
+      code: -32602,
+    });
+  }
+
+  const loaded = ctx.threads.get(params.threadId);
+  if (loaded) {
+    // turnWork can outlive turn/completed while cleanup finishes; wait for it rather than refusing the rename.
+    if (!loaded.isRunning && loaded.turnWork) await loaded.turnWork.catch(() => {});
+    if (loaded.isRunning) throw new Error("Cannot rename a thread that is currently running");
+    await loaded.manager.setName(name || undefined);
+  } else {
+    let path: string | undefined;
+    for (const cwd of ctx.knownCwds) {
+      path = await findSessionPath((await ctx.resolvePaths(cwd)).sessions, params.threadId);
+      if (path) break;
+    }
+    if (!path) throw new Error(`Thread not found: ${params.threadId}`);
+    await writeSessionName(path, name || undefined);
+  }
+
+  await ctx.emit({
+    method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_NAME_UPDATED,
+    params: { threadId: params.threadId, ...(name ? { name } : {}) },
+  });
+  return {};
 }
 
 export async function handleThreadDelete(ctx: ThreadHandlersContext, threadId: string): Promise<{ deleted: boolean }> {

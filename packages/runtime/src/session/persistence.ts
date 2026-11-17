@@ -1,5 +1,6 @@
-// @summary Session file persistence with JSONL format, immediate writing, and session listing
-import { appendFile, unlink } from "node:fs/promises";
+// @summary Session file persistence with JSONL format, immediate writing, session listing, and header renames
+import { randomUUID } from "node:crypto";
+import { appendFile, rename, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import {
   findMostRecentSession,
@@ -39,6 +40,27 @@ export async function createSessionFile(
   const path = join(sessionsDir, `${id}.jsonl`);
   await Bun.write(path, `${JSON.stringify(header)}\n`);
   return { path, header };
+}
+
+/**
+ * Set or clear the display name kept in a session header. Listing reads only the start of each file, so the header
+ * is the one place a name stays visible without scanning the whole session. The file is rewritten through a sibling
+ * temp file and an atomic rename; callers must keep appends out of the way (SessionPersistence.setName queues the
+ * rewrite behind pending writes).
+ */
+export async function writeSessionName(sessionPath: string, name: string | undefined): Promise<void> {
+  const text = await Bun.file(sessionPath).text();
+  const newline = text.indexOf("\n");
+  const header = parseSessionHeader(newline < 0 ? text : text.slice(0, newline), sessionPath);
+  const rest = newline < 0 ? "\n" : text.slice(newline);
+  const temp = `${sessionPath}.${randomUUID()}.tmp`;
+  try {
+    await Bun.write(temp, `${JSON.stringify({ ...header, name })}${rest}`);
+    await rename(temp, sessionPath);
+  } catch (error) {
+    await unlink(temp).catch(() => {});
+    throw error;
+  }
 }
 
 /**
@@ -87,7 +109,6 @@ async function readSessionSummary(path: string): Promise<SessionInfo> {
   const lines = (await Bun.file(path).text()).trim().split("\n").filter(Boolean);
   const header = parseSessionHeader(lines[0], path);
   let modified = header.timestamp;
-  let name: string | undefined;
   let messageCount = 0;
   let firstUserMessage: string | undefined;
   let foundUser = false;
@@ -95,7 +116,6 @@ async function readSessionSummary(path: string): Promise<SessionInfo> {
     // Listing does not need model migration, parent-chain reconstruction, or blobs.
     const entry = JSON.parse(lines[index]) as SessionEntry;
     modified = entry.timestamp;
-    if (entry.type === "session_info" && entry.name) name = entry.name;
     if (entry.type !== "message" || entry.visibility === "internal") continue;
     messageCount++;
     if (foundUser || entry.message.role !== "user") continue;
@@ -106,7 +126,7 @@ async function readSessionSummary(path: string): Promise<SessionInfo> {
     id: header.id,
     path,
     cwd: header.cwd,
-    name,
+    name: header.name,
     created: new Date(header.timestamp),
     modified: new Date(modified),
     messageCount,
@@ -226,6 +246,13 @@ export class SessionPersistence {
 
   async list(): Promise<SessionInfo[]> {
     return listSessions(this.config.sessionsDir);
+  }
+
+  /** Rename the session (undefined clears it), ordered after every append queued so far. */
+  setName(name: string | undefined): Promise<void> {
+    const run = this.writeQueue.then(async () => writeSessionName(await this.writer.create(), name));
+    this.writeQueue = run.catch(() => {});
+    return run;
   }
 
   append(entry: SessionEntry, onError: (error: unknown) => void): void {

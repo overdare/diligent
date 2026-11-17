@@ -19,6 +19,7 @@ export const COMMANDS = {
   interrupt: "diligent.interrupt",
   refreshThreads: "diligent.refreshThreads",
   openLogs: "diligent.openLogs",
+  renameThread: "diligent.renameThread",
 } as const;
 
 export const VIEW_TYPE = {

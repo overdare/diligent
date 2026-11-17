@@ -50,6 +50,8 @@ export interface SessionHeader {
   /** Sub-agent metadata — present only on child sessions spawned via collab */
   nickname?: string;
   description?: string;
+  /** Display name set through thread/name/set; kept in the header because listing reads only the file start. */
+  name?: string;
 }
 
 // --- Session Entries (subsequent lines) ---
