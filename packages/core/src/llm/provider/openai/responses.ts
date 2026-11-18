@@ -150,6 +150,8 @@ export function mapStopReason(status: string | undefined): StopReason {
 }
 
 const RESPONSES_LITE_MODEL_IDS = new Set([
+  "gpt-6.2-astra",
+  "gpt-6.2-sol",
   "gpt-6.1-terra",
   "gpt-6-astra",
   "gpt-6.1-sol",
@@ -293,18 +295,28 @@ export async function buildResponsesRequestBody(input: {
   localImageLoader?: LocalImageLoader;
   provider?: "openai" | "chatgpt";
 }): Promise<Record<string, unknown>> {
+  const isGpt62 = input.model === "gpt-6.2-astra" || input.model === "gpt-6.2-sol";
+  const inputItems = await toResponseInputItems({
+    messages: input.messages,
+    compactionSummary: input.compactionSummary,
+    imageDetail: input.imageDetail,
+    localImageLoader: input.localImageLoader,
+    provider: input.provider,
+  });
+  // GPT-6.2 appends top-level instructions after input; reusable instructions belong in the cached prefix.
+  if (isGpt62 && input.systemInstructions) {
+    inputItems.unshift({
+      type: "message",
+      role: "developer",
+      content: [{ type: "input_text", text: input.systemInstructions }],
+    });
+  }
   const body: Record<string, unknown> = {
     model: input.model,
     stream: true,
-    input: await toResponseInputItems({
-      messages: input.messages,
-      compactionSummary: input.compactionSummary,
-      imageDetail: input.imageDetail,
-      localImageLoader: input.localImageLoader,
-      provider: input.provider,
-    }),
+    input: inputItems,
   };
-  if (input.systemInstructions) body.instructions = input.systemInstructions;
+  if (!isGpt62 && input.systemInstructions) body.instructions = input.systemInstructions;
   if (input.fastMode !== undefined) body.service_tier = input.fastMode ? "priority" : "default";
   if (input.sessionId) body.prompt_cache_key = input.sessionId;
   if (input.enablePromptCaching) {
@@ -319,7 +331,7 @@ export async function buildResponsesRequestBody(input: {
     body.tools = buildTools(input.tools, input.strictTools);
   }
   if (input.maxTokens !== undefined) body.max_output_tokens = input.maxTokens;
-  if (input.temperature !== undefined) body.temperature = input.temperature;
+  if (!isGpt62 && input.temperature !== undefined) body.temperature = input.temperature;
   if (input.useReasoning && input.effort) {
     body.reasoning = { effort: input.effort, summary: "auto" };
     body.include = ["reasoning.encrypted_content"];
