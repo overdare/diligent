@@ -1,6 +1,7 @@
 // @summary Tests for provider-native compaction adapters (OpenAI/Anthropic)
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { toSerializableError } from "../../../src/agent/util/errors";
+import { resolveModel } from "../../../src/llm/models";
 import { createAnthropicNativeCompaction } from "../../../src/llm/provider/anthropic";
 import { createOpenAINativeCompaction } from "../../../src/llm/provider/openai";
 import { buildResponsesRequestBody, toResponseInputItems } from "../../../src/llm/provider/openai/responses";
@@ -76,6 +77,32 @@ afterEach(() => {
 });
 
 describe("native compaction adapters", () => {
+  test.each([
+    "gpt-6.2-astra",
+    "gpt-6.2-sol",
+  ])("compacts %s with reusable instructions before retained history", async (modelId) => {
+    let capturedBody: Record<string, unknown> = {};
+    globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+      capturedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify(currentCompactionPayload()));
+    }) as unknown as typeof fetch;
+    const result = await createOpenAINativeCompaction("test-key")({
+      model: resolveModel({ provider: "openai", modelId }),
+      systemPrompt: [{ label: "base", content: "Reusable instructions" }],
+      messages: [{ role: "user", content: "Continue", timestamp: 0 }],
+      compactionSummary: { type: "compaction", encrypted_content: "prior" },
+    });
+    expect(result.status).toBe("ok");
+    expect(capturedBody).toEqual({
+      model: modelId,
+      input: [
+        { type: "message", role: "developer", content: [{ type: "input_text", text: "Reusable instructions" }] },
+        { type: "compaction", encrypted_content: "prior" },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "Continue" }] },
+      ],
+    });
+  });
+
   test("OpenAI adapter posts to /responses/compact with auth header", async () => {
     let capturedUrl = "";
     let capturedHeaders: Record<string, string> = {};
@@ -99,6 +126,7 @@ describe("native compaction adapters", () => {
     expect(capturedUrl).toBe("https://api.openai.com/v1/responses/compact");
     expect(capturedHeaders.Authorization).toBe("Bearer sk-openai");
     expect(capturedBody.model).toBe("gpt-6.1-sol");
+    expect(capturedBody.instructions).toBe("You are helpful.");
     expect(capturedBody.input).toBeArray();
     expect(result.status).toBe("ok");
   });
