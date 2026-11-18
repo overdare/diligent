@@ -2,7 +2,7 @@
 import { flattenSections } from "../../system-sections";
 import type { NativeCompactFn } from "../native-compaction";
 import { readOpenAIFamilyCompactError } from "./compact-errors";
-import { type OpenAIImageDetail, toResponseInputItems } from "./responses";
+import { buildResponsesRequestBody, type OpenAIImageDetail } from "./responses";
 import { classifyOpenAIFamilyError, describeCompactionPayload, extractOpenAICompactionState } from "./shared";
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -24,17 +24,18 @@ export function createOpenAINativeCompaction(
 ): NativeCompactFn {
   const compactEndpoint = `${resolveOpenAIBaseUrl(baseUrl)}/responses/compact`;
   return async (input) => {
-    const body: Record<string, unknown> = {
+    const requestBody = await buildResponsesRequestBody({
       model: input.model.modelId,
-      input: await toResponseInputItems({
-        messages: input.messages,
-        compactionSummary: input.compactionSummary,
-        imageDetail,
-        localImageLoader: input.localImageLoader,
-        provider: "openai",
-      }),
-    };
-    if (input.systemPrompt.length > 0) body.instructions = flattenSections(input.systemPrompt);
+      messages: input.messages,
+      compactionSummary: input.compactionSummary,
+      systemInstructions: flattenSections(input.systemPrompt),
+      imageDetail,
+      localImageLoader: input.localImageLoader,
+      provider: "openai",
+    });
+    // Reuse model-specific input normalization without forwarding streaming-only request fields.
+    const body: Record<string, unknown> = { model: requestBody.model, input: requestBody.input };
+    if (requestBody.instructions !== undefined) body.instructions = requestBody.instructions;
 
     const response = await fetch(compactEndpoint, {
       method: "POST",

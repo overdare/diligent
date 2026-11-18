@@ -10,6 +10,36 @@ export const CHATGPT_MODEL_CLASSES = defineProviderModelClasses({
 
 export const CHATGPT_MODELS = defineProviderModels("chatgpt", [
   {
+    modelId: "gpt-6.2-astra",
+    display: "ChatGPT 6.2 Astra",
+    contextWindow: 272_000,
+    maxOutputTokens: 128_000,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+    supportsVision: true,
+    supportsFastMode: true,
+    provenance: {
+      source: "Codex model documentation",
+      sourceUrl: "https://learn.chatgpt.com/docs/models",
+      updatedAt: "2026-11-18",
+    },
+  },
+  {
+    modelId: "gpt-6.2-sol",
+    display: "ChatGPT 6.2 Sol",
+    contextWindow: 500_000,
+    maxOutputTokens: 128_000,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+    supportsVision: true,
+    supportsFastMode: true,
+    provenance: {
+      source: "Codex model documentation",
+      sourceUrl: "https://learn.chatgpt.com/docs/models",
+      updatedAt: "2026-11-18",
+    },
+  },
+  {
     modelId: "gpt-6.1-terra",
     display: "ChatGPT 6.1 Terra",
     contextWindow: 500_000,

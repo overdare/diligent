@@ -12,6 +12,50 @@ async function cacheFields(model: string) {
 }
 
 describe("OpenAI prompt caching", () => {
+  test.each(["gpt-6.2-astra", "gpt-6.2-sol"])("uses supported GPT-6.2 request fields for %s", async (model) => {
+    const body = await buildResponsesRequestBody({
+      model,
+      messages: MESSAGES,
+      systemInstructions: "Reusable instructions",
+      tools: [
+        {
+          kind: "function",
+          name: "lookup",
+          description: "Look up a value",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ],
+      useReasoning: true,
+      effort: "max",
+      fastMode: true,
+      temperature: 0.5,
+      enablePromptCaching: true,
+    });
+    expect(body.prompt_cache_options).toEqual({ ttl: "30m" });
+    expect(body.prompt_cache_retention).toBeUndefined();
+    expect(body.instructions).toBeUndefined();
+    expect(body.temperature).toBeUndefined();
+    expect(body.input).toEqual([
+      { type: "message", role: "developer", content: [{ type: "input_text", text: "Reusable instructions" }] },
+      { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] },
+    ]);
+    expect(body.tools).toMatchObject([{ type: "function", name: "lookup" }]);
+    expect(body.reasoning).toEqual({ effort: "max", summary: "auto" });
+    expect(body.service_tier).toBe("priority");
+  });
+
+  test("preserves earlier models' instruction and temperature behavior", async () => {
+    const body = await buildResponsesRequestBody({
+      model: "gpt-5.5",
+      messages: MESSAGES,
+      systemInstructions: "Legacy instructions",
+      temperature: 0.5,
+    });
+    expect(body.instructions).toBe("Legacy instructions");
+    expect(body.temperature).toBe(0.5);
+    expect(body.input).toEqual([{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }]);
+  });
+
   test("sends GPT-6.1 Sol tools and reasoning with the supported 30m cache option", async () => {
     const model = resolveModel({ provider: "openai", modelId: "gpt-6.1-sol" });
     const body = await buildResponsesRequestBody({

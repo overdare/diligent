@@ -15,6 +15,26 @@ import {
 import { getDefaultModelRef, PROVIDER_MODEL_POLICIES } from "../../src/llm/provider-model-policy";
 
 describe("provider-scoped model catalog", () => {
+  it.each([
+    ["openai", "gpt-6.2-astra", 1_050_000],
+    ["openai", "gpt-6.2-sol", 1_050_000],
+    ["chatgpt", "gpt-6.2-astra", 272_000],
+    ["chatgpt", "gpt-6.2-sol", 500_000],
+  ] as const)("resolves the GPT-6.2 wire identity %s/%s with its documented limits", (provider, modelId, contextWindow) => {
+    const ref = { provider, modelId };
+    const card = resolveModel(ref);
+    expect(resolveModelSelector(`${provider}/${modelId}`)).toBe(card);
+    expect(getModelInfoList().find((info) => sameModelRef(info, ref))).toMatchObject({
+      ...ref,
+      contextWindow,
+      maxOutputTokens: 128_000,
+      supportsThinking: true,
+      supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+      supportsVision: true,
+      supportsFastMode: true,
+    });
+  });
+
   it("lists each provider-scoped identity once and resolves it to its catalog card", () => {
     const cards = listModels();
     expect(cards.length).toBeGreaterThan(0);

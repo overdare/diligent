@@ -19,6 +19,41 @@ import {
 afterEach(restoreChatGPTStreamTestState);
 
 describe("ChatGPT WebSocket session", () => {
+  test.each([
+    "gpt-6.2-astra",
+    "gpt-6.2-sol",
+  ])("streams %s through Responses Lite with one instruction prefix", async (modelId) => {
+    globalThis.fetch = (async () => {
+      throw new Error("Expected the Responses Lite WebSocket transport");
+    }) as unknown as typeof fetch;
+    const harness = createWebSocketHarness((_body, socket) => completeWebSocketResponse(socket));
+    const stream = createChatGPTStream(() => testTokens(), { webSocketFactory: harness.factory });
+    const events = await collectEvents(
+      stream(
+        resolveModel({ provider: "chatgpt", modelId }),
+        {
+          ...TEST_CONTEXT,
+          systemPrompt: [{ label: "base", content: "Reusable instructions" }],
+        },
+        { effort: "max", fastMode: true },
+      ),
+    );
+    expect(events.some((event) => event.type === "done")).toBe(true);
+    expect(harness.requests).toHaveLength(1);
+    expect(harness.requests[0]?.headers["x-openai-internal-codex-responses-lite"]).toBe("true");
+    const body = JSON.parse(harness.requests[0]!.socket.sent[0]!);
+    expect(body).toMatchObject({
+      model: modelId,
+      reasoning: { effort: "max", context: "all_turns" },
+      service_tier: "priority",
+    });
+    expect(body.instructions).toBeUndefined();
+    expect(body.input.filter((item: { role?: string }) => item.role === "developer")).toEqual([
+      { type: "additional_tools", role: "developer", tools: [] },
+      { type: "message", role: "developer", content: [{ type: "input_text", text: "Reusable instructions" }] },
+    ]);
+  });
+
   test("uses WebSocket + Lite by default for ChatGPT GPT-6", async () => {
     const harness = createWebSocketHarness((_body, socket) => completeWebSocketResponse(socket));
     const chatgptStream = createChatGPTStream(() => testTokens(), {
