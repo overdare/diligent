@@ -382,6 +382,7 @@ test("correlates actual Agent retry attempts with instrumented SDK failures", as
     expect(requests).toBe(2);
     expect(attempts.map((s) => attr(s, "diligent.retry.attempt")?.intValue)).toEqual([1, 2]);
     expect(models).toHaveLength(2);
+    expect(models.every((s) => attr(s, "diligent.error.category")?.stringValue === "provider")).toBe(true);
     expect(models.map((s) => s.parentSpanId)).toEqual(attempts.map((s) => s.spanId));
     expect(attr(attempts[0]!, "diligent.model_call.id")).toEqual(attr(attempts[1]!, "diligent.model_call.id"));
     expect(attempts.every((s) => s.status.code === 2)).toBe(true);

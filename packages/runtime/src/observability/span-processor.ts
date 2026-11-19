@@ -1,5 +1,5 @@
 // @summary Projects authorized OTel spans into allowlisted fields before export.
-import type { Context } from "@opentelemetry/api";
+import { type Context, SpanStatusCode } from "@opentelemetry/api";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import type { ReadableSpan, Span, SpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { type ObservationPolicySnapshot, projectObservation } from "./content-policy";
@@ -55,7 +55,7 @@ export class ConsentSpanProcessor implements SpanProcessor {
             content = projectModelMessages(span.attributes, this.options.maskText);
           }
           Object.assign(content, this.options.getTurnContent?.(span));
-          if (started.contentMode === "full" && span.status.code === 2) {
+          if (started.contentMode === "full" && span.status.code === SpanStatusCode.ERROR) {
             message = this.options.getErrorReason?.(span);
           }
           if (started.contentMode === "full") content = boundDetailedAttributes(content);
@@ -78,6 +78,8 @@ export class ConsentSpanProcessor implements SpanProcessor {
         attributes["gen_ai.conversation.id"] = started.sessionId;
       }
       const kind = span.attributes["openinference.span.kind"];
+      if (kind === "LLM" && span.status.code === SpanStatusCode.ERROR)
+        attributes["diligent.error.category"] = "provider";
       if (kind === "LLM" || kind === "CHAIN" || kind === "TOOL") attributes["openinference.span.kind"] = kind;
       const projected: ReadableSpan = {
         ...span,

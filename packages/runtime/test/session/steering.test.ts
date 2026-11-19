@@ -171,12 +171,18 @@ describe("SessionManager.steer() — unified queue", () => {
 
   test("steer() triggers additional loop iteration via pending queue", async () => {
     const dir = await setupDir();
-    const mgr = new SessionManager(
-      makeManagerConfig(
+    let observed: { input?: string; output?: string } | undefined;
+    const mgr = new SessionManager({
+      ...makeManagerConfig(
         dir,
         createMockStreamFn([makeAssistant("initial response"), makeAssistant("follow-up response")]),
       ),
-    );
+      runObserved: async (context, run) => {
+        const result = await run();
+        observed = context.readTurnContent?.();
+        return result;
+      },
+    });
     await mgr.create();
 
     const events: AgentEvent[] = [];
@@ -188,7 +194,12 @@ describe("SessionManager.steer() — unified queue", () => {
         mgr.steer("task 2");
       }
     });
-    await mgr.run({ role: "user", content: "task 1", timestamp: Date.now() });
+    await mgr.runWithOutcome(
+      { role: "user", content: "task 1", timestamp: Date.now() },
+      { observationPrompt: "<AttachedContext>private\n</AttachedContext>\ntask 1" },
+    );
+    expect(observed).toEqual({ input: "task 1", output: undefined });
+    await mgr.waitForWrites();
     unsub();
 
     // Should have exactly 1 agent_start and 1 agent_end (outer lifecycle)
