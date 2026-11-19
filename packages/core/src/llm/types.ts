@@ -84,7 +84,23 @@ export interface StreamContext {
   compactionSummary?: Record<string, unknown>;
 }
 
+export interface ModelExchangeObservation {
+  firstText(): void;
+  usage(counts: {
+    prompt?: number;
+    completion?: number;
+    total?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+  }): void;
+  end(output?: AssistantMessage, failure?: { errorType?: string; statusCode?: number }): void;
+}
+
 export interface StreamOptions {
+  observeExchange?(
+    model: Model,
+    input: { instructions?: unknown; input?: unknown },
+  ): ModelExchangeObservation | undefined;
   signal?: AbortSignal;
   maxTokens?: number;
   temperature?: number;

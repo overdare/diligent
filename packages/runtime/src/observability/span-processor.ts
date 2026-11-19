@@ -8,6 +8,7 @@ import { boundDetailedAttributes, projectModelMessages } from "./detailed-conten
 interface ConsentSpanProcessorOptions {
   getPolicy(): ObservationPolicySnapshot;
   isAuthorizedContext(context: Context): boolean;
+  getErrorReason?(span: ReadableSpan): string | undefined;
   getSessionId?(): string | undefined;
   getTurnContent?(span: ReadableSpan): Record<string, string | boolean> | undefined;
   maskText?(text: string): string;
@@ -41,6 +42,7 @@ export class ConsentSpanProcessor implements SpanProcessor {
         current,
       );
       if (!attributes) return;
+      let message: string | undefined;
       if (started.contentMode !== "none" && current.contentMode === started.contentMode) {
         // A malformed SDK response or masker failure only removes content, never metadata.
         let content: Record<string, string | boolean> = {};
@@ -53,16 +55,21 @@ export class ConsentSpanProcessor implements SpanProcessor {
             content = projectModelMessages(span.attributes, this.options.maskText);
           }
           Object.assign(content, this.options.getTurnContent?.(span));
+          if (started.contentMode === "full" && span.status.code === 2) {
+            message = this.options.getErrorReason?.(span);
+          }
           if (started.contentMode === "full") content = boundDetailedAttributes(content);
         } catch {
           content = {};
+          message = undefined;
         }
         Object.assign(attributes, content);
         if (
           started.contentMode === "full" &&
-          ["input.value", "output.value", "gen_ai.input.messages", "gen_ai.output.messages"].some(
-            (key) => key in content,
-          )
+          (message ||
+            ["input.value", "output.value", "gen_ai.input.messages", "gen_ai.output.messages"].some(
+              (key) => key in content,
+            ))
         ) {
           attributes["diligent.content.user_id"] = started.userId;
         }
@@ -81,7 +88,7 @@ export class ConsentSpanProcessor implements SpanProcessor {
         links: span.links.map(({ context }) => ({
           context: { traceId: context.traceId, spanId: context.spanId, traceFlags: context.traceFlags },
         })),
-        status: { code: span.status.code },
+        status: { code: span.status.code, ...(message && { message }) },
         spanContext: () => span.spanContext(),
       };
       this.options.onSpan(projected, started);

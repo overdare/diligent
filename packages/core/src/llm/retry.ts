@@ -14,6 +14,7 @@ export interface RetryConfig {
 /** Optional vendor-neutral observation of one complete provider attempt. */
 export interface ModelAttemptObservation {
   run<T>(fn: () => Promise<T>): Promise<T>;
+  observeExchange?: StreamOptions["observeExchange"];
   firstResponse(): void;
   end(failed: boolean, failure?: Pick<ProviderError, "errorType" | "statusCode">): void;
 }
@@ -145,7 +146,11 @@ async function runAttempt(
   let inner: ReturnType<StreamFunction> | undefined;
 
   try {
-    inner = streamFn(model, context, options);
+    inner = streamFn(
+      model,
+      context,
+      observation?.observeExchange ? { ...options, observeExchange: observation.observeExchange } : options,
+    );
 
     for await (const event of inner) {
       if (!firstResponse && event.type === "text_delta" && event.delta.length > 0) {
