@@ -10,6 +10,29 @@ export const ANTHROPIC_MODEL_CLASSES = defineProviderModelClasses({
 
 export const ANTHROPIC_MODELS = defineProviderModels("anthropic", [
   {
+    modelId: "claude-fable-5-2",
+    display: "Claude Fable 5.2",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    inputCostPer1M: 8,
+    outputCostPer1M: 40,
+    cacheReadCostPer1M: 0.2,
+    cacheWriteCostPer1M: 10,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+    supportsVision: true,
+    supportsAdaptiveThinking: true,
+    supportsXhighEffort: true,
+    knowledgeCutoff: "2026-06-01",
+    releasedAt: "2026-11-09",
+    aliases: ["fable-5-2"],
+    provenance: {
+      source: "Anthropic Claude Fable 5.2 model documentation",
+      sourceUrl: "https://platform.claude.com/docs/en/models/fable-5-2/overview",
+      updatedAt: "2026-11-18",
+    },
+  },
+  {
     modelId: "claude-opus-5-5",
     display: "Claude Opus 5.5",
     contextWindow: 500_000,

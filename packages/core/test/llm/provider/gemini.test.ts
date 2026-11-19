@@ -1,9 +1,11 @@
 // @summary Contract tests for the Gemini AI SDK adapter
 import { describe, expect, test } from "bun:test";
+import { resolveModel } from "../../../src/llm/models";
 import {
   buildGeminiProviderOptions,
   buildGeminiTools,
   classifyGeminiError,
+  createGeminiStream,
   extractGeminiWebBlocks,
   resolveGeminiThinkingLevel,
 } from "../../../src/llm/provider/gemini";
@@ -28,6 +30,35 @@ describe("Gemini thinking", () => {
     expect(buildGeminiProviderOptions(model, { effort: "high" })).toEqual({
       google: { thinkingConfig: { thinkingLevel: "high", includeThoughts: true } },
     });
+  });
+
+  test("sends xhigh in the Hydrogen streaming request", async () => {
+    const hydrogen = resolveModel({ provider: "gemini", modelId: "gemini-4-hydrogen" });
+    const originalFetch = globalThis.fetch;
+    let request: { url: string; body: unknown } | undefined;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      request = { url: String(input), body: JSON.parse(String(init?.body)) };
+      const event = {
+        candidates: [{ content: { role: "model", parts: [{ text: "ok" }] }, finishReason: "STOP" }],
+      };
+      return new Response(`data: ${JSON.stringify(event)}\n\n`, {
+        headers: { "content-type": "text/event-stream" },
+      });
+    }) as unknown as typeof fetch;
+
+    try {
+      const stream = createGeminiStream("test-key");
+      const result = await stream(
+        hydrogen,
+        { systemPrompt: [], messages: [{ role: "user", content: "Hello", timestamp: 0 }], tools: [] },
+        { effort: "xhigh" },
+      ).result();
+      expect(request?.url).toContain("/models/gemini-4-hydrogen:streamGenerateContent");
+      expect(request?.body).toMatchObject({ generationConfig: { thinkingConfig: { thinkingLevel: "xhigh" } } });
+      expect(result.message.content).toEqual([{ type: "text", text: "ok" }]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   test("omits thinking configuration when effort is unset or thinking is unsupported", () => {
