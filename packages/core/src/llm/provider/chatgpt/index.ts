@@ -332,7 +332,7 @@ async function streamChatGPTWebSocket(input: {
   chainedFirstEventTimeoutMs: number;
   telemetry?: ReturnType<typeof observeExchanges>;
 }): Promise<void> {
-  const { stream, model, options, requestBody, channel } = input;
+  const { stream, model, options, requestBody, channel, telemetry } = input;
   let doneMessage: AssistantMessage | undefined;
   // Replaying inside this call is safe only while nothing past `start` has reached the consumer.
   let emittedEvents = 0;
@@ -353,12 +353,10 @@ async function streamChatGPTWebSocket(input: {
       ...requestBody,
       ...(chained && { previous_response_id: chained.previousResponseId, input: chained.input }),
     };
-    input.telemetry?.begin(request);
-    const exchange = channel.session.streamRequest(
-      request,
-      options.signal,
-      chained ? { firstEventTimeoutMs: input.chainedFirstEventTimeoutMs } : {},
-    );
+    const exchange = channel.session.streamRequest(request, options.signal, {
+      ...(chained && { firstEventTimeoutMs: input.chainedFirstEventTimeoutMs }),
+      beforeSend: telemetry && (() => telemetry.begin(request)),
+    });
     const observation: ChatGPTWebSocketObservation = { completed: false };
     try {
       const connectionId = await exchange.opened;
@@ -367,7 +365,7 @@ async function streamChatGPTWebSocket(input: {
         started = true;
       }
       await handleResponsesAPIEvents(
-        observeChatGPTWebSocketEvents(exchange.events, observation, chained !== undefined, input.telemetry),
+        observeChatGPTWebSocketEvents(exchange.events, observation, chained !== undefined, telemetry),
         stream,
         model,
         options.signal,
@@ -389,7 +387,7 @@ async function streamChatGPTWebSocket(input: {
       }
       return;
     } catch (error) {
-      input.telemetry?.fail(error);
+      telemetry?.fail(error);
       if (chained && emittedEvents === 0 && isReplayableChainFailure(error)) {
         chained = undefined;
         continue;

@@ -114,7 +114,6 @@ export function createObservationRuntime(options: ObservationRuntimeOptions) {
         /* A malformed model message must not suppress usage. */
       }
     }
-    capture("input", input);
     return {
       firstText: () => exchange.setAttribute("diligent.first_text_ms", performance.now() - started),
       usage: ({ prompt, completion, total, cacheRead, cacheWrite }) => {
@@ -129,6 +128,9 @@ export function createObservationRuntime(options: ObservationRuntimeOptions) {
           if (value !== undefined) exchange.setAttribute(`llm.token_count.${key}`, value);
       },
       end: (output, failure) => {
+        // Use transport timing and project content after the response has arrived.
+        const endTime = performance.timeOrigin + performance.now();
+        capture("input", input);
         if (output) capture("output", output);
         if (failure) {
           exchange.setStatus({ code: SpanStatusCode.ERROR });
@@ -136,7 +138,7 @@ export function createObservationRuntime(options: ObservationRuntimeOptions) {
           if (failure.errorType) exchange.setAttribute("error.type", failure.errorType);
           if (failure.statusCode !== undefined) exchange.setAttribute("http.response.status_code", failure.statusCode);
         }
-        exchange.end();
+        exchange.end(endTime);
       },
     };
   };

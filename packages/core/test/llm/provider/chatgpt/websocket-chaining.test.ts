@@ -73,6 +73,50 @@ async function runTurn(
 }
 
 describe("ChatGPT WebSocket chaining", () => {
+  test("ignores a non-string event type while observing a WebSocket exchange", async () => {
+    const harness = createWebSocketHarness((_body, socket) => {
+      socket.emit({ type: { toString: 0, valueOf: 0 } });
+      completeWithId(socket, "normal_response");
+    });
+    const stream = createChatGPTStream(() => testTokens(), { webSocketFactory: harness.factory });
+    const session = createStreamSessionScope();
+    try {
+      const events = await runTurn(stream, session, TEST_CONTEXT, () => ({
+        firstText() {},
+        usage() {},
+        end() {},
+      }));
+      expect(doneMessage(events).stopReason).toBe("end_turn");
+      expect(events.some((event) => event.type === "error")).toBe(false);
+    } finally {
+      await session.dispose();
+    }
+  });
+
+  test("starts observing a WebSocket request after the socket opens", async () => {
+    const steps: string[] = [];
+    const harness = createWebSocketHarness((_body, socket) => {
+      steps.push("send");
+      completeWithId(socket, "response");
+    });
+    const stream = createChatGPTStream(() => testTokens(), {
+      webSocketFactory(url, headers) {
+        steps.push("connect");
+        return harness.factory(url, headers);
+      },
+    });
+    const session = createStreamSessionScope();
+    try {
+      await runTurn(stream, session, TEST_CONTEXT, () => {
+        steps.push("observe");
+        return undefined;
+      });
+      expect(steps).toEqual(["connect", "observe", "send"]);
+    } finally {
+      await session.dispose();
+    }
+  });
+
   test("keeps the socket across turns and sends only new input with previous_response_id", async () => {
     const sent: Record<string, unknown>[] = [];
     const harness = createWebSocketHarness((body, socket) => {

@@ -59,8 +59,9 @@ export function observeExchanges(
       active = safely(() => start(model, { instructions: body.instructions, input: body.input }));
     },
     terminal(event: Record<string, unknown>) {
-      if (!active || !["response.completed", "response.incomplete", "response.failed"].includes(String(event.type)))
-        return;
+      if (!active) return;
+      const type = event.type;
+      if (type !== "response.completed" && type !== "response.incomplete" && type !== "response.failed") return;
       const usage = object(object(event.response)?.usage);
       if (!usage) return;
       const prompt = count(usage.input_tokens),

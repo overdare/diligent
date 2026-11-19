@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { resolveModel } from "@diligent/core/model-registry";
 import { withRetry } from "@diligent/core/provider-contract";
 import { createChatGPTStream } from "@diligent/core/providers/chatgpt";
@@ -9,9 +9,12 @@ interface CapturedSpan {
   parentSpanId?: string;
   name: string;
   status: { code: number; message?: string };
-  attributes: Array<{ key: string; value: { stringValue?: string; intValue?: number } }>;
+  attributes: Array<{ key: string; value: { stringValue?: string; intValue?: number; doubleValue?: number } }>;
 }
-function recorder(permission = { granted: true, generation: 1, full: true }) {
+function recorder(
+  permission = { granted: true, generation: 1, full: true },
+  maskText = (s: string) => s.replaceAll("private-marker", "[MASKED]"),
+) {
   const spans: CapturedSpan[] = [];
   const runtime = createObservationRuntime({
     baseUrl: "https://example.invalid",
@@ -21,7 +24,7 @@ function recorder(permission = { granted: true, generation: 1, full: true }) {
       generation: permission.generation,
       contentMode: permission.full ? "full" : "none",
     }),
-    maskText: (s) => s.replaceAll("private-marker", "[MASKED]"),
+    maskText,
     captureModelContent: true,
     resolveToken: async () => "test",
     fetch: async (_url, init) => {
@@ -97,6 +100,62 @@ test("each login HTTP exchange reports actual usage, masked messages and its att
     expect(attr(models[2]!, "llm.token_count.prompt")?.intValue).toBe(0);
     expect(JSON.stringify(spans)).not.toContain("private-marker");
   } finally {
+    globalThis.fetch = previous;
+    await runtime.shutdown();
+  }
+});
+
+test("login HTTP sends the request before projecting input and measures first text without masking time", async () => {
+  let clock = 1000;
+  const steps: string[] = [];
+  const { runtime, spans } = recorder(undefined, (text) => {
+    if (text === "question") {
+      steps.push("mask input");
+      clock += 80;
+    }
+    return text;
+  });
+  const previous = globalThis.fetch;
+  const now = spyOn(performance, "now").mockImplementation(() => clock);
+  try {
+    globalThis.fetch = (async () => {
+      steps.push("send");
+      clock += 10;
+      return new Response(
+        'data: {"type":"response.output_text.delta","delta":"reply"}\n\n' +
+          'data: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+      );
+    }) as typeof fetch;
+    const stream = withRetry(
+      createChatGPTStream(
+        () => ({
+          access_token: "credential",
+          refresh_token: "unused",
+          expires_at: Date.now() + 60000,
+          id_token: "test",
+        }),
+        { useWebSocket: false },
+      ),
+      { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1 },
+      undefined,
+      undefined,
+      runtime.observeModelAttempt,
+    );
+    await runtime.run(() =>
+      stream(
+        resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }),
+        { messages: [{ role: "user", content: "question", timestamp: 1 }], tools: [], systemPrompt: [] },
+        {},
+      ).result(),
+    );
+    await runtime.flush();
+    const model = spans.find((span) => span.name === "diligent.llm")!;
+    const firstText = attr(model, "diligent.first_text_ms");
+    expect(steps).toEqual(["send", "mask input"]);
+    expect(firstText?.intValue ?? firstText?.doubleValue).toBe(10);
+    expect(attr(model, "gen_ai.input.messages")?.stringValue).toContain("question");
+  } finally {
+    now.mockRestore();
     globalThis.fetch = previous;
     await runtime.shutdown();
   }
