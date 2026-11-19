@@ -35,6 +35,34 @@ describe("provider-scoped model catalog", () => {
     });
   });
 
+  it("registers Claude, Gemini, and Vertex models with their documented capabilities", () => {
+    expect(resolveModel({ provider: "anthropic", modelId: "claude-fable-5-2" })).toMatchObject({
+      contextWindow: 1_000_000,
+      maxOutputTokens: 128_000,
+      supportsAdaptiveThinking: true,
+    });
+    expect(resolveModel({ provider: "gemini", modelId: "gemini-4-carbon" })).toMatchObject({
+      contextWindow: 1_048_576,
+      maxOutputTokens: 65_536,
+      supportedEfforts: ["low", "medium", "high"],
+    });
+    expect(resolveModel({ provider: "gemini", modelId: "gemini-4-argon" })).toMatchObject({
+      contextWindow: 1_048_576,
+      maxOutputTokens: 65_536,
+      supportedEfforts: ["low", "medium", "high"],
+    });
+    expect(resolveModel({ provider: "gemini", modelId: "gemini-4-hydrogen" })).toMatchObject({
+      contextWindow: 1_048_576,
+      maxOutputTokens: 65_536,
+      supportedEfforts: ["low", "medium", "high", "xhigh"],
+    });
+    expect(resolveModel({ provider: "vertex", modelId: "vertex-gemma-4-26b-it" })).toMatchObject({
+      contextWindow: 262_144,
+      maxOutputTokens: 128_000,
+      supportsVision: true,
+    });
+  });
+
   it("lists each provider-scoped identity once and resolves it to its catalog card", () => {
     const cards = listModels();
     expect(cards.length).toBeGreaterThan(0);

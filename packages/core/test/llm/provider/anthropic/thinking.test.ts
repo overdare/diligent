@@ -65,6 +65,7 @@ mock.module("@anthropic-ai/sdk", () => ({
   default: MockAnthropicClient,
   APIError,
   APIConnectionError,
+  toFile: async (bytes: Buffer, filename: string, options: { type: string }) => ({ bytes, filename, ...options }),
 }));
 
 const { createAnthropicStream } = await import("../../../../src/llm/provider/anthropic");
@@ -247,7 +248,7 @@ describe("createAnthropicStream", () => {
   });
 
   test("forwards max effort to current adaptive-thinking Claude models", async () => {
-    for (const modelId of ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5"]) {
+    for (const modelId of ["claude-opus-5-5", "claude-fable-5-1", "claude-fable-5-2", "claude-sonnet-5"]) {
       const request = await collectRequest(resolveModel({ provider: "anthropic", modelId }), { effort: "max" });
       expect(request.model).toBe(modelId);
       expect(request.output_config).toEqual({ effort: "max" });
@@ -312,6 +313,7 @@ describe("createAnthropicStream", () => {
     "claude-sonnet-5-5",
     "claude-haiku-5-5",
     "claude-fable-5-1",
+    "claude-fable-5-2",
   ])("requests stale-block dropping for %s when a replayed conversation prefix changes", async (modelId) => {
     const model = resolveModel({ provider: "anthropic", modelId });
     const context: StreamContext = {

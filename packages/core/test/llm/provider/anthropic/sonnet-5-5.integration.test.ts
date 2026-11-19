@@ -6,6 +6,7 @@ test.each([
   "claude-sonnet-5-5",
   "claude-haiku-5-5",
   "claude-fable-5-1",
+  "claude-fable-5-2",
 ])("%s reaches /v1/messages with adaptive thinking, binding controls, tools, and images", async (modelId) => {
   // Other provider tests mock @anthropic-ai/sdk process-wide. Use a fresh process to exercise the real SDK.
   const child = Bun.spawn(
