@@ -5,14 +5,15 @@ import type { ProviderName, SystemSection } from "@diligent/core/provider-contra
 import { resolveMaxTokens } from "@diligent/core/provider-contract";
 import type { Tool, ToolOutputFileStore } from "@diligent/core/tool-contract";
 import { createLogger } from "@diligent/logging";
-import { createKnowledgeNudgeHook } from "../agent/knowledge-nudge-hook";
+import { createKnowledgeNudge } from "../agent/knowledge-nudge";
 import {
   EXECUTE_MODE_DISALLOWED_TOOLS,
   MODE_SYSTEM_PROMPT_SUFFIXES,
   type Mode,
   PLAN_MODE_DISALLOWED_TOOLS,
 } from "../agent/mode";
-import { createPlanReminderHook } from "../agent/plan-reminder-hook";
+import { createPlanReminder } from "../agent/plan-reminder";
+import { createReminderHook } from "../agent/reminder-hook";
 import { RuntimeAgent } from "../agent/runtime-agent";
 import { openBrowser as defaultOpenBrowser } from "../auth";
 import { loadDiligentConfig } from "../config/loader";
@@ -283,18 +284,14 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
     model.provider as ProviderName,
   );
   const loopHookLogger = logger.child({ scope: "runtime.agent.loop-hooks" });
+  const { planIntervalTurns, knowledgeIntervalTurns } = runtimeConfig.reminders;
   const loopHooks = [
     ...(request.goalHost ? [createGoalContextHook(request.goalHost)] : []),
-    ...(runtimeConfig.planReminderIntervalTurns > 0
-      ? [createPlanReminderHook({ intervalTurns: runtimeConfig.planReminderIntervalTurns, logger: loopHookLogger })]
+    ...(planIntervalTurns > 0
+      ? [createReminderHook({ intervalTurns: planIntervalTurns, policy: createPlanReminder(loopHookLogger) })]
       : []),
-    ...(runtimeConfig.knowledgeNudgeIntervalTurns > 0
-      ? [
-          createKnowledgeNudgeHook({
-            intervalTurns: runtimeConfig.knowledgeNudgeIntervalTurns,
-            logger: loopHookLogger,
-          }),
-        ]
+    ...(knowledgeIntervalTurns > 0
+      ? [createReminderHook({ intervalTurns: knowledgeIntervalTurns, policy: createKnowledgeNudge(loopHookLogger) })]
       : []),
     ...createBundledAgentLoopHooks(bundledToolProviders, {
       cwd,

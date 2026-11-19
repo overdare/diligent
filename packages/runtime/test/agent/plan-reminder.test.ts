@@ -3,13 +3,13 @@
 import { describe, expect, test } from "bun:test";
 import type { Message, ToolCallBlock, ToolResultMessage } from "@diligent/core/message-contract";
 import {
-  buildPlanReminderMessage,
-  createPlanReminderHook,
+  createPlanReminder,
   findLatestPlanSteps,
   latestUserGoal,
   parsePlanSteps,
   remainingPlanSteps,
-} from "../../src/agent/plan-reminder-hook";
+} from "../../src/agent/plan-reminder";
+import { createReminderHook } from "../../src/agent/reminder-hook";
 
 const planOutput = (status: "pending" | "in_progress" | "done" | "cancelled" = "pending") =>
   JSON.stringify({ steps: [{ text: "step A", status }] });
@@ -42,21 +42,14 @@ describe("plan reminder helpers", () => {
     ).toEqual([{ text: "B", status: "in_progress" }]);
   });
 
-  test("builds the established model-facing text", () => {
-    const content = buildPlanReminderMessage([{ text: "A", status: "pending" }], { goal: "ship" });
-    expect(content).toContain("<system-reminder>");
-    expect(content).toContain("Goal: ship");
-    expect(content).toContain("- (pending) A");
-  });
-
   test("captures the latest user goal", () => {
     expect(latestUserGoal([user("earlier"), user("real goal")])).toBe("real goal");
   });
 });
 
-describe("createPlanReminderHook", () => {
+describe("plan reminder", () => {
   test("restores plan state and fires after the configured cadence", () => {
-    const hook = createPlanReminderHook({ intervalTurns: 2 });
+    const hook = createReminderHook({ intervalTurns: 2, policy: createPlanReminder() });
     hook.restore?.({ messages: [result()] });
     hook.onPromptStart?.({ messages: [user("ship it")] });
 
@@ -67,23 +60,29 @@ describe("createPlanReminderHook", () => {
     const injections = hook.beforeTurn?.({ messages: [], turnId: "t3", compactedThisTurn: false });
     expect(injections?.[0]?.source).toBe("plan-reminder");
     expect(injections?.[0]?.content).toContain("Goal: ship it");
+    expect(injections?.[0]?.content).toContain("- (pending) step A");
   });
 
   test("fires immediately after compaction and resets cadence on plan updates", () => {
-    const hook = createPlanReminderHook({ intervalTurns: 5 });
+    const hook = createReminderHook({ intervalTurns: 2, policy: createPlanReminder() });
     hook.restore?.({ messages: [result()] });
     expect(hook.beforeTurn?.({ messages: [], turnId: "t1", compactedThisTurn: true })).toHaveLength(1);
     hook.onToolResult?.({ turnId: "t1", toolCall, result: result(planOutput("in_progress")) });
     hook.afterTurn?.({ turnId: "t1", message: {} as never, toolResults: [] });
     expect(hook.beforeTurn?.({ messages: [], turnId: "t2", compactedThisTurn: false })).toBeUndefined();
+    hook.afterTurn?.({ turnId: "t2", message: {} as never, toolResults: [] });
+    expect(hook.beforeTurn?.({ messages: [], turnId: "t3", compactedThisTurn: false })).toBeUndefined();
+    hook.afterTurn?.({ turnId: "t3", message: {} as never, toolResults: [] });
+    const injections = hook.beforeTurn?.({ messages: [], turnId: "t4", compactedThisTurn: false });
+    expect(injections?.[0]?.content).toContain("- (in_progress) step A");
   });
 
   test("does not inject when disabled, absent, or resolved", () => {
-    const disabled = createPlanReminderHook({ intervalTurns: 0 });
+    const disabled = createReminderHook({ intervalTurns: 0, policy: createPlanReminder() });
     disabled.restore?.({ messages: [result()] });
     expect(disabled.beforeTurn?.({ messages: [], turnId: "t", compactedThisTurn: true })).toBeUndefined();
 
-    const resolved = createPlanReminderHook({ intervalTurns: 1 });
+    const resolved = createReminderHook({ intervalTurns: 1, policy: createPlanReminder() });
     resolved.restore?.({ messages: [result(planOutput("done"))] });
     expect(resolved.beforeTurn?.({ messages: [], turnId: "t", compactedThisTurn: true })).toBeUndefined();
   });

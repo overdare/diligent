@@ -68,10 +68,11 @@ export interface RuntimeConfig {
   model: Model | undefined;
   effort: ThinkingEffort;
   mode: Mode;
-  /** Soft plan reminder cadence in agent turns; 0 disables. See DiligentConfig. */
-  planReminderIntervalTurns: number;
-  /** Turns without update_knowledge before a knowledge reminder (knowledge.nudgeInterval); 0 disables. */
-  knowledgeNudgeIntervalTurns: number;
+  /** Built-in reminder cadences in agent turns; 0 disables the respective reminder. */
+  reminders: {
+    planIntervalTurns: number;
+    knowledgeIntervalTurns: number;
+  };
   systemPrompt: SystemSection[];
   streamFunction: StreamFunction;
   diligent: DiligentConfig;
@@ -275,8 +276,10 @@ export async function loadRuntimeConfig(
     model,
     mode: (config.mode ?? "default") as Mode,
     effort: (config.effort ?? "medium") as ThinkingEffort,
-    planReminderIntervalTurns: config.planReminderIntervalTurns ?? DEFAULT_PLAN_REMINDER_INTERVAL_TURNS,
-    knowledgeNudgeIntervalTurns: config.knowledge?.enabled === false ? 0 : (config.knowledge?.nudgeInterval ?? 0),
+    reminders: {
+      planIntervalTurns: config.planReminderIntervalTurns ?? DEFAULT_PLAN_REMINDER_INTERVAL_TURNS,
+      knowledgeIntervalTurns: config.knowledge?.enabled === false ? 0 : (config.knowledge?.nudgeInterval ?? 0),
+    },
     systemPrompt,
     streamFunction,
     diligent: {

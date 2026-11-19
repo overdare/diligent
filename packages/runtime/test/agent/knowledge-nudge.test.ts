@@ -3,7 +3,8 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentLoopHook } from "@diligent/core/agent";
 import type { ToolCallBlock, ToolResultMessage } from "@diligent/core/message-contract";
-import { createKnowledgeNudgeHook } from "../../src/agent/knowledge-nudge-hook";
+import { createKnowledgeNudge } from "../../src/agent/knowledge-nudge";
+import { createReminderHook } from "../../src/agent/reminder-hook";
 
 const toolCall: ToolCallBlock = { type: "tool_call", id: "tc", name: "update_knowledge", input: {} };
 const knowledgeResult = (isError = false, toolName = "update_knowledge"): ToolResultMessage => ({
@@ -23,9 +24,9 @@ function after(hook: AgentLoopHook, turnId: string) {
   hook.afterTurn?.({ turnId, message: {} as never, toolResults: [] });
 }
 
-describe("createKnowledgeNudgeHook", () => {
+describe("knowledge nudge reminder", () => {
   test("reminds once every interval of turns and then waits a full interval again", () => {
-    const hook = createKnowledgeNudgeHook({ intervalTurns: 2 });
+    const hook = createReminderHook({ intervalTurns: 2, policy: createKnowledgeNudge() });
     hook.restore?.({ messages: [] });
 
     expect(before(hook, "t1")).toBeUndefined();
@@ -42,7 +43,7 @@ describe("createKnowledgeNudgeHook", () => {
   });
 
   test("a successful update_knowledge call restarts the count; a failed one does not", () => {
-    const hook = createKnowledgeNudgeHook({ intervalTurns: 2 });
+    const hook = createReminderHook({ intervalTurns: 2, policy: createKnowledgeNudge() });
     hook.restore?.({ messages: [] });
     after(hook, "t1");
     hook.onToolResult?.({ turnId: "t2", toolCall, result: knowledgeResult(true) });
@@ -52,19 +53,20 @@ describe("createKnowledgeNudgeHook", () => {
 
     after(hook, "t3");
     hook.onToolResult?.({ turnId: "t4", toolCall, result: knowledgeResult() });
+    hook.onToolResult?.({ turnId: "t4", toolCall, result: knowledgeResult(true) });
     after(hook, "t4");
     expect(before(hook, "t5")).toBeUndefined();
   });
 
   test("compaction alone does not trigger a reminder", () => {
-    const hook = createKnowledgeNudgeHook({ intervalTurns: 3 });
+    const hook = createReminderHook({ intervalTurns: 3, policy: createKnowledgeNudge() });
     hook.restore?.({ messages: [] });
     after(hook, "t1");
     expect(before(hook, "t2", true)).toBeUndefined();
   });
 
   test("restore starts counting from zero", () => {
-    const hook = createKnowledgeNudgeHook({ intervalTurns: 1 });
+    const hook = createReminderHook({ intervalTurns: 1, policy: createKnowledgeNudge() });
     hook.restore?.({ messages: [] });
     after(hook, "t1");
     hook.restore?.({ messages: [] });

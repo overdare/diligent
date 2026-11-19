@@ -58,8 +58,7 @@ function makeRuntimeConfig(overrides?: Partial<RuntimeConfig>): RuntimeConfig {
     model,
     mode: "default",
     effort: "medium",
-    planReminderIntervalTurns: 0,
-    knowledgeNudgeIntervalTurns: 0,
+    reminders: { planIntervalTurns: 0, knowledgeIntervalTurns: 0 },
     systemPrompt: [{ label: "base", content: "test" }],
     streamFunction: () => {
       throw new Error("not implemented");
@@ -578,7 +577,7 @@ describe("createAppServerConfig", () => {
     const hookCalls: string[] = [];
     let factoryCalls = 0;
     const runtimeConfig = makeRuntimeConfig({
-      planReminderIntervalTurns: 2,
+      reminders: { planIntervalTurns: 2, knowledgeIntervalTurns: 0 },
       streamFunction: makeStreamFn([makeAssistant("one"), makeAssistant("two")]),
     });
     const bundledToolProviders: BundledToolProvider[] = [
@@ -614,7 +613,7 @@ describe("createAppServerConfig", () => {
     const seenByModel: string[] = [];
     const stream = makeStreamFn([makeAssistant("one"), makeAssistant("two")]);
     const runtimeConfig = makeRuntimeConfig({
-      knowledgeNudgeIntervalTurns: 1,
+      reminders: { planIntervalTurns: 0, knowledgeIntervalTurns: 1 },
       streamFunction: (model, context, options) => {
         seenByModel.push(JSON.stringify(context.messages));
         return stream(model, context, options);

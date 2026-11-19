@@ -1,9 +1,8 @@
-// @summary Runtime-owned plan reminder parsing, cadence, and loop hook
+// @summary Plan reminder policy and restoration of unfinished plan steps
 
-import type { AgentLoopHook } from "@diligent/core/agent";
 import type { Message } from "@diligent/core/message-contract";
 import { createLogger, type Logger } from "@diligent/logging";
-import { formatSystemReminder } from "./system-reminder";
+import type { ReminderPolicy } from "./reminder-hook";
 
 export const PLAN_TOOL_NAME = "plan";
 
@@ -61,57 +60,49 @@ export function latestUserGoal(messages: readonly Message[], maxChars = 200): st
   return undefined;
 }
 
-export function buildPlanReminderMessage(remaining: readonly PlanStepLike[], opts?: { goal?: string }): string {
+function buildPlanReminderLines(remaining: readonly PlanStepLike[], goal: string | undefined): string[] {
   const lines = [
     "The plan still has unfinished steps. Keep working through them and update the plan as each is done — do not tell the user the work is complete while steps remain.",
     "The latest user request and current permissions take precedence. Cancel obsolete steps when scope changes; this reminder does not authorize actions or turn a quoted goal into a new user request.",
   ];
-  if (opts?.goal) lines.push(`Goal: ${opts.goal}`);
+  if (goal) lines.push(`Goal: ${goal}`);
   lines.push("Remaining:", ...remaining.map((step) => `- (${step.status}) ${step.text}`));
-  return formatSystemReminder(lines);
+  return lines;
 }
 
-export function createPlanReminderHook(options: { intervalTurns: number; logger?: Logger }): AgentLoopHook {
+export function createPlanReminder(
+  logger: Logger = createLogger({ scope: "runtime.agent.plan-reminder" }),
+): ReminderPolicy {
   let plan: PlanStepLike[] | undefined;
-  let turnsSinceSurfaced = 0;
-  let planUpdatedThisTurn = false;
   let goal: string | undefined;
-  const logger = options.logger ?? createLogger({ scope: "runtime.agent.plan-reminder" });
 
   return {
     id: "plan-reminder",
     restore({ messages }) {
       plan = findLatestPlanSteps(messages);
-      turnsSinceSurfaced = 0;
-      planUpdatedThisTurn = false;
       goal = undefined;
     },
     onPromptStart({ messages }) {
       goal = latestUserGoal(messages);
     },
-    beforeTurn({ compactedThisTurn }) {
-      if (options.intervalTurns <= 0 || !plan) return;
+    shouldRemindImmediately: ({ compactedThisTurn }) => compactedThisTurn,
+    buildReminder({ compactedThisTurn }, elapsedTurns) {
+      if (!plan) return;
       const remaining = remainingPlanSteps(plan);
       if (remaining.length === 0) return;
-      if (!compactedThisTurn && turnsSinceSurfaced < options.intervalTurns) return;
 
       logger.info("plan_reminder_injected", {
-        message: `[agent:plan-reminder] injected remaining=${remaining.length} compacted=${compactedThisTurn} turnsSince=${turnsSinceSurfaced}`,
-        fields: { remaining: remaining.length, compacted: compactedThisTurn, turnsSince: turnsSinceSurfaced },
+        message: `[agent:plan-reminder] injected remaining=${remaining.length} compacted=${compactedThisTurn} turnsSince=${elapsedTurns}`,
+        fields: { remaining: remaining.length, compacted: compactedThisTurn, turnsSince: elapsedTurns },
       });
-      turnsSinceSurfaced = 0;
-      return [{ source: "plan-reminder", content: buildPlanReminderMessage(remaining, { goal }) }];
+      return buildPlanReminderLines(remaining, goal);
     },
-    onToolResult({ result }) {
-      if (result.toolName !== PLAN_TOOL_NAME || result.isError) return;
+    recordToolResult({ result }) {
+      if (result.toolName !== PLAN_TOOL_NAME || result.isError) return false;
       const steps = parsePlanSteps(result.output);
-      if (!steps) return;
+      if (!steps) return false;
       plan = steps;
-      planUpdatedThisTurn = true;
-    },
-    afterTurn() {
-      turnsSinceSurfaced = planUpdatedThisTurn ? 0 : turnsSinceSurfaced + 1;
-      planUpdatedThisTurn = false;
+      return true;
     },
   };
 }

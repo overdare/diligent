@@ -241,6 +241,11 @@ cadence. The built-in main-Agent knowledge reminder uses the same mechanism and 
 `update_knowledge` after that many agent turns without a successful `update_knowledge` call. It never fires only
 because the context was compacted, and `knowledge.enabled: false` turns it off.
 
+Built-in reminders use the same runtime hook. The hook counts agent turns, resets the cadence,
+and wraps reminder text in `<system-reminder>`. Each reminder policy supplies its own text,
+what counts as progress, and any immediate trigger. For example, compaction can trigger
+the plan reminder immediately, but only when the plan has unfinished steps.
+
 Shell and plugin lifecycle hooks support two execution modes. The mode controls scheduling, not the meaning of a hook's
 return value:
 
