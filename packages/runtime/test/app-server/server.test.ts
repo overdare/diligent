@@ -531,6 +531,7 @@ function makeFactoryRuntimeConfig(overrides?: {
     model,
     mode: "default" as const,
     effort: overrides?.effort ?? ("medium" as const),
+    reminders: { planIntervalTurns: 0, knowledgeIntervalTurns: 0 },
     systemPrompt: [{ label: "base", content: "test" }],
     streamFunction: () => {
       const stream = new EventStream(

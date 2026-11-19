@@ -58,7 +58,7 @@ function makeRuntimeConfig(overrides?: Partial<RuntimeConfig>): RuntimeConfig {
     model,
     mode: "default",
     effort: "medium",
-    planReminderIntervalTurns: 0,
+    reminders: { planIntervalTurns: 0, knowledgeIntervalTurns: 0 },
     systemPrompt: [{ label: "base", content: "test" }],
     streamFunction: () => {
       throw new Error("not implemented");
@@ -577,7 +577,7 @@ describe("createAppServerConfig", () => {
     const hookCalls: string[] = [];
     let factoryCalls = 0;
     const runtimeConfig = makeRuntimeConfig({
-      planReminderIntervalTurns: 2,
+      reminders: { planIntervalTurns: 2, knowledgeIntervalTurns: 0 },
       streamFunction: makeStreamFn([makeAssistant("one"), makeAssistant("two")]),
     });
     const bundledToolProviders: BundledToolProvider[] = [
@@ -607,6 +607,33 @@ describe("createAppServerConfig", () => {
     await agent.prompt({ role: "user", content: "second", timestamp: Date.now() });
     expect(factoryCalls).toBe(1);
     expect(hookCalls).toEqual(["product", "product"]);
+  });
+
+  it("shows the model a knowledge reminder after the configured turns without update_knowledge", async () => {
+    const seenByModel: string[] = [];
+    const stream = makeStreamFn([makeAssistant("one"), makeAssistant("two")]);
+    const runtimeConfig = makeRuntimeConfig({
+      reminders: { planIntervalTurns: 0, knowledgeIntervalTurns: 1 },
+      streamFunction: (model, context, options) => {
+        seenByModel.push(JSON.stringify(context.messages));
+        return stream(model, context, options);
+      },
+    });
+    const agent = await createAppServerConfig({ cwd: "/tmp/test", runtimeConfig }).createAgent({
+      cwd: "/tmp/test",
+      mode: "default",
+      effort: "medium",
+      model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
+      approve: async () => "once",
+      ask: async () => null,
+    });
+
+    await agent.prompt({ role: "user", content: "first", timestamp: Date.now() });
+    await agent.prompt({ role: "user", content: "second", timestamp: Date.now() });
+
+    expect(seenByModel).toHaveLength(2);
+    expect(seenByModel[0]).not.toContain("record it with update_knowledge");
+    expect(seenByModel[1]).toContain("record it with update_knowledge");
   });
 
   it("refreshes provider tools through the same mode, plugin and product filters", async () => {

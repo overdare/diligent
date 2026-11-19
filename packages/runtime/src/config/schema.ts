@@ -170,6 +170,7 @@ export const DiligentConfigSchema = z
     knowledge: z
       .object({
         enabled: z.boolean().optional(),
+        // Agent turns without update_knowledge before the model is reminded to record durable knowledge. Unset: off.
         nudgeInterval: z.number().int().positive().optional(),
         injectionBudget: z.number().int().positive().optional(),
         maxItems: z.number().int().positive().optional(),
