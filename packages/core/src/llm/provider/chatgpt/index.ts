@@ -28,6 +28,7 @@ import { handleResponsesAPIEvents } from "../openai/sse";
 import { PROVIDER_RESPONSE_HEADER_TIMEOUT_MS } from "../timeouts";
 import { CHATGPT_CODEX_CLIENT_VERSION, CHATGPT_SESSION_HEADER } from "./headers";
 import { iterateChatGPTJsonSse } from "./http-sse";
+import { observeExchanges } from "./observation";
 import {
   ChatGPTWebSocketFirstEventTimeoutError,
   type ChatGPTWebSocketSession,
@@ -296,8 +297,10 @@ async function* observeChatGPTWebSocketEvents(
   events: AsyncIterable<Record<string, unknown>>,
   observation: ChatGPTWebSocketObservation,
   chained: boolean,
+  telemetry?: ReturnType<typeof observeExchanges>,
 ): AsyncGenerator<Record<string, unknown>> {
   for await (const payload of events) {
+    telemetry?.terminal(payload);
     const response = payload.response;
     if (response && typeof response === "object" && "id" in response && typeof response.id === "string") {
       observation.responseId = response.id;
@@ -327,8 +330,9 @@ async function streamChatGPTWebSocket(input: {
   requestBody: Record<string, unknown>;
   channel: ChatGPTWebSocketChannel;
   chainedFirstEventTimeoutMs: number;
+  telemetry?: ReturnType<typeof observeExchanges>;
 }): Promise<void> {
-  const { stream, model, options, requestBody, channel } = input;
+  const { stream, model, options, requestBody, channel, telemetry } = input;
   let doneMessage: AssistantMessage | undefined;
   // Replaying inside this call is safe only while nothing past `start` has reached the consumer.
   let emittedEvents = 0;
@@ -349,11 +353,10 @@ async function streamChatGPTWebSocket(input: {
       ...requestBody,
       ...(chained && { previous_response_id: chained.previousResponseId, input: chained.input }),
     };
-    const exchange = channel.session.streamRequest(
-      request,
-      options.signal,
-      chained ? { firstEventTimeoutMs: input.chainedFirstEventTimeoutMs } : {},
-    );
+    const exchange = channel.session.streamRequest(request, options.signal, {
+      ...(chained && { firstEventTimeoutMs: input.chainedFirstEventTimeoutMs }),
+      beforeSend: telemetry && (() => telemetry.begin(request)),
+    });
     const observation: ChatGPTWebSocketObservation = { completed: false };
     try {
       const connectionId = await exchange.opened;
@@ -362,7 +365,7 @@ async function streamChatGPTWebSocket(input: {
         started = true;
       }
       await handleResponsesAPIEvents(
-        observeChatGPTWebSocketEvents(exchange.events, observation, chained !== undefined),
+        observeChatGPTWebSocketEvents(exchange.events, observation, chained !== undefined, telemetry),
         stream,
         model,
         options.signal,
@@ -384,6 +387,7 @@ async function streamChatGPTWebSocket(input: {
       }
       return;
     } catch (error) {
+      telemetry?.fail(error);
       if (chained && emittedEvents === 0 && isReplayableChainFailure(error)) {
         chained = undefined;
         continue;
@@ -430,6 +434,7 @@ export function createChatGPTStream(
     );
     if (options.signal) stream.attachSignal(options.signal);
 
+    const telemetry = options.observeExchange ? observeExchanges(model, options.observeExchange, stream) : undefined;
     const work = (async () => {
       try {
         if (options.signal?.aborted) return;
@@ -493,6 +498,7 @@ export function createChatGPTStream(
           try {
             await streamChatGPTWebSocket({
               stream,
+              telemetry,
               model,
               options,
               requestBody,
@@ -532,6 +538,7 @@ export function createChatGPTStream(
         }, headerTimeoutMs);
         let response: Response;
         try {
+          telemetry?.begin(requestBody);
           response = await fetch(CHATGPT_CODEX_URL, {
             method: "POST",
             headers: {
@@ -590,6 +597,7 @@ export function createChatGPTStream(
           signal: options.signal,
           idleTimeoutMs: Math.max(1, providerOptions.httpStreamIdleTimeoutMs ?? CHATGPT_HTTP_STREAM_IDLE_TIMEOUT_MS),
           onJson: (event, _data, byteLength) => {
+            telemetry?.terminal(event);
             if (!debugEnabled) return;
             debugChatGPTHttpSse("<-", byteLength, summarizeChatGPTWebSocketPayload(event), options.sessionId);
           },
@@ -616,6 +624,9 @@ export function createChatGPTStream(
             }),
           });
         }
+      } finally {
+        // Aborted streams may terminate without delivering a provider event.
+        telemetry?.fail();
       }
     })();
     stream.setInnerWork(work);

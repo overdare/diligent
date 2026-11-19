@@ -25,6 +25,7 @@ describe("consent span processor", () => {
     span.end();
     expect(exported).toHaveLength(1);
     expect(exported[0]?.attributes).toEqual({
+      "diligent.error.category": "provider",
       "llm.model_name": "model-1",
       "llm.token_count.total": 12,
       "openinference.span.kind": "LLM",

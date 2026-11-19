@@ -40,15 +40,17 @@ import { generateEntryId } from "./types";
 const logger = createLogger({ scope: "runtime.session" });
 type AgentStopReason = Extract<CoreAgentEvent, { type: "agent_end" }>["stopReason"];
 
-function readObservedTurn(prompt: string, response?: AssistantMessage): { input: string; output: string } | undefined {
-  if (!response) return undefined;
+function readObservedTurn(prompt: string, response?: AssistantMessage): { input?: string; output?: string } {
   const trimmed = prompt.trimStart();
   // Hosts may put attached metadata in a leading wrapper.
   const close = "\n</AttachedContext>";
   const end = trimmed.lastIndexOf(close);
-  if (trimmed.startsWith("<AttachedContext>") && end === -1) return undefined;
-  const input = trimmed.startsWith("<AttachedContext>") ? trimmed.slice(end + close.length).trimStart() : prompt;
-  const output = response.content
+  const input = trimmed.startsWith("<AttachedContext>")
+    ? end === -1
+      ? undefined
+      : trimmed.slice(end + close.length).trimStart()
+    : prompt;
+  const output = response?.content
     .filter((block) => block.type === "text")
     .map((block) => block.text)
     .join("\n");
