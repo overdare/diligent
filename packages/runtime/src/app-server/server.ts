@@ -14,11 +14,11 @@ import {
 import { createLogger } from "@diligent/logging";
 import type { RuntimeAgent } from "../agent/runtime-agent";
 import type { AgentEvent } from "../agent-event";
-import type { ApprovalRequest, ApprovalResponse, PermissionEngine } from "../approval/types";
+import type { ApprovalOutcome, ApprovalRequest, PermissionEngine } from "../approval/types";
 import { type AuthStoreOptions, loadOAuthTokens } from "../auth/auth-store";
 import type { ProviderAuthPresenter } from "../auth/provider-auth-presenter";
 import type { ChildStopInfo } from "../collab/types";
-import type { DiligentConfig } from "../config/schema";
+import { DEFAULT_DENIAL_BREAKER_THRESHOLD, type DiligentConfig } from "../config/schema";
 import { presentRuntimeError } from "../errors/presentation";
 import { resolveExperimentGates } from "../experiments";
 import { GoalController } from "../goals/controller";
@@ -58,6 +58,7 @@ import {
   collectBundledHooks,
   collectSupersededPluginPackages,
 } from "../tools/bundled-provider";
+import type { ApprovalHandler, RuntimeRequestOptions } from "../tools/capabilities";
 import { collectPluginHooks, type PluginDiscoveryMode } from "../tools/plugin-loader";
 import { ShellProcessRegistry } from "../tools/shell-processes";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
@@ -98,10 +99,8 @@ export interface CreateAgentArgs {
   effort: ThinkingEffort;
   fastMode?: boolean;
   model: ModelRef;
-  approve: (
-    request: ApprovalRequest,
-    options?: import("../tools/capabilities").RuntimeRequestOptions,
-  ) => Promise<ApprovalResponse>;
+  /** Resolves approvals with their source; tool hosts are built from it with `createRuntimeToolHost`. */
+  approve: ApprovalHandler;
   ask: (
     request: UserInputRequest,
     options?: import("../tools/capabilities").RuntimeRequestOptions,
@@ -162,6 +161,11 @@ export interface DiligentAppServerConfig {
   defaultEffort?: ThinkingEffort;
   /** Permission policy engine loaded from runtime config (yolo/rules). */
   permissionEngine?: PermissionEngine;
+  /**
+   * Consecutive permission-rule denials in a thread before the model is told to stop retrying; at twice this
+   * value the turn ends. 0 disables the breaker. Defaults to DEFAULT_DENIAL_BREAKER_THRESHOLD.
+   */
+  denialBreakerThreshold?: number;
   /** Lifecycle hooks config (UserPromptSubmit, Stop). */
   hooks?: DiligentConfig["hooks"];
   /** Product-owned in-process bundled tool providers. */
@@ -190,6 +194,12 @@ async function resolveProviderPlanType(
   if (provider !== "chatgpt" || !authStore) return undefined;
   const tokens = await loadOAuthTokens(authStore).catch(() => undefined);
   return tokens?.account_info?.chatgpt_plan_type;
+}
+
+function denialBreakerLevel(consecutiveDenials: number, threshold: number) {
+  if (threshold <= 0) return "none";
+  if (consecutiveDenials >= threshold * 2) return "stop";
+  return consecutiveDenials >= threshold ? "warn" : "none";
 }
 
 export class DiligentAppServer {
@@ -664,18 +674,27 @@ export class DiligentAppServer {
   private async requestApproval(
     threadId: string,
     request: ApprovalRequest,
-    options?: import("../tools/capabilities").RuntimeRequestOptions,
-  ): Promise<ApprovalResponse> {
+    options?: RuntimeRequestOptions,
+  ): Promise<ApprovalOutcome> {
     const runtime = this.threads.get(threadId);
     const signal = options?.signal ?? runtime?.goalScope?.signal;
     signal?.throwIfAborted();
-    const policyAction = this.config.permissionEngine?.evaluate(request);
-    if (policyAction === "allow") {
-      return "once";
+    const policy = this.config.permissionEngine?.evaluateWithRule(request);
+    if (policy?.action === "deny") {
+      // Children route approvals through the parent thread, so they share its count.
+      const consecutiveDenials = (runtime?.consecutivePolicyDenials ?? 0) + 1;
+      if (runtime) runtime.consecutivePolicyDenials = consecutiveDenials;
+      const threshold = this.config.denialBreakerThreshold ?? DEFAULT_DENIAL_BREAKER_THRESHOLD;
+      return {
+        decision: "reject",
+        source: "policy",
+        rule: policy.rule,
+        consecutiveDenials,
+        breaker: denialBreakerLevel(consecutiveDenials, threshold),
+      };
     }
-    if (policyAction === "deny") {
-      return "reject";
-    }
+    if (runtime) runtime.consecutivePolicyDenials = 0;
+    if (policy?.action === "allow") return { decision: "once" };
 
     const decision = await requestApprovalFromConnections({
       threadId,
@@ -697,7 +716,7 @@ export class DiligentAppServer {
 
     runtime?.goal?.wake();
 
-    return decision;
+    return decision === "reject" ? { decision, source: "user" } : { decision };
   }
 
   private async requestUserInput(

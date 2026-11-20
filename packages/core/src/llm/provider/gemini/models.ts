@@ -10,6 +10,60 @@ export const GEMINI_MODEL_CLASSES = defineProviderModelClasses({
 
 export const GEMINI_MODELS = defineProviderModels("gemini", [
   {
+    modelId: "gemini-4-carbon",
+    display: "Gemini 4 Carbon",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    // Promotional Standard rates through November 30, 2026.
+    inputCostPer1M: 2,
+    outputCostPer1M: 10,
+    cacheReadCostPer1M: 0.1,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high"],
+    supportsVision: true,
+    provenance: {
+      source: "Gemini 4 Carbon model documentation and Standard paid pricing",
+      sourceUrl: "https://ai.google.dev/gemini-api/docs/models/gemini-4-carbon",
+      updatedAt: "2026-11-18",
+    },
+  },
+  {
+    modelId: "gemini-4-argon",
+    display: "Gemini 4 Argon",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    // Promotional Standard rates through November 30, 2026.
+    inputCostPer1M: 2,
+    outputCostPer1M: 10,
+    cacheReadCostPer1M: 0.1,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high"],
+    supportsVision: true,
+    provenance: {
+      source: "Gemini 4 Argon model documentation and Standard paid pricing",
+      sourceUrl: "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon",
+      updatedAt: "2026-11-18",
+    },
+  },
+  {
+    modelId: "gemini-4-hydrogen",
+    display: "Gemini 4 Hydrogen",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    inputCostPer1M: 1.5,
+    outputCostPer1M: 7.5,
+    cacheReadCostPer1M: 0.075,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high", "xhigh"],
+    supportsVision: true,
+    aliases: ["gemini-4"],
+    provenance: {
+      source: "Gemini 4 Hydrogen model documentation and Standard paid pricing",
+      sourceUrl: "https://ai.google.dev/gemini-api/docs/models/gemini-4-hydrogen",
+      updatedAt: "2026-11-18",
+    },
+  },
+  {
     modelId: "gemini-3.8-flash",
     display: "Gemini 3.8 Flash",
     contextWindow: 1_048_576,

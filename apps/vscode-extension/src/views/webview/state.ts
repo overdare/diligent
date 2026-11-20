@@ -37,6 +37,7 @@ export function applyThreadRead(state: ConversationViewState, payload: ThreadRea
     overlayStatus: payload.isRunning ? (state.overlayStatus ?? "Working…") : null,
     liveText: payload.isRunning ? state.liveText : "",
     liveThinking: payload.isRunning ? state.liveThinking : "",
+    liveToolItemId: payload.isRunning ? state.liveToolItemId : null,
     liveToolName: payload.isRunning ? state.liveToolName : null,
     liveToolInput: payload.isRunning ? state.liveToolInput : null,
     liveToolOutput: payload.isRunning ? state.liveToolOutput : "",

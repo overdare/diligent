@@ -5,7 +5,7 @@ import { MAX_OUTPUT_BYTES, truncateHeadTail, truncateTail } from "@diligent/core
 import { existsSync } from "fs";
 import { z } from "zod";
 import { spawnProcess } from "../util/process";
-import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
+import { type RuntimeToolHost, requestToolApprovalOutcome, resolveRejectedApproval } from "./capabilities";
 import { createCommandRenderPayload } from "./render-payload";
 import { SHELL_INPUT_LIMIT, type ShellProcess, type ShellProcessRegistry } from "./shell-processes";
 

@@ -1,15 +1,16 @@
-// @summary Edit file contents via exact string replacement
+// @summary Edit file contents via string replacement with tolerant line matching and a stale-write guard
 import { mkdir, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { isAbsolute, stripExtendedLengthPrefix } from "../util/path";
-import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
+import { type RuntimeToolHost, requestToolApprovalOutcome, resolveRejectedApproval } from "./capabilities";
 import {
   createEditDiffRenderPayload,
   createMultiEditDiffRenderPayload,
   createTextRenderPayload,
 } from "./render-payload";
+import { findTolerantLineMatch } from "./text-match";
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -50,6 +51,13 @@ interface SingleEdit {
   replace_all: boolean;
 }
 
+interface AppliedEdits {
+  result: string;
+  count: number;
+  /** Labels of tolerant passes used, one per edit that did not match exactly. */
+  tolerantMatches: string[];
+}
+
 async function fileExists(path: string): Promise<boolean> {
   try {
     await stat(path);
@@ -59,47 +67,135 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
-/** Count non-overlapping occurrences of `needle` in `haystack`. */
-function countOccurrences(haystack: string, needle: string): number {
-  if (needle.length === 0) return 0;
-  let count = 0;
+/** 1-based line numbers of every non-overlapping occurrence of `needle` in `haystack`. */
+function occurrenceLines(haystack: string, needle: string): number[] {
+  if (needle.length === 0) return [];
+  const lines: number[] = [];
   let pos = 0;
   while ((pos = haystack.indexOf(needle, pos)) !== -1) {
-    count++;
+    lines.push(haystack.slice(0, pos).split("\n").length);
     pos += needle.length;
   }
-  return count;
+  return lines;
+}
+
+function leadingWhitespace(line: string): string {
+  return line.slice(0, line.length - line.trimStart().length);
 }
 
 /**
- * Validate and apply a single edit to `content`, returning the new content and
- * the number of replacements made. Throws on validation failure.
+ * Line-level fallback after an exact substring miss. Accepts only a unique match; when the match ignored
+ * indentation, shifts the replacement by the indentation difference of the first matched line.
  */
-function applyEdit(content: string, edit: SingleEdit): { result: string; count: number } {
-  const { old_string, new_string, replace_all } = edit;
+function applyTolerantEdit(content: string, oldString: string, newString: string): { result: string; label: string } {
+  const endsWithNewline = content.endsWith("\n");
+  const lines = (endsWithNewline ? content.slice(0, -1) : content).split("\n");
+  const trailingNewline = oldString.endsWith("\n");
+  const pattern = (trailingNewline ? oldString.slice(0, -1) : oldString).split("\n");
+  const replacementText = trailingNewline && newString.endsWith("\n") ? newString.slice(0, -1) : newString;
 
-  if (old_string === new_string) {
-    throw new Error("old_string and new_string must differ");
+  const match = findTolerantLineMatch(lines, pattern);
+  if (match.kind === "none") throw new Error("old_string not found in file");
+  if (match.kind === "ambiguous") {
+    const at = match.indexes.map((index) => index + 1).join(", ");
+    throw new Error(`old_string matches ${match.pass.label} at lines ${at}; provide more context`);
   }
 
-  const occurrences = countOccurrences(content, old_string);
+  let replacement = replacementText === "" ? [] : replacementText.split("\n");
+  const fileIndent = leadingWhitespace(lines[match.index]);
+  const oldIndent = leadingWhitespace(pattern[0]);
+  if (match.pass.label.startsWith("ignoring indentation") && fileIndent !== oldIndent) {
+    replacement = replacement.map((line) =>
+      line !== "" && line.startsWith(oldIndent) ? fileIndent + line.slice(oldIndent.length) : line,
+    );
+  }
 
-  if (replace_all) {
-    if (occurrences === 0) {
-      throw new Error("old_string not found in file");
+  const next = [...lines.slice(0, match.index), ...replacement, ...lines.slice(match.index + pattern.length)];
+  return { result: next.join("\n") + (endsWithNewline ? "\n" : ""), label: match.pass.label };
+}
+
+/** A failed edit within a sequence; `index` is 0-based. */
+class EditFailure extends Error {
+  constructor(
+    readonly index: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Validate and apply edits in order to `content`, throwing EditFailure for the first edit that does not apply.
+ * A consistently CRLF file is matched as LF-normalized text and written back with CRLF.
+ */
+function applyEdits(content: string, edits: SingleEdit[]): AppliedEdits {
+  const crlf = content.includes("\r\n") && !/(^|[^\r])\n/.test(content);
+  const toLf = (value: string) => (crlf ? value.replace(/\r\n/g, "\n") : value);
+  let current = toLf(content);
+  let count = 0;
+  const tolerantMatches: string[] = [];
+
+  edits.forEach((edit, index) => {
+    try {
+      const oldString = toLf(edit.old_string);
+      const newString = toLf(edit.new_string);
+      if (oldString === newString) throw new Error("old_string and new_string must differ");
+
+      const exact = occurrenceLines(current, oldString);
+      if (edit.replace_all) {
+        if (exact.length === 0) throw new Error("old_string not found in file");
+        current = current.replaceAll(oldString, () => newString);
+        count += exact.length;
+        return;
+      }
+      if (exact.length > 1) {
+        throw new Error(
+          `old_string is not unique (found at lines ${exact.join(", ")}), provide more context or use replace_all`,
+        );
+      }
+      if (exact.length === 1) {
+        current = current.replace(oldString, () => newString);
+      } else {
+        const tolerant = applyTolerantEdit(current, oldString, newString);
+        current = tolerant.result;
+        tolerantMatches.push(tolerant.label);
+      }
+      count += 1;
+    } catch (err) {
+      throw new EditFailure(index, err instanceof Error ? err.message : String(err));
     }
-    return { result: content.replaceAll(old_string, new_string), count: occurrences };
-  }
+  });
 
-  // Unique match mode
-  if (occurrences === 0) {
-    throw new Error("old_string not found in file");
-  }
-  if (occurrences > 1) {
-    throw new Error("old_string is not unique, provide more context or use replace_all");
-  }
+  return { result: crlf ? current.replace(/\n/g, "\r\n") : current, count, tolerantMatches };
+}
 
-  return { result: content.replace(old_string, new_string), count: 1 };
+/**
+ * Approval can take minutes. Re-read the file before writing: if it changed, re-apply the edits to the current
+ * content so a concurrent change is never overwritten, or fail when the edits no longer apply.
+ */
+async function revalidateAfterApproval(
+  filePath: string,
+  approvedFrom: string,
+  applied: AppliedEdits,
+  edits: SingleEdit[],
+): Promise<{ applied: AppliedEdits; note: string } | { error: string }> {
+  const current = await Bun.file(filePath).text();
+  if (current === approvedFrom) return { applied, note: "" };
+  try {
+    return {
+      applied: applyEdits(current, edits),
+      note: " The file changed while waiting for approval; the edit was re-applied to its current content.",
+    };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return {
+      error: `Error: ${filePath} changed while waiting for approval and the edit no longer applies (${reason}). Re-read the file before editing.`,
+    };
+  }
+}
+
+function describeTolerantMatches(applied: AppliedEdits): string {
+  return applied.tolerantMatches.length > 0 ? ` (matched ${[...new Set(applied.tolerantMatches)].join("; ")})` : "";
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +205,7 @@ function applyEdit(content: string, edit: SingleEdit): { result: string; count: 
 export function createEditTool(host?: RuntimeToolHost): Tool<typeof EditParams> {
   return {
     name: "edit",
-    description: `Performs exact string replacements in files.
+    description: `Performs string replacements in files.
 
 Usage:
 - Inspect the file before editing unless the exact current text and sufficient context are already available from this conversation or tool output. The tool matches current contents; it does not track prior read calls.
@@ -117,6 +213,7 @@ Usage:
 - When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: spaces + line number + tab. Everything after that tab is the actual file content to match. Never include any part of the line number prefix in the old_string or new_string.
 - Prefer a focused edit to an existing file. Create a new file when the requested implementation needs it.
 - The edit will FAIL if old_string is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use replace_all to change every instance of old_string.
+- When old_string has no exact match, whole lines are matched again ignoring trailing whitespace, then indentation, then typographic punctuation. The result says which tolerance was used. replace_all always requires an exact match.
 - Use replace_all for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.`,
     parameters: EditParams,
 
@@ -139,7 +236,7 @@ Usage:
           };
         }
 
-        const approval = await requestToolApproval(
+        const approval = await requestToolApprovalOutcome(
           host,
           {
             permission: "write",
@@ -149,10 +246,7 @@ Usage:
           },
           { signal: ctx.signal },
         );
-        if (approval === "reject") {
-          ctx.abort();
-          return { output: "[Rejected by user]", metadata: { error: true } };
-        }
+        if (approval.decision === "reject") return resolveRejectedApproval(approval, ctx);
 
         try {
           await mkdir(dirname(file_path), { recursive: true });
@@ -187,10 +281,10 @@ Usage:
         };
       }
 
-      let result: string;
-      let count: number;
+      const edits = [{ old_string, new_string, replace_all }];
+      let applied: AppliedEdits;
       try {
-        ({ result, count } = applyEdit(content, { old_string, new_string, replace_all }));
+        applied = applyEdits(content, edits);
       } catch (err) {
         return {
           output: `Error: ${err instanceof Error ? err.message : String(err)}`,
@@ -198,7 +292,7 @@ Usage:
         };
       }
 
-      const approval = await requestToolApproval(
+      const approval = await requestToolApprovalOutcome(
         host,
         {
           permission: "write",
@@ -208,14 +302,14 @@ Usage:
         },
         { signal: ctx.signal },
       );
-      if (approval === "reject") {
-        ctx.abort();
-        return { output: "[Rejected by user]", metadata: { error: true } };
-      }
+      if (approval.decision === "reject") return resolveRejectedApproval(approval, ctx);
 
       try {
-        await Bun.write(file_path, result);
-        const output = `Edited ${file_path}: replaced ${count} occurrence(s)`;
+        const checked = await revalidateAfterApproval(file_path, content, applied, edits);
+        if ("error" in checked) return { output: checked.error, metadata: { error: true } };
+        const { count } = checked.applied;
+        await Bun.write(file_path, checked.applied.result);
+        const output = `Edited ${file_path}: replaced ${count} occurrence(s)${describeTolerantMatches(checked.applied)}.${checked.note}`;
         return {
           output,
           render: createEditDiffRenderPayload({
@@ -257,7 +351,7 @@ IMPORTANT:
 - Plan your edits carefully to avoid conflicts between sequential operations
 
 WARNING:
-- The tool will fail if edits.old_string doesn't match the file contents exactly (including whitespace)
+- old_string should match the file contents exactly; when it does not, whole lines are matched again ignoring trailing whitespace, then indentation, then typographic punctuation
 - The tool will fail if edits.old_string and edits.new_string are the same
 - Since edits are applied in sequence, ensure that earlier edits don't affect the text that later edits are trying to find
 
@@ -288,25 +382,17 @@ When making edits:
       }
 
       // Validate and apply all edits on an in-memory copy (atomic: fail before writing)
-      let current = content;
-      let totalCount = 0;
-      for (let i = 0; i < edits.length; i++) {
-        const edit = edits[i];
-        try {
-          const { result, count } = applyEdit(current, {
-            old_string: edit.old_string,
-            new_string: edit.new_string,
-            replace_all: edit.replace_all,
-          });
-          current = result;
-          totalCount += count;
-        } catch (err) {
-          const output = `Error in edit ${i + 1}/${edits.length}: ${err instanceof Error ? err.message : String(err)}`;
-          return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };
-        }
+      let applied: AppliedEdits;
+      try {
+        applied = applyEdits(content, edits);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const output =
+          err instanceof EditFailure ? `Error in edit ${err.index + 1}/${edits.length}: ${message}` : message;
+        return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };
       }
 
-      const approval = await requestToolApproval(
+      const approval = await requestToolApprovalOutcome(
         host,
         {
           permission: "write",
@@ -316,14 +402,20 @@ When making edits:
         },
         { signal: ctx.signal },
       );
-      if (approval === "reject") {
-        ctx.abort();
-        return { output: "[Rejected by user]", metadata: { error: true } };
-      }
+      if (approval.decision === "reject") return resolveRejectedApproval(approval, ctx);
 
       try {
-        await Bun.write(file_path, current);
-        const output = `Edited ${file_path}: applied ${edits.length} edit(s), replaced ${totalCount} occurrence(s) total`;
+        const checked = await revalidateAfterApproval(file_path, content, applied, edits);
+        if ("error" in checked) {
+          return {
+            output: checked.error,
+            render: createTextRenderPayload(undefined, checked.error, true),
+            metadata: { error: true },
+          };
+        }
+        const totalCount = checked.applied.count;
+        await Bun.write(file_path, checked.applied.result);
+        const output = `Edited ${file_path}: applied ${edits.length} edit(s), replaced ${totalCount} occurrence(s) total${describeTolerantMatches(checked.applied)}.${checked.note}`;
         return {
           output,
           render: createMultiEditDiffRenderPayload({

@@ -61,6 +61,14 @@ export function projectObservation(
       value <= 599
     ) {
       projected[key] = value;
+    } else if (
+      (key === "diligent.auth_mode" && value === "chatgpt_login") ||
+      (key === "diligent.error.category" && (value === "tool" || value === "provider" || value === "workflow")) ||
+      (key === "diligent.error.phase" && (value === "execute" || value === "save"))
+    ) {
+      projected[key] = value;
+    } else if (key === "diligent.error.code" && typeof value === "number" && Number.isSafeInteger(value)) {
+      projected[key] = value;
     } else if ((key === "llm.provider" || key === "llm.system") && (value === "openai" || value === "anthropic")) {
       projected[key] = value;
     } else if (numericAttributes.has(key) && typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {

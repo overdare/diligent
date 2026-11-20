@@ -1,13 +1,15 @@
 // @summary Projects authorized OTel spans into allowlisted fields before export.
-import type { Context } from "@opentelemetry/api";
+import { type Context, SpanStatusCode } from "@opentelemetry/api";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import type { ReadableSpan, Span, SpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { type ObservationPolicySnapshot, projectObservation } from "./content-policy";
 import { boundDetailedAttributes, projectModelMessages } from "./detailed-content";
 
 interface ConsentSpanProcessorOptions {
+  resourceAttributes?: Readonly<Record<string, string>>;
   getPolicy(): ObservationPolicySnapshot;
   isAuthorizedContext(context: Context): boolean;
+  getErrorReason?(span: ReadableSpan): string | undefined;
   getSessionId?(): string | undefined;
   getTurnContent?(span: ReadableSpan): Record<string, string | boolean> | undefined;
   maskText?(text: string): string;
@@ -16,9 +18,15 @@ interface ConsentSpanProcessorOptions {
 
 export class ConsentSpanProcessor implements SpanProcessor {
   private readonly snapshots = new WeakMap<Span, ObservationPolicySnapshot & { sessionId?: string }>();
-  private readonly resource = resourceFromAttributes({ "service.name": "diligent", dd_llmobs_enabled: true });
+  private readonly resource;
 
-  constructor(private readonly options: ConsentSpanProcessorOptions) {}
+  constructor(private readonly options: ConsentSpanProcessorOptions) {
+    this.resource = resourceFromAttributes({
+      ...options.resourceAttributes,
+      "service.name": "diligent",
+      dd_llmobs_enabled: true,
+    });
+  }
 
   onStart(span: Span, parentContext: Context): void {
     try {
@@ -41,6 +49,7 @@ export class ConsentSpanProcessor implements SpanProcessor {
         current,
       );
       if (!attributes) return;
+      let message: string | undefined;
       if (started.contentMode !== "none" && current.contentMode === started.contentMode) {
         // A malformed SDK response or masker failure only removes content, never metadata.
         let content: Record<string, string | boolean> = {};
@@ -53,16 +62,21 @@ export class ConsentSpanProcessor implements SpanProcessor {
             content = projectModelMessages(span.attributes, this.options.maskText);
           }
           Object.assign(content, this.options.getTurnContent?.(span));
+          if (started.contentMode === "full" && span.status.code === SpanStatusCode.ERROR) {
+            message = this.options.getErrorReason?.(span);
+          }
           if (started.contentMode === "full") content = boundDetailedAttributes(content);
         } catch {
           content = {};
+          message = undefined;
         }
         Object.assign(attributes, content);
         if (
           started.contentMode === "full" &&
-          ["input.value", "output.value", "gen_ai.input.messages", "gen_ai.output.messages"].some(
-            (key) => key in content,
-          )
+          (message ||
+            ["input.value", "output.value", "gen_ai.input.messages", "gen_ai.output.messages"].some(
+              (key) => key in content,
+            ))
         ) {
           attributes["diligent.content.user_id"] = started.userId;
         }
@@ -71,6 +85,8 @@ export class ConsentSpanProcessor implements SpanProcessor {
         attributes["gen_ai.conversation.id"] = started.sessionId;
       }
       const kind = span.attributes["openinference.span.kind"];
+      if (kind === "LLM" && span.status.code === SpanStatusCode.ERROR)
+        attributes["diligent.error.category"] = "provider";
       if (kind === "LLM" || kind === "CHAIN" || kind === "TOOL") attributes["openinference.span.kind"] = kind;
       const projected: ReadableSpan = {
         ...span,
@@ -81,7 +97,7 @@ export class ConsentSpanProcessor implements SpanProcessor {
         links: span.links.map(({ context }) => ({
           context: { traceId: context.traceId, spanId: context.spanId, traceFlags: context.traceFlags },
         })),
-        status: { code: span.status.code },
+        status: { code: span.status.code, ...(message && { message }) },
         spanContext: () => span.spanContext(),
       };
       this.options.onSpan(projected, started);

@@ -74,6 +74,29 @@ function makeContext(config: AppConfig, overrides?: Partial<CommandContext>): Co
 }
 
 describe("modelCommand picker", () => {
+  it.each([
+    ["openai", "gpt-6.2-astra"],
+    ["openai", "gpt-6.2-sol"],
+    ["chatgpt", "gpt-6.2-astra"],
+    ["chatgpt", "gpt-6.2-sol"],
+  ] as const)("offers and selects %s/%s while preserving max effort", async (provider, modelId) => {
+    const config = makeConfig("gpt-6.1-sol", {
+      hasKeyFor: (name: string) => name === provider,
+    } as AppConfig["providerManager"]);
+    let offered: ListPickerItem[] = [];
+    const ctx = makeContext(config, { currentEffort: "max" });
+    ctx.app.pick = async ({ items }) => {
+      offered = items;
+      return items.find((item) => item.value === `${provider}/${modelId}`)?.value ?? null;
+    };
+    const setEffort = mock(async () => {});
+    ctx.setEffort = setEffort;
+    await modelCommand.handler(undefined, ctx);
+    expect(offered.some((item) => item.value === `${provider}/${modelId}`)).toBe(true);
+    expect(config.model).toMatchObject({ provider, modelId, supportsFastMode: true });
+    expect(setEffort).not.toHaveBeenCalled();
+  });
+
   it("shows only models for authenticated providers", async () => {
     let capturedItems: ListPickerItem[] = [];
 

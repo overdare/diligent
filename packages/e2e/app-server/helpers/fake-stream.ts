@@ -49,6 +49,18 @@ export function createToolUseStream(
   finalText: string,
   leadingText?: string,
 ): StreamFunction {
+  return createToolRoundsStream(toolCalls.length > 0 ? [toolCalls] : [], finalText, leadingText);
+}
+
+/**
+ * Creates a StreamFunction that emits one batch of tool calls per invocation, in order,
+ * then a final text response once every round has been emitted.
+ */
+export function createToolRoundsStream(
+  rounds: ToolCallSpec[][],
+  finalText: string,
+  leadingText?: string,
+): StreamFunction {
   let callCount = 0;
   return () => {
     const stream = new EventStream<ProviderEvent, ProviderResult>(
@@ -58,9 +70,10 @@ export function createToolUseStream(
     const iteration = callCount++;
     queueMicrotask(() => {
       stream.push({ type: "start" });
-      if (iteration === 0 && toolCalls.length > 0) {
-        if (leadingText) stream.push({ type: "text_delta", delta: leadingText });
-        // First call: emit tool calls
+      const toolCalls = rounds[iteration];
+      if (toolCalls) {
+        const text = iteration === 0 ? leadingText : undefined;
+        if (text) stream.push({ type: "text_delta", delta: text });
         for (const tc of toolCalls) {
           stream.push({ type: "tool_call_start", id: tc.id, name: tc.name });
           stream.push({ type: "tool_call_end", id: tc.id, name: tc.name, input: tc.input });
@@ -71,7 +84,7 @@ export function createToolUseStream(
           message: {
             role: "assistant",
             content: [
-              ...(leadingText ? [{ type: "text" as const, text: leadingText }] : []),
+              ...(text ? [{ type: "text" as const, text }] : []),
               ...toolCalls.map((tc) => ({
                 type: "tool_call" as const,
                 id: tc.id,
@@ -86,7 +99,6 @@ export function createToolUseStream(
           },
         });
       } else {
-        // Subsequent calls: emit final text
         stream.push({ type: "text_delta", delta: finalText });
         stream.push({
           type: "done",

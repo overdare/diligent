@@ -37,6 +37,7 @@ export function generatePattern(request: ApprovalRequest): string {
 export function createYoloPermissionEngine(): PermissionEngine {
   return {
     evaluate: () => "allow",
+    evaluateWithRule: () => ({ action: "allow" }),
     remember: () => {},
   };
 }
@@ -45,16 +46,16 @@ export function createPermissionEngine(configRules: PermissionRule[]): Permissio
   // Session-scoped rules added by "always" responses (D029)
   const sessionRules: PermissionRule[] = [];
 
-  function evaluate(request: ApprovalRequest): PermissionAction {
-    // Config rules first, then session rules — last-match-wins (D027)
-    const allRules = [...configRules, ...sessionRules];
-    let result: PermissionAction = "prompt"; // default when no rule matches
+  function findMatchingRule(request: ApprovalRequest): PermissionRule | undefined {
     const subject = extractSubject(request);
-    for (const rule of allRules) {
-      if (rule.permission !== request.permission) continue;
-      if (wildcardMatch(rule.pattern, subject)) result = rule.action;
-    }
-    return result;
+    const matches = (rule: PermissionRule) =>
+      rule.permission === request.permission && wildcardMatch(rule.pattern, subject);
+    // Last match wins within each list, and session rules take precedence (D027).
+    return sessionRules.findLast(matches) ?? configRules.findLast(matches);
+  }
+
+  function evaluate(request: ApprovalRequest): PermissionAction {
+    return findMatchingRule(request)?.action ?? "prompt";
   }
 
   function remember(request: ApprovalRequest, action: "allow" | "deny"): void {
@@ -62,7 +63,14 @@ export function createPermissionEngine(configRules: PermissionRule[]): Permissio
     sessionRules.push({ permission: request.permission, pattern, action });
   }
 
-  return { evaluate, remember };
+  return {
+    evaluate,
+    evaluateWithRule(request) {
+      const rule = findMatchingRule(request);
+      return rule ? { action: rule.action, rule } : { action: "prompt" };
+    },
+    remember,
+  };
 }
 
 /**

@@ -3,8 +3,9 @@ import { mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { dirnameCrossPlatform, isAbsolute, relativeCrossPlatform, resolveCrossPlatformPath } from "../util/path";
-import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
+import { type RuntimeToolHost, requestToolApprovalOutcome, resolveRejectedApproval } from "./capabilities";
 import { createPatchDiffRenderPayload, createTextRenderPayload } from "./render-payload";
+import { seekSequence } from "./text-match";
 
 const ApplyPatchParams = z.object({
   patch: z.string().describe("The full patch text to apply, including *** Begin Patch and *** End Patch markers"),
@@ -151,7 +152,7 @@ It is important to remember:
       }
 
       const previewPath = touchedPaths[0]?.targetPath ?? touchedPaths[0]?.sourcePath ?? "(none)";
-      const approval = await requestToolApproval(
+      const approval = await requestToolApprovalOutcome(
         host,
         {
           permission: "write",
@@ -164,12 +165,12 @@ It is important to remember:
         },
         { signal: ctx.signal },
       );
-      if (approval === "reject") {
-        ctx.abort();
+      if (approval.decision === "reject") {
+        const rejection = resolveRejectedApproval(approval, ctx);
         return {
-          output: "[Rejected by user]",
-          render: createTextRenderPayload(args.patch, "[Rejected by user]", true),
-          metadata: { error: true },
+          output: rejection.output,
+          render: createTextRenderPayload(args.patch, rejection.output, true),
+          metadata: rejection.metadata,
         };
       }
 
@@ -531,63 +532,4 @@ function seekSequenceWithFallback(lines: string[], pattern: string[], start: num
   if (primary !== -1) return primary;
   if (start <= 0) return -1;
   return seekSequence(lines, pattern, 0, eof);
-}
-
-function normalizeUnicode(value: string): string {
-  return value
-    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
-    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
-    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-")
-    .replace(/\u2026/g, "...")
-    .replace(/[\u00A0\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F\u3000]/g, " ");
-}
-
-function tryMatch(
-  lines: string[],
-  pattern: string[],
-  start: number,
-  compare: (a: string, b: string) => boolean,
-  eof: boolean,
-): number {
-  if (eof) {
-    const fromEnd = lines.length - pattern.length;
-    if (fromEnd >= start) {
-      let matched = true;
-      for (let i = 0; i < pattern.length; i++) {
-        if (!compare(lines[fromEnd + i], pattern[i])) {
-          matched = false;
-          break;
-        }
-      }
-      if (matched) return fromEnd;
-    }
-  }
-
-  for (let index = start; index <= lines.length - pattern.length; index++) {
-    let matched = true;
-    for (let i = 0; i < pattern.length; i++) {
-      if (!compare(lines[index + i], pattern[i])) {
-        matched = false;
-        break;
-      }
-    }
-    if (matched) return index;
-  }
-
-  return -1;
-}
-
-function seekSequence(lines: string[], pattern: string[], start: number, eof = false): number {
-  if (pattern.length === 0) return -1;
-
-  const exact = tryMatch(lines, pattern, start, (a, b) => a === b, eof);
-  if (exact !== -1) return exact;
-
-  const rstrip = tryMatch(lines, pattern, start, (a, b) => a.trimEnd() === b.trimEnd(), eof);
-  if (rstrip !== -1) return rstrip;
-
-  const trim = tryMatch(lines, pattern, start, (a, b) => a.trim() === b.trim(), eof);
-  if (trim !== -1) return trim;
-
-  return tryMatch(lines, pattern, start, (a, b) => normalizeUnicode(a.trim()) === normalizeUnicode(b.trim()), eof);
 }

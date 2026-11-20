@@ -170,6 +170,7 @@ export const DiligentConfigSchema = z
     knowledge: z
       .object({
         enabled: z.boolean().optional(),
+        // Agent turns without update_knowledge before the model is reminded to record durable knowledge. Unset: off.
         nudgeInterval: z.number().int().positive().optional(),
         injectionBudget: z.number().int().positive().optional(),
         maxItems: z.number().int().positive().optional(),
@@ -222,6 +223,15 @@ export const DiligentConfigSchema = z
       )
       .optional(),
 
+    // Consecutive permission-rule denials before the model is told to stop retrying; the turn ends at twice
+    // this value. 0 disables the breaker. Defaults to DEFAULT_DENIAL_BREAKER_THRESHOLD.
+    approvals: z
+      .object({
+        denialBreakerThreshold: z.number().int().nonnegative().optional(),
+      })
+      .strict()
+      .optional(),
+
     // User identifier included in hook inputs (falls back to OS username if unset)
     userId: z.string().optional(),
 
@@ -272,6 +282,8 @@ export const DiligentConfigSchema = z
 export type DiligentConfig = z.infer<typeof DiligentConfigSchema>;
 
 export const DEFAULT_PLAN_REMINDER_INTERVAL_TURNS = 6;
+
+export const DEFAULT_DENIAL_BREAKER_THRESHOLD = 3;
 
 export const DEFAULT_CONFIG: DiligentConfig = {
   effort: "medium",

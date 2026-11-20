@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { isAbsolute, stripExtendedLengthPrefix } from "../util/path";
-import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
+import { type RuntimeToolHost, requestToolApprovalOutcome, resolveRejectedApproval } from "./capabilities";
 import { createFileRenderPayload, createTextRenderPayload } from "./render-payload";
 
 const WriteParams = z.object({
@@ -26,7 +26,7 @@ export function createWriteTool(cwd: string, host?: RuntimeToolHost): Tool<typeo
       }
       const targetPath = resolve(cwd, file_path);
 
-      const approval = await requestToolApproval(
+      const approval = await requestToolApprovalOutcome(
         host,
         {
           permission: "write",
@@ -36,12 +36,12 @@ export function createWriteTool(cwd: string, host?: RuntimeToolHost): Tool<typeo
         },
         { signal: ctx.signal },
       );
-      if (approval === "reject") {
-        ctx.abort();
+      if (approval.decision === "reject") {
+        const rejection = resolveRejectedApproval(approval, ctx);
         return {
-          output: "[Rejected by user]",
-          render: createTextRenderPayload(undefined, "[Rejected by user]", true),
-          metadata: { error: true },
+          output: rejection.output,
+          render: createTextRenderPayload(undefined, rejection.output, true),
+          metadata: rejection.metadata,
         };
       }
 
@@ -103,7 +103,7 @@ Usage:
         return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };
       }
 
-      const approval = await requestToolApproval(
+      const approval = await requestToolApprovalOutcome(
         host,
         {
           permission: "write",
@@ -113,12 +113,12 @@ Usage:
         },
         { signal: ctx.signal },
       );
-      if (approval === "reject") {
-        ctx.abort();
+      if (approval.decision === "reject") {
+        const rejection = resolveRejectedApproval(approval, ctx);
         return {
-          output: "[Rejected by user]",
-          render: createTextRenderPayload(undefined, "[Rejected by user]", true),
-          metadata: { error: true },
+          output: rejection.output,
+          render: createTextRenderPayload(undefined, rejection.output, true),
+          metadata: rejection.metadata,
         };
       }
 

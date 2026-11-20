@@ -38,6 +38,49 @@ afterEach(async () => {
 });
 
 describe("loadRuntimeConfig", () => {
+  it("preserves reminder defaults and honors the existing public config keys", async () => {
+    tmpRoot = await mkdtemp(join(tmpdir(), "diligent-runtime-reminders-"));
+    const paths = makePaths(tmpRoot);
+    const isolatedHome = join(tmpRoot, ".isolated-home");
+    await mkdir(paths.root, { recursive: true });
+    await mkdir(isolatedHome, { recursive: true });
+    const configPath = join(paths.root, "config.jsonc");
+    const provider = { auth: { credentialsStore: "ephemeral" } };
+
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    process.env.HOME = isolatedHome;
+    process.env.USERPROFILE = isolatedHome;
+    try {
+      await writeFile(configPath, JSON.stringify({ provider }));
+      expect((await loadRuntimeConfig(tmpRoot, paths)).reminders).toEqual({
+        planIntervalTurns: 6,
+        knowledgeIntervalTurns: 0,
+      });
+
+      await writeFile(
+        configPath,
+        JSON.stringify({ provider, planReminderIntervalTurns: 0, knowledge: { nudgeInterval: 3 } }),
+      );
+      expect((await loadRuntimeConfig(tmpRoot, paths)).reminders).toEqual({
+        planIntervalTurns: 0,
+        knowledgeIntervalTurns: 3,
+      });
+
+      await writeFile(
+        configPath,
+        JSON.stringify({ provider, planReminderIntervalTurns: 2, knowledge: { enabled: false, nudgeInterval: 3 } }),
+      );
+      expect((await loadRuntimeConfig(tmpRoot, paths)).reminders).toEqual({
+        planIntervalTurns: 2,
+        knowledgeIntervalTurns: 0,
+      });
+    } finally {
+      process.env.HOME = originalHome;
+      process.env.USERPROFILE = originalUserProfile;
+    }
+  });
+
   it("preserves the last selected model when its provider is configured", () => {
     expect(resolveRuntimeModel({ provider: "openai", modelId: "gpt-6.1-terra" }, ["openai"]).modelId).toBe(
       "gpt-6.1-terra",

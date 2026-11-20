@@ -218,7 +218,7 @@ export interface SessionManagerConfig {
       sessionId: string;
       rootSessionId?: string;
       userId?: string;
-      readTurnContent?: () => { input: string; output: string } | undefined;
+      readTurnContent?: () => { input?: string; output?: string } | undefined;
     },
     run: () => Promise<SessionRunOutcome>,
   ) => Promise<SessionRunOutcome>;

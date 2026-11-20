@@ -52,7 +52,14 @@ export type {
   ExperimentConfigManager,
 } from "./app-server";
 export { bindAppServer, createAppServerConfig, DiligentAppServer } from "./app-server";
-export type { ApprovalRequest, ApprovalResponse, PermissionAction, PermissionEngine, PermissionRule } from "./approval";
+export type {
+  ApprovalOutcome,
+  ApprovalRequest,
+  ApprovalResponse,
+  PermissionAction,
+  PermissionEngine,
+  PermissionRule,
+} from "./approval";
 export { createPermissionEngine, createYoloPermissionEngine } from "./approval";
 export type {
   AuthKeys,

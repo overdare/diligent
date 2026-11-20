@@ -29,6 +29,8 @@ export interface ChatGPTWebSocketExchange {
 export interface ChatGPTWebSocketRequestOptions {
   /** Shorter wait for the first response frame; later frames use the session idle timeout. */
   firstEventTimeoutMs?: number;
+  /** Called after the connection opens, immediately before writing the request. */
+  beforeSend?: () => void;
 }
 
 /** A reused socket stayed silent past the per-request first-event bound; the socket was discarded. */
@@ -163,7 +165,7 @@ export class ChatGPTWebSocketSession {
     if (signal?.aborted) active.onAbort();
     else {
       this.resetTimeout(active, "ChatGPT WebSocket idle timeout waiting for connection");
-      void this.send(request, active);
+      void this.send(request, active, requestOptions.beforeSend);
     }
     return { opened, events: queue };
   }
@@ -177,13 +179,18 @@ export class ChatGPTWebSocketSession {
     else this.closeSocket(this.socket, false);
   }
 
-  private async send(request: Record<string, unknown>, active: ActiveExchange): Promise<void> {
+  private async send(request: Record<string, unknown>, active: ActiveExchange, beforeSend?: () => void): Promise<void> {
     try {
       const socket = await this.ensureSocket(active);
       if (this.active !== active) return;
       this.resetTimeout(active, "ChatGPT WebSocket idle timeout waiting for send");
       const requestText = JSON.stringify(request);
       this.options.diagnostics?.onSend?.(requestText, request);
+      try {
+        beforeSend?.();
+      } catch {
+        // An observation failure must not interrupt transport.
+      }
       try {
         socket.send(requestText);
       } catch (error) {

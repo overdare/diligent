@@ -10,6 +10,48 @@ export const OPENAI_MODEL_CLASSES = defineProviderModelClasses({
 
 export const OPENAI_MODELS = defineProviderModels("openai", [
   {
+    modelId: "gpt-6.2-astra",
+    display: "GPT-6.2 Astra",
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    // Standard short-context rates with 30-minute cache writes; longer prompts and Fast mode cost more.
+    inputCostPer1M: 8,
+    outputCostPer1M: 40,
+    cacheReadCostPer1M: 0.4,
+    cacheWriteCostPer1M: 10,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+    supportsVision: true,
+    supportsFastMode: true,
+    knowledgeCutoff: "2026-05-18",
+    provenance: {
+      source: "OpenAI API model documentation",
+      sourceUrl: "https://developers.openai.com/api/docs/models/gpt-6.2-astra",
+      updatedAt: "2026-11-18",
+    },
+  },
+  {
+    modelId: "gpt-6.2-sol",
+    display: "GPT-6.2 Sol",
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    // Standard short-context rates with 30-minute cache writes; longer prompts and Fast mode cost more.
+    inputCostPer1M: 2,
+    outputCostPer1M: 10,
+    cacheReadCostPer1M: 0.1,
+    cacheWriteCostPer1M: 2.5,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+    supportsVision: true,
+    supportsFastMode: true,
+    knowledgeCutoff: "2026-06-01",
+    provenance: {
+      source: "OpenAI API model documentation",
+      sourceUrl: "https://developers.openai.com/api/docs/models/gpt-6.2-sol",
+      updatedAt: "2026-11-18",
+    },
+  },
+  {
     modelId: "gpt-6.1-terra",
     display: "GPT-6.1 Terra",
     contextWindow: 500_000,

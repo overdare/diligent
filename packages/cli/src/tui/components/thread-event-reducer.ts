@@ -100,6 +100,7 @@ function extractLiveFields<TItem>(state: ThreadEventReducerState<TItem>): Conver
     items: [],
     liveText: "",
     liveThinking: "",
+    liveToolItemId: null,
     liveToolName: null,
     liveToolInput: null,
     liveToolOutput: "",

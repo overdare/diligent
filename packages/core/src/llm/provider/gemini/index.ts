@@ -20,13 +20,14 @@ interface GeminiProviderState {
   sourceResults: Map<string, { url: string; title?: string }>;
 }
 
-type GeminiThinkingLevel = "low" | "medium" | "high";
+type GeminiThinkingLevel = "low" | "medium" | "high" | "xhigh";
 
 export function resolveGeminiThinkingLevel(
   model: Model,
   effort: ThinkingEffort | undefined,
 ): GeminiThinkingLevel | undefined {
   if (effort === undefined || !model.supportsThinking) return undefined;
+  if (effort === "xhigh" && model.supportedEfforts?.includes("xhigh")) return "xhigh";
   if (effort === "xhigh" || effort === "max") return "high";
   return effort;
 }

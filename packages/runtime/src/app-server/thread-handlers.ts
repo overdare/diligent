@@ -84,6 +84,7 @@ export function resetTurnRuntimeState(runtime: ThreadRuntime): void {
   runtime.runningFastModeSnapshot = undefined;
   runtime.runningModelSnapshot = undefined;
   runtime.isRunning = false;
+  runtime.consecutivePolicyDenials = 0;
 }
 
 export interface ThreadListScan {

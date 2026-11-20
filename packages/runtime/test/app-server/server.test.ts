@@ -531,6 +531,7 @@ function makeFactoryRuntimeConfig(overrides?: {
     model,
     mode: "default" as const,
     effort: overrides?.effort ?? ("medium" as const),
+    reminders: { planIntervalTurns: 0, knowledgeIntervalTurns: 0 },
     systemPrompt: [{ label: "base", content: "test" }],
     streamFunction: () => {
       const stream = new EventStream(
@@ -2739,7 +2740,7 @@ describe("DiligentAppServer", () => {
 
             queueMicrotask(async () => {
               stream.push({ type: "start" });
-              const decision = await approve({
+              const { decision } = await approve({
                 permission: "execute",
                 toolName: "bash",
                 description: "run ls",
@@ -2822,7 +2823,7 @@ describe("DiligentAppServer", () => {
 
             queueMicrotask(async () => {
               stream.push({ type: "start" });
-              const decision = await approve({
+              const { decision } = await approve({
                 permission: "execute",
                 toolName: "bash",
                 description: "run rm",

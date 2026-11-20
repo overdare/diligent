@@ -19,6 +19,7 @@ import { createLocalImageLoader, toolOutputStore } from "../infrastructure";
 import { withToolInstructions } from "../prompt/tool-instructions";
 import { SessionManager } from "../session/manager";
 import { isSafeSessionId } from "../session/types";
+import { createRuntimeToolHost } from "../tools/capabilities";
 import { forkToolForChild } from "../tools/child-fork";
 import { CodeModeSession } from "../tools/code-mode/session";
 import { applyCodeMode } from "../tools/code-mode/tools";
@@ -425,10 +426,7 @@ export class AgentRegistry {
           collabDeps: nestedCollabEnabled ? childDeps : undefined,
           parentToolOverride: childTools,
           enableCollabTools: nestedCollabEnabled,
-          host: {
-            approve: this.deps.approve,
-            ask: childAsk,
-          },
+          host: createRuntimeToolHost(this.deps.approve, childAsk),
         });
 
         const filteredTools = result.tools.filter((tool) => allowedChildToolNames.has(tool.name));
