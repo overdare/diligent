@@ -1,8 +1,12 @@
 // @summary Tests CLI stdio app-server mode framing and stdout cleanliness
 
 import { afterEach, describe, expect, it, mock } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { createStdioPeer, redirectConsoleToStderr } from "../src/app-server-stdio";
+import { StdioAppServerRpcClient } from "../src/tui/rpc-client";
 
 describe("createStdioPeer", () => {
   const originalLog = console.log;
@@ -53,4 +57,26 @@ describe("createStdioPeer", () => {
       process.stderr.write = originalWrite;
     }
   });
+});
+
+it.if(process.platform !== "win32")("SIGTERM lets the stdio app server shut down before exit", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "diligent-stdio-shutdown-"));
+  const child = Bun.spawn([process.execPath, `${import.meta.dir}/../src/index.ts`, "app-server", "--stdio"], {
+    cwd,
+    env: { ...process.env, HOME: cwd },
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const client = new StdioAppServerRpcClient(child);
+  try {
+    await client.request("initialize", { clientName: "test", clientVersion: "0", protocolVersion: 1 });
+    child.kill("SIGTERM");
+    expect(await child.exited).toBe(143);
+    expect(child.signalCode).toBeNull();
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    await client.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
 });

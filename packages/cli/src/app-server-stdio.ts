@@ -133,6 +133,11 @@ export async function runAppServerStdio(options: AppServerStdioOptions): Promise
       });
   };
 
+  if (process.platform !== "win32") {
+    process.on("SIGINT", () => shutdown(130));
+    process.on("SIGTERM", () => shutdown(143));
+  }
+
   peer.onClose?.((error) => {
     if (error) {
       shutdown(1, error);

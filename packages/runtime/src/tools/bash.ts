@@ -136,6 +136,8 @@ export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof
       }, timeout);
 
       const onAbort = () => {
+        if (ac.signal.aborted) return;
+        clearTimeout(timer);
         aborted = true;
         ac.abort();
       };

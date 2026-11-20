@@ -1,6 +1,7 @@
 // @summary Cross-platform child process spawn with abort, timeout, and process-tree kill (process group on POSIX)
 
 import { type ChildProcess, spawn as nodeSpawn } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 
 export type Stdio = "inherit" | "pipe" | "ignore";
 
@@ -15,41 +16,45 @@ export interface SpawnOptions {
 
 export type Child = ChildProcess & { exited: Promise<number> };
 
-/**
- * Kill the process and its entire process tree. On Windows uses taskkill /F /T. On POSIX the child leads its own
- * process group (see `detached` below), so signalling the negative PID also reaches the commands it started.
- */
-function killTree(proc: ChildProcess): void {
-  if (process.platform === "win32" && proc.pid !== undefined) {
-    nodeSpawn("taskkill", ["/F", "/T", "/PID", String(proc.pid)], { stdio: "ignore" });
-    return;
-  }
+const TERMINATION_GRACE_MS = 1_000;
+const GROUP_POLL_MS = 25;
+
+/** Signal the entire POSIX group. Return false only when the group no longer exists. */
+function signalGroup(pid: number, signal: NodeJS.Signals | 0): boolean {
   try {
-    if (proc.pid === undefined) throw new Error("no pid");
-    process.kill(-proc.pid, "SIGKILL");
-  } catch {
-    proc.kill("SIGKILL");
+    process.kill(-pid, signal);
+    return true;
+  } catch (error) {
+    // EPERM can mean the group still exists even though we cannot signal it.
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
   }
 }
 
-/**
- * Detached POSIX children no longer share the runtime's process group, so a terminal Ctrl-C or the host exiting
- * does not reach them. Track the running ones and kill their groups when the runtime process exits.
- */
-const runningGroups = new Set<ChildProcess>();
+async function terminateGroup(pid: number): Promise<void> {
+  if (!signalGroup(pid, "SIGTERM")) return;
+  const deadline = performance.now() + TERMINATION_GRACE_MS;
+  while (signalGroup(pid, 0)) {
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) {
+      signalGroup(pid, "SIGKILL");
+      return;
+    }
+    await delay(Math.min(GROUP_POLL_MS, remaining));
+  }
+}
+
+const runningGroups = new Set<number>();
 let exitCleanupInstalled = false;
 
-function killGroupOnRuntimeExit(proc: ChildProcess): void {
+function trackGroup(pid: number): void {
   if (!exitCleanupInstalled) {
     exitCleanupInstalled = true;
     process.once("exit", () => {
-      for (const running of runningGroups) killTree(running);
+      // The exit event cannot wait for graceful shutdown.
+      for (const group of runningGroups) signalGroup(group, "SIGKILL");
     });
   }
-  runningGroups.add(proc);
-  const forget = () => runningGroups.delete(proc);
-  proc.once("exit", forget);
-  proc.once("error", forget);
+  runningGroups.add(pid);
 }
 
 export function spawnProcess(cmd: string[], opts: SpawnOptions = {}): Child {
@@ -60,24 +65,33 @@ export function spawnProcess(cmd: string[], opts: SpawnOptions = {}): Child {
     cwd: opts.cwd,
     env: opts.env,
     stdio: [opts.stdin ?? "ignore", opts.stdout ?? "ignore", opts.stderr ?? "ignore"],
-    // POSIX: start a new process group (and session) so killTree can terminate grandchildren, and so a command
-    // cannot read the host's controlling terminal.
+    // POSIX: isolate the command and its descendants in a new process group without a controlling terminal.
     detached: process.platform !== "win32",
   });
-  if (process.platform !== "win32") killGroupOnRuntimeExit(proc);
+  const groupId = process.platform === "win32" ? undefined : proc.pid;
+  if (groupId !== undefined) trackGroup(groupId);
 
+  let termination: Promise<void> | undefined;
   const abort = () => {
     if (proc.exitCode !== null || proc.signalCode !== null) return;
-    killTree(proc);
+    if (groupId !== undefined) {
+      termination ??= terminateGroup(groupId);
+    } else if (process.platform === "win32" && proc.pid !== undefined) {
+      nodeSpawn("taskkill", ["/F", "/T", "/PID", String(proc.pid)], { stdio: "ignore" });
+    }
   };
 
   const exited = new Promise<number>((resolve, reject) => {
-    proc.once("exit", (code, signal) => {
+    proc.once("exit", async (code, signal) => {
       opts.signal?.removeEventListener("abort", abort);
+      // The group can outlive its leader. Keep tracking it until cancellation finishes.
+      if (termination) await termination;
+      if (groupId !== undefined) runningGroups.delete(groupId);
       resolve(code ?? (signal ? 1 : 0));
     });
     proc.once("error", (err) => {
       opts.signal?.removeEventListener("abort", abort);
+      if (groupId !== undefined) runningGroups.delete(groupId);
       reject(err);
     });
   });

@@ -48,6 +48,10 @@ Some built-ins are immutable and always stay enabled:
 
 These appear as locked in the UI and stay enabled even if config tries to disable them.
 
+On POSIX, `bash` runs each command in its own process group. Cancellation, timeouts, and graceful app-server shutdown
+send `SIGTERM` to the group. Diligent gives the group up to one second to exit before sending `SIGKILL` if it still
+exists. This does not stop descendants that move to another process group. Windows keeps using `taskkill /F /T`.
+
 ## Bundled product tools
 
 Product variants can register first-party bundled tool providers in-process.
