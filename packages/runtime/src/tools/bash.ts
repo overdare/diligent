@@ -141,7 +141,7 @@ async function approveCommand(
   ctx: ToolContext,
   host?: RuntimeToolHost,
 ): Promise<ToolResult | undefined> {
-  const approval = await requestToolApproval(
+  const approval = await requestToolApprovalOutcome(
     host,
     {
       permission: "execute",
@@ -151,12 +151,11 @@ async function approveCommand(
     },
     { signal: ctx.signal },
   );
-  if (approval !== "reject") return;
-  ctx.abort();
+  if (approval.decision !== "reject") return;
+  const rejection = resolveRejectedApproval(approval, ctx);
   return {
-    output: "[Rejected by user]",
-    render: createCommandRenderPayload(args.command, "[Rejected by user]", true),
-    metadata: { error: true },
+    ...rejection,
+    render: createCommandRenderPayload(args.command, rejection.output, true),
   };
 }
 
@@ -374,7 +373,7 @@ async function approveShellInput(
   ctx: ToolContext,
   host: RuntimeToolHost | undefined,
 ): Promise<ToolResult | undefined> {
-  const approval = await requestToolApproval(
+  const approval = await requestToolApprovalOutcome(
     host,
     {
       permission: "execute",
@@ -384,10 +383,7 @@ async function approveShellInput(
     },
     { signal: ctx.signal, rememberApproval: false },
   );
-  if (approval === "reject") {
-    ctx.abort();
-    return shellError("[Rejected by user]");
-  }
+  if (approval.decision === "reject") return resolveRejectedApproval(approval, ctx);
   entry.inputApproved = true;
 }
 

@@ -64,6 +64,8 @@ export interface ThreadRuntime {
   /** Cached agent — cleared when mode/effort/model changes to force a rebuild on the next turn. */
   agent?: RuntimeAgent;
   shellProcesses?: ShellProcessRegistry;
+  /** Permission-rule denials in a row during the current turn, shared with child agents; feeds the breaker. */
+  consecutivePolicyDenials?: number;
 }
 
 /** Agent rebuilds must wait until goal-owned work can no longer reference the old registry. */

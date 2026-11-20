@@ -124,6 +124,51 @@ test.if(process.platform !== "win32")("background Bash survives turns and mode c
   }
 });
 
+test.if(process.platform !== "win32")("policy denials block background Bash and stdin", async () => {
+  const blockedCommand = "printf blocked";
+  const stdinRule = "bash_wait:*";
+  const app = await setup(
+    "on",
+    createPermissionEngine([
+      { permission: "execute", action: "deny", pattern: blockedCommand },
+      { permission: "execute", action: "deny", pattern: stdinRule },
+    ]),
+  );
+  try {
+    const threadId = await app.client.initAndStartThread(app.cwd);
+    const deniedSpawn = await app.call(threadId, {
+      id: "denied-spawn",
+      name: "bash",
+      input: { command: blockedCommand, yield_time_ms: 0 },
+    });
+    expect(deniedSpawn.item.output).toContain(`Denied by permission rule "${blockedCommand}"`);
+    expect(deniedSpawn.notifications.some((event) => event.method === "turn/completed")).toBe(true);
+
+    const { item: started } = await app.call(threadId, {
+      id: "start-for-denied-input",
+      name: "bash",
+      input: { command: `exec sh -c 'read value; printf "received:%s" "$value"'`, yield_time_ms: 0 },
+    });
+    const id = processId(started.output);
+    const deniedInput = await app.call(threadId, {
+      id: "denied-input",
+      name: "bash_wait",
+      input: { process_id: id, input: "blocked\n" },
+    });
+    expect(deniedInput.item.output).toContain(`Denied by permission rule "${stdinRule}"`);
+    expect(deniedInput.notifications.some((event) => event.method === "turn/completed")).toBe(true);
+
+    const { item: polled } = await app.call(threadId, {
+      id: "poll-after-denied-input",
+      name: "bash_wait",
+      input: { process_id: id, yield_time_ms: 350 },
+    });
+    expect(polled.output).toBe(`[Process running. process_id: ${id}]`);
+  } finally {
+    await app.close();
+  }
+});
+
 test.if(process.platform !== "win32")("bash_wait terminates a yielded process and keeps its final output", async () => {
   const app = await setup();
   try {

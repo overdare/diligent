@@ -214,7 +214,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions, parentSystemPr
     skills: runtimeConfig.skills,
     enableCollabTools: true,
     existingRegistry: existingAgent?.registry,
-    host: { approve, ask },
+    host: createRuntimeToolHost(approve, ask),
     shellProcesses,
     goalHost: request.goalHost,
     generateImage: (input, options) =>
