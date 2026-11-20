@@ -14,6 +14,8 @@ export interface RuntimeToolHost {
 }
 export interface RuntimeRequestOptions {
   signal?: AbortSignal;
+  /** Do not save a general permission rule when the tool owns the approval scope. */
+  rememberApproval?: false;
 }
 
 /** Build a tool host whose two approval callbacks share one outcome-returning handler. */

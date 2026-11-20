@@ -48,6 +48,32 @@ Some built-ins are immutable and always stay enabled:
 
 These appear as locked in the UI and stay enabled even if config tries to disable them.
 
+On POSIX, `bash` runs each command in its own process group. Cancellation, timeouts, and graceful app-server shutdown
+send `SIGTERM` to the group. Diligent gives the group up to one second to exit before sending `SIGKILL` if it still
+exists. This does not stop descendants that move to another process group. Windows keeps using `taskkill /F /T`.
+
+On POSIX, foreground `bash` also cleans up any remaining group members when the shell exits normally. Use
+`yield_time_ms` rather than shell `&` to keep a command running after the tool returns.
+
+### Background shell commands
+
+Pass `yield_time_ms` to `bash` to return while the command keeps running. If it exits first, `bash` returns its final
+output and exit code. Without `yield_time_ms`, `bash` waits for the command as before and uses `timeout`. Background
+commands use a 30-minute lifetime limit instead of `timeout`.
+
+Use `bash_wait` with the returned `process_id`:
+
+- Omit `yield_time_ms` to wait up to 10 seconds, or set it to `0` to poll. Each call returns only new output.
+- Set `input` to write to stdin. Include `\n` when the command reads a line. The first write requires approval for
+  that process. This is a pipe, not a PTY.
+- Set `terminate: true` to stop the command and collect its final output. On POSIX, termination uses the same
+  `SIGTERM` grace period as foreground cancellation.
+
+Only the originating session can use a process ID. A background command survives turns and a turn interrupt after
+`bash` has yielded. Diligent stops it when the thread is deleted, the child agent finishes, or the app server shuts
+down. IDs do not survive a restart. Each session can track up to 16 processes. Unread output is bounded, and a final
+result can be collected once. If you limit output with `max_output_tokens`, the status and process ID stay visible.
+
 ## Bundled product tools
 
 Product variants can register first-party bundled tool providers in-process.

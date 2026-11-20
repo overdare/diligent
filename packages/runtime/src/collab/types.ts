@@ -12,6 +12,7 @@ import type { SessionManager } from "../session/manager";
 import type { AgentLoopHookFactory } from "../tools/bundled-provider";
 import type { ApprovalHandler } from "../tools/capabilities";
 import type { CodeMode } from "../tools/code-mode/tools";
+import type { ShellProcessRegistry } from "../tools/shell-processes";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
 import type { AgentProgressTracker } from "./progress";
 
@@ -95,6 +96,7 @@ export interface CollabToolDeps {
   streamFn?: import("@diligent/core/provider-contract").StreamFunction;
   /** Parent-selected full-output store, retained by every nested collaboration registry. */
   toolOutputStore?: ToolOutputFileStore;
+  shellProcesses?: ShellProcessRegistry;
   /** Authenticated user captured for a child execution's persistence and lifecycle. */
   userId?: string;
   /** Resolve the owner at spawn/resume; active children retain the captured identity. */

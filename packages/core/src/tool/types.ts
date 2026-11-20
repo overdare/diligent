@@ -22,6 +22,8 @@ export interface Tool<TParams extends z.ZodType = any> {
   supportParallel?: boolean; // D015: When true, tool can run concurrently with other parallel tools
   /** Custom arg parser. When provided, executor uses this instead of parameters.safeParse(). */
   parseArgs?: (raw: unknown) => z.infer<TParams>;
+  /** Top-level arguments whose empty values carry meaning, such as whitespace written to stdin. */
+  preserveEmptyArgs?: readonly string[];
 }
 
 export interface ToolContext {

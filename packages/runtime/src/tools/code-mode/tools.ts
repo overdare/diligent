@@ -3,6 +3,7 @@
 import type { ToolGate } from "@diligent/core/agent";
 import type { Tool, ToolOutputFileStore, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
+import { hasBuiltinBashWait, isYieldingBash, restrictBash } from "../bash";
 import { createToolEndRenderPayloadFromInput } from "../render-strategies";
 import { TOOL_CAPABILITIES } from "../tool-metadata";
 import {
@@ -77,9 +78,15 @@ export interface CodeModeAssemblyOptions {
  * Tools flagged `codeModeDirect` and provider-native tools (`modelExposure`) are never nested.
  */
 export function applyCodeMode(tools: Tool[], options: CodeModeAssemblyOptions): Tool[] {
-  if (options.codeMode === "off") return tools;
+  const canYieldBash = hasBuiltinBashWait(tools);
+  if (options.codeMode === "off") {
+    if (canYieldBash || !tools.some(isYieldingBash)) return tools;
+    return tools.map((tool) => (isYieldingBash(tool) ? restrictBash(tool, "foreground") : tool));
+  }
   const isNested = (tool: Tool) => !tool.modelExposure && !TOOL_CAPABILITIES[tool.name]?.codeModeDirect;
-  const nestedTools = tools.filter(isNested);
+  const nestedTools = tools
+    .filter(isNested)
+    .map((tool) => (isYieldingBash(tool) ? restrictBash(tool, "foreground") : tool));
   const registry = new Map(nestedTools.map((tool) => [tool.name, tool]));
   const bindings = bindNestedTools(nestedTools);
   // A yielded cell keeps running nested calls while the model issues direct calls; direct calls of the
@@ -89,9 +96,15 @@ export function applyCodeMode(tools: Tool[], options: CodeModeAssemblyOptions): 
       (tool) =>
         tool.name !== EXEC_TOOL_NAME &&
         tool.name !== EXEC_WAIT_TOOL_NAME &&
-        (options.codeMode === "on" || !isNested(tool)),
+        (options.codeMode === "on" || !isNested(tool) || (canYieldBash && isYieldingBash(tool))),
     )
-    .map((tool) => (isNested(tool) ? gateDirectTool(tool, options.session.gate) : tool));
+    .map((tool) => {
+      if (isYieldingBash(tool)) {
+        if (!canYieldBash) tool = restrictBash(tool, "foreground");
+        else if (options.codeMode === "only") tool = restrictBash(tool, "background");
+      }
+      return isNested(tool) ? gateDirectTool(tool, options.session.gate) : tool;
+    });
   const exec: Tool<typeof ExecParams> = {
     name: EXEC_TOOL_NAME,
     description: buildExecDescription(

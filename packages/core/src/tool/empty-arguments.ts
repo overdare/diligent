@@ -1,14 +1,14 @@
 // @summary Treats an empty value on an optional parameter as the parameter not being given.
 import { z } from "zod";
-export function dropEmptyOptionals(schema: z.ZodTypeAny, input: unknown): unknown {
+export function dropEmptyOptionals(schema: z.ZodTypeAny, input: unknown, preserve?: readonly string[]): unknown {
   const shape = objectShape(schema, input);
   if (!shape || !isPlainObject(input)) return input;
 
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
     const field = shape[key];
-    if (!field) {
-      out[key] = value; // Unknown to the schema — let validation have its say.
+    if (!field || preserve?.includes(key)) {
+      out[key] = value;
       continue;
     }
     const cleaned = dropEmptyOptionals(field, value);

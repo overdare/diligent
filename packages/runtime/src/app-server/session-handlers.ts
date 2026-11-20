@@ -232,6 +232,7 @@ export async function handleThreadDelete(ctx: ThreadHandlersContext, threadId: s
 
   const deleted = deletedFromDisk || knownInMemory;
   if (deleted) {
+    await existing?.shellProcesses?.dispose();
     existing?.manager.dispose();
     ctx.threads.delete(threadId);
     if (ctx.activeThreadId === threadId) {
