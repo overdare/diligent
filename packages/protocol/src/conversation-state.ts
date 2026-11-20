@@ -16,6 +16,8 @@ export interface ConversationLiveState {
   items: ThreadItem[];
   liveText: string;
   liveThinking: string;
+  /** Item of the call shown in the live tool slot; updates and ends of other overlapping calls leave it alone. */
+  liveToolItemId: string | null;
   liveToolName: string | null;
   liveToolInput: string | null;
   liveToolOutput: string;
@@ -33,6 +35,7 @@ export function createInitialConversationLiveState(): ConversationLiveState {
     items: [],
     liveText: "",
     liveThinking: "",
+    liveToolItemId: null,
     liveToolName: null,
     liveToolInput: null,
     liveToolOutput: "",

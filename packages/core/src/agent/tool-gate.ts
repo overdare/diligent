@@ -1,4 +1,4 @@
-// @summary Agent-wide reader/writer gate shared by code mode nested calls and direct calls of nestable tools
+// @summary FIFO reader/writer gate: shared tool calls overlap, exclusive tool calls run alone
 
 interface Waiter {
   shared: boolean;
@@ -6,10 +6,12 @@ interface Waiter {
 }
 
 /**
- * Mirrors the agent loop's batching rule across code mode: tools marked `supportParallel` may overlap,
- * every other tool runs alone. A yielded cell keeps dispatching nested calls while the model issues direct
- * calls, so both paths acquire the same gate (one per `CodeModeSession`, i.e. per agent). Waiters are
- * admitted in arrival order, so a waiting exclusive call is not starved by later shared ones.
+ * Tools marked `supportParallel` acquire shared access and may overlap; every other tool acquires exclusive
+ * access and runs alone. Waiters are admitted in arrival order, so a waiting exclusive call is not starved by
+ * later shared ones and calls never overtake an earlier exclusive call.
+ *
+ * The agent loop uses one gate per tool batch to schedule the model's calls. Code mode keeps one gate per agent
+ * so a yielded cell's nested calls and the model's direct calls of nestable tools never overlap unsafely.
  */
 export class ToolGate {
   /** Admitted holders: n > 0 shared, -1 one exclusive, 0 free. */

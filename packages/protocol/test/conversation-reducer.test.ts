@@ -266,6 +266,57 @@ describe("applyAgentEvents / tool_end", () => {
   });
 });
 
+describe("applyAgentEvents / overlapping tool calls", () => {
+  const start = (itemId: string, toolName: string): AgentEvent => ({
+    type: "tool_start",
+    itemId,
+    toolCallId: `tc-${itemId}`,
+    toolName,
+    input: toolName,
+  });
+  const update = (itemId: string, toolName: string, partialResult: string): AgentEvent => ({
+    type: "tool_update",
+    itemId,
+    toolCallId: `tc-${itemId}`,
+    toolName,
+    partialResult,
+  });
+  const end = (itemId: string): AgentEvent => ({
+    type: "tool_end",
+    itemId,
+    toolCallId: `tc-${itemId}`,
+    toolName: "read",
+    output: "",
+    isError: false,
+  });
+
+  test("the live slot follows the most recently started call", () => {
+    const next = apply([
+      start("a", "read"),
+      start("b", "grep"),
+      update("a", "read", "from-a"),
+      update("b", "grep", "from-b"),
+    ]);
+    expect(next.liveToolItemId).toBe("b");
+    expect(next.liveToolName).toBe("grep");
+    expect(next.liveToolOutput).toBe("from-b");
+  });
+
+  test("ending an earlier call leaves the live call in place", () => {
+    const next = apply([start("a", "read"), start("b", "grep"), end("a")]);
+    expect(next.liveToolItemId).toBe("b");
+    expect(next.liveToolName).toBe("grep");
+    expect(next.overlayStatus).toBe("grep…");
+  });
+
+  test("ending the live call clears the slot", () => {
+    const next = apply([start("a", "read"), start("b", "grep"), end("a"), end("b")]);
+    expect(next.liveToolItemId).toBeNull();
+    expect(next.liveToolName).toBeNull();
+    expect(next.overlayStatus).toBeNull();
+  });
+});
+
 describe("applyAgentEvents / compaction", () => {
   test("compaction_start sets overlayStatus to 'Compacting…'", () => {
     const next = apply([{ type: "compaction_start", estimatedTokens: 1000 }]);

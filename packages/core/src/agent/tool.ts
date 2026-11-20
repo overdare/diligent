@@ -1,17 +1,27 @@
-// @summary Tool-call runner for sequential and parallel execution batches
+// @summary Tool-call runner: schedules a batch through a FIFO reader/writer gate and keeps results in model order
 
 import type { ToolOutputFileStore } from "../tool/executor";
 import { executeTool } from "../tool/executor";
 import type { ToolContext, ToolRegistry, ToolRunScope } from "../tool/types";
 import type { ToolCallBlock, ToolResultMessage } from "../types";
+import { ToolGate } from "./tool-gate";
 import type { AgentStream } from "./types";
 
-interface ToolCallExecution {
+export interface ToolCallExecution {
   toolCall: ToolCallBlock;
   toolResult: ToolResultMessage;
   endTurn?: boolean;
 }
 
+export interface ToolCallBatchResult {
+  /** One execution per call, in the model's call order. */
+  executions: ToolCallExecution[];
+}
+
+/**
+ * Runs one batch of model tool calls. Parallel-safe calls (`supportParallel`) share the gate and overlap; every
+ * other call runs alone. Admission follows the model's order, so no call overtakes an earlier exclusive call.
+ */
 export async function runToolCalls(
   toolCalls: ToolCallBlock[],
   signal: AbortSignal | undefined,
@@ -22,13 +32,9 @@ export async function runToolCalls(
   outputStore?: ToolOutputFileStore,
   sessionId?: string,
   runScope?: ToolRunScope,
-): Promise<{
-  executions: ToolCallExecution[];
-}> {
-  const executions: ToolCallExecution[] = [];
-
+): Promise<ToolCallBatchResult> {
   if (toolCalls.length === 0) {
-    return { executions };
+    return { executions: [] };
   }
 
   const buildToolContext = (toolCall: ToolCallBlock, toolItemId: string): ToolContext => ({
@@ -51,82 +57,54 @@ export async function runToolCalls(
     ...(runScope ? { runScope } : {}),
   });
 
-  const canRunInParallel =
-    toolCalls.length > 1 && toolCalls.every((toolCall) => registry.get(toolCall.name)?.supportParallel);
   const itemIds = toolCalls.map(() => generateItemId());
+  const settled: Array<ToolCallExecution | undefined> = new Array(toolCalls.length);
+  const gate = new ToolGate();
 
-  if (signal?.aborted) {
-    fillAbortedExecutions(toolCalls, itemIds, executions, signal, stream);
-    return { executions };
-  }
+  await Promise.all(
+    toolCalls.map(async (toolCall, index) => {
+      let release: () => void;
+      try {
+        release = await gate.acquire(registry.get(toolCall.name)?.supportParallel === true, signal);
+      } catch {
+        return; // Aborted before admission; paired below.
+      }
+      try {
+        if (signal?.aborted) return;
+        stream.emit({
+          type: "tool_start",
+          itemId: itemIds[index],
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          input: toolCall.input,
+        });
+        const result = await executeTool(registry, toolCall, buildToolContext(toolCall, itemIds[index]), {
+          outputStore,
+        });
+        settled[index] = toToolCallExecution(toolCall, itemIds[index], result, stream);
+      } finally {
+        release();
+      }
+    }),
+  );
 
-  if (canRunInParallel) {
-    for (let index = 0; index < toolCalls.length; index++) {
-      stream.emit({
-        type: "tool_start",
-        itemId: itemIds[index],
-        toolCallId: toolCalls[index].id,
-        toolName: toolCalls[index].name,
-        input: toolCalls[index].input,
-      });
-    }
-
-    const results = await Promise.all(
-      toolCalls.map((toolCall, index) =>
-        executeTool(registry, toolCall, buildToolContext(toolCall, itemIds[index]), { outputStore }),
-      ),
-    );
-
-    for (let index = 0; index < toolCalls.length; index++) {
-      executions.push(toToolCallExecution(toolCalls[index], itemIds[index], results[index], stream));
-    }
-
-    return { executions };
-  }
-
-  for (let index = 0; index < toolCalls.length; index++) {
-    const toolCall = toolCalls[index];
-    if (signal?.aborted) {
-      break;
-    }
-
-    stream.emit({
-      type: "tool_start",
-      itemId: itemIds[index],
-      toolCallId: toolCall.id,
-      toolName: toolCall.name,
-      input: toolCall.input,
-    });
-
-    const result = await executeTool(registry, toolCall, buildToolContext(toolCall, itemIds[index]), { outputStore });
-    executions.push(toToolCallExecution(toolCall, itemIds[index], result, stream));
-
-    if (signal?.aborted) break;
-  }
-
-  // Sequential: only executed calls emitted tool_start, so unexecuted ones still need it.
-  fillAbortedExecutions(toolCalls, itemIds, executions, signal, stream);
-  return { executions };
+  return { executions: pairUnexecutedCalls(toolCalls, itemIds, settled, stream) };
 }
 
 /**
- * Calls skipped by a pre-aborted batch or sequential cancellation still need a
- * matching tool_result for provider replay. Synthesize tool_start and tool_end
- * only for calls that never executed; settled parallel calls retain their results.
+ * Every call needs a matching tool_result for provider replay. Calls that never started (a pre-aborted batch, or
+ * an abort while they waited for the gate) get synthesized tool_start/tool_end events and an aborted result;
+ * calls that ran keep their results.
  */
-function fillAbortedExecutions(
+function pairUnexecutedCalls(
   toolCalls: ToolCallBlock[],
   itemIds: string[],
-  executions: Array<{ toolCall: ToolCallBlock; toolResult: ToolResultMessage }>,
-  signal: AbortSignal | undefined,
+  settled: Array<ToolCallExecution | undefined>,
   stream: AgentStream,
-): void {
-  if (!signal?.aborted) return;
-  const executed = new Set(executions.map((execution) => execution.toolCall.id));
-
-  for (let index = 0; index < toolCalls.length; index++) {
-    const toolCall = toolCalls[index];
-    if (executed.has(toolCall.id)) continue;
+): ToolCallExecution[] {
+  return toolCalls.map((toolCall, index) => {
+    const execution = settled[index];
+    if (execution) return execution;
 
     stream.emit({
       type: "tool_start",
@@ -154,8 +132,8 @@ function fillAbortedExecutions(
       isError: false,
     });
 
-    executions.push({ toolCall, toolResult });
-  }
+    return { toolCall, toolResult };
+  });
 }
 
 function toToolCallExecution(

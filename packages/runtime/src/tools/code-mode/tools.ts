@@ -1,5 +1,6 @@
 // @summary Code mode tools (exec, exec_wait) and the model-facing tool assembly for tools.codeMode
 
+import type { ToolGate } from "@diligent/core/agent";
 import type { Tool, ToolOutputFileStore, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { createToolEndRenderPayloadFromInput } from "../render-strategies";
@@ -13,7 +14,6 @@ import {
   EXEC_WAIT_TOOL_NAME,
   toCodeModeIdentifier,
 } from "./description";
-import type { ToolGate } from "./gate";
 import type { CodeModeCellSnapshot, CodeModeSession, CodeModeToolBinding } from "./session";
 
 export type CodeMode = "off" | "on" | "only";

@@ -1,10 +1,10 @@
 // @summary Code mode session: owns exec cells (Bun Workers), the cross-exec store, the agent tool gate, and nested tool dispatch
 
+import { ToolGate } from "@diligent/core/agent";
 import type { ImageBlock } from "@diligent/core/message-contract";
 import type { ToolContext, ToolOutputFileStore, ToolRegistry } from "@diligent/core/tool-contract";
 import { executeTool } from "@diligent/core/tool-contract";
 import { SUPPORTED_IMAGE_MEDIA_TYPES, type SupportedImageMediaType } from "@diligent/protocol";
-import { ToolGate } from "./gate";
 import { type CodeModeHostMessage, type CodeModeWorkerMessage, codeModeWorkerMain } from "./worker";
 
 /** Live (yielded) cells kept per session; starting another evicts the least recently driven one. */
