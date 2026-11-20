@@ -206,7 +206,14 @@ export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof
         stderr: "pipe",
         env: filterSensitiveEnv(process.env) as NodeJS.ProcessEnv,
         signal: ac.signal,
+        cleanupGroupOnExit: true,
       });
+      const disarmCancellation = () => {
+        clearTimeout(timer);
+        ctx.signal.removeEventListener("abort", onAbort);
+      };
+      // The shell has finished even if its process group still needs time to exit.
+      proc.once("exit", disarmCancellation);
 
       const stdoutChunks: Buffer[] = [];
       const stderrChunks: Buffer[] = [];
@@ -228,8 +235,7 @@ export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof
       } catch {
         // process killed — exitCode stays null
       } finally {
-        clearTimeout(timer);
-        ctx.signal.removeEventListener("abort", onAbort);
+        disarmCancellation();
         live?.close();
       }
 

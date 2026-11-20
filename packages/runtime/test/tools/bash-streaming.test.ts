@@ -2,6 +2,9 @@
 
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ToolContext } from "@diligent/core/tool-contract";
 import { createBashTool } from "@diligent/runtime/tools";
 
@@ -33,6 +36,24 @@ async function waitUntilDead(pid: number, deadlineMs = 3000): Promise<boolean> {
 }
 
 describe.if(posix)("bash process groups", () => {
+  test("foreground Bash cleans up descendants even when the shell exits successfully", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "diligent-foreground-bash-"));
+    let pid = 0;
+    try {
+      const result = await createBashTool(cwd).execute(
+        { command: "sleep 30 </dev/null >/dev/null 2>&1 & echo $! > child.pid" },
+        { toolCallId: "tc", signal: new AbortController().signal, abort: () => {} },
+      );
+      pid = Number(readFileSync(join(cwd, "child.pid"), "utf8"));
+      expect(pid).toBeGreaterThan(0);
+      expect(result.metadata?.exitCode).toBe(0);
+      expect(await waitUntilDead(pid, 500)).toBe(true);
+    } finally {
+      if (pid > 0 && isAlive(pid)) process.kill(pid, "SIGKILL");
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("a timeout forces a descendant to exit even after the shell handles SIGTERM", async () => {
     const result = await bashTool.execute(
       {

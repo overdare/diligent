@@ -52,6 +52,9 @@ On POSIX, `bash` runs each command in its own process group. Cancellation, timeo
 send `SIGTERM` to the group. Diligent gives the group up to one second to exit before sending `SIGKILL` if it still
 exists. This does not stop descendants that move to another process group. Windows keeps using `taskkill /F /T`.
 
+On POSIX, foreground `bash` also cleans up any remaining group members when the shell exits normally. Use
+`yield_time_ms` rather than shell `&` to keep a command running after the tool returns.
+
 ### Background shell commands
 
 Pass `yield_time_ms` to `bash` to return while the command keeps running. If it exits first, `bash` returns its final
