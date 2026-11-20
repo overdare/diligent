@@ -10,6 +10,23 @@ export const GEMINI_MODEL_CLASSES = defineProviderModelClasses({
 
 export const GEMINI_MODELS = defineProviderModels("gemini", [
   {
+    modelId: "gemini-4-neon",
+    display: "Gemini 4 Neon",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    inputCostPer1M: 3,
+    outputCostPer1M: 15,
+    cacheReadCostPer1M: 0.15,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high", "xhigh"],
+    supportsVision: true,
+    provenance: {
+      source: "Gemini 4 Neon model documentation and Standard paid pricing",
+      sourceUrl: "https://aistudio.google.com/docs/whats-new-gemini-4-neon",
+      updatedAt: "2026-11-21",
+    },
+  },
+  {
     modelId: "gemini-4-carbon",
     display: "Gemini 4 Carbon",
     contextWindow: 1_048_576,
