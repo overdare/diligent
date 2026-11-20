@@ -282,7 +282,23 @@ async function waitForShell(entry: ShellProcess, ctx: ToolContext, yieldMs: numb
   }
 }
 
-function shellResult(
+function formatShellHeader(id: string, completion: ShellProcess["completion"]): string {
+  if (!completion) return `[Process running. process_id: ${id}]`;
+
+  switch (completion.reason) {
+    case "terminated":
+      return "[Process terminated]";
+    case "aborted":
+      return "[Aborted by user]";
+    case "expired":
+      return "[Background process lifetime expired]";
+    case undefined:
+      if (completion.error) return `[Process failed: ${completion.error}]`;
+      return `[Exit code: ${completion.exitCode}]`;
+  }
+}
+
+function collectShellResult(
   registry: ShellProcessRegistry,
   owner: string,
   entry: ShellProcess,
@@ -293,17 +309,7 @@ function shellResult(
   const status = completion ? "exited" : "running";
   const reason = completion?.reason;
   const exitCode = completion?.exitCode ?? null;
-  const header = completion
-    ? reason === "terminated"
-      ? "[Process terminated]"
-      : reason === "aborted"
-        ? "[Aborted by user]"
-        : reason === "expired"
-          ? "[Background process lifetime expired]"
-          : completion.error
-            ? `[Process failed: ${completion.error}]`
-            : `[Exit code: ${exitCode}]`
-    : `[Process running. process_id: ${id}]`;
+  const header = formatShellHeader(id, completion);
   const delta = entry.takeOutput();
   const maxDeltaBytes = budget * 4;
   const limited = Buffer.byteLength(delta) > maxDeltaBytes ? truncateHeadTail(delta, maxDeltaBytes).output : delta;
@@ -322,13 +328,13 @@ function shellResult(
   };
 }
 
-export function createBashTools(
+function createYieldingBashTool(
   cwd: string,
   host: RuntimeToolHost | undefined,
   registry: ShellProcessRegistry,
-): Tool[] {
+): Tool<typeof BashParams> {
   const foreground = createBashTool(cwd, host);
-  const bash: Tool<typeof BashParams> = {
+  return {
     ...foreground,
     description: `${foreground.description} Set yield_time_ms to keep the command running and return a process ID for bash_wait.`,
     parameters: BashParams,
@@ -354,62 +360,85 @@ export function createBashTools(
       try {
         await waitForShell(entry, ctx, yieldMs);
         if (ctx.signal.aborted) await entry.done;
-        return shellResult(registry, owner, entry, args.max_output_tokens);
+        return collectShellResult(registry, owner, entry, args.max_output_tokens);
       } finally {
         ctx.signal.removeEventListener("abort", abort);
       }
     },
   };
+}
 
-  const wait: Tool<typeof BashWaitParams> = {
+async function approveShellInput(
+  entry: ShellProcess,
+  input: string,
+  ctx: ToolContext,
+  host: RuntimeToolHost | undefined,
+): Promise<ToolResult | undefined> {
+  const approval = await requestToolApproval(
+    host,
+    {
+      permission: "execute",
+      toolName: "bash_wait",
+      description: `Allow writes to stdin for this process: ${entry.command}\nInput: ${input}`,
+      details: { command: `bash_wait:${entry.id}` },
+    },
+    { signal: ctx.signal, rememberApproval: false },
+  );
+  if (approval === "reject") {
+    ctx.abort();
+    return shellError("[Rejected by user]");
+  }
+  entry.inputApproved = true;
+}
+
+function createBashWaitTool(
+  host: RuntimeToolHost | undefined,
+  registry: ShellProcessRegistry,
+): Tool<typeof BashWaitParams> {
+  return {
     name: "bash_wait",
     description:
       "Read new output from a yielded bash process, optionally send stdin or terminate it. No PTY is allocated.",
     parameters: BashWaitParams,
     preserveEmptyArgs: ["input"],
     async execute(args, ctx) {
+      const { process_id: id, input, terminate } = args;
       const owner = ctx.sessionId;
-      const entry = owner && registry.get(owner, args.process_id);
-      if (!owner || !entry)
-        return shellError(`Unknown process_id ${args.process_id}; processes do not survive a runtime restart`);
-      if (entry.busy) return shellError(`Another call is already waiting for process_id ${args.process_id}`);
-      if (args.terminate && args.input !== undefined)
-        return shellError("Cannot send input and terminate in the same call");
+      const entry = owner && registry.get(owner, id);
+      if (!owner || !entry) {
+        return shellError(`Unknown process_id ${id}; processes do not survive a runtime restart`);
+      }
+      if (entry.busy) return shellError(`Another call is already waiting for process_id ${id}`);
+      if (terminate && input !== undefined) return shellError("Cannot send input and terminate in the same call");
 
       entry.busy = true;
       try {
         ctx.signal.throwIfAborted();
-        if (args.input !== undefined) {
-          if (!entry.inputApproved && !entry.completion) {
-            const approval = await requestToolApproval(
-              host,
-              {
-                permission: "execute",
-                toolName: "bash_wait",
-                description: `Allow writes to stdin for this process: ${entry.command}\nInput: ${args.input}`,
-                details: { command: `bash_wait:${entry.id}` },
-              },
-              { signal: ctx.signal, rememberApproval: false },
-            );
-            if (approval === "reject") {
-              ctx.abort();
-              return shellError("[Rejected by user]");
-            }
-            entry.inputApproved = true;
-          }
+        if (input !== undefined && !entry.inputApproved && !entry.completion) {
+          const rejection = await approveShellInput(entry, input, ctx, host);
+          if (rejection) return rejection;
+        }
+        if (input !== undefined) {
           ctx.signal.throwIfAborted();
-          const error = entry.write(args.input);
+          const error = entry.write(input);
           if (error) return shellError(error);
         }
-        if (args.terminate) entry.stop("terminated");
-        await waitForShell(entry, ctx, args.terminate ? undefined : (args.yield_time_ms ?? DEFAULT_WAIT_MS));
+        if (terminate) entry.stop("terminated");
+        const waitMs = terminate ? undefined : (args.yield_time_ms ?? DEFAULT_WAIT_MS);
+        await waitForShell(entry, ctx, waitMs);
         if (ctx.signal.aborted) return shellError("[Aborted by user]");
-        return shellResult(registry, owner, entry, args.max_output_tokens);
+        return collectShellResult(registry, owner, entry, args.max_output_tokens);
       } finally {
         entry.busy = false;
       }
     },
   };
+}
 
-  return [bash, wait];
+export function createBashTools(
+  cwd: string,
+  host: RuntimeToolHost | undefined,
+  registry: ShellProcessRegistry,
+): Tool[] {
+  return [createYieldingBashTool(cwd, host, registry), createBashWaitTool(host, registry)];
 }
