@@ -35,7 +35,13 @@ import { type ExperimentConfigManager, handleExperimentsList, handleExperimentsS
 import { readFilePreview, resolveFilePreviewCwd } from "./file-handlers";
 import { handleKnowledgeList, handleKnowledgeUpdate } from "./knowledge-handlers";
 import { handleMcpList, handleMcpLoginStart, handleMcpLogout } from "./mcp-handlers";
-import { handleThreadDelete, handleThreadHistory, handleThreadList, handleThreadResume } from "./session-handlers";
+import {
+  handleThreadDelete,
+  handleThreadHistory,
+  handleThreadList,
+  handleThreadNameSet,
+  handleThreadResume,
+} from "./session-handlers";
 import { handleSkillsList, handleSkillsSet, type SkillConfigManager } from "./skill-handlers";
 import { handleSubagentsList, handleSubagentsSet, type SubagentConfigManager } from "./subagent-handlers";
 import {
@@ -343,6 +349,9 @@ export async function dispatchClientRequest(
       }
       return result;
     }
+
+    case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_NAME_SET:
+      return handleThreadNameSet(ctx.threadHandlersCtx, request.params);
 
     case DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST:
       return handleToolsList(ctx.threadHandlersCtx, request.params.threadId);

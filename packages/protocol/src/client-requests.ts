@@ -325,6 +325,22 @@ export const ThreadDeleteResponseSchema = z.object({
 });
 export type ThreadDeleteResponse = z.infer<typeof ThreadDeleteResponseSchema>;
 
+/** Maximum length of a thread display name after trimming. */
+export const THREAD_NAME_MAX_LENGTH = 120;
+
+/**
+ * Sets the display name of a thread, loaded or not. The server trims `name`; an empty result clears the name, and
+ * more than THREAD_NAME_MAX_LENGTH characters is rejected.
+ */
+export const ThreadNameSetParamsSchema = z.object({
+  threadId: z.string(),
+  name: z.string(),
+});
+export type ThreadNameSetParams = z.infer<typeof ThreadNameSetParamsSchema>;
+
+export const ThreadNameSetResponseSchema = z.object({});
+export type ThreadNameSetResponse = z.infer<typeof ThreadNameSetResponseSchema>;
+
 export const ToolConflictPolicySchema = z.enum(["error", "builtin_wins", "plugin_wins"]);
 export type ToolConflictPolicy = z.infer<typeof ToolConflictPolicySchema>;
 
@@ -716,6 +732,7 @@ export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
     params: KnowledgeUpdateParamsSchema,
   }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE), params: ThreadDeleteParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_NAME_SET), params: ThreadNameSetParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST), params: ToolsListParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET), params: ToolsSetParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.SKILLS_LIST), params: SkillsListParamsSchema }),
@@ -786,6 +803,7 @@ export const DiligentClientResponseSchema = z.discriminatedUnion("method", [
     result: KnowledgeUpdateResponseSchema,
   }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE), result: ThreadDeleteResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_NAME_SET), result: ThreadNameSetResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST), result: ToolsListResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET), result: ToolsSetResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.SKILLS_LIST), result: SkillsListResponseSchema }),

@@ -236,6 +236,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await ensureStarted();
       await session.refreshThreads();
     }),
+    vscode.commands.registerCommand(COMMANDS.renameThread, async (threadId?: string) => {
+      await ensureStarted();
+      const targetThreadId = threadId ?? getFocusedThreadId();
+      if (!targetThreadId) {
+        vscode.window.showWarningMessage("Open a Diligent thread before renaming it.");
+        return;
+      }
+      const current = store.snapshot().threads.find((thread) => thread.id === targetThreadId)?.name;
+      const name = await vscode.window.showInputBox({
+        prompt: "Thread name (leave empty to clear)",
+        value: current ?? "",
+      });
+      if (name === undefined) return;
+      try {
+        await session.renameThread(targetThreadId, name);
+      } catch (error) {
+        vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+      }
+    }),
     vscode.commands.registerCommand(COMMANDS.openLogs, async () => {
       await openLogsDocument(logs);
     }),

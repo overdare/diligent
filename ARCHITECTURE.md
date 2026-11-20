@@ -507,7 +507,8 @@ Skills are discovered from configured directories and rendered into the prompt a
 The shared protocol is JSON-RPC based and currently includes requests such as:
 
 - lifecycle: `initialize`
-- threads: `thread/start`, `thread/resume`, `thread/list`, `thread/read`, `thread/delete`, `thread/compact/start`
+- threads: `thread/start`, `thread/resume`, `thread/list`, `thread/read`, `thread/name/set`, `thread/delete`,
+  `thread/compact/start`
 - turns: `turn/start`, `turn/interrupt`, `turn/steer`
 - thread state: `mode/set`, `effort/set`
 - knowledge: `knowledge/list`, `knowledge/update`
