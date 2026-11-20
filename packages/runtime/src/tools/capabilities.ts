@@ -8,6 +8,8 @@ export interface RuntimeToolHost {
 }
 export interface RuntimeRequestOptions {
   signal?: AbortSignal;
+  /** Do not save a general permission rule when the tool owns the approval scope. */
+  rememberApproval?: false;
 }
 
 export async function requestToolApproval(

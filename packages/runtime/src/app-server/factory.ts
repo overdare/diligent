@@ -32,6 +32,7 @@ import { applyCodeMode } from "../tools/code-mode/tools";
 import { buildDefaultTools } from "../tools/defaults";
 import { buildMcpNeedsAuthNote, getMcpManager } from "../tools/mcp";
 import type { PluginDiscoveryMode } from "../tools/plugin-loader";
+import { ShellProcessRegistry } from "../tools/shell-processes";
 import type { ConfigReloadResult } from "./config-handlers";
 import type { CreateAgentArgs, DiligentAppServerConfig } from "./server";
 
@@ -177,6 +178,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions, parentSystemPr
       .join("\n");
   };
   const codeMode = runtimeConfig.diligent.tools?.codeMode ?? "on";
+  const shellProcesses = request.shellProcesses ?? new ShellProcessRegistry();
   const toolsResult = await buildDefaultTools({
     cwd,
     paths,
@@ -185,6 +187,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions, parentSystemPr
       mode: mode ?? "default",
       getGoalScope: request.goalHost?.scope,
       model: modelRef,
+      shellProcesses,
       effort,
       fastMode,
       agentDefinitions: runtimeConfig.agentDefinitions,
@@ -209,6 +212,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions, parentSystemPr
     enableCollabTools: true,
     existingRegistry: existingAgent?.registry,
     host: { approve, ask },
+    shellProcesses,
     goalHost: request.goalHost,
     generateImage: (input, options) =>
       runtimeConfig.providerManager.generateImage(model.provider as ProviderName, input, options),
@@ -237,6 +241,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions, parentSystemPr
       parentSystemPrompt,
       mode: activeMode,
       getGoalScope: request.goalHost?.scope,
+      shellProcesses,
       model: modelRef,
       effort,
       fastMode,

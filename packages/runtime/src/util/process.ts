@@ -12,6 +12,8 @@ export interface SpawnOptions {
   stdout?: Stdio;
   stderr?: Stdio;
   signal?: AbortSignal;
+  /** Terminate remaining group members if the command exits before them. POSIX only. */
+  cleanupGroupOnExit?: boolean;
 }
 
 export type Child = ChildProcess & { exited: Promise<number> };
@@ -84,6 +86,7 @@ export function spawnProcess(cmd: string[], opts: SpawnOptions = {}): Child {
   const exited = new Promise<number>((resolve, reject) => {
     proc.once("exit", async (code, signal) => {
       opts.signal?.removeEventListener("abort", abort);
+      if (groupId !== undefined && opts.cleanupGroupOnExit) termination ??= terminateGroup(groupId);
       // The group can outlive its leader. Keep tracking it until cancellation finishes.
       if (termination) await termination;
       if (groupId !== undefined) runningGroups.delete(groupId);

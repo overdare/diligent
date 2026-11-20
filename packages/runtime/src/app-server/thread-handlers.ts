@@ -22,6 +22,7 @@ import type { SessionManager } from "../session/manager";
 import { generateSessionId, type SessionRunOutcome } from "../session/types";
 import type { BundledToolProvider } from "../tools/bundled-provider";
 import type { CollectedPluginHooks } from "../tools/plugin-loader";
+import type { ShellProcessRegistry } from "../tools/shell-processes";
 import type { HistoryPriority } from "./history-priority";
 import {
   applyLiveCollabStatusesToSnapshot,
@@ -62,6 +63,7 @@ export interface ThreadRuntime {
   turnWork?: Promise<void>;
   /** Cached agent — cleared when mode/effort/model changes to force a rebuild on the next turn. */
   agent?: RuntimeAgent;
+  shellProcesses?: ShellProcessRegistry;
 }
 
 /** Agent rebuilds must wait until goal-owned work can no longer reference the old registry. */

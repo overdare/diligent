@@ -54,6 +54,7 @@ export const TOOL_CAPABILITIES: Record<string, ToolCapabilities> = {
 
   // Write tools (excluded from plan mode)
   bash: { planModeDisallowed: true, hasCustomRender: true },
+  bash_wait: { planModeDisallowed: true, codeModeDirect: true },
   write: { planModeDisallowed: true, hasCustomRender: true },
   apply_patch: { planModeDisallowed: true, hasCustomRender: true },
   edit: { planModeDisallowed: true, hasCustomRender: true },

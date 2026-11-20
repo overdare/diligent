@@ -368,6 +368,7 @@ export class AgentRegistry {
     const onChildStop = this.deps.onChildStop;
     const onEntryAppended = this.deps.onChildEntryAppended;
     const userId = this.deps.getUserId ? this.deps.getUserId() : this.deps.userId;
+    const shellProcesses = this.deps.shellProcesses;
     let childManager: SessionManager;
     // The child agent is rebuilt per turn; one session keeps its yielded exec cells and store across turns.
     const childCodeModeSession = new CodeModeSession();
@@ -581,6 +582,7 @@ export class AgentRegistry {
         fatalError = err instanceof Error ? err.message : String(err);
       } finally {
         unsub();
+        await shellProcesses?.dispose(threadId);
       }
 
       if (fatalError !== null) {

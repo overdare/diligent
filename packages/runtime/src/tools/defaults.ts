@@ -12,7 +12,7 @@ import { createGoalTools, type GoalToolHost } from "../goals/tools";
 import type { DiligentPaths } from "../infrastructure";
 import type { SkillMetadata } from "../skills";
 import { createApplyPatchTool } from "./apply-patch";
-import { createBashTool } from "./bash";
+import { createBashTools } from "./bash";
 import type { BundledToolProvider, TextGenerationFn } from "./bundled-provider";
 import type { RuntimeToolHost } from "./capabilities";
 import type { PluginLoadError, PluginStateEntry, ToolStateEntry } from "./catalog";
@@ -28,6 +28,7 @@ import { createReadTool } from "./read";
 import { createReadImageTool } from "./read-image";
 import { createRequestUserInputTool } from "./request-user-input";
 import { createSearchKnowledgeTool } from "./search-knowledge";
+import { ShellProcessRegistry } from "./shell-processes";
 import { createSkillTool } from "./skill";
 import { createUpdateKnowledgeTool } from "./update-knowledge";
 import { createWebTool } from "./web";
@@ -56,6 +57,7 @@ export interface BuildDefaultToolsOptions {
    */
   existingRegistry?: AgentRegistry;
   host?: RuntimeToolHost;
+  shellProcesses?: ShellProcessRegistry;
   bundledToolProviders?: BundledToolProvider[];
   disabledToolNames?: ReadonlySet<string>;
   provider?: ProviderName;
@@ -153,7 +155,7 @@ export async function buildDefaultTools(options: BuildDefaultToolsOptions): Prom
         const webEnabled = toolsConfig?.web_action !== false;
 
         const builtinTools: Tool[] = [
-          createBashTool(cwd, host),
+          ...createBashTools(cwd, host, options.shellProcesses ?? new ShellProcessRegistry()),
           createSkillTool(skills),
           createReadTool(),
           createReadImageTool(),

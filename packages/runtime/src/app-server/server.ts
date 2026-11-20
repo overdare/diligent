@@ -59,6 +59,7 @@ import {
   collectSupersededPluginPackages,
 } from "../tools/bundled-provider";
 import { collectPluginHooks, type PluginDiscoveryMode } from "../tools/plugin-loader";
+import { ShellProcessRegistry } from "../tools/shell-processes";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
 import type { ConfigReloadResult } from "./config-handlers";
 import type { ExperimentConfigManager } from "./experiment-handlers";
@@ -109,6 +110,8 @@ export interface CreateAgentArgs {
   getSessionId?: () => string | undefined;
   /** The thread's current agent, if one already exists. Passed so createAgent can reuse the registry. */
   existingAgent?: RuntimeAgent;
+  /** Owns yielded Bash processes across agent rebuilds within the thread. */
+  shellProcesses?: ShellProcessRegistry;
   /** Called when a child agent's turn completes or is interrupted. Propagated to the collab registry. */
   onChildStop?: (info: ChildStopInfo) => Promise<void>;
   /** Routes durable child entries through the same host observers as parent entries. */
@@ -330,6 +333,7 @@ export class DiligentAppServer {
         // for input. Cancel them before awaiting cleanup during host shutdown.
         runtime.abortController?.abort();
         await runtime.turnWork;
+        await runtime.shellProcesses?.dispose();
         await runtime.agent?.registry?.shutdownAll();
         await runtime.goal?.close();
       }),
@@ -687,7 +691,7 @@ export class DiligentAppServer {
       waitForConnection: !!runtime?.goalScope || !!runtime?.goal?.hasChildren,
     });
 
-    if (decision === "always") {
+    if (decision === "always" && options?.rememberApproval !== false) {
       this.config.permissionEngine?.remember(request, "allow");
     }
 
@@ -811,6 +815,7 @@ export class DiligentAppServer {
       abortController: null,
       currentTurnId: null,
       isRunning: false,
+      shellProcesses: new ShellProcessRegistry(),
     };
 
     const paths = await this.config.resolvePaths(cwd);
@@ -843,6 +848,7 @@ export class DiligentAppServer {
           ask: (request, options) => this.requestUserInput(runtime.id, request, options),
           getSessionId: () => runtime.manager.sessionId,
           existingAgent: runtime.agent,
+          shellProcesses: runtime.shellProcesses,
           onChildStop: (info) => this.runStopHooksFor(info),
           onChildEntryAppended: (info) => this.runEntryAppendedHooks(info),
           getUserId: () => runtime.currentTurnUserId,

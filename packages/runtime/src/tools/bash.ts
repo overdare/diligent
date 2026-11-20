@@ -1,20 +1,70 @@
 // @summary Shell command execution with timeout and output truncation
 
-import type { Tool, ToolResult } from "@diligent/core/tool-contract";
-import { MAX_OUTPUT_BYTES, truncateTail } from "@diligent/core/tool-contract";
+import type { Tool, ToolContext, ToolResult } from "@diligent/core/tool-contract";
+import { MAX_OUTPUT_BYTES, truncateHeadTail, truncateTail } from "@diligent/core/tool-contract";
 import { existsSync } from "fs";
 import { z } from "zod";
 import { spawnProcess } from "../util/process";
 import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
 import { createCommandRenderPayload } from "./render-payload";
+import { SHELL_INPUT_LIMIT, type ShellProcess, type ShellProcessRegistry } from "./shell-processes";
 
-const BashParams = z.object({
+const ForegroundBashParams = z.object({
   command: z.string().min(1).describe("The shell command to execute"),
   description: z.string().optional().describe("Short description of what the command does (5-10 words)"),
-  timeout: z.number().positive().optional().describe("Timeout in milliseconds. Default: 120000 (2 min)"),
+  timeout: z.number().positive().optional().describe("Foreground timeout in milliseconds. Default: 120000 (2 min)"),
 });
 
 const DEFAULT_TIMEOUT = 120_000;
+const BASH_DESCRIPTION =
+  "Execute a shell command. Use this to run programs, install packages, manage files, or interact with the system.";
+
+const DEFAULT_WAIT_MS = 10_000;
+const DEFAULT_MAX_OUTPUT_TOKENS = 10_000;
+const yieldTime = z.number().int().nonnegative().max(2_147_483_647);
+const outputBudget = z
+  .number()
+  .int()
+  .positive()
+  .max(250_000)
+  .optional()
+  .describe("Maximum output tokens (default 10000 for background commands).");
+const BashParams = ForegroundBashParams.extend({
+  yield_time_ms: yieldTime
+    .optional()
+    .describe("Return early while the command keeps running. Omit to run in the foreground."),
+  max_output_tokens: outputBudget,
+});
+const ForegroundOnlyBashParams = ForegroundBashParams.strict();
+const BackgroundOnlyBashParams = BashParams.omit({ timeout: true }).extend({
+  yield_time_ms: yieldTime.describe("Return after this many milliseconds while the process keeps running."),
+});
+const BashWaitParams = z.object({
+  process_id: z.string().min(1).describe("ID returned by a yielded bash call in this session."),
+  yield_time_ms: yieldTime.optional().describe("Maximum wait in ms (default 10000); use 0 to poll without waiting."),
+  input: z.string().max(SHELL_INPUT_LIMIT).optional().describe("Text to write to stdin. Include a newline if needed."),
+  terminate: z.boolean().optional().describe("Stop the process and return its remaining output."),
+  max_output_tokens: outputBudget,
+});
+
+export function isYieldingBash(tool: Tool): boolean {
+  return tool.name === "bash" && tool.parameters === BashParams;
+}
+
+export function restrictBash(tool: Tool, mode: "foreground" | "background"): Tool {
+  return mode === "foreground"
+    ? { ...tool, description: BASH_DESCRIPTION, parameters: ForegroundOnlyBashParams }
+    : {
+        ...tool,
+        description:
+          "Run a shell command in the background. Use bash_wait to read output, send stdin, or terminate it.",
+        parameters: BackgroundOnlyBashParams,
+      };
+}
+
+export function hasBuiltinBashWait(tools: readonly Tool[]): boolean {
+  return tools.some((tool) => tool.name === "bash_wait" && tool.parameters === BashWaitParams);
+}
 
 /** Live output is coalesced into at most one tool update per interval. */
 const LIVE_UPDATE_INTERVAL_MS = 250;
@@ -82,6 +132,34 @@ function resolveWindowsShell(command: string): string[] {
   return [process.env.ComSpec || "cmd.exe", "/C", command];
 }
 
+function resolveShell(command: string): string[] {
+  return process.platform === "win32" ? resolveWindowsShell(command) : [process.env.SHELL || "bash", "-c", command];
+}
+
+async function approveCommand(
+  args: { command: string; description?: string },
+  ctx: ToolContext,
+  host?: RuntimeToolHost,
+): Promise<ToolResult | undefined> {
+  const approval = await requestToolApproval(
+    host,
+    {
+      permission: "execute",
+      toolName: "bash",
+      description: args.description ?? args.command,
+      details: { command: args.command },
+    },
+    { signal: ctx.signal },
+  );
+  if (approval !== "reject") return;
+  ctx.abort();
+  return {
+    output: "[Rejected by user]",
+    render: createCommandRenderPayload(args.command, "[Rejected by user]", true),
+    metadata: { error: true },
+  };
+}
+
 export function filterSensitiveEnv(env: NodeJS.ProcessEnv): Record<string, string | undefined> {
   const filtered: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(env)) {
@@ -92,38 +170,18 @@ export function filterSensitiveEnv(env: NodeJS.ProcessEnv): Record<string, strin
   return filtered;
 }
 
-export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof BashParams> {
+export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof ForegroundBashParams> {
   return {
     name: "bash",
-    description:
-      "Execute a shell command. Use this to run programs, install packages, manage files, or interact with the system.",
-    parameters: BashParams,
+    description: BASH_DESCRIPTION,
+    parameters: ForegroundBashParams,
     async execute(args, ctx): Promise<ToolResult> {
-      const approval = await requestToolApproval(
-        host,
-        {
-          permission: "execute",
-          toolName: "bash",
-          description: args.description ?? args.command,
-          details: { command: args.command },
-        },
-        { signal: ctx.signal },
-      );
-      if (approval === "reject") {
-        ctx.abort();
-        return {
-          output: "[Rejected by user]",
-          render: createCommandRenderPayload(args.command, "[Rejected by user]", true),
-          metadata: { error: true },
-        };
-      }
+      const rejection = await approveCommand(args, ctx, host);
+      if (rejection) return rejection;
 
       const timeout = args.timeout ?? DEFAULT_TIMEOUT;
 
-      const isWindows = process.platform === "win32";
-      const shellArgs = isWindows
-        ? resolveWindowsShell(args.command)
-        : [process.env.SHELL || "bash", "-c", args.command];
+      const shellArgs = resolveShell(args.command);
 
       let timedOut = false;
       let aborted = false;
@@ -209,4 +267,149 @@ export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof
       };
     },
   };
+}
+
+function shellError(output: string): ToolResult {
+  return { output, metadata: { error: true } };
+}
+
+async function waitForShell(entry: ShellProcess, ctx: ToolContext, yieldMs: number | undefined): Promise<void> {
+  const live = ctx.onUpdate ? createLiveOutput(ctx.onUpdate) : undefined;
+  try {
+    await entry.wait(yieldMs, ctx.signal, live?.push);
+  } finally {
+    live?.close();
+  }
+}
+
+function shellResult(
+  registry: ShellProcessRegistry,
+  owner: string,
+  entry: ShellProcess,
+  budget = DEFAULT_MAX_OUTPUT_TOKENS,
+): ToolResult {
+  const completion = entry.completion;
+  const { id, command } = entry;
+  const status = completion ? "exited" : "running";
+  const reason = completion?.reason;
+  const exitCode = completion?.exitCode ?? null;
+  const header = completion
+    ? reason === "terminated"
+      ? "[Process terminated]"
+      : reason === "aborted"
+        ? "[Aborted by user]"
+        : reason === "expired"
+          ? "[Background process lifetime expired]"
+          : completion.error
+            ? `[Process failed: ${completion.error}]`
+            : `[Exit code: ${exitCode}]`
+    : `[Process running. process_id: ${id}]`;
+  const delta = entry.takeOutput();
+  const maxDeltaBytes = budget * 4;
+  const limited = Buffer.byteLength(delta) > maxDeltaBytes ? truncateHeadTail(delta, maxDeltaBytes).output : delta;
+  const output = limited ? `${header}\n${limited}` : header;
+  const isError = !!completion && reason !== "terminated" && (reason !== undefined || exitCode !== 0);
+  if (completion) registry.forget(owner, entry);
+  const render = createCommandRenderPayload(command, truncateTail(output, MAX_OUTPUT_BYTES).output, isError);
+  if (!completion) render.outputSummary = `Process running (${id})`;
+  else if (reason === "terminated") render.outputSummary = "Process terminated";
+  return {
+    output,
+    render,
+    truncateDirection: "head_tail",
+    maxOutputBytes: maxDeltaBytes + Buffer.byteLength(header) + 128, // Preserve the status header and omission marker.
+    metadata: { status, processId: id, exitCode, error: isError },
+  };
+}
+
+export function createBashTools(
+  cwd: string,
+  host: RuntimeToolHost | undefined,
+  registry: ShellProcessRegistry,
+): Tool[] {
+  const foreground = createBashTool(cwd, host);
+  const bash: Tool<typeof BashParams> = {
+    ...foreground,
+    description: `${foreground.description} Set yield_time_ms to keep the command running and return a process ID for bash_wait.`,
+    parameters: BashParams,
+    async execute(args, ctx) {
+      const yieldMs = args.yield_time_ms;
+      if (yieldMs === undefined) {
+        const result = await foreground.execute(args, ctx);
+        if (args.max_output_tokens !== undefined) result.maxOutputBytes = args.max_output_tokens * 4;
+        return result;
+      }
+      const owner = ctx.sessionId;
+      if (!owner) return shellError("Background commands require a session");
+      const rejection = await approveCommand(args, ctx, host);
+      if (rejection) return rejection;
+      ctx.signal.throwIfAborted();
+
+      const entry = registry.start(owner, args.command, resolveShell(args.command), {
+        cwd,
+        env: filterSensitiveEnv(process.env),
+      });
+      const abort = () => entry.stop("aborted");
+      ctx.signal.addEventListener("abort", abort, { once: true });
+      try {
+        await waitForShell(entry, ctx, yieldMs);
+        if (ctx.signal.aborted) await entry.done;
+        return shellResult(registry, owner, entry, args.max_output_tokens);
+      } finally {
+        ctx.signal.removeEventListener("abort", abort);
+      }
+    },
+  };
+
+  const wait: Tool<typeof BashWaitParams> = {
+    name: "bash_wait",
+    description:
+      "Read new output from a yielded bash process, optionally send stdin or terminate it. No PTY is allocated.",
+    parameters: BashWaitParams,
+    preserveEmptyArgs: ["input"],
+    async execute(args, ctx) {
+      const owner = ctx.sessionId;
+      const entry = owner && registry.get(owner, args.process_id);
+      if (!owner || !entry)
+        return shellError(`Unknown process_id ${args.process_id}; processes do not survive a runtime restart`);
+      if (entry.busy) return shellError(`Another call is already waiting for process_id ${args.process_id}`);
+      if (args.terminate && args.input !== undefined)
+        return shellError("Cannot send input and terminate in the same call");
+
+      entry.busy = true;
+      try {
+        ctx.signal.throwIfAborted();
+        if (args.input !== undefined) {
+          if (!entry.inputApproved && !entry.completion) {
+            const approval = await requestToolApproval(
+              host,
+              {
+                permission: "execute",
+                toolName: "bash_wait",
+                description: `Allow writes to stdin for this process: ${entry.command}\nInput: ${args.input}`,
+                details: { command: `bash_wait:${entry.id}` },
+              },
+              { signal: ctx.signal, rememberApproval: false },
+            );
+            if (approval === "reject") {
+              ctx.abort();
+              return shellError("[Rejected by user]");
+            }
+            entry.inputApproved = true;
+          }
+          ctx.signal.throwIfAborted();
+          const error = entry.write(args.input);
+          if (error) return shellError(error);
+        }
+        if (args.terminate) entry.stop("terminated");
+        await waitForShell(entry, ctx, args.terminate ? undefined : (args.yield_time_ms ?? DEFAULT_WAIT_MS));
+        if (ctx.signal.aborted) return shellError("[Aborted by user]");
+        return shellResult(registry, owner, entry, args.max_output_tokens);
+      } finally {
+        entry.busy = false;
+      }
+    },
+  };
+
+  return [bash, wait];
 }

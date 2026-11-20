@@ -37,7 +37,7 @@ export async function executeTool(
     return { output: `Error: Unknown tool "${toolCall.name}"`, metadata: { error: true } };
   }
 
-  const input = dropEmptyOptionals(tool.parameters, toolCall.input);
+  const input = dropEmptyOptionals(tool.parameters, toolCall.input, tool.preserveEmptyArgs);
 
   let args: unknown;
   if (tool.parseArgs) {
