@@ -77,7 +77,6 @@ export function createTestServer(opts: {
       timeoutMs: 180_000,
     },
     permissionEngine: createYoloPermissionEngine(),
-    denialBreakerThreshold: 3,
     providerManager,
     authStore: { mode: "auto" },
     experimentDefinitions: [],

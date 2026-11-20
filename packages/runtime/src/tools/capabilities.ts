@@ -72,21 +72,15 @@ export function resolveRejectedApproval(
 
   const { rule, consecutiveDenials, breaker } = outcome;
   const deniedBy = rule ? `permission rule "${rule.pattern}" (${rule.permission})` : "a permission rule";
-  const lines = [
-    `Denied by ${deniedBy}. Do not retry this operation or variations of it. Continue without it, or tell the user what was blocked.`,
-  ];
-  if (breaker === "warn") {
-    lines.push(
-      `${consecutiveDenials} consecutive operations were denied by permission rules. Stop attempting variations and report the blocked operations to the user.`,
-    );
-  } else if (breaker === "stop") {
-    lines.push(
-      `${consecutiveDenials} consecutive operations were denied by permission rules. This turn is stopping; report the blocked operations to the user.`,
-    );
-    ctx.abort();
+  let output = `Denied by ${deniedBy}. Do not retry this operation or variations of it. Continue without it, or tell the user what was blocked.`;
+  if (breaker !== "none") {
+    const stopping = breaker === "stop";
+    const nextStep = stopping ? "This turn is stopping;" : "Stop attempting variations and";
+    output += `\n${consecutiveDenials} consecutive operations were denied by permission rules. ${nextStep} report the blocked operations to the user.`;
+    if (stopping) ctx.abort();
   }
   return {
-    output: lines.join("\n"),
+    output,
     metadata: { error: true, denial: { source: "policy", rule, consecutiveDenials } },
   };
 }

@@ -236,7 +236,7 @@ describe("PermissionEngine.evaluate", () => {
   });
 });
 
-describe("PermissionEngine.decidingRule", () => {
+describe("PermissionEngine.evaluateWithRule", () => {
   const request = {
     permission: "execute" as const,
     toolName: "bash",
@@ -244,23 +244,31 @@ describe("PermissionEngine.decidingRule", () => {
     details: { command: "rm -rf build" },
   };
 
-  it("returns the last matching rule, which is the one evaluate applies", () => {
+  it("returns the action and the last matching config rule together", () => {
     const broad: PermissionRule = { permission: "execute", pattern: "**", action: "allow" };
     const narrow: PermissionRule = { permission: "execute", pattern: "rm **", action: "deny" };
     const engine = createPermissionEngine([broad, narrow]);
-    expect(engine.decidingRule(request)).toEqual(narrow);
-    expect(engine.evaluate(request)).toBe("deny");
+    expect(engine.evaluateWithRule(request)).toEqual({ action: "deny", rule: narrow });
   });
 
-  it("includes rules remembered during the session", () => {
+  it("returns the most recent matching session rule before config rules", () => {
     const engine = createPermissionEngine([{ permission: "execute", pattern: "rm **", action: "deny" }]);
+    engine.remember(request, "deny");
     engine.remember(request, "allow");
-    expect(engine.decidingRule(request)).toMatchObject({ pattern: "rm **", action: "allow" });
+    expect(engine.evaluateWithRule(request)).toEqual({
+      action: "allow",
+      rule: { permission: "execute", pattern: "rm **", action: "allow" },
+    });
   });
 
-  it("returns undefined when no rule matches or in yolo mode", () => {
-    expect(createPermissionEngine([]).decidingRule(request)).toBeUndefined();
-    expect(createYoloPermissionEngine().decidingRule(request)).toBeUndefined();
+  it("reports no rule for unmatched or yolo requests", () => {
+    expect(createPermissionEngine([]).evaluateWithRule(request)).toEqual({ action: "prompt" });
+    expect(createYoloPermissionEngine().evaluateWithRule(request)).toEqual({ action: "allow" });
+  });
+
+  it("keeps the matching rule when its action is prompt", () => {
+    const rule: PermissionRule = { permission: "execute", pattern: "rm **", action: "prompt" };
+    expect(createPermissionEngine([rule]).evaluateWithRule(request)).toEqual({ action: "prompt", rule });
   });
 });
 

@@ -4,11 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  type AgentEvent,
-  DILIGENT_SERVER_NOTIFICATION_METHODS,
-  type DiligentServerNotification,
-} from "@diligent/protocol";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS, type DiligentServerNotification } from "@diligent/protocol";
 import { createPermissionEngine } from "@diligent/runtime";
 import { createToolRoundsStream, type ToolCallSpec } from "./helpers/fake-stream";
 import { createProtocolClient, type ProtocolTestClient } from "./helpers/protocol-client";
@@ -24,29 +20,29 @@ afterEach(async () => {
   tmpDir = "";
 });
 
-function agentEvents(notifications: DiligentServerNotification[]): AgentEvent[] {
-  const events: AgentEvent[] = [];
-  for (const notification of notifications) {
-    if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT)
-      events.push(notification.params.event);
-  }
-  return events;
+function agentEvent(notification: DiligentServerNotification) {
+  return notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT
+    ? notification.params.event
+    : undefined;
 }
 
 function toolOutputs(notifications: DiligentServerNotification[]): Map<string, string> {
   const outputs = new Map<string, string>();
-  for (const event of agentEvents(notifications)) {
-    if (event.type === "tool_end") outputs.set(event.toolCallId, event.output);
+  for (const notification of notifications) {
+    const event = agentEvent(notification);
+    if (event?.type === "tool_end") outputs.set(event.toolCallId, event.output);
   }
   return outputs;
 }
 
 function assistantSaid(notifications: DiligentServerNotification[], text: string): boolean {
-  return agentEvents(notifications).some(
-    (event) =>
-      event.type === "message_end" &&
-      event.message.content.some((block) => block.type === "text" && block.text === text),
-  );
+  return notifications.some((notification) => {
+    const event = agentEvent(notification);
+    return (
+      event?.type === "message_end" &&
+      event.message.content.some((block) => block.type === "text" && block.text === text)
+    );
+  });
 }
 
 function deniedRound(index: number): ToolCallSpec[] {
@@ -84,15 +80,16 @@ describe("permission-rule denials", () => {
   test("consecutive denials add an escalation and end the turn at twice the threshold", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-denial-breaker-"));
     const threshold = 2;
+    const stopAt = threshold * 2;
     const server = createTestServer({
       cwd: tmpDir,
       runtimeToolsConfig: { builtin: { bash: true } },
       runtimeConfigOverrides: {
         permissionEngine: createPermissionEngine([{ permission: "execute", pattern: "rm **", action: "deny" }]),
-        denialBreakerThreshold: threshold,
+        diligent: { approvals: { denialBreakerThreshold: threshold } },
       },
       streamFunction: createToolRoundsStream(
-        [deniedRound(1), deniedRound(2), deniedRound(3), deniedRound(4), deniedRound(5)],
+        Array.from({ length: stopAt + 1 }, (_, index) => deniedRound(index + 1)),
         "should not be reached",
       ),
     });
@@ -103,9 +100,9 @@ describe("permission-rule denials", () => {
     const outputs = toolOutputs(notifications);
 
     expect(outputs.get("tc-deny-1")).not.toContain("consecutive");
-    expect(outputs.get("tc-deny-2")).toContain(`${threshold} consecutive operations were denied`);
-    expect(outputs.get("tc-deny-4")).toContain("This turn is stopping");
-    expect(outputs.has("tc-deny-5")).toBe(false);
+    expect(outputs.get(`tc-deny-${threshold}`)).toContain(`${threshold} consecutive operations were denied`);
+    expect(outputs.get(`tc-deny-${stopAt}`)).toContain("This turn is stopping");
+    expect(outputs.has(`tc-deny-${stopAt + 1}`)).toBe(false);
     expect(assistantSaid(notifications, "should not be reached")).toBe(false);
   });
 });

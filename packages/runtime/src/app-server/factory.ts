@@ -498,7 +498,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
     providerAuthPresenter: runtimeConfig.providerAuthPresenter,
     authStore: runtimeConfig.authStore,
     permissionEngine: runtimeConfig.permissionEngine,
-    denialBreakerThreshold: runtimeConfig.denialBreakerThreshold,
+    denialBreakerThreshold: runtimeConfig.diligent.approvals?.denialBreakerThreshold,
     skillNames: runtimeConfig.skills.map((skill) => skill.name),
     hooks: runtimeConfig.diligent.hooks,
     bundledToolProviders,

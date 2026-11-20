@@ -37,7 +37,7 @@ export function generatePattern(request: ApprovalRequest): string {
 export function createYoloPermissionEngine(): PermissionEngine {
   return {
     evaluate: () => "allow",
-    decidingRule: () => undefined,
+    evaluateWithRule: () => ({ action: "allow" }),
     remember: () => {},
   };
 }
@@ -46,19 +46,16 @@ export function createPermissionEngine(configRules: PermissionRule[]): Permissio
   // Session-scoped rules added by "always" responses (D029)
   const sessionRules: PermissionRule[] = [];
 
-  function decidingRule(request: ApprovalRequest): PermissionRule | undefined {
-    // Config rules first, then session rules — last-match-wins (D027)
+  function findMatchingRule(request: ApprovalRequest): PermissionRule | undefined {
     const subject = extractSubject(request);
-    let decided: PermissionRule | undefined;
-    for (const rule of [...configRules, ...sessionRules]) {
-      if (rule.permission !== request.permission) continue;
-      if (wildcardMatch(rule.pattern, subject)) decided = rule;
-    }
-    return decided;
+    const matches = (rule: PermissionRule) =>
+      rule.permission === request.permission && wildcardMatch(rule.pattern, subject);
+    // Last match wins within each list, and session rules take precedence (D027).
+    return sessionRules.findLast(matches) ?? configRules.findLast(matches);
   }
 
   function evaluate(request: ApprovalRequest): PermissionAction {
-    return decidingRule(request)?.action ?? "prompt";
+    return findMatchingRule(request)?.action ?? "prompt";
   }
 
   function remember(request: ApprovalRequest, action: "allow" | "deny"): void {
@@ -66,7 +63,14 @@ export function createPermissionEngine(configRules: PermissionRule[]): Permissio
     sessionRules.push({ permission: request.permission, pattern, action });
   }
 
-  return { evaluate, decidingRule, remember };
+  return {
+    evaluate,
+    evaluateWithRule(request) {
+      const rule = findMatchingRule(request);
+      return rule ? { action: rule.action, rule } : { action: "prompt" };
+    },
+    remember,
+  };
 }
 
 /**

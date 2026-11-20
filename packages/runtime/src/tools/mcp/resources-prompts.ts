@@ -2,8 +2,7 @@
 
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
-import type { RuntimeToolHost } from "../capabilities";
-import { requestToolApprovalOutcome, resolveRejectedApproval } from "../capabilities";
+import { type RuntimeToolHost, requestToolApprovalOutcome, resolveRejectedApproval } from "../capabilities";
 import type { McpConnectionManager } from "./client";
 
 const listParams = z.object({
@@ -60,7 +59,7 @@ export function createMcpResourceTools(
           metadata: { error: true },
         };
       }
-      const decision = await requestToolApprovalOutcome(
+      const approval = await requestToolApprovalOutcome(
         host,
         {
           permission: "execute",
@@ -70,9 +69,10 @@ export function createMcpResourceTools(
         },
         { signal: ctx.signal },
       );
-      if (decision.decision === "reject") {
-        if (decision.source === "user") return { output: "Resource read rejected by user." };
-        return resolveRejectedApproval(decision, ctx);
+      if (approval.decision === "reject") {
+        return approval.source === "user"
+          ? { output: "Resource read rejected by user." }
+          : resolveRejectedApproval(approval, ctx);
       }
       const result = await manager.readResource(server, uri, ctx.signal);
       return { output: result.text || "(empty resource)", metadata: { mcpServer: server, mcpResource: uri } };
@@ -116,7 +116,7 @@ export function createMcpPromptTools(servers: string[], manager: McpConnectionMa
           metadata: { error: true },
         };
       }
-      const decision = await requestToolApprovalOutcome(
+      const approval = await requestToolApprovalOutcome(
         host,
         {
           permission: "execute",
@@ -126,9 +126,10 @@ export function createMcpPromptTools(servers: string[], manager: McpConnectionMa
         },
         { signal: ctx.signal },
       );
-      if (decision.decision === "reject") {
-        if (decision.source === "user") return { output: "Prompt render rejected by user." };
-        return resolveRejectedApproval(decision, ctx);
+      if (approval.decision === "reject") {
+        return approval.source === "user"
+          ? { output: "Prompt render rejected by user." }
+          : resolveRejectedApproval(approval, ctx);
       }
       const result = await manager.getPrompt(server, name, args, ctx.signal);
       const header = result.description ? `${result.description}\n\n` : "";

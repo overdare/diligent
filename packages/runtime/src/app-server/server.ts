@@ -193,6 +193,12 @@ async function resolveProviderPlanType(
   return tokens?.account_info?.chatgpt_plan_type;
 }
 
+function denialBreakerLevel(consecutiveDenials: number, threshold: number) {
+  if (threshold <= 0) return "none";
+  if (consecutiveDenials >= threshold * 2) return "stop";
+  return consecutiveDenials >= threshold ? "warn" : "none";
+}
+
 export class DiligentAppServer {
   private readonly serverName: string;
   private readonly serverVersion: string;
@@ -669,22 +675,22 @@ export class DiligentAppServer {
     const runtime = this.threads.get(threadId);
     const signal = options?.signal ?? runtime?.goalScope?.signal;
     signal?.throwIfAborted();
-    const engine = this.config.permissionEngine;
-    const policyAction = engine?.evaluate(request);
-    if (policyAction === "deny") {
+    const policy = this.config.permissionEngine?.evaluateWithRule(request);
+    if (policy?.action === "deny") {
       // Children route approvals through the parent thread, so they share its count.
       const consecutiveDenials = (runtime?.consecutivePolicyDenials ?? 0) + 1;
       if (runtime) runtime.consecutivePolicyDenials = consecutiveDenials;
       const threshold = this.config.denialBreakerThreshold ?? DEFAULT_DENIAL_BREAKER_THRESHOLD;
-      let breaker: "none" | "warn" | "stop" = "none";
-      if (threshold > 0 && consecutiveDenials >= threshold * 2) breaker = "stop";
-      else if (threshold > 0 && consecutiveDenials >= threshold) breaker = "warn";
-      return { decision: "reject", source: "policy", rule: engine?.decidingRule(request), consecutiveDenials, breaker };
+      return {
+        decision: "reject",
+        source: "policy",
+        rule: policy.rule,
+        consecutiveDenials,
+        breaker: denialBreakerLevel(consecutiveDenials, threshold),
+      };
     }
     if (runtime) runtime.consecutivePolicyDenials = 0;
-    if (policyAction === "allow") {
-      return { decision: "once" };
-    }
+    if (policy?.action === "allow") return { decision: "once" };
 
     const decision = await requestApprovalFromConnections({
       threadId,
