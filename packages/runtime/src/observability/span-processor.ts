@@ -6,6 +6,7 @@ import { type ObservationPolicySnapshot, projectObservation } from "./content-po
 import { boundDetailedAttributes, projectModelMessages } from "./detailed-content";
 
 interface ConsentSpanProcessorOptions {
+  resourceAttributes?: Readonly<Record<string, string>>;
   getPolicy(): ObservationPolicySnapshot;
   isAuthorizedContext(context: Context): boolean;
   getErrorReason?(span: ReadableSpan): string | undefined;
@@ -17,9 +18,15 @@ interface ConsentSpanProcessorOptions {
 
 export class ConsentSpanProcessor implements SpanProcessor {
   private readonly snapshots = new WeakMap<Span, ObservationPolicySnapshot & { sessionId?: string }>();
-  private readonly resource = resourceFromAttributes({ "service.name": "diligent", dd_llmobs_enabled: true });
+  private readonly resource;
 
-  constructor(private readonly options: ConsentSpanProcessorOptions) {}
+  constructor(private readonly options: ConsentSpanProcessorOptions) {
+    this.resource = resourceFromAttributes({
+      ...options.resourceAttributes,
+      "service.name": "diligent",
+      dd_llmobs_enabled: true,
+    });
+  }
 
   onStart(span: Span, parentContext: Context): void {
     try {

@@ -7,6 +7,7 @@ describe("consent span processor", () => {
     const exported: ReadableSpan[] = [];
     const policy = { granted: true, generation: 1, userId: "user", contentMode: "none" as const };
     const processor = new ConsentSpanProcessor({
+      resourceAttributes: { "service.version": "1.2.3", "service.name": "override" },
       getPolicy: () => policy,
       isAuthorizedContext: () => true,
       onSpan: (span) => exported.push(span),
@@ -31,6 +32,8 @@ describe("consent span processor", () => {
       "openinference.span.kind": "LLM",
     });
     expect(exported[0]?.name).toBe("diligent.llm");
+    expect(exported[0]?.resource.attributes["service.version"]).toBe("1.2.3");
+    expect(exported[0]?.resource.attributes["service.name"]).toBe("diligent");
     expect(exported[0]?.events).toEqual([]);
     expect(exported[0]?.status).toEqual({ code: 2 });
   });

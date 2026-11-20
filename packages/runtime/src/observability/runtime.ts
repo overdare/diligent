@@ -13,6 +13,7 @@ import { ConsentSpanProcessor } from "./span-processor";
 
 interface ObservationRuntimeOptions {
   baseUrl: string;
+  resourceAttributes?: Readonly<Record<string, string>>;
   getPolicy(): ObservationPolicySnapshot;
   resolveToken(): Promise<string | undefined>;
   fetch?: typeof globalThis.fetch;
@@ -36,6 +37,7 @@ export function createObservationRuntime(options: ObservationRuntimeOptions) {
   const errorReasons = new WeakMap<object, string>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const processor = new ConsentSpanProcessor({
+    resourceAttributes: options.resourceAttributes,
     getPolicy: options.getPolicy,
     getErrorReason: (span) => errorReasons.get(span),
     getTurnContent: (span) => turnContent.get(span),
