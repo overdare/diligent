@@ -29,6 +29,7 @@ import {
   createBundledAgentLoopHooks,
   type TextGenerationFn,
 } from "../tools/bundled-provider";
+import { createRuntimeToolHost } from "../tools/capabilities";
 import { CodeModeSession } from "../tools/code-mode/session";
 import { applyCodeMode } from "../tools/code-mode/tools";
 import { buildDefaultTools } from "../tools/defaults";
@@ -210,7 +211,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions, parentSystemPr
     skills: runtimeConfig.skills,
     enableCollabTools: true,
     existingRegistry: existingAgent?.registry,
-    host: { approve, ask },
+    host: createRuntimeToolHost(approve, ask),
     goalHost: request.goalHost,
     generateImage: (input, options) =>
       runtimeConfig.providerManager.generateImage(model.provider as ProviderName, input, options),
@@ -503,6 +504,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
     providerAuthPresenter: runtimeConfig.providerAuthPresenter,
     authStore: runtimeConfig.authStore,
     permissionEngine: runtimeConfig.permissionEngine,
+    denialBreakerThreshold: runtimeConfig.diligent.approvals?.denialBreakerThreshold,
     skillNames: runtimeConfig.skills.map((skill) => skill.name),
     hooks: runtimeConfig.diligent.hooks,
     bundledToolProviders,

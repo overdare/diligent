@@ -458,6 +458,19 @@ The approval system is a rule-based permission engine in runtime. It supports:
 
 Core consumes approval hooks; it does not own the policy engine.
 
+Rejections carry their source (`ApprovalOutcome`):
+
+- A user rejection ends the turn for built-in shell and file tools. MCP tools keep the turn running.
+- A permission-rule `deny` does not end the turn. The tool result names the deciding rule, and the model continues
+  without the operation.
+  The permission engine returns the action and deciding rule from the same lookup.
+- Consecutive rule denials in a thread feed a breaker (`approvals.denialBreakerThreshold`, default 3, `0` disables).
+  At the threshold the tool result tells the model to stop retrying variations; at twice the threshold the turn ends.
+  Child agents route approvals through the parent thread and share its count.
+
+Built-in tools read `RuntimeToolHost.approveWithOutcome`. `RuntimeToolHost.approve` keeps returning a plain
+`ApprovalResponse` for plugins and product-owned tools, so their behavior is unchanged.
+
 ### User input
 
 `request_user_input` is a general clarification tool, not an approval substitute. It pauses execution and asks the connected frontend to collect structured answers from the user.

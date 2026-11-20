@@ -11,7 +11,7 @@ import type { Tool, ToolOutputFileStore } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { getBuiltinAgentDefinitions } from "../../src/agent/agent-types";
 import { createAppServerConfig, filterToolsByMode } from "../../src/app-server/factory";
-import type { PermissionEngine } from "../../src/approval";
+import { createYoloPermissionEngine } from "../../src/approval";
 import type { RuntimeConfig } from "../../src/config/runtime";
 import { toolOutputStore } from "../../src/infrastructure";
 
@@ -43,10 +43,6 @@ async function waitFor(condition: () => Promise<boolean>, timeoutMs = 500): Prom
 
 function makeRuntimeConfig(overrides?: Partial<RuntimeConfig>): RuntimeConfig {
   const providerManager = new ProviderManager({});
-  const permissionEngine: PermissionEngine = {
-    evaluate: () => "allow",
-    remember: () => {},
-  };
   const model: Model = {
     modelId: TEST_ANTHROPIC_MODEL_ID,
     provider: "anthropic",
@@ -73,7 +69,7 @@ function makeRuntimeConfig(overrides?: Partial<RuntimeConfig>): RuntimeConfig {
       reservePercent: 16,
       timeoutMs: 180000,
     },
-    permissionEngine,
+    permissionEngine: createYoloPermissionEngine(),
     providerManager,
     agents: [],
     agentDefinitions: [],
@@ -113,7 +109,7 @@ describe("createAppServerConfig", () => {
       mode: "plan",
       effort: "medium",
       model: runtimeConfig.model,
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
     });
     const instruction = agent.systemPrompt.find((section) => section.label === "knowledge_instruction")?.content ?? "";
@@ -166,7 +162,7 @@ describe("createAppServerConfig", () => {
       mode: "default",
       effort: "medium",
       model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
     });
     expect(agent.tools.map((tool) => tool.name)).toContain("factory_plugin_tool");
@@ -182,7 +178,7 @@ describe("createAppServerConfig", () => {
       mode: "default",
       effort: "medium",
       model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
     });
     const loader = (agent as unknown as { localImageLoader?: LocalImageLoader }).localImageLoader;
@@ -199,7 +195,7 @@ describe("createAppServerConfig", () => {
       mode: "default" as const,
       effort: "medium" as const,
       model: { provider: "anthropic" as const, modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => "once" as const,
+      approve: async () => ({ decision: "once" as const }),
       ask: async () => null,
     };
 
@@ -387,7 +383,7 @@ describe("createAppServerConfig", () => {
       mode: "default",
       effort: "medium",
       model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
     });
 
@@ -425,7 +421,7 @@ describe("createAppServerConfig", () => {
     await config.createAgent({
       cwd: "/tmp/test",
       model: getDefaultModelRef("chatgpt"),
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
     });
     expect(generate).toBeDefined();
@@ -470,7 +466,7 @@ describe("createAppServerConfig", () => {
     await config.createAgent({
       cwd: "/tmp/test",
       model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
       getSessionId: () => "session-123",
     });
@@ -522,7 +518,7 @@ describe("createAppServerConfig", () => {
     await config.createAgent({
       cwd: "/tmp/test",
       model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
     });
     const controller = new AbortController();
@@ -542,7 +538,7 @@ describe("createAppServerConfig", () => {
       mode: "plan",
       effort: "medium",
       model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
     });
     let observed: { names: string[]; cwd: string; mode: string; provider: string } | undefined;
@@ -559,7 +555,7 @@ describe("createAppServerConfig", () => {
       mode: "plan",
       effort: "medium",
       model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
     });
 
@@ -598,7 +594,7 @@ describe("createAppServerConfig", () => {
       mode: "default",
       effort: "medium",
       model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
       getSessionId: () => "session-loop-hooks",
     });
@@ -671,7 +667,7 @@ describe("createAppServerConfig", () => {
       mode: "plan" as const,
       effort: "medium" as const,
       model: getDefaultModelRef("anthropic"),
-      approve: async () => "once" as const,
+      approve: async () => ({ decision: "once" as const }),
       ask: async () => null,
     };
     const agent = await config.createAgent(request);
@@ -726,7 +722,7 @@ describe("createAppServerConfig", () => {
       mode: "default",
       effort: "medium",
       model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
     });
 
@@ -744,7 +740,7 @@ describe("createAppServerConfig", () => {
       mode: "default",
       effort: "medium",
       model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
     });
 
@@ -779,7 +775,7 @@ describe("createAppServerConfig", () => {
       mode: "default",
       effort: "medium",
       model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
     });
 
@@ -804,7 +800,7 @@ describe("createAppServerConfig", () => {
       mode: "execute",
       effort: "medium",
       model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
     });
 
@@ -834,7 +830,7 @@ describe("createAppServerConfig", () => {
       mode: "execute",
       effort: "medium",
       model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => "once",
+      approve: async () => ({ decision: "once" }),
       ask: async () => null,
     });
 

@@ -236,6 +236,42 @@ describe("PermissionEngine.evaluate", () => {
   });
 });
 
+describe("PermissionEngine.evaluateWithRule", () => {
+  const request = {
+    permission: "execute" as const,
+    toolName: "bash",
+    description: "run",
+    details: { command: "rm -rf build" },
+  };
+
+  it("returns the action and the last matching config rule together", () => {
+    const broad: PermissionRule = { permission: "execute", pattern: "**", action: "allow" };
+    const narrow: PermissionRule = { permission: "execute", pattern: "rm **", action: "deny" };
+    const engine = createPermissionEngine([broad, narrow]);
+    expect(engine.evaluateWithRule(request)).toEqual({ action: "deny", rule: narrow });
+  });
+
+  it("returns the most recent matching session rule before config rules", () => {
+    const engine = createPermissionEngine([{ permission: "execute", pattern: "rm **", action: "deny" }]);
+    engine.remember(request, "deny");
+    engine.remember(request, "allow");
+    expect(engine.evaluateWithRule(request)).toEqual({
+      action: "allow",
+      rule: { permission: "execute", pattern: "rm **", action: "allow" },
+    });
+  });
+
+  it("reports no rule for unmatched or yolo requests", () => {
+    expect(createPermissionEngine([]).evaluateWithRule(request)).toEqual({ action: "prompt" });
+    expect(createYoloPermissionEngine().evaluateWithRule(request)).toEqual({ action: "allow" });
+  });
+
+  it("keeps the matching rule when its action is prompt", () => {
+    const rule: PermissionRule = { permission: "execute", pattern: "rm **", action: "prompt" };
+    expect(createPermissionEngine([rule]).evaluateWithRule(request)).toEqual({ action: "prompt", rule });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // PermissionEngine.remember — session cache
 // ---------------------------------------------------------------------------

@@ -62,6 +62,8 @@ export interface ThreadRuntime {
   turnWork?: Promise<void>;
   /** Cached agent — cleared when mode/effort/model changes to force a rebuild on the next turn. */
   agent?: RuntimeAgent;
+  /** Permission-rule denials in a row during the current turn, shared with child agents; feeds the breaker. */
+  consecutivePolicyDenials?: number;
 }
 
 /** Agent rebuilds must wait until goal-owned work can no longer reference the old registry. */
@@ -82,6 +84,7 @@ export function resetTurnRuntimeState(runtime: ThreadRuntime): void {
   runtime.runningFastModeSnapshot = undefined;
   runtime.runningModelSnapshot = undefined;
   runtime.isRunning = false;
+  runtime.consecutivePolicyDenials = 0;
 }
 
 export interface ThreadListScan {
