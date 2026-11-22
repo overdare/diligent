@@ -54,7 +54,7 @@ export const OPENAI_MODELS = defineProviderModels("openai", [
   {
     modelId: "gpt-6.1-terra",
     display: "GPT-6.1 Terra",
-    contextWindow: 500_000,
+    contextWindow: 1_050_000,
     maxOutputTokens: 128_000,
     inputCostPer1M: 1,
     outputCostPer1M: 5,
@@ -116,7 +116,7 @@ export const OPENAI_MODELS = defineProviderModels("openai", [
   {
     modelId: "gpt-6-luna",
     display: "GPT-6 Luna",
-    contextWindow: 500_000,
+    contextWindow: 1_050_000,
     maxOutputTokens: 128_000,
     inputCostPer1M: 0.1,
     outputCostPer1M: 0.5,
