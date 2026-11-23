@@ -4,7 +4,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { StreamOptions } from "@diligent/core/provider-contract";
 import { createContextKey, context as otelContext, ROOT_CONTEXT, SpanStatusCode, trace } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
-import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { TracerProvider } from "@opentelemetry/sdk-trace";
 import { maskTurnText, type ObservationPolicySnapshot } from "./content-policy";
 import { projectModelMessages, sanitizeDetailedValue } from "./detailed-content";
 import { attachModelInstrumentation } from "./model-instrumentation";
@@ -65,7 +65,7 @@ export function createObservationRuntime(options: ObservationRuntimeOptions) {
       }
     },
   });
-  const provider = new NodeTracerProvider({ spanProcessors: [processor] });
+  const provider = new TracerProvider({ spanProcessors: [processor] });
   const instrumentation = attachModelInstrumentation(provider, {
     captureContent: options.captureModelContent === true,
   });

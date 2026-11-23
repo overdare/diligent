@@ -1,6 +1,6 @@
 // @summary Bounded in-memory delivery of sanitized spans in standard OTLP JSON.
 import { JsonTraceSerializer } from "@opentelemetry/otlp-transformer";
-import type { ReadableSpan } from "@opentelemetry/sdk-trace-node";
+import type { ReadableSpan } from "@opentelemetry/sdk-trace";
 import type { ObservationPolicySnapshot } from "./content-policy";
 import { sendToGateway } from "./gateway-transport";
 

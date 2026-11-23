@@ -1,7 +1,7 @@
 // @summary Projects authorized OTel spans into allowlisted fields before export.
 import { type Context, SpanStatusCode } from "@opentelemetry/api";
 import { resourceFromAttributes } from "@opentelemetry/resources";
-import type { ReadableSpan, Span, SpanProcessor } from "@opentelemetry/sdk-trace-node";
+import type { ReadableSpan, Span, SpanProcessor } from "@opentelemetry/sdk-trace";
 import { type ObservationPolicySnapshot, projectObservation } from "./content-policy";
 import { boundDetailedAttributes, projectModelMessages } from "./detailed-content";
 

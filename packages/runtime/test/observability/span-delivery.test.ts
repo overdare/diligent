@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { TracerProvider } from "@opentelemetry/sdk-trace";
 import { SpanDelivery } from "../../src/observability/span-delivery";
 import { ConsentSpanProcessor } from "../../src/observability/span-processor";
 
@@ -20,7 +20,7 @@ test("exports sanitized spans to the gateway as standard OTLP JSON", async () =>
     isAuthorizedContext: () => true,
     onSpan: (span, snapshot) => delivery.enqueue(span, snapshot),
   });
-  const provider = new NodeTracerProvider({ spanProcessors: [processor] });
+  const provider = new TracerProvider({ spanProcessors: [processor] });
   const span = provider.getTracer("test").startSpan("private prompt", {
     attributes: { "input.value": "secret text", "llm.model_name": "sample", "openinference.span.kind": "LLM" },
   });
@@ -53,7 +53,7 @@ test("discards queued data after consent changes", async () => {
     isAuthorizedContext: () => true,
     onSpan: (span, policy) => delivery.enqueue(span, policy),
   });
-  const provider = new NodeTracerProvider({ spanProcessors: [processor] });
+  const provider = new TracerProvider({ spanProcessors: [processor] });
   provider.getTracer("test").startSpan("test").end();
   generation++;
   await delivery.flush();
@@ -80,7 +80,7 @@ test("retries transient errors without retrying successful payloads", async () =
     isAuthorizedContext: () => true,
     onSpan: (span, snapshot) => delivery.enqueue(span, snapshot),
   });
-  const provider = new NodeTracerProvider({ spanProcessors: [processor] });
+  const provider = new TracerProvider({ spanProcessors: [processor] });
   provider.getTracer("test").startSpan("test").end();
   await delivery.flush();
   expect(calls).toBe(2);
@@ -109,7 +109,7 @@ test("honors retry-after when the gateway asks the client to slow down", async (
     isAuthorizedContext: () => true,
     onSpan: (span, snapshot) => delivery.enqueue(span, snapshot),
   });
-  const provider = new NodeTracerProvider({ spanProcessors: [processor] });
+  const provider = new TracerProvider({ spanProcessors: [processor] });
   provider.getTracer("test").startSpan("test").end();
   await delivery.flush();
   expect(calls).toBe(2);
