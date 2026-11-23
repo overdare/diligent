@@ -3,6 +3,7 @@
 import { isAuthenticationStatus } from "../provider-errors";
 import { getDefaultModelRef } from "../provider-model-policy";
 import { ProviderError, ProviderErrorReason, ProviderErrorType, type ProviderName } from "../types";
+import { ANTHROPIC_API_VERSION } from "./anthropic/request";
 import { resolveZaiCodingPlanBaseUrl } from "./zai-coding-plan";
 
 const VALIDATE_TIMEOUT_MS = 10_000;
@@ -54,7 +55,7 @@ export async function validateProviderApiKey(
 async function validateAnthropicKey(apiKey: string, baseUrl?: string): Promise<void> {
   await requestValidation(joinUrl(baseUrl ?? DEFAULT_ANTHROPIC_BASE_URL, "v1/models?limit=1"), {
     headers: {
-      "anthropic-version": "2023-06-01",
+      "anthropic-version": ANTHROPIC_API_VERSION,
       "x-api-key": apiKey,
     },
   });

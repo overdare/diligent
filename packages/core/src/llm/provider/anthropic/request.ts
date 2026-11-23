@@ -1,5 +1,16 @@
-// @summary Anthropic request-level system section conversion
+// @summary Anthropic request-level API version, API-key header, and system section conversion
 import type { SystemSection } from "../../types";
+
+/** The API version SDK 1.x sends; raw-fetch requests send the same so every Anthropic path follows one contract. */
+export const ANTHROPIC_API_VERSION = "2026-10-21";
+
+/**
+ * SDK 1.x sends an API key as `Authorization: Bearer`. These default headers keep it in `X-Api-Key`, where
+ * the raw-fetch paths send it and where gateways behind a custom base URL may read it. The API accepts both.
+ */
+export function anthropicApiKeyHeaders(apiKey: string): { "X-Api-Key": string; Authorization: null } {
+  return { "X-Api-Key": apiKey, Authorization: null };
+}
 
 interface AnthropicTextBlock {
   type: "text";

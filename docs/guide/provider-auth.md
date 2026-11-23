@@ -238,6 +238,15 @@ bound as the stream idle timeout.
 Set `DILIGENT_DEBUG_CHATGPT_WEBSOCKET=1` to log content-safe frame summaries, including
 `inputItems=` counts that show whether a request was chained.
 
+## Anthropic API version
+
+- Every Anthropic request (SDK streaming, Files API uploads, native compaction, and key validation)
+  sends `anthropic-version: 2026-10-21`.
+- The API key goes out in `X-Api-Key` on every path. The SDK would send `Authorization: Bearer`, so
+  the provider overrides it to keep gateways behind a custom `provider.anthropic.baseUrl` working.
+- That version rejects `temperature`, `top_p`, and `top_k` with a 400, so the provider never sends
+  them. A caller's `temperature` has no effect on Anthropic models.
+
 ## Anthropic image uploads
 
 The Anthropic Messages API keeps no conversation state, so every request resends the whole history,

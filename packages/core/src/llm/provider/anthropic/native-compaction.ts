@@ -2,7 +2,7 @@
 import type { NativeCompactFn } from "../native-compaction";
 import { ANTHROPIC_FILES_BETA, getAnthropicImageFiles, isFileSourceRejection } from "./image-files";
 import { convertMessages, ensureAnthropicCompactionConversationEndsWithUser } from "./messages";
-import { toAnthropicBlocks } from "./request";
+import { ANTHROPIC_API_VERSION, toAnthropicBlocks } from "./request";
 
 function resolveAnthropicBaseUrl(baseUrl?: string): string {
   const resolved = (baseUrl ?? "https://api.anthropic.com").replace(/\/+$/, "");
@@ -56,7 +56,7 @@ export function createAnthropicNativeCompaction(apiKey: string, baseUrl?: string
         headers: {
           "Content-Type": "application/json",
           "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
+          "anthropic-version": ANTHROPIC_API_VERSION,
           "anthropic-beta": usesFiles ? `compact-2026-01-12,${ANTHROPIC_FILES_BETA}` : "compact-2026-01-12",
         },
         body: JSON.stringify(body),

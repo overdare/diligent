@@ -103,6 +103,7 @@ export interface StreamOptions {
   ): ModelExchangeObservation | undefined;
   signal?: AbortSignal;
   maxTokens?: number;
+  /** Ignored by Anthropic, whose API version 2026-10-21 rejects sampling parameters. */
   temperature?: number;
   sessionId?: string;
   effort?: ThinkingEffort;
