@@ -11,9 +11,17 @@ import { createLspTool } from "../../../src/tools/lsp/tool";
 import { LspWorkspace } from "../../../src/tools/lsp/workspace";
 import { makeToolContext } from "../../helpers/lsp";
 
-const available = resolveCommand("typescript-language-server") !== undefined;
-// The server needs a TypeScript with tsserver.js; use the repository's own rather than the fixture project's.
-const tsserverPath = require.resolve("typescript/lib/tsserver.js");
+// The server needs a TypeScript 5 tsserver.js; use the repository's own rather than the fixture project's.
+// TypeScript 7 ships without tsserver.js, so the suite skips instead of failing to load.
+function resolveTsserver(): string | undefined {
+  try {
+    return require.resolve("typescript/lib/tsserver.js");
+  } catch {
+    return undefined;
+  }
+}
+const tsserverPath = resolveTsserver();
+const available = resolveCommand("typescript-language-server") !== undefined && tsserverPath !== undefined;
 
 describe.skipIf(!available)("typescript-language-server", () => {
   let dir: string;
