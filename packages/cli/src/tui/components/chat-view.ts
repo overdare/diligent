@@ -213,4 +213,4 @@ export class ChatView implements Component {
   }
 }
 
-export { MarkdownView, ThreadStore, UserMessageView, displayWidth };
+export { displayWidth, MarkdownView, ThreadStore, UserMessageView };

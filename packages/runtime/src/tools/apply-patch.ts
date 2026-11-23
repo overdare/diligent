@@ -408,7 +408,7 @@ async function applyHunks(hunks: PatchHunk[], cwd: string, changes: FileChange[]
     if (hunk.type === "delete") {
       const sourcePath = resolvePatchPath(cwd, hunk.path);
       const info = await stat(sourcePath).catch(() => null);
-      if (!info || !info.isFile()) {
+      if (!info?.isFile()) {
         throw new Error(`Failed to delete file ${sourcePath}`);
       }
       const before = await readFile(sourcePath, "utf-8");

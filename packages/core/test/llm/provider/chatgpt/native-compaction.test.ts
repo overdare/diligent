@@ -163,20 +163,21 @@ test("rejects an incomplete response instead of adopting its checkpoint", async 
   await expect(createChatGPTNativeCompaction(() => testTokens())(input)).rejects.toThrow("max_output_tokens");
 });
 
-test.each([
-  400, 404, 429,
-])("preserves structured HTTP %d diagnostics instead of marking the adapter unsupported", async (status) => {
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ error: { code: "targeted_provider_error", message: "Request rejected" } }), {
-      status,
-      headers: { "content-type": "application/json", "retry-after": "2" },
-    })) as unknown as typeof fetch;
-  const error = await createChatGPTNativeCompaction(() => testTokens())(input).catch((caught: unknown) => caught);
-  expect(error).toBeInstanceOf(Error);
-  expect(error).toMatchObject({ statusCode: status });
-  expect((error as Error).message).toContain("Request rejected");
-  expect(toSerializableError(error).code).toBe("targeted_provider_error");
-});
+test.each([400, 404, 429])(
+  "preserves structured HTTP %d diagnostics instead of marking the adapter unsupported",
+  async (status) => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: { code: "targeted_provider_error", message: "Request rejected" } }), {
+        status,
+        headers: { "content-type": "application/json", "retry-after": "2" },
+      })) as unknown as typeof fetch;
+    const error = await createChatGPTNativeCompaction(() => testTokens())(input).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toMatchObject({ statusCode: status });
+    expect((error as Error).message).toContain("Request rejected");
+    expect(toSerializableError(error).code).toBe("targeted_provider_error");
+  },
+);
 
 test("propagates cancellation while waiting for the checkpoint stream", async () => {
   const controller = new AbortController();

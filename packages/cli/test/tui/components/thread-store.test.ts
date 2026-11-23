@@ -341,7 +341,7 @@ describe("ThreadStore", () => {
 
     const toolItem = store.getItems().find((item) => item.kind === "tool_result");
     expect(toolItem).toBeDefined();
-    if (!toolItem || toolItem.kind !== "tool_result") throw new Error("Expected tool_result item");
+    if (toolItem?.kind !== "tool_result") throw new Error("Expected tool_result item");
 
     const readHeader = stripAnsi(toolItem.header);
     expect(readHeader).toBe("⏺ read");
@@ -368,7 +368,7 @@ describe("ThreadStore", () => {
 
     const toolItem = store.getItems().find((item) => item.kind === "tool_result");
     expect(toolItem).toBeDefined();
-    if (!toolItem || toolItem.kind !== "tool_result") throw new Error("Expected tool_result item");
+    if (toolItem?.kind !== "tool_result") throw new Error("Expected tool_result item");
 
     expect(stripAnsi(toolItem.header)).toContain("bash - pwd");
     expect(toolItem.summaryLine).toBe("⎿  Command completed");
@@ -396,7 +396,7 @@ describe("ThreadStore", () => {
 
     const toolItem = store.getItems().find((item) => item.kind === "tool_result");
     expect(toolItem).toBeDefined();
-    if (!toolItem || toolItem.kind !== "tool_result") throw new Error("Expected tool_result item");
+    if (toolItem?.kind !== "tool_result") throw new Error("Expected tool_result item");
 
     const header = stripAnsi(toolItem.header);
     expect(header).toContain("✗ bash - exit 1");
@@ -424,7 +424,7 @@ describe("ThreadStore", () => {
 
     const toolItem = store.getItems().find((item) => item.kind === "tool_result");
     expect(toolItem).toBeDefined();
-    if (!toolItem || toolItem.kind !== "tool_result") throw new Error("Expected tool_result item");
+    if (toolItem?.kind !== "tool_result") throw new Error("Expected tool_result item");
 
     const header = stripAnsi(toolItem.header);
     expect(header).toContain("read - README.md");

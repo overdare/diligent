@@ -145,21 +145,21 @@ describe("buildDefaultTools provider-specific edit tools", () => {
     expect(stateNames).toContain("multi_edit");
   });
 
-  test.each([
-    "openai",
-    "chatgpt",
-  ] as const)("preserves %s provider compatibility by exposing only apply_patch", async (provider) => {
-    const result = await buildDefaultTools({ cwd: "/tmp", provider });
-    const names = toolNamesFor(result);
-    const stateNames = stateNamesFor(result);
+  test.each(["openai", "chatgpt"] as const)(
+    "preserves %s provider compatibility by exposing only apply_patch",
+    async (provider) => {
+      const result = await buildDefaultTools({ cwd: "/tmp", provider });
+      const names = toolNamesFor(result);
+      const stateNames = stateNamesFor(result);
 
-    expect(names).toContain("apply_patch");
-    expect(names).not.toContain("edit");
-    expect(names).not.toContain("multi_edit");
-    expect(stateNames).toContain("apply_patch");
-    expect(stateNames).not.toContain("edit");
-    expect(stateNames).not.toContain("multi_edit");
-  });
+      expect(names).toContain("apply_patch");
+      expect(names).not.toContain("edit");
+      expect(names).not.toContain("multi_edit");
+      expect(stateNames).toContain("apply_patch");
+      expect(stateNames).not.toContain("edit");
+      expect(stateNames).not.toContain("multi_edit");
+    },
+  );
 
   test("uses edit and multi_edit for a non-OpenAI provider", async () => {
     const provider = "anthropic";

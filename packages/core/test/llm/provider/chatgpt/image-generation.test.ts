@@ -128,16 +128,14 @@ test("cancellation while reading the response takes precedence over an invalid p
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
 
-test.each([
-  {},
-  { data: [] },
-  { data: [{ b64_json: "not-base64" }] },
-  { data: [{ b64_json: "dGV4dA==" }] },
-])("rejects invalid image responses instead of returning an asset", async (payload) => {
-  mockFetch(async () => Response.json(payload));
-  const generate = createChatGPTImageGeneration(() => tokens);
-  await expect(generate({ prompt: "Coin", model: "test" })).rejects.toThrow();
-});
+test.each([{}, { data: [] }, { data: [{ b64_json: "not-base64" }] }, { data: [{ b64_json: "dGV4dA==" }] }])(
+  "rejects invalid image responses instead of returning an asset",
+  async (payload) => {
+    mockFetch(async () => Response.json(payload));
+    const generate = createChatGPTImageGeneration(() => tokens);
+    await expect(generate({ prompt: "Coin", model: "test" })).rejects.toThrow();
+  },
+);
 
 test.each([
   { name: "PNG signature without image data", bytes: png.subarray(0, 8) },

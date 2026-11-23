@@ -39,7 +39,7 @@ export class SessionWatcher {
     // fs.watch for immediate notifications
     try {
       this.watcher = watch(this.sessionsDir, (_eventType, filename) => {
-        if (!filename || !filename.endsWith(".jsonl")) return;
+        if (!filename?.endsWith(".jsonl")) return;
         this.debouncedCheck(filename);
       });
     } catch {

@@ -113,28 +113,28 @@ describe("handleResponsesAPIEvents", () => {
     expect(events.some((event) => event.type === "done")).toBe(false);
   });
 
-  test.each([
-    undefined,
-    "future_reason",
-  ])("rejects response.incomplete reason %p without emitting done", async (reason) => {
-    const stream = makeProviderEventStream();
-    async function* iter(): AsyncIterable<Record<string, unknown>> {
-      yield {
-        type: "response.incomplete",
-        response: {
-          status: "incomplete",
-          ...(reason === undefined ? {} : { incomplete_details: { reason } }),
-          usage: { input_tokens: 4, output_tokens: 1 },
-        },
-      };
-    }
+  test.each([undefined, "future_reason"])(
+    "rejects response.incomplete reason %p without emitting done",
+    async (reason) => {
+      const stream = makeProviderEventStream();
+      async function* iter(): AsyncIterable<Record<string, unknown>> {
+        yield {
+          type: "response.incomplete",
+          response: {
+            status: "incomplete",
+            ...(reason === undefined ? {} : { incomplete_details: { reason } }),
+            usage: { input_tokens: 4, output_tokens: 1 },
+          },
+        };
+      }
 
-    await handleResponsesAPIEvents(iter(), stream, TEST_MODEL);
-    const events = await collectEvents(stream);
-    expect(events.map((event) => event.type)).toEqual(["usage", "error"]);
-    const terminalEvent = events.at(-1);
-    expect(terminalEvent?.type === "error" ? terminalEvent.error.message : "").toContain(reason ?? "unknown");
-  });
+      await handleResponsesAPIEvents(iter(), stream, TEST_MODEL);
+      const events = await collectEvents(stream);
+      expect(events.map((event) => event.type)).toEqual(["usage", "error"]);
+      const terminalEvent = events.at(-1);
+      expect(terminalEvent?.type === "error" ? terminalEvent.error.message : "").toContain(reason ?? "unknown");
+    },
+  );
 
   test("preserves reasoning item identity and encrypted content with its plaintext summary", async () => {
     const stream = makeProviderEventStream();
@@ -191,29 +191,32 @@ describe("handleResponsesAPIEvents", () => {
     ["server_error", "server_error", true, undefined],
     ["bio_policy", "unknown", false, undefined],
     ["invalid_api_key", "auth", false, "credentials_rejected"],
-  ] as const)("classifies streamed provider code %s before its opaque message", async (code, type, retryable, reason) => {
-    const events: ProviderEvent[] = [];
-    const stream = { push: (event: ProviderEvent) => events.push(event) } as unknown as EventStream<
-      ProviderEvent,
-      ProviderResult
-    >;
-    async function* iter(): AsyncIterable<Record<string, unknown>> {
-      yield {
-        type: "response.failed",
-        response: {
-          error: { code, message: "opaque provider failure" },
-          usage: { input_tokens: 2, output_tokens: 0 },
-        },
-      };
-    }
+  ] as const)(
+    "classifies streamed provider code %s before its opaque message",
+    async (code, type, retryable, reason) => {
+      const events: ProviderEvent[] = [];
+      const stream = { push: (event: ProviderEvent) => events.push(event) } as unknown as EventStream<
+        ProviderEvent,
+        ProviderResult
+      >;
+      async function* iter(): AsyncIterable<Record<string, unknown>> {
+        yield {
+          type: "response.failed",
+          response: {
+            error: { code, message: "opaque provider failure" },
+            usage: { input_tokens: 2, output_tokens: 0 },
+          },
+        };
+      }
 
-    await handleResponsesAPIEvents(iter(), stream, TEST_MODEL);
-    const errorEvent = events.find(
-      (event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error",
-    );
-    expect(errorEvent?.error).toMatchObject({ errorType: type, isRetryable: retryable, reason });
-    expect(toSerializableError(errorEvent?.error).code).toBe(code);
-  });
+      await handleResponsesAPIEvents(iter(), stream, TEST_MODEL);
+      const errorEvent = events.find(
+        (event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error",
+      );
+      expect(errorEvent?.error).toMatchObject({ errorType: type, isRetryable: retryable, reason });
+      expect(toSerializableError(errorEvent?.error).code).toBe(code);
+    },
+  );
 
   test("preserves the Responses empty-object fallback for malformed tool arguments", async () => {
     const stream = makeProviderEventStream();

@@ -50,20 +50,21 @@ function makeContext(modelId: string, overrides?: Partial<CommandContext>): Comm
 }
 
 describe("effortCommand", () => {
-  it.each(
-    getThinkingEffortOptions(resolveModel({ provider: "openai", modelId: "gpt-6.1-sol" })),
-  )("sets and announces supported effort $value", async ({ value }) => {
-    const setEffort = mock(async () => {});
-    const onEffortChanged = mock(() => {});
-    const displayError = mock(() => {});
-    const ctx = makeContext("gpt-6.1-sol", { setEffort, onEffortChanged, displayError });
+  it.each(getThinkingEffortOptions(resolveModel({ provider: "openai", modelId: "gpt-6.1-sol" })))(
+    "sets and announces supported effort $value",
+    async ({ value }) => {
+      const setEffort = mock(async () => {});
+      const onEffortChanged = mock(() => {});
+      const displayError = mock(() => {});
+      const ctx = makeContext("gpt-6.1-sol", { setEffort, onEffortChanged, displayError });
 
-    await effortCommand.handler(value, ctx);
+      await effortCommand.handler(value, ctx);
 
-    expect(setEffort).toHaveBeenCalledWith(value);
-    expect(onEffortChanged).toHaveBeenCalledWith(value, value);
-    expect(displayError).not.toHaveBeenCalled();
-  });
+      expect(setEffort).toHaveBeenCalledWith(value);
+      expect(onEffortChanged).toHaveBeenCalledWith(value, value);
+      expect(displayError).not.toHaveBeenCalled();
+    },
+  );
 
   it("preserves the existing command behavior for non-thinking models", async () => {
     const setEffort = mock(async () => {});

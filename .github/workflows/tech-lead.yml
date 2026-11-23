@@ -2,7 +2,7 @@ name: tech-lead review
 
 on:
   schedule:
-    - cron: '0 21 * * *' # Every day at 06:00 KST (= 21:00 UTC)
+    - cron: "0 21 * * *" # Every day at 06:00 KST (= 21:00 UTC)
   workflow_dispatch:
 
 permissions:

@@ -35,7 +35,7 @@ export function normalizeThinkingEffort(
   model: Pick<Model, "supportsThinking" | "supportedEfforts"> | undefined,
   effort: ThinkingEffort,
 ): ThinkingEffort {
-  if (!model || !model.supportsThinking) return effort;
+  if (!model?.supportsThinking) return effort;
   if (supportsThinkingEffort(model, effort)) return effort;
 
   if (supportsThinkingEffort(model, "medium")) return "medium";

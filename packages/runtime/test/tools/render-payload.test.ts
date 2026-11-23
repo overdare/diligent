@@ -122,7 +122,7 @@ describe("patch render payload builder", () => {
     const payload = createPatchDiffRenderPayload(patch, "Success. Updated the following files:\nM src/a.ts");
     expect(payload?.inputSummary).toBe("src/a.ts");
     const diffBlock = payload?.blocks[0];
-    if (!diffBlock || diffBlock.type !== "diff") throw new Error("Expected diff block");
+    if (diffBlock?.type !== "diff") throw new Error("Expected diff block");
     expect(diffBlock.files[0]?.filePath).toBe("src/a.ts");
   });
 

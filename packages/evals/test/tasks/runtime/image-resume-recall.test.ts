@@ -162,6 +162,6 @@ function lastUserText(context: StreamContext): string {
 
 function replaceLastAssistantText(messages: Message[], text: string): void {
   const message = [...messages].reverse().find((item) => item.role === "assistant");
-  if (!message || message.role !== "assistant") throw new Error("Missing assistant message.");
+  if (message?.role !== "assistant") throw new Error("Missing assistant message.");
   message.content = [{ type: "text", text }];
 }

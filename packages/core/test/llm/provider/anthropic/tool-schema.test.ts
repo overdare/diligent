@@ -7,7 +7,7 @@ import { type ObjectJsonSchema, toToolInputSchema } from "../../../../src/tool/i
 describe("convertTools function schemas", () => {
   function schemaOf(inputSchema: ObjectJsonSchema): Record<string, unknown> {
     const tools = convertTools([{ kind: "function", name: "t", description: "d", inputSchema }]);
-    return (tools?.[0] as { input_schema: Record<string, unknown> }).input_schema;
+    return (tools?.[0] as { input_schema: Record<string, unknown> })?.input_schema;
   }
 
   test.each(["anyOf", "oneOf", "allOf"])("moves root %s constraints into the schema description", (keyword) => {

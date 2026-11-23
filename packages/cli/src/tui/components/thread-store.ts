@@ -588,5 +588,5 @@ export class ThreadStore {
   }
 }
 
-export { UserMessageView };
 export type { ThreadItem };
+export { UserMessageView };
