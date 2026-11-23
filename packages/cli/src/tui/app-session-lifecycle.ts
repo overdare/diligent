@@ -87,6 +87,7 @@ export class AppSessionLifecycle {
       clientName: "diligent-tui",
       clientVersion: this.deps.pkgVersion,
       protocolVersion: 1,
+      interactiveTerminal: true,
     });
     this.deps.setGoalsSupported?.(initialized.capabilities?.goals === true);
     await rpcClient.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });

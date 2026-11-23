@@ -95,6 +95,18 @@ Windows has no pseudo-terminal support yet. `bash` does not offer `tty` there, a
 with an error instead of running the command on pipes. Code mode `exec` cells reject `tty` for nested `tools.bash`
 calls, as they reject `yield_time_ms`; use a direct `bash` call instead.
 
+#### Private terminal input
+
+Use a direct foreground `bash` call with `interactive: true` when a user must type into the running command.
+On supported clients, the console shows the command and sends keystrokes straight to its PTY. Terminal input
+and output are not model messages and are not recorded in thread history. The agent receives the command's
+status only. Inspect the command before entering credentials: the CLI itself can still read or store them.
+
+The console belongs to the client connection that started the turn. Stopping the command, interrupting the
+turn, or disconnecting that client closes the PTY. This mode requires a supporting client and is unavailable
+on Windows, in `tools.codeMode: "only"`, and for nested or background calls. `tty: true` without
+`interactive: true` is not private; never send a credential via `bash_wait` or a chat question.
+
 ## Bundled product tools
 
 Product variants can register first-party bundled tool providers in-process.

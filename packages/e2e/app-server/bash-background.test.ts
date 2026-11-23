@@ -324,3 +324,67 @@ test.if(process.platform !== "win32")(
     }
   },
 );
+
+test.if(process.platform !== "win32")("private Bash input is not recorded", async () => {
+  const app = await setup();
+  const observer = createProtocolClient(app.server);
+  const token = "test-only-secret-its-value-must-not-enter-the-turn";
+  const callId = "private-console";
+  try {
+    await observer.request("initialize", {
+      clientName: "terminal-observer",
+      clientVersion: "test",
+      protocolVersion: 1,
+      interactiveTerminal: true,
+    });
+    await app.client.request("initialize", {
+      clientName: "terminal-test",
+      clientVersion: "test",
+      protocolVersion: 1,
+      interactiveTerminal: true,
+    });
+    const { threadId } = (await app.client.request("thread/start", { cwd: app.cwd })) as { threadId: string };
+    app.streams.set(
+      callId,
+      createToolUseStream(
+        [
+          {
+            id: callId,
+            name: "bash",
+            input: {
+              command: `printf 'Token: '; IFS= read -r token; printf '%s' "$token" > received; printf 'received %s\\n' "$token"`,
+              interactive: true,
+            },
+          },
+        ],
+        "done",
+      ),
+    );
+    const turn = app.client.sendTurnAndWait(threadId, callId);
+    const params = { threadId, toolCallId: callId, cursor: 0 };
+    let prompt = "";
+    const deadline = Date.now() + 2000;
+    while (!prompt.includes("Token: ")) {
+      if (Date.now() >= deadline) throw new Error("The private console did not show the CLI prompt");
+      const result = (await app.client.request("thread/terminal", params)) as { output: string };
+      prompt = result.output;
+      if (!prompt.includes("Token: ")) await Bun.sleep(25);
+    }
+    await observer.request("thread/subscribe", { threadId });
+    await observer.request("thread/resume", { threadId });
+    await expect(observer.request("thread/terminal", params)).rejects.toThrow("another connection");
+    await expect(observer.request("thread/terminal", { ...params, input: "wrong-user\n" })).rejects.toThrow(
+      "another connection",
+    );
+    await app.client.request("thread/terminal", { ...params, input: `${token}\n` });
+    const notifications = await turn;
+    expect(await readFile(join(app.cwd, "received"), "utf8")).toBe(token);
+    expect(JSON.stringify(notifications)).not.toContain(token);
+    const thread = (await app.client.request("thread/read", { threadId })) as ThreadReadResponse;
+    expect(JSON.stringify(thread)).not.toContain(token);
+    expect(thread.items).toContainEqual(expect.objectContaining({ toolCallId: callId, isError: false }));
+  } finally {
+    observer.close();
+    await app.close();
+  }
+});

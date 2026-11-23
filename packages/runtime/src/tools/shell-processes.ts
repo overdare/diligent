@@ -1,7 +1,9 @@
 // @summary Session-owned subprocesses backing yielded bash commands
 
+import type { ThreadTerminalParams, ThreadTerminalResponse } from "@diligent/protocol";
 import { type SpawnOptions, spawnProcess, spawnTerminal } from "../util/process";
 import { TerminalTextDecoder } from "../util/terminal-output";
+import { InteractiveTerminal } from "./interactive-terminal";
 
 const PROCESS_LIMIT = 16;
 const OUTPUT_LIMIT = 512 * 1024; // UTF-16 code units, at most 1 MiB of text per process.
@@ -26,6 +28,46 @@ interface ShellIo {
 export class ShellProcessRegistry {
   private readonly sessions = new Map<string, Map<string, ShellProcess>>();
   private closed = false;
+  private readonly terminals = new Map<string, InteractiveTerminal>();
+  interactiveConnection?: (sessionId: string) => string | undefined;
+
+  openTerminal(
+    connectionId: string,
+    sessionId: string,
+    toolCallId: string,
+    argv: string[],
+    options: Pick<SpawnOptions, "cwd" | "env" | "signal"> & { onExit?: () => void },
+  ): Promise<number> {
+    if (this.closed) throw new Error("Shell process registry is shutting down");
+    if (this.terminals.has(toolCallId)) throw new Error("Terminal already exists");
+    const entry = new InteractiveTerminal(connectionId, sessionId, argv, options);
+    this.terminals.set(toolCallId, entry);
+    return entry.exited.finally(() => {
+      // Let the attached client pull the last output, without storing it in session history.
+      setTimeout(() => {
+        if (this.terminals.get(toolCallId) === entry) this.terminals.delete(toolCallId);
+      }, 10_000).unref();
+    });
+  }
+
+  exchangeTerminal(connectionId: string, params: ThreadTerminalParams): ThreadTerminalResponse {
+    const entry = this.terminals.get(params.toolCallId);
+    if (!entry) {
+      if (params.input !== undefined) throw new Error("Terminal input is closed");
+      return { state: "waiting", cursor: 0, output: "", reset: params.cursor !== 0 };
+    }
+    if (entry.connectionId !== connectionId) throw new Error("Terminal belongs to another connection");
+    if (params.cancel && params.input !== undefined) throw new Error("Cannot write and cancel together");
+    return entry.exchange(params);
+  }
+
+  closeTerminals(connectionId: string): void {
+    for (const [id, entry] of this.terminals) {
+      if (entry.connectionId !== connectionId) continue;
+      this.terminals.delete(id);
+      entry.stop();
+    }
+  }
 
   start(owner: string, command: string, argv: string[], options: ShellProcessOptions): ShellProcess {
     if (this.closed) throw new Error("Shell process registry is shutting down");
@@ -56,6 +98,12 @@ export class ShellProcessRegistry {
     if (owner === undefined) this.closed = true;
     const entries = owner === undefined ? this.sessions.values() : [this.sessions.get(owner)];
     const settling: Promise<void>[] = [];
+    for (const [id, entry] of this.terminals) {
+      if (owner !== undefined && entry.sessionId !== owner) continue;
+      this.terminals.delete(id);
+      entry.stop();
+      settling.push(entry.exited.catch(() => undefined).then(() => undefined));
+    }
     for (const owned of entries) {
       if (!owned) continue;
       for (const entry of owned.values()) {

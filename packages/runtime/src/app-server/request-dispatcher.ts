@@ -66,6 +66,7 @@ export interface ConnectedPeer {
   subscriptions: Set<string>;
   currentThreadId: string | null;
   threadSelection?: number;
+  interactiveTerminal?: boolean;
   cwd: string;
   mode: Mode;
   effort: ThinkingEffort;
@@ -225,6 +226,8 @@ export async function dispatchClientRequest(
         );
       }
       const extra = (await ctx.getInitializeResult?.()) ?? {};
+      const conn = ctx.getConnection(connectionId);
+      if (conn) conn.interactiveTerminal = request.params.interactiveTerminal === true && process.platform !== "win32";
       return {
         serverName: ctx.serverName,
         serverVersion: ctx.serverVersion,
@@ -265,6 +268,18 @@ export async function dispatchClientRequest(
 
     case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ:
       return handleThreadRead(ctx.threadHandlersCtx, request.params.threadId, request.params.includeItems);
+
+    case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_TERMINAL: {
+      const conn = ctx.getConnection(connectionId);
+      if (!conn?.interactiveTerminal) throw new Error("Private terminal input is unavailable on this connection");
+      const { threadId } = request.params;
+      if (conn.currentThreadId !== threadId && ctx.turnInitiators.get(threadId) !== connectionId) {
+        throw new Error("Private terminal is not in the current thread");
+      }
+      const registry = ctx.threadHandlersCtx.threads.get(threadId)?.shellProcesses;
+      if (!registry) throw new Error("Private terminal thread is not running");
+      return registry.exchangeTerminal(connectionId, request.params);
+    }
 
     case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY:
       return handleThreadHistory(ctx.threadHandlersCtx, request.params);

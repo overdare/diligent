@@ -301,6 +301,7 @@ export class DiligentAppServer {
     if (!conn) return;
     for (const runtime of this.threads.values()) {
       if (runtime.goalCreation?.connectionId === connectionId) runtime.goalCreation = undefined;
+      runtime.shellProcesses?.closeTerminals(connectionId);
     }
     // A transport loss is not a user pause. Existing work and durable questions survive;
     // new automatic runs wait for a connection and are woken by connect().
@@ -836,6 +837,13 @@ export class DiligentAppServer {
       isRunning: false,
       shellProcesses: new ShellProcessRegistry(),
     };
+    if (runtime.shellProcesses) {
+      runtime.shellProcesses.interactiveConnection = (sessionId) => {
+        if (runtime.manager.sessionId !== sessionId) return undefined;
+        const initiator = this.turnInitiators.get(runtime.id);
+        return initiator && this.connections.get(initiator)?.interactiveTerminal ? initiator : undefined;
+      };
+    }
 
     const paths = await this.config.resolvePaths(cwd);
     // Track the resolved selection independently from config/set's immediate model update.

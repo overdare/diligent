@@ -41,15 +41,24 @@ const AllBashParams = ForegroundBashParams.extend({
     .describe(
       "Run in a pseudo-terminal for programs that need one (prompts, isatty checks). Output is one stream without terminal escape sequences.",
     ),
+  interactive: z
+    .boolean()
+    .optional()
+    .describe(
+      "Open a private PTY for direct user input, such as credentials. Requires an interactive client. Foreground only; the model gets exit status, not terminal output.",
+    ),
 });
-/** Windows has no PTY backend yet, so `tty` is not offered there; `guardTty` rejects it if sent anyway. */
+/** Windows has no PTY backend yet; explicit requests are rejected instead of falling back to pipes. */
 const TTY_SUPPORTED = process.platform !== "win32";
-// The Windows variant only lacks an optional key, so the wider type stays accurate: `tty` is always undefined there.
-const BashParams = (TTY_SUPPORTED ? AllBashParams : AllBashParams.omit({ tty: true })) as typeof AllBashParams;
+const BashParams = (
+  TTY_SUPPORTED ? AllBashParams : AllBashParams.omit({ tty: true, interactive: true })
+) as typeof AllBashParams;
 const ForegroundOnlyBashParams = ForegroundBashParams.strict();
-const BackgroundOnlyBashParams = BashParams.omit({ timeout: true }).extend({
-  yield_time_ms: yieldTime.describe("Return after this many milliseconds while the process keeps running."),
-});
+const BackgroundOnlyBashParams = (TTY_SUPPORTED ? BashParams.omit({ interactive: true }) : BashParams)
+  .omit({ timeout: true })
+  .extend({
+    yield_time_ms: yieldTime.describe("Return after this many milliseconds while the process keeps running."),
+  });
 const BashWaitParams = z.object({
   process_id: z.string().min(1).describe("ID returned by a yielded bash call in this session."),
   yield_time_ms: yieldTime.optional().describe("Maximum wait in ms (default 10000); use 0 to poll without waiting."),
@@ -66,11 +75,18 @@ const BashWaitParams = z.object({
  * Without a PTY backend the schema omits `tty`, and plain parsing would silently drop it and run on pipes. Reject an
  * explicit request instead, because a program that needs a terminal behaves differently without one.
  */
-function guardTty<T extends z.ZodType>(schema: T): ((raw: unknown) => z.infer<T>) | undefined {
-  if (TTY_SUPPORTED) return undefined;
+function guardBashParams<T extends z.ZodType>(schema: T, interactive: boolean): (raw: unknown) => z.infer<T> {
   return (raw) => {
-    if (typeof raw === "object" && raw !== null && "tty" in raw && raw.tty === true) {
-      throw new Error(TERMINAL_UNSUPPORTED_MESSAGE);
+    if (typeof raw === "object" && raw !== null) {
+      if (
+        !TTY_SUPPORTED &&
+        (("tty" in raw && raw.tty === true) || ("interactive" in raw && raw.interactive === true))
+      ) {
+        throw new Error(TERMINAL_UNSUPPORTED_MESSAGE);
+      }
+      if (!interactive && "interactive" in raw && raw.interactive === true) {
+        throw new Error("Use a direct foreground Bash call to open a private terminal");
+      }
     }
     const parsed = schema.safeParse(raw);
     if (!parsed.success) throw new Error(z.prettifyError(parsed.error));
@@ -90,7 +106,7 @@ export function restrictBash(tool: Tool, mode: "foreground" | "background"): Too
         description:
           "Run a shell command in the background. Use bash_wait to read output, send stdin, or terminate it.",
         parameters: BackgroundOnlyBashParams,
-        parseArgs: guardTty(BackgroundOnlyBashParams),
+        parseArgs: guardBashParams(BackgroundOnlyBashParams, false),
       };
 }
 
@@ -284,9 +300,14 @@ async function runForeground(
   host: RuntimeToolHost | undefined,
   args: ForegroundArgs,
   ctx: ToolContext,
+  terminal?: { registry: ShellProcessRegistry; connectionId: string; sessionId: string },
 ): Promise<ToolResult> {
   const rejection = await approveCommand(args, ctx, host);
   if (rejection) return rejection;
+  ctx.signal.throwIfAborted();
+  if (terminal && terminal.registry.interactiveConnection?.(terminal.sessionId) !== terminal.connectionId) {
+    return shellError("The private terminal client disconnected before the command started");
+  }
 
   const timeout = args.timeout ?? DEFAULT_TIMEOUT;
 
@@ -314,12 +335,28 @@ async function runForeground(
     clearTimeout(timer);
     ctx.signal.removeEventListener("abort", onAbort);
   };
-  const live = ctx.onUpdate ? createLiveOutput(ctx.onUpdate) : undefined;
+  const live = !terminal && ctx.onUpdate ? createLiveOutput(ctx.onUpdate) : undefined;
   const run: CommandRun = { cwd, signal: ac.signal, onExit: disarmCancellation, onOutput: live?.push };
   let exitCode: number | null;
   let output: string;
   try {
-    ({ exitCode, output } = await (args.tty ? runInTerminal : runWithPipes)(shellArgs, run));
+    if (terminal) {
+      exitCode = await terminal.registry.openTerminal(
+        terminal.connectionId,
+        terminal.sessionId,
+        ctx.toolCallId,
+        shellArgs,
+        {
+          cwd,
+          env: commandEnv(true),
+          signal: ac.signal,
+          onExit: disarmCancellation,
+        },
+      );
+      output = "[Private terminal output is not shared with the agent.]";
+    } else {
+      ({ exitCode, output } = await (args.tty ? runInTerminal : runWithPipes)(shellArgs, run));
+    }
   } finally {
     disarmCancellation();
     live?.close();
@@ -425,9 +462,17 @@ function createYieldingBashTool(
     name: "bash",
     description: `${BASH_DESCRIPTION} Set yield_time_ms to keep the command running and return a process ID for bash_wait.`,
     parameters: BashParams,
-    parseArgs: guardTty(BashParams),
+    parseArgs: guardBashParams(BashParams, true),
     async execute(args, ctx) {
       const yieldMs = args.yield_time_ms;
+      if (args.interactive) {
+        if (yieldMs !== undefined) return shellError("A private terminal cannot run in the background");
+        const sessionId = ctx.sessionId;
+        const connectionId = sessionId && registry.interactiveConnection?.(sessionId);
+        if (!sessionId || !connectionId)
+          return shellError("This turn has no client that supports private terminal input");
+        return runForeground(cwd, host, args, ctx, { registry, connectionId, sessionId });
+      }
       if (yieldMs === undefined) {
         const result = await runForeground(cwd, host, args, ctx);
         if (args.max_output_tokens !== undefined) result.maxOutputBytes = args.max_output_tokens * 4;
