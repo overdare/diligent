@@ -15,7 +15,11 @@ import {
   type StreamFunction,
   type StreamOptions,
 } from "@diligent/core/provider-contract";
-import { createChatGPTNativeCompaction, createChatGPTStream } from "@diligent/core/providers/chatgpt";
+import {
+  createChatGPTImageGeneration,
+  createChatGPTNativeCompaction,
+  createChatGPTStream,
+} from "@diligent/core/providers/chatgpt";
 import { type AuthStoreOptions, loadOAuthTokens, runChatGPTOAuth, saveOAuthTokens } from "@diligent/runtime/auth";
 import { loadDiligentConfig } from "@diligent/runtime/config";
 
@@ -52,6 +56,7 @@ export class ChatGPTEvalAuth {
       ensureFresh: () => this.ensureFresh(),
       getStream: () => this.streamFunction,
       getNativeCompaction: () => this.nativeCompaction,
+      getImageGeneration: () => createChatGPTImageGeneration(() => this.getTokens()),
     };
   }
 
@@ -192,6 +197,7 @@ export function getChatGPTRedactionSecrets(tokens: OpenAIOAuthTokens): string[] 
 export async function createLocalChatGPTEvalAuth(
   cwd: string,
   options?: {
+    nonInteractive?: boolean;
     onStatus?: (status: string) => void;
     onCredentials?: (tokens: OpenAIOAuthTokens) => void;
   },
@@ -201,7 +207,10 @@ export async function createLocalChatGPTEvalAuth(
     load: () => loadOAuthTokens(authStore),
     save: (tokens) => saveOAuthTokens(tokens, authStore),
     refresh: refreshOAuthTokens,
-    login: () => runChatGPTOAuth(),
+    login: () => {
+      if (options?.nonInteractive) throw new Error("ChatGPT OAuth requires interactive login on the runner.");
+      return runChatGPTOAuth();
+    },
     shouldRefresh,
     createStream: createChatGPTStream,
     createNativeCompaction: createChatGPTNativeCompaction,

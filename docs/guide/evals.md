@@ -75,8 +75,8 @@ explicit Gemini selections. An unfiltered run requires the OpenAI and Anthropic 
 Local ChatGPT subscription evals are explicitly selected with `--provider chatgpt`. They use the same configured
 Diligent auth store, token refresh, browser opener, and localhost callback as the product runtime. Rotated refresh
 tokens are persisted before model use. Missing credentials or one clear authentication rejection may open the browser;
-schema, network, model, and eval assertion failures do not trigger login. This provider remains local-only: it is not
-part of default profiles, scheduled matrices, GitHub Actions inputs, or CI secrets.
+schema, network, model, and eval assertion failures do not trigger login. Interactive OAuth remains opt-in.
+The separate compatibility gate uses a pre-authorized runner credential store, never a CI token secret or browser login.
 
 ```bash
 # One focused execution; only OPENAI_API_KEY is required
@@ -205,3 +205,34 @@ The standalone core and runtime workflows remain available through `workflow_dis
 no schedule and therefore do not duplicate the daily graph. They may filter to one task or provider; leaving filters
 empty preserves their complete-suite behavior. Scheduled and standalone workflows remain shadow signals disconnected
 from Release.
+
+## Provider compatibility release gate
+
+`provider-compat.yml` runs daily at 18:17 UTC, on manual dispatch, and as a required dependency of Release publication.
+The release run checks out the candidate SHA. Each provider has a separate job and report, including on failure.
+
+```bash
+# Inspect the catalog-derived workload without credentials, network traffic, or reports.
+bun --no-env-file packages/evals/src/compat.ts openai --plan
+# Execute one whole provider lane from the repository root; nonzero exit blocks publication.
+bun --no-env-file packages/evals/src/compat.ts openai
+```
+
+Use `anthropic`, `openai`, `gemini`, or `chatgpt`. Each lane exercises direct response, web search, image input,
+image generation and manual compaction where supported; only the product default model runs collaboration.
+Image generation is a separate OAuth endpoint, not a capability of individual chat model IDs: one generation
+result is shared by rows routing to the same image model. API-key lanes do not fall back to OAuth.
+Each run writes `artifacts/compat/<provider>.json` with the checkout SHA, fixture seed, row status, and skip reasons.
+`pending` is not a pass. Inspect `http` for observed fetch failures; HTTP 400 fails the row even after recovery.
+Only bounded diagnostic identifiers are recorded when available, not request headers, prompts or raw error bodies.
+
+Before enabling the gate:
+
+1. Obtain dedicated, approved test keys and configure `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GEMINI_API_KEY`
+   as Actions secrets. Set provider spending limits. Do not use developer keys or paste credentials into reports.
+2. Register a dedicated POSIX Actions runner labeled `diligent-oauth` under a service account. Restrict its runner
+   group to the trusted compatibility workflow on a protected ref; never expose its home or credential store to PR jobs.
+   Sign in through Diligent as that account and ensure its credential store is writable for refresh-token rotation.
+   Run only one worker per store. The OAuth job does not receive the three API keys.
+3. Dispatch the workflow on the release branch and check all four reports before cutting a release. If OAuth
+   requires consent again, log in on the machine and rerun. A missing runner or key is not an exemption.

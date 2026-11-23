@@ -48,6 +48,14 @@ jobs:
             echo "tag=$TAG"
           } >> "$GITHUB_OUTPUT"
 
+  compatibility:
+    needs: prepare
+    uses: ./.github/workflows/provider-compat.yml
+    secrets:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
   build:
     name: Build CLI (${{ matrix.target }})
     needs: prepare
@@ -82,7 +90,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: [prepare, build]
+    needs: [prepare, build, compatibility]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -97,6 +105,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: diligent-*
           merge-multiple: true
       - name: Checksums
         shell: bash

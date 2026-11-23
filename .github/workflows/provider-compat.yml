@@ -1,0 +1,57 @@
+name: Provider compatibility
+
+on:
+  schedule:
+    - cron: '17 18 * * *'
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      OPENAI_API_KEY:
+        required: true
+      ANTHROPIC_API_KEY:
+        required: true
+      GEMINI_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    name: Compatibility (${{ matrix.provider }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - provider: anthropic
+            runner: '"ubuntu-latest"'
+          - provider: openai
+            runner: '"ubuntu-latest"'
+          - provider: gemini
+            runner: '"ubuntu-latest"'
+          - provider: chatgpt
+            runner: '["self-hosted", "diligent-oauth"]'
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - name: Run compatibility matrix
+        env:
+          COMPAT_PROVIDER: ${{ matrix.provider }}
+          ANTHROPIC_API_KEY: ${{ matrix.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
+          OPENAI_API_KEY: ${{ matrix.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
+          GEMINI_API_KEY: ${{ matrix.provider == 'gemini' && secrets.GEMINI_API_KEY || '' }}
+        run: bun --no-env-file packages/evals/src/compat.ts "$COMPAT_PROVIDER"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compat-${{ matrix.provider }}-${{ github.run_attempt }}
+          path: artifacts/compat/${{ matrix.provider }}.json
+          if-no-files-found: error
