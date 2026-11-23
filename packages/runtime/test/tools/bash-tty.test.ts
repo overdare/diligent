@@ -84,11 +84,12 @@ async function withEnv<T>(values: Record<string, string | undefined>, run: () =>
 describe.if(posix)("bash tty", () => {
   test("gives the command a terminal on stdin and stdout, unlike the default pipes", async () => {
     const { bash } = setup();
-    const command = "[ -t 0 ] && [ -t 1 ] && tty";
+    // Shell builtins only: the `tty` utility's output differs between coreutils implementations.
+    const command = "[ -t 0 ] && [ -t 1 ] && echo terminal";
 
     const terminal = await bash.execute({ command, tty: true }, makeCtx());
     expect(terminal.metadata?.exitCode).toBe(0);
-    expect(terminal.output).toMatch(/^\/dev\/(tty|pts)\S*\n$/);
+    expect(terminal.output).toBe("terminal\n");
 
     const piped = await bash.execute({ command }, makeCtx());
     expect(piped.metadata?.exitCode).toBe(1);
