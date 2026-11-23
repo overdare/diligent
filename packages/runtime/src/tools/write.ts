@@ -5,6 +5,7 @@ import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { isAbsolute, stripExtendedLengthPrefix } from "../util/path";
 import { type RuntimeToolHost, requestToolApprovalOutcome, resolveRejectedApproval } from "./capabilities";
+import { appendPostWriteNote, type WriteToolOptions } from "./lsp/post-edit";
 import { createFileRenderPayload, createTextRenderPayload } from "./render-payload";
 
 const WriteParams = z.object({
@@ -12,7 +13,20 @@ const WriteParams = z.object({
   content: z.string().describe("The full content to write to the file"),
 });
 
-export function createWriteTool(cwd: string, host?: RuntimeToolHost): Tool<typeof WriteParams> {
+/** Content a write replaces, read only when a post-write hook needs it. */
+async function contentBeforeWrite(path: string, options: WriteToolOptions | undefined): Promise<string | undefined> {
+  return options?.postWrite
+    ? Bun.file(path)
+        .text()
+        .catch(() => undefined)
+    : undefined;
+}
+
+export function createWriteTool(
+  cwd: string,
+  host?: RuntimeToolHost,
+  options?: WriteToolOptions,
+): Tool<typeof WriteParams> {
   return {
     name: "write",
     description:
@@ -50,11 +64,17 @@ export function createWriteTool(cwd: string, host?: RuntimeToolHost): Tool<typeo
         await mkdir(dirname(targetPath), { recursive: true });
 
         // 2. Write content to file
+        const before = await contentBeforeWrite(targetPath, options);
         await Bun.write(targetPath, content);
 
         // 3. Return summary
         const bytes = new TextEncoder().encode(content).length;
-        const output = `Wrote ${bytes} bytes to ${targetPath}`;
+        const output = await appendPostWriteNote(
+          `Wrote ${bytes} bytes to ${targetPath}`,
+          options,
+          [{ path: targetPath, before, after: content }],
+          ctx.signal,
+        );
         return {
           output,
           render: createFileRenderPayload({
@@ -84,7 +104,10 @@ const WriteAbsoluteParams = z.object({
 /**
  * Write tool variant for non-OpenAI models — accepts absolute paths.
  */
-export function createWriteAbsoluteTool(host?: RuntimeToolHost): Tool<typeof WriteAbsoluteParams> {
+export function createWriteAbsoluteTool(
+  host?: RuntimeToolHost,
+  options?: WriteToolOptions,
+): Tool<typeof WriteAbsoluteParams> {
   return {
     name: "write",
     description: `Writes a file to the local filesystem.
@@ -124,9 +147,15 @@ Usage:
 
       try {
         await mkdir(dirname(file_path), { recursive: true });
+        const before = await contentBeforeWrite(file_path, options);
         await Bun.write(file_path, content);
         const bytes = new TextEncoder().encode(content).length;
-        const output = `Wrote ${bytes} bytes to ${file_path}`;
+        const output = await appendPostWriteNote(
+          `Wrote ${bytes} bytes to ${file_path}`,
+          options,
+          [{ path: file_path, before, after: content }],
+          ctx.signal,
+        );
         return {
           output,
           render: createFileRenderPayload({

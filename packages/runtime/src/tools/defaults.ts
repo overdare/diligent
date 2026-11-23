@@ -21,6 +21,8 @@ import { createEditTool, createMultiEditTool } from "./edit";
 import { createGlobTool } from "./glob";
 import { createGrepTool } from "./grep";
 import { createLsTool } from "./ls";
+import { createLspIntegration } from "./lsp";
+import type { WriteToolOptions } from "./lsp/post-edit";
 import { createMcpToolProvider, getMcpManager } from "./mcp";
 import { createPlanTool } from "./plan";
 import type { PluginDiscoveryMode } from "./plugin-loader";
@@ -84,20 +86,24 @@ export interface BuildDefaultToolsOptions {
   mcpResources?: boolean;
   /** Expose MCP prompt proxy tools when supported (default true). */
   mcpPrompts?: boolean;
+  /** Language server settings for the `lsp` tool and post-edit diagnostics; the tool is on unless `enabled: false`. */
+  lsp?: DiligentConfig["lsp"];
 }
 
 function createProviderEditTools(
   provider: ProviderName | undefined,
   cwd: string,
   host: RuntimeToolHost | undefined,
+  writeOptions: WriteToolOptions,
 ): Tool[] {
   if (provider === "openai" || provider === "chatgpt") {
-    return [createApplyPatchTool(cwd, host)];
+    return [createApplyPatchTool(cwd, host, writeOptions)];
   }
+  const editTools = [createEditTool(host, writeOptions), createMultiEditTool(host, writeOptions)];
   if (provider === undefined) {
-    return [createApplyPatchTool(cwd, host), createEditTool(host), createMultiEditTool(host)];
+    return [createApplyPatchTool(cwd, host, writeOptions), ...editTools];
   }
-  return [createEditTool(host), createMultiEditTool(host)];
+  return editTools;
 }
 
 export async function buildDefaultTools(options: BuildDefaultToolsOptions): Promise<BuildDefaultToolsResult> {
@@ -153,19 +159,21 @@ export async function buildDefaultTools(options: BuildDefaultToolsOptions): Prom
       }
     : await (async () => {
         const webEnabled = toolsConfig?.web_action !== false;
+        const lsp = createLspIntegration(cwd, options.lsp, host);
 
         const builtinTools: Tool[] = [
           ...createBashTools(cwd, host, options.shellProcesses ?? new ShellProcessRegistry()),
           createSkillTool(skills),
           createReadTool(),
           createReadImageTool(),
-          ...createProviderEditTools(provider, cwd, host),
+          ...createProviderEditTools(provider, cwd, host, { postWrite: lsp?.postWrite }),
           createLsTool(),
           createGlobTool(cwd),
           createGrepTool(cwd),
           createPlanTool(),
           createRequestUserInputTool(host),
           ...(options.goalHost ? createGoalTools(options.goalHost) : []),
+          ...(lsp ? [lsp.tool] : []),
         ];
 
         if (webEnabled) {

@@ -78,6 +78,35 @@ export type McpStdioServerConfig = z.infer<typeof McpStdioServerSchema>;
 export type McpHttpServerConfig = z.infer<typeof McpHttpServerSchema>;
 export type McpOAuthConfig = z.infer<typeof McpOAuthConfigSchema>;
 
+// A language server for the `lsp` tool. An entry named like a built-in default overrides only the fields it sets,
+// so `{ "enabled": false }` turns that default off; a new entry needs `command` and `fileTypes`.
+export const LspServerConfigSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    command: z.string().min(1).optional(),
+    args: z.array(z.string()).optional(),
+    // File extensions including the dot, e.g. ".ts".
+    fileTypes: z.array(z.string().min(1)).optional(),
+    // File names whose nearest containing directory becomes the server root.
+    rootMarkers: z.array(z.string().min(1)).optional(),
+    initOptions: z.record(z.string(), z.unknown()).optional(),
+    settings: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
+
+export const LspConfigSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    servers: z.record(z.string(), LspServerConfigSchema).optional(),
+    // After a successful write: `off` only syncs open documents, `running` (default) waits for diagnostics from an
+    // already running server, `start` also starts a matching server.
+    postEditDiagnostics: z.enum(["off", "running", "start"]).optional(),
+  })
+  .strict();
+
+export type LspServerConfig = z.infer<typeof LspServerConfigSchema>;
+export type LspConfig = z.infer<typeof LspConfigSchema>;
+
 export const DiligentConfigSchema = z
   .object({
     $schema: z.string().optional(),
@@ -276,6 +305,10 @@ export const DiligentConfigSchema = z
 
     // Global MCP behavior (tool-loading strategy). See McpGlobalConfigSchema.
     mcp: McpGlobalConfigSchema.optional(),
+
+    // Language servers for the `lsp` tool and post-edit diagnostics (docs/guide/lsp.md). `servers` is honored only
+    // from the global layer: project-layer entries would run commands from the repository's config.
+    lsp: LspConfigSchema.optional(),
   })
   .strict();
 

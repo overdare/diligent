@@ -27,4 +27,5 @@ export const CUSTOM_RENDER_TOOLS = new Set([
   "update_knowledge",
   "exec",
   "exec_wait",
+  "lsp",
 ]);

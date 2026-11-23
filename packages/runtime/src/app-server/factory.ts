@@ -33,8 +33,10 @@ import { createRuntimeToolHost } from "../tools/capabilities";
 import { CodeModeSession } from "../tools/code-mode/session";
 import { applyCodeMode } from "../tools/code-mode/tools";
 import { buildDefaultTools } from "../tools/defaults";
+import { shutdownLspManager } from "../tools/lsp";
 import { buildMcpNeedsAuthNote, getMcpManager } from "../tools/mcp";
 import type { PluginDiscoveryMode } from "../tools/plugin-loader";
+import { toReadOnlyTool } from "../tools/read-only-variant";
 import { ShellProcessRegistry } from "../tools/shell-processes";
 import type { ConfigReloadResult } from "./config-handlers";
 import type { CreateAgentArgs, DiligentAppServerConfig } from "./server";
@@ -93,7 +95,7 @@ async function withLatestKnowledge(
 
 export function filterToolsByMode(mode: Mode, tools: Awaited<ReturnType<typeof buildDefaultTools>>["tools"]) {
   if (mode === "plan") {
-    return tools.filter((tool) => !PLAN_MODE_DISALLOWED_TOOLS.has(tool.name));
+    return tools.filter((tool) => !PLAN_MODE_DISALLOWED_TOOLS.has(tool.name)).map(toReadOnlyTool);
   }
   if (mode === "execute") {
     return tools.filter((tool) => !EXECUTE_MODE_DISALLOWED_TOOLS.has(tool.name));
@@ -232,6 +234,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions, parentSystemPr
     mcpWarnOutputTokens: runtimeConfig.diligent.mcp?.warnOutputTokens,
     mcpResources: runtimeConfig.diligent.mcp?.resources,
     mcpPrompts: runtimeConfig.diligent.mcp?.prompts,
+    lsp: runtimeConfig.diligent.lsp,
   });
 
   const activeMode = (mode ?? "default") as Mode;
@@ -544,6 +547,8 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
     config.mcpServers = fresh.diligent.mcpServers;
     config.skillNames = fresh.skills.map((skill) => skill.name);
     config.hooks = fresh.diligent.hooks;
+    // Restart language servers with the new config; this also clears servers reported as failed.
+    await shutdownLspManager();
     return { skills: fresh.skills.map((skill) => ({ name: skill.name, description: skill.description })) };
   };
 

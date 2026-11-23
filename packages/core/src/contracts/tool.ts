@@ -15,5 +15,13 @@ export {
   truncateHeadTail,
   truncateTail,
 } from "../tool/truncation";
-export type { NestedToolEvent, Tool, ToolContext, ToolRegistry, ToolResult, ToolRunScope } from "../tool/types";
+export type {
+  NestedToolEvent,
+  Tool,
+  ToolConcurrency,
+  ToolContext,
+  ToolRegistry,
+  ToolResult,
+  ToolRunScope,
+} from "../tool/types";
 export type { ToolRenderPayloadLike } from "../types";

@@ -51,6 +51,8 @@ export const TOOL_CAPABILITIES: Record<string, ToolCapabilities> = {
   ls: {},
   search_knowledge: { hasCustomRender: true },
   web_action: {},
+  // Plan mode and read-only agents get a variant whose rename only previews (see read-only-variant.ts).
+  lsp: { hasCustomRender: true },
 
   // Write tools (excluded from plan mode)
   bash: { planModeDisallowed: true, hasCustomRender: true },

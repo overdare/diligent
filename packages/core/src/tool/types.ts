@@ -20,6 +20,11 @@ export interface Tool<TParams extends z.ZodType = any> {
   modelExposure?: ProviderBuiltinToolDefinition;
   execute: (args: z.infer<TParams>, ctx: ToolContext) => Promise<ToolResult>;
   supportParallel?: boolean; // D015: When true, tool can run concurrently with other parallel tools
+  /**
+   * Per-call override of `supportParallel`: `shared` calls may overlap, `exclusive` calls run alone. Receives the
+   * call's arguments as given; a throw schedules the call as `exclusive`.
+   */
+  concurrency?: (args: unknown) => ToolConcurrency;
   /** Custom arg parser. When provided, executor uses this instead of parameters.safeParse(). */
   parseArgs?: (raw: unknown) => z.infer<TParams>;
   /** Top-level arguments whose empty values carry meaning, such as whitespace written to stdin. */
@@ -90,6 +95,8 @@ export interface ToolResult {
    */
   maxOutputBytes?: number;
 }
+
+export type ToolConcurrency = "shared" | "exclusive";
 
 // D014: Registry type
 export type ToolRegistry = Map<string, Tool>;

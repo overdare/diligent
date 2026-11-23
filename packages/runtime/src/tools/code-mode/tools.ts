@@ -1,6 +1,6 @@
 // @summary Code mode tools (exec, exec_wait) and the model-facing tool assembly for tools.codeMode
 
-import type { ToolGate } from "@diligent/core/agent";
+import { resolveToolConcurrency, type ToolGate } from "@diligent/core/agent";
 import type { Tool, ToolOutputFileStore, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { hasBuiltinBashWait, isYieldingBash, restrictBash } from "../bash";
@@ -148,7 +148,7 @@ function gateDirectTool(tool: Tool, gate: ToolGate): Tool {
   return {
     ...tool,
     async execute(args, ctx) {
-      const release = await gate.acquire(tool.supportParallel === true, ctx.signal);
+      const release = await gate.acquire(resolveToolConcurrency(tool, args) === "shared", ctx.signal);
       try {
         return await tool.execute(args, ctx);
       } finally {

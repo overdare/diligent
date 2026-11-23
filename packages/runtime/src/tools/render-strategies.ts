@@ -3,6 +3,7 @@
 import type { ToolRenderPayload } from "@diligent/protocol";
 import {
   buildKnowledgeInputSummary,
+  buildLspInputSummary,
   buildPatchInputSummary,
   buildSearchKnowledgeInputSummary,
   clipInlineText,
@@ -234,6 +235,17 @@ const RENDER_STRATEGIES: Map<string, RenderStrategy> = new Map([
         if (command?.trim()) return createCommandRenderPayload(command, output, isError);
         return undefined;
       },
+    },
+  ],
+  [
+    "lsp",
+    {
+      startInputSummary: (parsedInput) => buildLspInputSummary(parsedInput),
+      endRender: (parsedInput, output, isError) => ({
+        inputSummary: buildLspInputSummary(parsedInput),
+        outputSummary: summarizeRenderText(output.split("\n", 1)[0], 120),
+        blocks: [{ type: "text", title: isError ? "Error" : "Output", text: output, isError }],
+      }),
     },
   ],
 ]);

@@ -258,5 +258,55 @@ describe("runToolCalls", () => {
       expect(starts.sort()).toEqual(["r1", "r2", "w"]);
       expect(ends.sort()).toEqual(["r1", "r2", "w"]);
     });
+
+    test("a concurrency resolver decides per call; a throwing resolver runs the call alone", async () => {
+      const started: string[] = [];
+      const waiting = new Map<string, () => void>();
+      const tool: Tool = {
+        name: "mixed",
+        description: "mixed",
+        parameters: z.object({ id: z.string(), write: z.boolean().optional() }),
+        // A resolver overrides supportParallel in both directions.
+        supportParallel: true,
+        concurrency: (args) => {
+          const input = args as { id: string; write?: boolean };
+          if (input.id === "boom") throw new Error("resolver failed");
+          return input.write ? "exclusive" : "shared";
+        },
+        async execute(args: { id: string }) {
+          started.push(args.id);
+          const { promise, resolve } = Promise.withResolvers<void>();
+          waiting.set(args.id, resolve);
+          await promise;
+          return { output: `done ${args.id}` };
+        },
+      };
+      const calls = [{ id: "r1" }, { id: "r2" }, { id: "w", write: true }, { id: "boom" }, { id: "r3" }];
+      let itemId = 0;
+      const run = runToolCalls(
+        calls.map((input) => ({ type: "tool_call" as const, id: input.id, name: "mixed", input })),
+        new AbortController().signal,
+        new Map([["mixed", tool]]),
+        new AgentStream(),
+        () => `item-${++itemId}`,
+        () => {},
+      );
+      const finish = async (id: string) => {
+        waiting.get(id)?.();
+        await flush();
+      };
+
+      await flush();
+      expect(started).toEqual(["r1", "r2"]);
+      await finish("r1");
+      await finish("r2");
+      expect(started).toEqual(["r1", "r2", "w"]);
+      await finish("w");
+      expect(started).toEqual(["r1", "r2", "w", "boom"]);
+      await finish("boom");
+      expect(started).toEqual(["r1", "r2", "w", "boom", "r3"]);
+      await finish("r3");
+      await run;
+    });
   });
 });

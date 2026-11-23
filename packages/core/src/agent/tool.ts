@@ -4,7 +4,7 @@ import type { ToolOutputFileStore } from "../tool/executor";
 import { executeTool } from "../tool/executor";
 import type { ToolContext, ToolRegistry, ToolRunScope } from "../tool/types";
 import type { ToolCallBlock, ToolResultMessage } from "../types";
-import { ToolGate } from "./tool-gate";
+import { resolveToolConcurrency, ToolGate } from "./tool-gate";
 import type { AgentStream } from "./types";
 
 export interface ToolCallExecution {
@@ -19,8 +19,8 @@ export interface ToolCallBatchResult {
 }
 
 /**
- * Runs one batch of model tool calls. Parallel-safe calls (`supportParallel`) share the gate and overlap; every
- * other call runs alone. Admission follows the model's order, so no call overtakes an earlier exclusive call.
+ * Runs one batch of model tool calls. Shared calls (`resolveToolConcurrency`) overlap; every other call runs alone.
+ * Admission follows the model's order, so no call overtakes an earlier exclusive call.
  */
 export async function runToolCalls(
   toolCalls: ToolCallBlock[],
@@ -65,7 +65,8 @@ export async function runToolCalls(
     toolCalls.map(async (toolCall, index) => {
       let release: () => void;
       try {
-        release = await gate.acquire(registry.get(toolCall.name)?.supportParallel === true, signal);
+        const shared = resolveToolConcurrency(registry.get(toolCall.name), toolCall.input) === "shared";
+        release = await gate.acquire(shared, signal);
       } catch {
         return; // Aborted before admission; paired below.
       }

@@ -405,6 +405,19 @@ export function buildKnowledgeInputSummary(
   return "upsert";
 }
 
+/** `action file:line symbol` summary of an `lsp` call, shared by live rendering and history replay. */
+export function buildLspInputSummary(input: Record<string, unknown> | undefined): string | undefined {
+  const action = typeof input?.action === "string" ? input.action : undefined;
+  if (!action) return undefined;
+  const parts = [action];
+  if (typeof input?.file === "string")
+    parts.push(`${input.file}${typeof input.line === "number" ? `:${input.line}` : ""}`);
+  if (typeof input?.symbol === "string") parts.push(input.symbol);
+  if (typeof input?.query === "string") parts.push(`"${input.query}"`);
+  if (typeof input?.new_name === "string") parts.push(`→ ${input.new_name}${input.apply === true ? "" : " (preview)"}`);
+  return summarizeRenderText(parts.join(" "), 120);
+}
+
 export function buildSearchKnowledgeInputSummary(input: SearchKnowledgeRenderInput): string | undefined {
   const id = typeof input.id === "string" ? input.id.trim() : "";
   const query = typeof input.query === "string" ? input.query.trim() : "";

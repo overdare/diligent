@@ -79,6 +79,8 @@ export interface Tool<TParams extends z.ZodType = any> {
   parameters: TParams;
   execute: (args: z.infer<TParams>, ctx: ToolContext) => Promise<ToolResult>;
   supportParallel?: boolean;
+  /** Per-call override of `supportParallel`; a throw runs the call alone. */
+  concurrency?: (args: unknown) => "shared" | "exclusive";
   /** Custom arg parser. When provided, executor uses this instead of parameters.safeParse(). */
   parseArgs?: (raw: unknown) => z.infer<TParams>;
 }
