@@ -96,4 +96,22 @@ describe("ThreadStore", () => {
 
     expect(store.snapshot().focusedThreadId).toBe("thread-a");
   });
+
+  test("applies thread name updates, including clearing a name, to the listed thread only", () => {
+    const store = new ThreadStore();
+    const summary = (id: string) => ({
+      id,
+      path: `/tmp/${id}.jsonl`,
+      cwd: "/tmp",
+      created: "2026-04-07T00:00:00.000Z",
+      modified: "2026-04-07T00:00:00.000Z",
+    });
+    store.setThreads([summary("thread-1"), summary("thread-2")]);
+
+    store.applyNotification({ method: "thread/name/updated", params: { threadId: "thread-1", name: "Triage" } });
+    expect(store.snapshot().threads.map((thread) => thread.name)).toEqual(["Triage", undefined]);
+
+    store.applyNotification({ method: "thread/name/updated", params: { threadId: "thread-1" } });
+    expect(store.snapshot().threads[0]?.name).toBeUndefined();
+  });
 });

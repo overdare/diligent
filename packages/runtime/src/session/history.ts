@@ -173,14 +173,12 @@ export async function readSessionPreview(path: string): Promise<SessionPreview> 
     const stat = await file.stat();
     const { header, dataOffset, preview, previewEndsAtEof } = await readHeader(file, path);
     let firstUserMessage: string | undefined;
-    let name: string | undefined;
     const lines = preview.toString("utf8").split("\n");
     if (!previewEndsAtEof) lines.pop();
     for (const line of lines) {
       if (!line.trim()) continue;
       try {
         const entry = JSON.parse(line) as SessionEntry;
-        if (entry.type === "session_info" && entry.name) name = entry.name;
         if (entry.type === "message" && entry.visibility !== "internal" && entry.message.role === "user") {
           firstUserMessage = firstUserPreview(entry.message.content);
           break;
@@ -193,7 +191,7 @@ export async function readSessionPreview(path: string): Promise<SessionPreview> 
       id: header.id,
       path,
       cwd: header.cwd,
-      name,
+      name: header.name,
       created: new Date(header.timestamp),
       modified: stat.mtime,
       messageCount: stat.size <= dataOffset ? 0 : undefined,

@@ -267,6 +267,11 @@ export class SessionManager {
     await this.persistence.waitForWrites();
   }
 
+  /** Set or clear (undefined) the session's display name, after every write queued so far. */
+  async setName(name: string | undefined): Promise<void> {
+    await this.persistence.setName(name);
+  }
+
   /** Queue a steering message. If agent is active, steers directly; otherwise queues locally. */
   steer(message: Message | string, id?: string): string {
     return this.orchestrator.steer(message, id);
