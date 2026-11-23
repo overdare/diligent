@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { NodeTracerProvider, type ReadableSpan } from "@opentelemetry/sdk-trace-node";
+import { type ReadableSpan, TracerProvider } from "@opentelemetry/sdk-trace";
 import { ConsentSpanProcessor } from "../../src/observability/span-processor";
 
 describe("consent span processor", () => {
@@ -12,7 +12,7 @@ describe("consent span processor", () => {
       isAuthorizedContext: () => true,
       onSpan: (span) => exported.push(span),
     });
-    const provider = new NodeTracerProvider({ spanProcessors: [processor] });
+    const provider = new TracerProvider({ spanProcessors: [processor] });
     const span = provider.getTracer("test").startSpan("secret prompt", {
       attributes: {
         "llm.model_name": "model-1",
@@ -46,7 +46,7 @@ describe("consent span processor", () => {
       isAuthorizedContext: () => true,
       onSpan: (span) => exported.push(span),
     });
-    const provider = new NodeTracerProvider({ spanProcessors: [processor] });
+    const provider = new TracerProvider({ spanProcessors: [processor] });
     const span = provider.getTracer("test").startSpan("model");
     generation++;
     span.end();
@@ -60,7 +60,7 @@ describe("consent span processor", () => {
       isAuthorizedContext: () => false,
       onSpan: (span) => exported.push(span),
     });
-    const provider = new NodeTracerProvider({ spanProcessors: [processor] });
+    const provider = new TracerProvider({ spanProcessors: [processor] });
     provider.getTracer("test").startSpan("background").end();
     expect(exported).toEqual([]);
   });
@@ -75,7 +75,7 @@ test("only detailed mode exports masked SDK messages and the verified content id
       maskText: (text: string) => text.replaceAll("sensitive-value", "[MASKED]"),
       onSpan: (span) => exported.push(span),
     });
-    const provider = new NodeTracerProvider({ spanProcessors: [processor] });
+    const provider = new TracerProvider({ spanProcessors: [processor] });
     provider
       .getTracer("test")
       .startSpan("model", {
@@ -109,7 +109,7 @@ test("does not attach detailed messages when content mode is downgraded during a
     maskText: (text: string) => text,
     onSpan: (span) => exported.push(span),
   });
-  const provider = new NodeTracerProvider({ spanProcessors: [processor] });
+  const provider = new TracerProvider({ spanProcessors: [processor] });
   const span = provider
     .getTracer("test")
     .startSpan("model", { attributes: { "openinference.span.kind": "LLM", "input.value": "private input" } });
@@ -128,7 +128,7 @@ test("invalid detailed content cannot discard the model metadata span", () => {
     },
     onSpan: (span) => exported.push(span),
   });
-  const provider = new NodeTracerProvider({ spanProcessors: [processor] });
+  const provider = new TracerProvider({ spanProcessors: [processor] });
   provider
     .getTracer("test")
     .startSpan("model", {

@@ -7,7 +7,7 @@ function test(name: string, run: () => Promise<void>) {
 
 import { createAnthropicStream } from "@diligent/core/providers/anthropic";
 import { createOpenAIStream } from "@diligent/core/providers/openai";
-import { NodeTracerProvider, type ReadableSpan } from "@opentelemetry/sdk-trace-node";
+import { type ReadableSpan, TracerProvider } from "@opentelemetry/sdk-trace";
 import { attachModelInstrumentation } from "../../../src/observability/model-instrumentation";
 import { ConsentSpanProcessor } from "../../../src/observability/span-processor";
 
@@ -18,7 +18,7 @@ test("attaches to the actual provider SDKs and captures failed requests without 
     isAuthorizedContext: () => true,
     onSpan: (span) => spans.push(span),
   });
-  const provider = new NodeTracerProvider({ spanProcessors: [processor] });
+  const provider = new TracerProvider({ spanProcessors: [processor] });
   const instrumentation = attachModelInstrumentation(provider);
   const server = Bun.serve({
     port: 0,
@@ -60,7 +60,7 @@ test("attaches to the actual provider SDKs and captures failed requests without 
 
 test("preserves Anthropic streaming and exports token usage without input or output", async () => {
   const spans: ReadableSpan[] = [];
-  const provider = new NodeTracerProvider({
+  const provider = new TracerProvider({
     spanProcessors: [
       new ConsentSpanProcessor({
         getPolicy: () => ({ granted: true, generation: 1, userId: "test-user", contentMode: "none" }),
@@ -138,7 +138,7 @@ test("preserves Anthropic streaming and exports token usage without input or out
 
 test("preserves OpenAI streaming and exports token usage without input or output", async () => {
   const spans: ReadableSpan[] = [];
-  const provider = new NodeTracerProvider({
+  const provider = new TracerProvider({
     spanProcessors: [
       new ConsentSpanProcessor({
         getPolicy: () => ({ granted: true, generation: 1, userId: "test-user", contentMode: "none" }),
