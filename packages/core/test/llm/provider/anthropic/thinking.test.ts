@@ -255,44 +255,44 @@ describe("createAnthropicStream", () => {
     }
   });
 
-  test.each([
-    "claude-sonnet-5-5",
-    "claude-haiku-5-5",
-  ])("serializes %s Messages requests with all documented efforts and image input", async (modelId) => {
-    const model = resolveModel({ provider: "anthropic", modelId });
-    for (const effort of ["low", "medium", "high", "xhigh", "max"] as const) {
-      const context: StreamContext = {
-        ...EMPTY_CONTEXT,
-        messages: [
-          {
-            role: "user",
-            content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" } }],
-            timestamp: 1,
-          },
-        ],
-        tools: [{ kind: "function", name: "read_file", description: "Read a file", inputSchema: { type: "object" } }],
-      };
-      await createAnthropicStream("test-key")(model, context, { effort, temperature: 0.5 }).result();
-      const request = anthropicCalls.at(-1) as Record<string, unknown>;
-      expect(request.model).toBe(modelId);
-      expect(request.max_tokens).toBe(128_000);
-      expect(request.output_config).toEqual({ effort });
-      expect(request.thinking).toMatchObject({ type: "adaptive", display: "summarized" });
-      expect(request.temperature).toBeUndefined();
-      expect(request.tool_choice).toBeUndefined();
-      expect(request.tools).toContainEqual(expect.objectContaining({ name: "read_file" }));
-      expect(request.messages).toContainEqual({
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "file", file_id: expect.any(String) },
-            cache_control: { type: "ephemeral" },
-          },
-        ],
-      });
-    }
-  });
+  test.each(["claude-sonnet-5-5", "claude-haiku-5-5"])(
+    "serializes %s Messages requests with all documented efforts and image input",
+    async (modelId) => {
+      const model = resolveModel({ provider: "anthropic", modelId });
+      for (const effort of ["low", "medium", "high", "xhigh", "max"] as const) {
+        const context: StreamContext = {
+          ...EMPTY_CONTEXT,
+          messages: [
+            {
+              role: "user",
+              content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" } }],
+              timestamp: 1,
+            },
+          ],
+          tools: [{ kind: "function", name: "read_file", description: "Read a file", inputSchema: { type: "object" } }],
+        };
+        await createAnthropicStream("test-key")(model, context, { effort, temperature: 0.5 }).result();
+        const request = anthropicCalls.at(-1) as Record<string, unknown>;
+        expect(request.model).toBe(modelId);
+        expect(request.max_tokens).toBe(128_000);
+        expect(request.output_config).toEqual({ effort });
+        expect(request.thinking).toMatchObject({ type: "adaptive", display: "summarized" });
+        expect(request.temperature).toBeUndefined();
+        expect(request.tool_choice).toBeUndefined();
+        expect(request.tools).toContainEqual(expect.objectContaining({ name: "read_file" }));
+        expect(request.messages).toContainEqual({
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "file", file_id: expect.any(String) },
+              cache_control: { type: "ephemeral" },
+            },
+          ],
+        });
+      }
+    },
+  );
 
   test("uses always-on adaptive thinking for Claude Opus 5.5", async () => {
     const request = await collectRequest(resolveModel({ provider: "anthropic", modelId: "claude-opus-5-5" }), {
@@ -308,53 +308,50 @@ describe("createAnthropicStream", () => {
     expect(request.output_config).toEqual({ effort: "medium" });
   });
 
-  test.each([
-    "claude-opus-5-5",
-    "claude-sonnet-5-5",
-    "claude-haiku-5-5",
-    "claude-fable-5-1",
-    "claude-fable-5-2",
-  ])("requests stale-block dropping for %s when a replayed conversation prefix changes", async (modelId) => {
-    const model = resolveModel({ provider: "anthropic", modelId });
-    const context: StreamContext = {
-      systemPrompt: [{ label: "system", content: "Updated instructions" }],
-      messages: [
-        {
-          role: "assistant",
-          content: [
-            { type: "thinking", thinking: "Earlier reasoning", signature: "signed-block" },
-            { type: "text", text: "Earlier answer" },
-          ],
-          model,
-          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
-          stopReason: "end_turn",
-          timestamp: 1,
-        },
-        { role: "user", content: "Continue", timestamp: 2 },
-      ],
-      tools: [],
-    };
+  test.each(["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1", "claude-fable-5-2"])(
+    "requests stale-block dropping for %s when a replayed conversation prefix changes",
+    async (modelId) => {
+      const model = resolveModel({ provider: "anthropic", modelId });
+      const context: StreamContext = {
+        systemPrompt: [{ label: "system", content: "Updated instructions" }],
+        messages: [
+          {
+            role: "assistant",
+            content: [
+              { type: "thinking", thinking: "Earlier reasoning", signature: "signed-block" },
+              { type: "text", text: "Earlier answer" },
+            ],
+            model,
+            usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+            stopReason: "end_turn",
+            timestamp: 1,
+          },
+          { role: "user", content: "Continue", timestamp: 2 },
+        ],
+        tools: [],
+      };
 
-    const stream = createAnthropicStream("test-key")(model, context, { effort: "medium" });
-    await stream.result();
+      const stream = createAnthropicStream("test-key")(model, context, { effort: "medium" });
+      await stream.result();
 
-    const request = anthropicCalls.at(-1) as Record<string, unknown>;
-    expect(request.messages).toContainEqual({
-      role: "assistant",
-      content: [
-        { type: "thinking", thinking: "Earlier reasoning", signature: "signed-block" },
-        { type: "text", text: "Earlier answer" },
-      ],
-    });
-    expect(request.thinking).toEqual({
-      type: "adaptive",
-      display: "summarized",
-      block_binding: { prefix_mismatch_behavior: "drop_block" },
-    });
-    expect(anthropicRequestOptions.at(-1)).toMatchObject({
-      headers: { "anthropic-beta": "thinking-binding-controls-2026-08-01" },
-    });
-  });
+      const request = anthropicCalls.at(-1) as Record<string, unknown>;
+      expect(request.messages).toContainEqual({
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "Earlier reasoning", signature: "signed-block" },
+          { type: "text", text: "Earlier answer" },
+        ],
+      });
+      expect(request.thinking).toEqual({
+        type: "adaptive",
+        display: "summarized",
+        block_binding: { prefix_mismatch_behavior: "drop_block" },
+      });
+      expect(anthropicRequestOptions.at(-1)).toMatchObject({
+        headers: { "anthropic-beta": "thinking-binding-controls-2026-08-01" },
+      });
+    },
+  );
 
   test("preserves xhigh for adaptive models with intrinsic xhigh support", async () => {
     const request = await collectRequest(baseModel({ supportsAdaptiveThinking: true, supportsXhighEffort: true }), {

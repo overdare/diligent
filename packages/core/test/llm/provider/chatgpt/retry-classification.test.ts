@@ -64,9 +64,9 @@ describe("ChatGPT retry classification", () => {
 
     expect(error?.error.message).toContain("opaque quota failure");
     expect(error?.error.message).not.toContain("upgrade your plan");
-    expect((error?.error as { errorType?: string }).errorType).toBe("rate_limit");
-    expect((error?.error as { reason?: string }).reason).toBe("usage_limit_reached");
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(false);
+    expect((error?.error as { errorType?: string })?.errorType).toBe("rate_limit");
+    expect((error?.error as { reason?: string })?.reason).toBe("usage_limit_reached");
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(false);
   });
 
   test("retries ChatGPT HTTP 500 and recovers", async () => {

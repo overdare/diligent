@@ -344,36 +344,36 @@ describe("AgentRegistry", () => {
     });
   });
 
-  it.each([
-    undefined,
-    "only",
-  ] as const)("applies code mode %s to child agents with their own exec session", async (codeMode) => {
-    let inspectedAgent: RuntimeAgent | undefined;
-    const registry = new AgentRegistry(
-      makeCollabDeps({
-        // Code mode renders input schemas into the exec description, so these tools need real Zod parameters.
-        parentTools: ["read", "plan"].map((name) => ({ ...makeTool(name), parameters: z.object({}) })),
-        codeMode,
-        sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
-          inspectedAgent = agent;
+  it.each([undefined, "only"] as const)(
+    "applies code mode %s to child agents with their own exec session",
+    async (codeMode) => {
+      let inspectedAgent: RuntimeAgent | undefined;
+      const registry = new AgentRegistry(
+        makeCollabDeps({
+          // Code mode renders input schemas into the exec description, so these tools need real Zod parameters.
+          parentTools: ["read", "plan"].map((name) => ({ ...makeTool(name), parameters: z.object({}) })),
+          codeMode,
+          sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
+            inspectedAgent = agent;
+          }),
         }),
-      }),
-    );
-
-    const { threadId } = registry.spawn({ prompt: "inspect", description: "inspect", agentType: "general" });
-    await registry.wait([threadId], 5000);
-
-    expect(inspectedAgent?.tools.map((tool) => tool.name)).toEqual(
-      codeMode === "only" ? ["plan", "exec", "exec_wait"] : ["read", "plan", "exec", "exec_wait"],
-    );
-    const result = await inspectedAgent!.tools
-      .find((tool) => tool.name === "exec")!
-      .execute(
-        { code: "text(await tools.read({}));" },
-        { toolCallId: "test-exec", signal: new AbortController().signal, abort: () => {} },
       );
-    expect(result.output).toBe("Script completed\nread");
-  });
+
+      const { threadId } = registry.spawn({ prompt: "inspect", description: "inspect", agentType: "general" });
+      await registry.wait([threadId], 5000);
+
+      expect(inspectedAgent?.tools.map((tool) => tool.name)).toEqual(
+        codeMode === "only" ? ["plan", "exec", "exec_wait"] : ["read", "plan", "exec", "exec_wait"],
+      );
+      const result = await inspectedAgent!.tools
+        .find((tool) => tool.name === "exec")!
+        .execute(
+          { code: "text(await tools.read({}));" },
+          { toolCallId: "test-exec", signal: new AbortController().signal, abort: () => {} },
+        );
+      expect(result.output).toBe("Script completed\nread");
+    },
+  );
 
   it("propagates the injected output store through child and nested-child assembly", async () => {
     const outputStore: ToolOutputFileStore = { save: async () => "/tmp/eval-output.txt" };

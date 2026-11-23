@@ -386,6 +386,6 @@ function seeded(seed: string, prefix: string) {
 
 function setTurnFinal(value: Execution, turnIndex: number, text: string) {
   const final = value.turns[turnIndex]!.messages.findLast((message) => message.role === "assistant");
-  if (!final || final.role !== "assistant") throw new Error("Missing final assistant response.");
+  if (final?.role !== "assistant") throw new Error("Missing final assistant response.");
   final.content = [{ type: "text", text }];
 }

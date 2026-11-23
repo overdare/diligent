@@ -45,23 +45,23 @@ describe("runtime protocol turn completion", () => {
     }
   });
 
-  test.each([
-    "turn/completed",
-    "turn/interrupted",
-  ] as const)("waits for a new %s notification instead of an earlier turn", async (method) => {
-    const { client, notify } = createClient();
-    const controller = new AbortController();
-    const previous = { method, params: { threadId: "thread-1", turnId: "turn-1" } };
-    const current = { method, params: { threadId: "thread-1", turnId: "turn-2" } };
-    try {
-      notify(previous);
-      const waiting = client.waitForTerminal(client.notifications.length, controller.signal);
-      notify(current);
-      expect(await waiting).toEqual([current]);
-      expect(await client.waitForTerminal(0, controller.signal)).toEqual([previous, current]);
-    } finally {
-      controller.abort();
-      client.close();
-    }
-  });
+  test.each(["turn/completed", "turn/interrupted"] as const)(
+    "waits for a new %s notification instead of an earlier turn",
+    async (method) => {
+      const { client, notify } = createClient();
+      const controller = new AbortController();
+      const previous = { method, params: { threadId: "thread-1", turnId: "turn-1" } };
+      const current = { method, params: { threadId: "thread-1", turnId: "turn-2" } };
+      try {
+        notify(previous);
+        const waiting = client.waitForTerminal(client.notifications.length, controller.signal);
+        notify(current);
+        expect(await waiting).toEqual([current]);
+        expect(await client.waitForTerminal(0, controller.signal)).toEqual([previous, current]);
+      } finally {
+        controller.abort();
+        client.close();
+      }
+    },
+  );
 });

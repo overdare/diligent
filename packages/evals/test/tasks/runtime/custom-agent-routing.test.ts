@@ -347,6 +347,6 @@ function seeded(seed: string, prefix: string): string {
 
 function setFinal(value: Execution, text: string): void {
   const final = value.turns[0]!.messages.at(-1);
-  if (!final || final.role !== "assistant") throw new Error("Missing final assistant response.");
+  if (final?.role !== "assistant") throw new Error("Missing final assistant response.");
   final.content = [{ type: "text", text }];
 }

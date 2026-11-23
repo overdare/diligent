@@ -77,31 +77,31 @@ afterEach(() => {
 });
 
 describe("native compaction adapters", () => {
-  test.each([
-    "gpt-6.2-astra",
-    "gpt-6.2-sol",
-  ])("compacts %s with reusable instructions before retained history", async (modelId) => {
-    let capturedBody: Record<string, unknown> = {};
-    globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
-      capturedBody = JSON.parse(String(init?.body));
-      return new Response(JSON.stringify(currentCompactionPayload()));
-    }) as unknown as typeof fetch;
-    const result = await createOpenAINativeCompaction("test-key")({
-      model: resolveModel({ provider: "openai", modelId }),
-      systemPrompt: [{ label: "base", content: "Reusable instructions" }],
-      messages: [{ role: "user", content: "Continue", timestamp: 0 }],
-      compactionSummary: { type: "compaction", encrypted_content: "prior" },
-    });
-    expect(result.status).toBe("ok");
-    expect(capturedBody).toEqual({
-      model: modelId,
-      input: [
-        { type: "message", role: "developer", content: [{ type: "input_text", text: "Reusable instructions" }] },
-        { type: "compaction", encrypted_content: "prior" },
-        { type: "message", role: "user", content: [{ type: "input_text", text: "Continue" }] },
-      ],
-    });
-  });
+  test.each(["gpt-6.2-astra", "gpt-6.2-sol"])(
+    "compacts %s with reusable instructions before retained history",
+    async (modelId) => {
+      let capturedBody: Record<string, unknown> = {};
+      globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+        capturedBody = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify(currentCompactionPayload()));
+      }) as unknown as typeof fetch;
+      const result = await createOpenAINativeCompaction("test-key")({
+        model: resolveModel({ provider: "openai", modelId }),
+        systemPrompt: [{ label: "base", content: "Reusable instructions" }],
+        messages: [{ role: "user", content: "Continue", timestamp: 0 }],
+        compactionSummary: { type: "compaction", encrypted_content: "prior" },
+      });
+      expect(result.status).toBe("ok");
+      expect(capturedBody).toEqual({
+        model: modelId,
+        input: [
+          { type: "message", role: "developer", content: [{ type: "input_text", text: "Reusable instructions" }] },
+          { type: "compaction", encrypted_content: "prior" },
+          { type: "message", role: "user", content: [{ type: "input_text", text: "Continue" }] },
+        ],
+      });
+    },
+  );
 
   test("OpenAI adapter posts to /responses/compact with auth header", async () => {
     let capturedUrl = "";

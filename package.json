@@ -39,7 +39,7 @@
     "vscode:package": "bun run --cwd apps/vscode-extension package"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.4",
+    "@biomejs/biome": "^2.6.8",
     "@types/node": "25.3.0",
     "bun-types": "^1.3.10",
     "lefthook": "^2.1.2",

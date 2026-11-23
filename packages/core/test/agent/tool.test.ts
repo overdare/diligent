@@ -53,71 +53,71 @@ async function runPreAbortedBatch(tools: Tool[]): Promise<{
 }
 
 describe("runToolCalls", () => {
-  test.each([
-    "tool",
-    "external",
-  ] as const)("preserves settled parallel results after %s cancellation", async (source) => {
-    const controller = new AbortController();
-    const stream = new AgentStream();
-    const events: CoreAgentEvent[] = [];
-    stream.subscribe((event) => events.push(event));
-    const effects: string[] = [];
-    const completed: ToolResult = {
-      output: "saved",
-      outputImages: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "c2F2ZWQ=" } }],
-      metadata: { saved: true },
-    };
-    const failed: ToolResult = { output: "write failed", metadata: { error: true } };
-    const tools: Tool[] = [
-      {
-        ...makeTool("stop", true, effects),
-        async execute() {
-          await Promise.resolve();
-          if (source === "external") controller.abort();
-          return { output: "stopped", abortRequested: source === "tool" };
+  test.each(["tool", "external"] as const)(
+    "preserves settled parallel results after %s cancellation",
+    async (source) => {
+      const controller = new AbortController();
+      const stream = new AgentStream();
+      const events: CoreAgentEvent[] = [];
+      stream.subscribe((event) => events.push(event));
+      const effects: string[] = [];
+      const completed: ToolResult = {
+        output: "saved",
+        outputImages: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "c2F2ZWQ=" } }],
+        metadata: { saved: true },
+      };
+      const failed: ToolResult = { output: "write failed", metadata: { error: true } };
+      const tools: Tool[] = [
+        {
+          ...makeTool("stop", true, effects),
+          async execute() {
+            await Promise.resolve();
+            if (source === "external") controller.abort();
+            return { output: "stopped", abortRequested: source === "tool" };
+          },
         },
-      },
-      {
-        ...makeTool("save", true, effects),
-        async execute() {
-          effects.push("saved");
-          return completed;
+        {
+          ...makeTool("save", true, effects),
+          async execute() {
+            effects.push("saved");
+            return completed;
+          },
         },
-      },
-      { ...makeTool("fail", true, effects), execute: async () => failed },
-    ];
-    const calls: ToolCallBlock[] = tools.map((tool) => ({
-      type: "tool_call",
-      id: tool.name,
-      name: tool.name,
-      input: {},
-    }));
-    let itemId = 0;
+        { ...makeTool("fail", true, effects), execute: async () => failed },
+      ];
+      const calls: ToolCallBlock[] = tools.map((tool) => ({
+        type: "tool_call",
+        id: tool.name,
+        name: tool.name,
+        input: {},
+      }));
+      let itemId = 0;
 
-    const result = await runToolCalls(
-      calls,
-      controller.signal,
-      new Map(tools.map((tool) => [tool.name, tool])),
-      stream,
-      () => `item-${++itemId}`,
-      () => controller.abort(),
-    );
+      const result = await runToolCalls(
+        calls,
+        controller.signal,
+        new Map(tools.map((tool) => [tool.name, tool])),
+        stream,
+        () => `item-${++itemId}`,
+        () => controller.abort(),
+      );
 
-    expect(controller.signal.aborted).toBe(true);
-    expect(effects).toEqual(["saved"]);
-    const expected = [
-      { toolCallId: "stop", output: "stopped", isError: false },
-      { toolCallId: "save", ...completed, isError: false },
-      { toolCallId: "fail", ...failed, isError: true },
-    ];
-    expect(result.executions.map((execution) => execution.toolResult)).toMatchObject(expected);
-    // tool_end is emitted as each call settles; the provider-visible executions above keep model order.
-    const ends = events.filter((event) => event.type === "tool_end");
-    for (const expectedEnd of expected) {
-      expect(ends.find((event) => event.toolCallId === expectedEnd.toolCallId)).toMatchObject(expectedEnd);
-    }
-    expect(ends).toHaveLength(expected.length);
-  });
+      expect(controller.signal.aborted).toBe(true);
+      expect(effects).toEqual(["saved"]);
+      const expected = [
+        { toolCallId: "stop", output: "stopped", isError: false },
+        { toolCallId: "save", ...completed, isError: false },
+        { toolCallId: "fail", ...failed, isError: true },
+      ];
+      expect(result.executions.map((execution) => execution.toolResult)).toMatchObject(expected);
+      // tool_end is emitted as each call settles; the provider-visible executions above keep model order.
+      const ends = events.filter((event) => event.type === "tool_end");
+      for (const expectedEnd of expected) {
+        expect(ends.find((event) => event.toolCallId === expectedEnd.toolCallId)).toMatchObject(expectedEnd);
+      }
+      expect(ends).toHaveLength(expected.length);
+    },
+  );
 
   test("pre-aborted parallel batch executes no tools and pairs every call", async () => {
     const executions: string[] = [];

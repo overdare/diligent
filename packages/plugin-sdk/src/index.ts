@@ -2,10 +2,9 @@
 import type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse } from "@diligent/protocol";
 import type { z } from "zod";
 
-export type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse };
-
 export type { Env } from "./env";
 export { currentEnv } from "./env";
+export type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse };
 
 export interface ToolRenderPayload {
   inputSummary?: string;

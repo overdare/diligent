@@ -125,7 +125,7 @@ export function finalAssistantText(input: Pick<RuntimeEvalExecution<unknown>, "t
     .at(turnIndex ?? -1)
     ?.messages.filter((message) => message.role === "assistant")
     .at(-1);
-  if (!last || last.role !== "assistant") return "";
+  if (last?.role !== "assistant") return "";
   return last.content
     .filter((block): block is { type: "text"; text: string } => block.type === "text")
     .map((block) => block.text)

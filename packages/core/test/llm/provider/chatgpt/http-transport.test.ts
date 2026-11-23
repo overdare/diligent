@@ -282,8 +282,8 @@ describe("ChatGPT HTTP transport", () => {
 
     const error = events.find((event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error");
     expect(error?.error.message).toBe("ChatGPT HTTP response header timeout after 5ms");
-    expect((error?.error as { errorType?: string }).errorType).toBe("network");
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(true);
+    expect((error?.error as { errorType?: string })?.errorType).toBe("network");
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(true);
   });
 
   test("clears the ChatGPT HTTP header timeout before streaming the SSE body", async () => {

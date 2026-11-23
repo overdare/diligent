@@ -135,21 +135,21 @@ test("runs the agent within the host observation scope using the current session
   expect(inside).toBe(false);
 });
 
-test.each([
-  "run",
-  "runWithOutcome",
-] as const)("%s announces busy synchronously before yielding to turn-start dispatch", async (method) => {
-  const dir = await setupDir();
-  const manager = new SessionManager(makeManagerConfig(dir, createMockStreamFn([makeAssistant()])));
-  await manager.create();
-  const events: AgentEvent[] = [];
-  manager.subscribe((event) => events.push(event));
-  const running = manager[method]({ role: "user", content: "work", timestamp: Date.now() });
-  const first = events[0];
-  await running;
-  await manager.waitForWrites();
-  expect(first).toMatchObject({ type: "status_change", status: "busy" });
-});
+test.each(["run", "runWithOutcome"] as const)(
+  "%s announces busy synchronously before yielding to turn-start dispatch",
+  async (method) => {
+    const dir = await setupDir();
+    const manager = new SessionManager(makeManagerConfig(dir, createMockStreamFn([makeAssistant()])));
+    await manager.create();
+    const events: AgentEvent[] = [];
+    manager.subscribe((event) => events.push(event));
+    const running = manager[method]({ role: "user", content: "work", timestamp: Date.now() });
+    const first = events[0];
+    await running;
+    await manager.waitForWrites();
+    expect(first).toMatchObject({ type: "status_change", status: "busy" });
+  },
+);
 
 /** Collect events via subscribe, run, return events. */
 async function runCollecting(mgr: SessionManager, userMsg: Message): Promise<AgentEvent[]> {
@@ -168,61 +168,63 @@ afterEach(async () => {
 });
 
 describe("SessionManager", () => {
-  test.each([
-    "run",
-    "runWithOutcome",
-  ] as const)("%s gives shared tools actual identity and resolves resumed child ancestry", async (method) => {
-    const dir = await setupDir();
-    const observed: Array<{ sessionId: string; rootSessionId: string; resumed: boolean }> = [];
-    const observedRuns: Array<{ sessionId: string; rootSessionId?: string }> = [];
-    const tool: Tool = {
-      name: "observe_identity",
-      description: "Observe execution identity",
-      parameters: z.object({}),
-      async execute() {
-        const scope = getSessionExecutionContext()!;
-        observed.push({ sessionId: scope.sessionId, rootSessionId: scope.rootSessionId, resumed: scope.resumed });
-        return { output: "observed" };
-      },
-    };
-    const build = (parentSession?: string) => ({
-      cwd: dir,
-      paths: resolvePaths(dir),
-      parentSession,
-      runObserved: async (
-        context: { sessionId: string; rootSessionId?: string },
-        run: () => Promise<import("../../src/session/types").SessionRunOutcome>,
-      ) => {
-        observedRuns.push(context);
-        return run();
-      },
-      agent: new Agent(TEST_MODEL, [], [tool], {
-        llmMsgStreamFn: createMockStreamFn([
-          makeAssistantMessage([{ type: "tool_call", id: "identity", name: tool.name, input: {} }], "tool_use"),
-          makeAssistant(),
-        ]),
-      }),
-    });
-    const parent = new SessionManager(build());
-    await parent.create();
-    const child = new SessionManager(build(parent.sessionId));
-    await child.create();
-    await child.waitForWrites();
-    const resumed = new SessionManager(build());
-    expect(await resumed.resume({ sessionId: child.sessionId })).toBe(true);
-    await runWithSessionExecutionContext(
-      {
-        sessionId: "unrelated",
-        rootSessionId: "unrelated",
-        resumed: false,
-        rootRequest: { sessionId: "unrelated", requestId: "unrelated" },
-      },
-      () => resumed[method]({ role: "user", content: "observe", timestamp: Date.now() }),
-    );
-    expect(observed).toEqual([{ sessionId: child.sessionId, rootSessionId: parent.sessionId, resumed: true }]);
-    expect(observedRuns).toEqual([{ sessionId: child.sessionId, rootSessionId: parent.sessionId, userId: undefined }]);
-    await resumed.waitForWrites();
-  });
+  test.each(["run", "runWithOutcome"] as const)(
+    "%s gives shared tools actual identity and resolves resumed child ancestry",
+    async (method) => {
+      const dir = await setupDir();
+      const observed: Array<{ sessionId: string; rootSessionId: string; resumed: boolean }> = [];
+      const observedRuns: Array<{ sessionId: string; rootSessionId?: string }> = [];
+      const tool: Tool = {
+        name: "observe_identity",
+        description: "Observe execution identity",
+        parameters: z.object({}),
+        async execute() {
+          const scope = getSessionExecutionContext()!;
+          observed.push({ sessionId: scope.sessionId, rootSessionId: scope.rootSessionId, resumed: scope.resumed });
+          return { output: "observed" };
+        },
+      };
+      const build = (parentSession?: string) => ({
+        cwd: dir,
+        paths: resolvePaths(dir),
+        parentSession,
+        runObserved: async (
+          context: { sessionId: string; rootSessionId?: string },
+          run: () => Promise<import("../../src/session/types").SessionRunOutcome>,
+        ) => {
+          observedRuns.push(context);
+          return run();
+        },
+        agent: new Agent(TEST_MODEL, [], [tool], {
+          llmMsgStreamFn: createMockStreamFn([
+            makeAssistantMessage([{ type: "tool_call", id: "identity", name: tool.name, input: {} }], "tool_use"),
+            makeAssistant(),
+          ]),
+        }),
+      });
+      const parent = new SessionManager(build());
+      await parent.create();
+      const child = new SessionManager(build(parent.sessionId));
+      await child.create();
+      await child.waitForWrites();
+      const resumed = new SessionManager(build());
+      expect(await resumed.resume({ sessionId: child.sessionId })).toBe(true);
+      await runWithSessionExecutionContext(
+        {
+          sessionId: "unrelated",
+          rootSessionId: "unrelated",
+          resumed: false,
+          rootRequest: { sessionId: "unrelated", requestId: "unrelated" },
+        },
+        () => resumed[method]({ role: "user", content: "observe", timestamp: Date.now() }),
+      );
+      expect(observed).toEqual([{ sessionId: child.sessionId, rootSessionId: parent.sessionId, resumed: true }]);
+      expect(observedRuns).toEqual([
+        { sessionId: child.sessionId, rootSessionId: parent.sessionId, userId: undefined },
+      ]);
+      await resumed.waitForWrites();
+    },
+  );
 
   test("create() starts with empty session", async () => {
     const dir = await setupDir();

@@ -287,7 +287,7 @@ it("removes rejected steering without adding UI or ending the active turn", asyn
   );
   handler.handleSteering("change approach");
   await Promise.resolve();
-  expect(removePendingSteer).toHaveBeenCalledWith((queuePendingSteer.mock.calls[0]?.[0] as { id: string }).id);
+  expect(removePendingSteer).toHaveBeenCalledWith((queuePendingSteer.mock.calls[0]?.[0] as { id: string })?.id);
   expect(addLines).not.toHaveBeenCalled();
   expect(finishTurn).not.toHaveBeenCalled();
 });

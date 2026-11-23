@@ -6,7 +6,7 @@ import type { ObjectJsonSchema } from "../../../../src/tool/input-schema";
 describe("Responses tool schemas", () => {
   function schemaOf(inputSchema: ObjectJsonSchema, strict?: boolean): Record<string, unknown> {
     const tool = buildTools([{ kind: "function", name: "example", description: "Example", inputSchema }], strict)[0];
-    if (!tool || tool.type !== "function") throw new Error("Expected a function tool");
+    if (tool?.type !== "function") throw new Error("Expected a function tool");
     return tool.parameters;
   }
 

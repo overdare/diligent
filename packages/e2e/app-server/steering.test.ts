@@ -61,7 +61,7 @@ describe("steering", () => {
       );
     expect(steeringEvent).toBeDefined();
     expect(
-      (steeringEvent?.params as { event?: { steerIds?: string[]; messages?: Array<{ content?: unknown }> } }).event,
+      (steeringEvent?.params as { event?: { steerIds?: string[]; messages?: Array<{ content?: unknown }> } })?.event,
     ).toMatchObject({
       steerIds: ["steer-e2e"],
       messages: [{ role: "user", content: "change approach" }],

@@ -316,5 +316,5 @@ export const toolsCommand: Command = {
   },
 };
 
-export { buildSetParams, createDraft };
 export type { ToolSettingsDraft };
+export { buildSetParams, createDraft };

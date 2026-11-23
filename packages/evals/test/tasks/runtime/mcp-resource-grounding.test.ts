@@ -188,6 +188,6 @@ function cwdFromContext(context: StreamContext): string {
 
 function setFinal(value: Execution, text: string) {
   const final = value.turns[0]!.messages.findLast((message) => message.role === "assistant");
-  if (!final || final.role !== "assistant") throw new Error("Missing final assistant response.");
+  if (final?.role !== "assistant") throw new Error("Missing final assistant response.");
   final.content = [{ type: "text", text }];
 }

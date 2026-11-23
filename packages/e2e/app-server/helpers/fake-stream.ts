@@ -129,7 +129,7 @@ export function createGoalCompletionStream(evidence: string, finalText = "Done")
       const result = [...args[1].messages]
         .reverse()
         .find((message) => message.role === "tool_result" && message.toolCallId === "inspect-goal");
-      if (!result || result.role !== "tool_result") throw new Error("Missing goal evidence response");
+      if (result?.role !== "tool_result") throw new Error("Missing goal evidence response");
       const snapshot = JSON.parse(result.output);
       const source = snapshot.evidenceSources?.findLast((item: { kind: string }) => item.kind === "answer");
       finish = createToolUseStream(

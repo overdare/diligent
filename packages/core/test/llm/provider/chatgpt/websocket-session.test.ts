@@ -19,40 +19,40 @@ import {
 afterEach(restoreChatGPTStreamTestState);
 
 describe("ChatGPT WebSocket session", () => {
-  test.each([
-    "gpt-6.2-astra",
-    "gpt-6.2-sol",
-  ])("streams %s through Responses Lite with one instruction prefix", async (modelId) => {
-    globalThis.fetch = (async () => {
-      throw new Error("Expected the Responses Lite WebSocket transport");
-    }) as unknown as typeof fetch;
-    const harness = createWebSocketHarness((_body, socket) => completeWebSocketResponse(socket));
-    const stream = createChatGPTStream(() => testTokens(), { webSocketFactory: harness.factory });
-    const events = await collectEvents(
-      stream(
-        resolveModel({ provider: "chatgpt", modelId }),
-        {
-          ...TEST_CONTEXT,
-          systemPrompt: [{ label: "base", content: "Reusable instructions" }],
-        },
-        { effort: "max", fastMode: true },
-      ),
-    );
-    expect(events.some((event) => event.type === "done")).toBe(true);
-    expect(harness.requests).toHaveLength(1);
-    expect(harness.requests[0]?.headers["x-openai-internal-codex-responses-lite"]).toBe("true");
-    const body = JSON.parse(harness.requests[0]!.socket.sent[0]!);
-    expect(body).toMatchObject({
-      model: modelId,
-      reasoning: { effort: "max", context: "all_turns" },
-      service_tier: "priority",
-    });
-    expect(body.instructions).toBeUndefined();
-    expect(body.input.filter((item: { role?: string }) => item.role === "developer")).toEqual([
-      { type: "additional_tools", role: "developer", tools: [] },
-      { type: "message", role: "developer", content: [{ type: "input_text", text: "Reusable instructions" }] },
-    ]);
-  });
+  test.each(["gpt-6.2-astra", "gpt-6.2-sol"])(
+    "streams %s through Responses Lite with one instruction prefix",
+    async (modelId) => {
+      globalThis.fetch = (async () => {
+        throw new Error("Expected the Responses Lite WebSocket transport");
+      }) as unknown as typeof fetch;
+      const harness = createWebSocketHarness((_body, socket) => completeWebSocketResponse(socket));
+      const stream = createChatGPTStream(() => testTokens(), { webSocketFactory: harness.factory });
+      const events = await collectEvents(
+        stream(
+          resolveModel({ provider: "chatgpt", modelId }),
+          {
+            ...TEST_CONTEXT,
+            systemPrompt: [{ label: "base", content: "Reusable instructions" }],
+          },
+          { effort: "max", fastMode: true },
+        ),
+      );
+      expect(events.some((event) => event.type === "done")).toBe(true);
+      expect(harness.requests).toHaveLength(1);
+      expect(harness.requests[0]?.headers["x-openai-internal-codex-responses-lite"]).toBe("true");
+      const body = JSON.parse(harness.requests[0]!.socket.sent[0]!);
+      expect(body).toMatchObject({
+        model: modelId,
+        reasoning: { effort: "max", context: "all_turns" },
+        service_tier: "priority",
+      });
+      expect(body.instructions).toBeUndefined();
+      expect(body.input.filter((item: { role?: string }) => item.role === "developer")).toEqual([
+        { type: "additional_tools", role: "developer", tools: [] },
+        { type: "message", role: "developer", content: [{ type: "input_text", text: "Reusable instructions" }] },
+      ]);
+    },
+  );
 
   test("uses WebSocket + Lite by default for ChatGPT GPT-6", async () => {
     const harness = createWebSocketHarness((_body, socket) => completeWebSocketResponse(socket));
@@ -155,8 +155,8 @@ describe("ChatGPT WebSocket session", () => {
     expect(outcome).not.toBe("still-pending");
     const error = events.find((event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error");
     expect(error?.error.message).toBe("ChatGPT WebSocket idle timeout waiting for connection");
-    expect((error?.error as { errorType?: string }).errorType).toBe("network");
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(true);
+    expect((error?.error as { errorType?: string })?.errorType).toBe("network");
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(true);
     expect(harness.requests[0]?.socket.terminated).toBe(true);
   });
 
@@ -174,8 +174,8 @@ describe("ChatGPT WebSocket session", () => {
     expect(error?.error.message).toContain(
       "ChatGPT WebSocket closed before a terminal response event (1011: upstream unavailable)",
     );
-    expect((error?.error as { errorType?: string }).errorType).toBe("network");
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(true);
+    expect((error?.error as { errorType?: string })?.errorType).toBe("network");
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(true);
   });
 
   test("scoped path maps send throws to retryable network errors", async () => {
@@ -190,8 +190,8 @@ describe("ChatGPT WebSocket session", () => {
 
     const error = events.find((event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error");
     expect(error?.error.message).toBe("ChatGPT WebSocket send failed: send failed");
-    expect((error?.error as { errorType?: string }).errorType).toBe("network");
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(true);
+    expect((error?.error as { errorType?: string })?.errorType).toBe("network");
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(true);
   });
 
   test("scoped path classifies top-level provider errors like the unscoped path", async () => {
@@ -281,10 +281,10 @@ describe("ChatGPT WebSocket session", () => {
       const error = events.find((event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error");
 
       expect(error?.error.message).toContain(testCase.expectedMessage);
-      expect((error?.error as { errorType?: string }).errorType).toBe(testCase.expectedType);
-      expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(testCase.expectedRetryable);
-      expect((error?.error as { statusCode?: number }).statusCode).toBe(testCase.expectedStatus);
-      expect((error?.error as { reason?: string }).reason).toBe(testCase.expectedReason);
+      expect((error?.error as { errorType?: string })?.errorType).toBe(testCase.expectedType);
+      expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(testCase.expectedRetryable);
+      expect((error?.error as { statusCode?: number })?.statusCode).toBe(testCase.expectedStatus);
+      expect((error?.error as { reason?: string })?.reason).toBe(testCase.expectedReason);
     }
   });
 
@@ -308,8 +308,8 @@ describe("ChatGPT WebSocket session", () => {
     );
 
     const error = events.find((event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error");
-    expect((error?.error as { errorType?: string }).errorType).toBe("server_error");
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(true);
+    expect((error?.error as { errorType?: string })?.errorType).toBe("server_error");
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(true);
   });
 
   test("scoped path aborts during open and during an active exchange", async () => {
@@ -505,7 +505,7 @@ describe("ChatGPT WebSocket session", () => {
     const error = events.find((event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error");
     expect(error?.error).toBeInstanceOf(Error);
     expect(error?.error.message).toContain("terminal response event");
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(true);
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(true);
   });
 
   test("times out when a GPT-6 WebSocket never opens", async () => {
@@ -523,8 +523,8 @@ describe("ChatGPT WebSocket session", () => {
 
     const error = events.find((event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error");
     expect(error?.error.message).toBe("ChatGPT WebSocket idle timeout waiting for connection");
-    expect((error?.error as { errorType?: string }).errorType).toBe("network");
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(true);
+    expect((error?.error as { errorType?: string })?.errorType).toBe("network");
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(true);
     expect(harness.requests[0]?.socket.terminated).toBe(true);
   });
 
@@ -544,8 +544,8 @@ describe("ChatGPT WebSocket session", () => {
     const error = events.find((event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error");
     expect(harness.requests[0]?.socket.sent.length).toBe(1);
     expect(error?.error.message).toBe("ChatGPT WebSocket idle timeout waiting for response");
-    expect((error?.error as { errorType?: string }).errorType).toBe("network");
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(true);
+    expect((error?.error as { errorType?: string })?.errorType).toBe("network");
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(true);
   });
 
   test("maps GPT-6 WebSocket send throws to retryable network errors", async () => {
@@ -565,8 +565,8 @@ describe("ChatGPT WebSocket session", () => {
 
     const error = events.find((event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error");
     expect(error?.error.message).toBe("ChatGPT WebSocket send failed: send failed");
-    expect((error?.error as { errorType?: string }).errorType).toBe("network");
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(true);
+    expect((error?.error as { errorType?: string })?.errorType).toBe("network");
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(true);
   });
 
   test("preserves GPT-6 WebSocket close code and reason before completion", async () => {
@@ -587,8 +587,8 @@ describe("ChatGPT WebSocket session", () => {
     expect(error?.error.message).toContain(
       "ChatGPT WebSocket closed before a terminal response event (1011: upstream unavailable)",
     );
-    expect((error?.error as { errorType?: string }).errorType).toBe("network");
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(true);
+    expect((error?.error as { errorType?: string })?.errorType).toBe("network");
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(true);
   });
 
   test("processes a delayed terminal WebSocket message before close", async () => {
@@ -741,9 +741,9 @@ describe("ChatGPT WebSocket session", () => {
     expect(error?.error.message).toContain("usage_limit_reached");
     expect(error?.error.message).toContain("The usage limit has been reached");
     expect(error?.error.message).not.toContain("upgrade your plan");
-    expect((error?.error as { errorType?: string }).errorType).toBe("rate_limit");
-    expect((error?.error as { reason?: string }).reason).toBe("usage_limit_reached");
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(false);
+    expect((error?.error as { errorType?: string })?.errorType).toBe("rate_limit");
+    expect((error?.error as { reason?: string })?.reason).toBe("usage_limit_reached");
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(false);
   });
 
   test("maps GPT-6 WebSocket status_code alias as rate limit", async () => {
@@ -768,9 +768,9 @@ describe("ChatGPT WebSocket session", () => {
 
     const error = events.find((event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error");
     expect(error?.error.message).toContain("ChatGPT API error (429): rate limited");
-    expect((error?.error as { errorType?: string }).errorType).toBe("rate_limit");
-    expect((error?.error as { statusCode?: number }).statusCode).toBe(429);
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(false);
+    expect((error?.error as { errorType?: string })?.errorType).toBe("rate_limit");
+    expect((error?.error as { statusCode?: number })?.statusCode).toBe(429);
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(false);
   });
 
   test("classifies a WebSocket usage-limit code even without an HTTP status", async () => {
@@ -796,9 +796,9 @@ describe("ChatGPT WebSocket session", () => {
     );
     const error = events.find((event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error");
 
-    expect((error?.error as { errorType?: string }).errorType).toBe("rate_limit");
-    expect((error?.error as { reason?: string }).reason).toBe("usage_limit_reached");
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(false);
+    expect((error?.error as { errorType?: string })?.errorType).toBe("rate_limit");
+    expect((error?.error as { reason?: string })?.reason).toBe("usage_limit_reached");
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(false);
   });
 
   test("maps GPT-6 WebSocket connection-limit code as retryable", async () => {
@@ -826,6 +826,6 @@ describe("ChatGPT WebSocket session", () => {
 
     const error = events.find((event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error");
     expect(error?.error.message).toContain("websocket_connection_limit_reached");
-    expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(true);
+    expect((error?.error as { isRetryable?: boolean })?.isRetryable).toBe(true);
   });
 });

@@ -20,20 +20,23 @@ describe("provider-scoped model catalog", () => {
     ["openai", "gpt-6.2-sol", 1_050_000],
     ["chatgpt", "gpt-6.2-astra", 272_000],
     ["chatgpt", "gpt-6.2-sol", 500_000],
-  ] as const)("resolves the GPT-6.2 wire identity %s/%s with its documented limits", (provider, modelId, contextWindow) => {
-    const ref = { provider, modelId };
-    const card = resolveModel(ref);
-    expect(resolveModelSelector(`${provider}/${modelId}`)).toBe(card);
-    expect(getModelInfoList().find((info) => sameModelRef(info, ref))).toMatchObject({
-      ...ref,
-      contextWindow,
-      maxOutputTokens: 128_000,
-      supportsThinking: true,
-      supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
-      supportsVision: true,
-      supportsFastMode: true,
-    });
-  });
+  ] as const)(
+    "resolves the GPT-6.2 wire identity %s/%s with its documented limits",
+    (provider, modelId, contextWindow) => {
+      const ref = { provider, modelId };
+      const card = resolveModel(ref);
+      expect(resolveModelSelector(`${provider}/${modelId}`)).toBe(card);
+      expect(getModelInfoList().find((info) => sameModelRef(info, ref))).toMatchObject({
+        ...ref,
+        contextWindow,
+        maxOutputTokens: 128_000,
+        supportsThinking: true,
+        supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+        supportsVision: true,
+        supportsFastMode: true,
+      });
+    },
+  );
 
   it("registers Claude, Gemini, and Vertex models with their documented capabilities", () => {
     expect(resolveModel({ provider: "anthropic", modelId: "claude-fable-5-2" })).toMatchObject({

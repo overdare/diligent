@@ -201,7 +201,7 @@ export class Agent {
   updatePendingMessage(id: string, content: string): boolean {
     const entry = this.pendingSteeringMessages.find((pending) => pending.id === id);
     const msg = entry?.message;
-    if (!msg || msg.role !== "user") return false;
+    if (msg?.role !== "user") return false;
     msg.content = updateUserMessageContent(msg.content, content);
     return true;
   }

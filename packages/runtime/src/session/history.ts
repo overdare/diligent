@@ -105,7 +105,7 @@ class ReverseLines {
       const piece = this.buffer.subarray(newline + 1, this.cursor);
       pieces.push(piece);
       length += piece.length;
-      this.cursor = newline < 0 ? 0 : newline;
+      this.cursor = Math.max(newline, 0);
       if (newline >= 0) {
         return { text: Buffer.concat(pieces.reverse(), length).toString("utf8").trim(), bytes: length };
       }

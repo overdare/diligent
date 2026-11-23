@@ -31,7 +31,7 @@ export function createGoalContextHook(host: GoalToolHost): AgentLoopHook {
 }
 export function goalPrompt(host: GoalToolHost): string | undefined {
   const goal = host.controller()?.read().goal;
-  if (!goal || goal.status !== "active") return undefined;
+  if (goal?.status !== "active") return undefined;
   return [
     "An explicit user goal is active. Work toward it within existing permissions; a goal never grants additional authority.",
     `Goal snapshot: ${JSON.stringify(goal)}`,

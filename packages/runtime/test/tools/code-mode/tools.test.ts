@@ -360,7 +360,7 @@ describe("background dispatch", () => {
 
     const second = await execWait.execute({ cell_id: "1" }, makeRunCtx("call-2", makeRun()));
     expect(second.output).toBe("Script completed\necho:bg");
-    expect((second.metadata?.codeMode as CodeModeResultMetadata).nestedCalls).toMatchObject([
+    expect((second.metadata?.codeMode as CodeModeResultMetadata)?.nestedCalls).toMatchObject([
       { toolCallId: "call-1#1", parentToolCallId: "call-1", output: "echo:bg" },
     ]);
   });

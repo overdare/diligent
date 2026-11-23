@@ -281,7 +281,7 @@ export class TurnOrchestrator {
   updatePendingMessage(id: string, content: string): boolean {
     if (this._agent?.updatePendingMessage(id, content)) return true;
     const msg = this.pendingMessages.find((entry) => entry.id === id)?.message;
-    if (!msg || msg.role !== "user") return false;
+    if (msg?.role !== "user") return false;
     msg.content = updateUserMessageContent(msg.content, content);
     return true;
   }
