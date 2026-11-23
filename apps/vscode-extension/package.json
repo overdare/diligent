@@ -114,7 +114,7 @@
     "@diligent/protocol": "workspace:*",
     "@diligent/runtime": "workspace:*",
     "@types/node": "25.3.0",
-    "@vscode/vsce": "^3.6.2",
+    "@vscode/vsce": "^3.9.2",
     "bun-types": "^1.4.5",
     "marked": "^16.2.1",
     "typescript": "^7.0.2"

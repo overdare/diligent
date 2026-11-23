@@ -23,8 +23,8 @@
     "./tool-contract": "./src/contracts/tool.ts"
   },
   "dependencies": {
-    "@ai-sdk/google": "^4.0.119",
-    "@ai-sdk/openai-compatible": "^3.0.91",
+    "@ai-sdk/google": "^4.0.124",
+    "@ai-sdk/openai-compatible": "^3.0.94",
     "@anthropic-ai/sdk": "^1.12.0",
     "@diligent/logging": "workspace:*",
     "@diligent/protocol": "workspace:*",
@@ -32,8 +32,8 @@
     "@jsquash/png": "^3.1.1",
     "@jsquash/resize": "^2.1.1",
     "@jsquash/webp": "^1.5.0",
-    "ai": "^7.0.171",
-    "eventsource-parser": "^3.0.8",
+    "ai": "^7.0.179",
+    "eventsource-parser": "^3.1.1",
     "openai": "^7.62.0",
     "zod": "^4.6.6"
   },
