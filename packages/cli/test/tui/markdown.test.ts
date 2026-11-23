@@ -195,6 +195,12 @@ describe("renderMarkdown", () => {
     expect(result).not.toContain("<details>");
   });
 
+  test("keeps the block after an HTML block on its own line", () => {
+    const source = "<!-- note -->\n\nAfter comment\n\n<details><summary>More</summary>\nbody\n</details>\n\n- item";
+    const plain = stripAnsi(renderMarkdown(source, 80));
+    expect(plain).toBe("<!-- note -->\n\nAfter comment\n▸ More\n  body\n\n- item\n");
+  });
+
   test("handles plain text without errors", () => {
     const result = renderMarkdown("just plain text", 80);
     expect(result).toContain("just plain text");

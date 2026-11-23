@@ -473,7 +473,8 @@ renderer.del = function (token) {
   return `~~${text}~~`;
 };
 
-renderer.html = (token) => token.text;
+// Block HTML tokens exclude trailing blank lines, so end them with one to keep the next block apart.
+renderer.html = (token) => (token.block ? `${token.text.replace(/\n+$/, "")}\n\n` : token.text);
 
 renderer.text = (token) => token.text;
 

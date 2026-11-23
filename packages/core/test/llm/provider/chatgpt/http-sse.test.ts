@@ -47,6 +47,15 @@ describe("iterateChatGPTJsonSse", () => {
     expect(events).toEqual([{ multi: true }]);
   });
 
+  test("keeps events around unknown fields and comments split into single bytes", async () => {
+    const bytes = encoder.encode(
+      'stray line\n: keepalive\ndata: {"first":1}\n\nunknown: x\nevent: delta\ndata: {"second":2}\n\n',
+    );
+    const events = await collect(streamFromByteChunks(Array.from(bytes, (byte) => Uint8Array.of(byte))));
+
+    expect(events).toEqual([{ first: 1 }, { second: 2 }]);
+  });
+
   test("flushes a final SSE event at EOF", async () => {
     const events = await collect(streamFromByteChunks([encoder.encode('data: {"final":true}')]));
     expect(events).toEqual([{ final: true }]);
