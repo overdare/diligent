@@ -286,6 +286,7 @@ function wrapPluginTool(tool: PluginTool, packageName: string, host?: RuntimeToo
     description: tool.description,
     parameters: tool.parameters,
     supportParallel: tool.supportParallel,
+    concurrency: tool.concurrency,
     parseArgs: tool.parseArgs,
     execute: async (args, ctx) => {
       const pluginContext: PluginToolHostContext = Object.assign({}, ctx, {

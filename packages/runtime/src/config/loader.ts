@@ -44,6 +44,16 @@ export async function loadDiligentConfig(
     delete merged.tools;
   }
 
+  // Language server entries run commands. Until project config is trusted, only the global layer may define them.
+  if (projectConfig?.lsp?.servers && merged.lsp) {
+    logger.warn("lsp_project_servers_ignored", {
+      message: `Config warning: ${projectPath}\nlsp.servers in project config is ignored; define language servers in ${globalPath}.`,
+      fields: { path: projectPath, servers: Object.keys(projectConfig.lsp.servers) },
+    });
+    if (globalConfig?.lsp?.servers) merged.lsp = { ...merged.lsp, servers: globalConfig.lsp.servers };
+    else delete merged.lsp.servers;
+  }
+
   return {
     config: merged,
     sources,

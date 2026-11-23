@@ -1,14 +1,31 @@
 // @summary FIFO reader/writer gate: shared tool calls overlap, exclusive tool calls run alone
 
+import type { Tool, ToolConcurrency } from "../tool/types";
+
 interface Waiter {
   shared: boolean;
   admit: () => void;
 }
 
+/** A call's gate access: the tool's `concurrency(args)` when present (a throw → exclusive), else `supportParallel`. */
+export function resolveToolConcurrency(
+  tool: Pick<Tool, "supportParallel" | "concurrency"> | undefined,
+  args: unknown,
+): ToolConcurrency {
+  if (tool?.concurrency) {
+    try {
+      return tool.concurrency(args) === "shared" ? "shared" : "exclusive";
+    } catch {
+      return "exclusive";
+    }
+  }
+  return tool?.supportParallel === true ? "shared" : "exclusive";
+}
+
 /**
- * Tools marked `supportParallel` acquire shared access and may overlap; every other tool acquires exclusive
- * access and runs alone. Waiters are admitted in arrival order, so a waiting exclusive call is not starved by
- * later shared ones and calls never overtake an earlier exclusive call.
+ * Shared calls (see `resolveToolConcurrency`) may overlap; exclusive calls run alone. Waiters are admitted in
+ * arrival order, so a waiting exclusive call is not starved by later shared ones and calls never overtake an
+ * earlier exclusive call.
  *
  * The agent loop uses one gate per tool batch to schedule the model's calls. Code mode keeps one gate per agent
  * so a yielded cell's nested calls and the model's direct calls of nestable tools never overlap unsafely.

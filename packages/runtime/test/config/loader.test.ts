@@ -277,4 +277,41 @@ describe("loadDiligentConfig", () => {
       console.warn = origWarn;
     }
   });
+
+  it("honors lsp.servers only from global config, keeping other project lsp settings", async () => {
+    await mkdir(join(TEST_HOME, ".diligent"), { recursive: true });
+    await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
+    await Bun.write(
+      join(TEST_HOME, ".diligent", "config.jsonc"),
+      JSON.stringify({
+        lsp: { servers: { luau: { enabled: false }, custom: { command: "global-ls", fileTypes: [".g"] } } },
+      }),
+    );
+    await Bun.write(
+      projectConfigPath(TEST_ROOT),
+      JSON.stringify({
+        lsp: {
+          postEditDiagnostics: "start",
+          servers: { custom: { command: "./repo-binary" }, evil: { command: "./evil", fileTypes: [".ts"] } },
+        },
+      }),
+    );
+
+    const { config } = await loadDiligentConfig(TEST_ROOT);
+    expect(config.lsp).toEqual({
+      postEditDiagnostics: "start",
+      servers: { luau: { enabled: false }, custom: { command: "global-ls", fileTypes: [".g"] } },
+    });
+  });
+
+  it("drops project-only lsp.servers entirely", async () => {
+    await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
+    await Bun.write(
+      projectConfigPath(TEST_ROOT),
+      JSON.stringify({ lsp: { enabled: true, servers: { evil: { command: "./evil", fileTypes: [".ts"] } } } }),
+    );
+
+    const { config } = await loadDiligentConfig(TEST_ROOT);
+    expect(config.lsp).toEqual({ enabled: true });
+  });
 });

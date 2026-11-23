@@ -5,6 +5,7 @@ import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { isAbsolute, stripExtendedLengthPrefix } from "../util/path";
 import { type RuntimeToolHost, requestToolApprovalOutcome, resolveRejectedApproval } from "./capabilities";
+import { appendPostWriteNote, type WriteToolOptions } from "./lsp/post-edit";
 import {
   createEditDiffRenderPayload,
   createMultiEditDiffRenderPayload,
@@ -178,13 +179,14 @@ async function revalidateAfterApproval(
   approvedFrom: string,
   applied: AppliedEdits,
   edits: SingleEdit[],
-): Promise<{ applied: AppliedEdits; note: string } | { error: string }> {
+): Promise<{ applied: AppliedEdits; note: string; before: string } | { error: string }> {
   const current = await Bun.file(filePath).text();
-  if (current === approvedFrom) return { applied, note: "" };
+  if (current === approvedFrom) return { applied, note: "", before: current };
   try {
     return {
       applied: applyEdits(current, edits),
       note: " The file changed while waiting for approval; the edit was re-applied to its current content.",
+      before: current,
     };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
@@ -202,7 +204,7 @@ function describeTolerantMatches(applied: AppliedEdits): string {
 // edit tool
 // ---------------------------------------------------------------------------
 
-export function createEditTool(host?: RuntimeToolHost): Tool<typeof EditParams> {
+export function createEditTool(host?: RuntimeToolHost, options?: WriteToolOptions): Tool<typeof EditParams> {
   return {
     name: "edit",
     description: `Performs string replacements in files.
@@ -251,7 +253,12 @@ Usage:
         try {
           await mkdir(dirname(file_path), { recursive: true });
           await Bun.write(file_path, new_string);
-          const output = `Created ${file_path}`;
+          const output = await appendPostWriteNote(
+            `Created ${file_path}`,
+            options,
+            [{ path: file_path, after: new_string }],
+            ctx.signal,
+          );
           return {
             output,
             render: createEditDiffRenderPayload({
@@ -309,7 +316,12 @@ Usage:
         if ("error" in checked) return { output: checked.error, metadata: { error: true } };
         const { count } = checked.applied;
         await Bun.write(file_path, checked.applied.result);
-        const output = `Edited ${file_path}: replaced ${count} occurrence(s)${describeTolerantMatches(checked.applied)}.${checked.note}`;
+        const output = await appendPostWriteNote(
+          `Edited ${file_path}: replaced ${count} occurrence(s)${describeTolerantMatches(checked.applied)}.${checked.note}`,
+          options,
+          [{ path: file_path, before: checked.before, after: checked.applied.result }],
+          ctx.signal,
+        );
         return {
           output,
           render: createEditDiffRenderPayload({
@@ -334,7 +346,7 @@ Usage:
 // multi_edit tool
 // ---------------------------------------------------------------------------
 
-export function createMultiEditTool(host?: RuntimeToolHost): Tool<typeof MultiEditParams> {
+export function createMultiEditTool(host?: RuntimeToolHost, options?: WriteToolOptions): Tool<typeof MultiEditParams> {
   return {
     name: "multi_edit",
     description: `This is a tool for making multiple edits to a single file in one operation. It is built on top of the Edit tool and allows you to perform multiple find-and-replace operations efficiently. Prefer this tool over the Edit tool when you need to make multiple edits to the same file.
@@ -415,7 +427,12 @@ When making edits:
         }
         const totalCount = checked.applied.count;
         await Bun.write(file_path, checked.applied.result);
-        const output = `Edited ${file_path}: applied ${edits.length} edit(s), replaced ${totalCount} occurrence(s) total${describeTolerantMatches(checked.applied)}.${checked.note}`;
+        const output = await appendPostWriteNote(
+          `Edited ${file_path}: applied ${edits.length} edit(s), replaced ${totalCount} occurrence(s) total${describeTolerantMatches(checked.applied)}.${checked.note}`,
+          options,
+          [{ path: file_path, before: checked.before, after: checked.applied.result }],
+          ctx.signal,
+        );
         return {
           output,
           render: createMultiEditDiffRenderPayload({

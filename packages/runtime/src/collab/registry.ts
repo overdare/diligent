@@ -24,6 +24,7 @@ import { forkToolForChild } from "../tools/child-fork";
 import { CodeModeSession } from "../tools/code-mode/session";
 import { applyCodeMode } from "../tools/code-mode/tools";
 import { buildDefaultTools } from "../tools/defaults";
+import { toReadOnlyTool } from "../tools/read-only-variant";
 import { COLLAB_TOOL_NAMES, TOOL_CAPABILITIES } from "../tools/tool-metadata";
 import { NicknamePool } from "./nicknames";
 import { type AgentProgress, AgentProgressTracker, formatAgentProgress } from "./progress";
@@ -93,7 +94,8 @@ export function resolveChildToolAccess(
   // when nestedCollabEnabled=true (bound to the child's own registry, not the parent's).
   const childTools = parentTools
     .filter((tool) => !COLLAB_TOOL_NAMES.has(tool.name) && allowedChildToolNames.has(tool.name))
-    .map(forkToolForChild);
+    .map(forkToolForChild)
+    .map((tool) => (agentDefinition.readonly ? toReadOnlyTool(tool) : tool));
   const nestedCollabEnabled = [...allowedChildToolNames].some((toolName) => COLLAB_TOOL_NAMES.has(toolName));
 
   return { childTools, nestedCollabEnabled, allowedChildToolNames };

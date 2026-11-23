@@ -74,6 +74,14 @@ Only the originating session can use a process ID. A background command survives
 down. IDs do not survive a restart. Each session can track up to 16 processes. Unread output is bounded, and a final
 result can be collected once. If you limit output with `max_output_tokens`, the status and process ID stay visible.
 
+### Language servers
+
+The `lsp` built-in queries language servers for definitions, references, hover, symbols, diagnostics, and renames, and
+`edit`, `multi_edit`, `write`, and `apply_patch` append errors a language server reports on the lines they changed.
+Disable the tool alone with `"tools": { "builtin": { "lsp": false } }`, or the whole integration (tool and post-edit
+diagnostics) with `"lsp": { "enabled": false }`. Language servers are configured under `lsp`, not `tools`; see
+`docs/guide/lsp.md`.
+
 ## Bundled product tools
 
 Product variants can register first-party bundled tool providers in-process.

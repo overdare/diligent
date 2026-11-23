@@ -1,6 +1,6 @@
 // @summary Code mode session: owns exec cells (Bun Workers), the cross-exec store, the agent tool gate, and nested tool dispatch
 
-import { ToolGate } from "@diligent/core/agent";
+import { resolveToolConcurrency, ToolGate } from "@diligent/core/agent";
 import type { ImageBlock } from "@diligent/core/message-contract";
 import type { ToolContext, ToolOutputFileStore, ToolRegistry } from "@diligent/core/tool-contract";
 import { executeTool } from "@diligent/core/tool-contract";
@@ -294,7 +294,8 @@ class CodeModeCell {
     const itemId = `tool:${toolCallId}`;
     let release: () => void;
     try {
-      release = await this.gate.acquire(registry.get(call.name)?.supportParallel === true, signal);
+      const shared = resolveToolConcurrency(registry.get(call.name), call.input) === "shared";
+      release = await this.gate.acquire(shared, signal);
     } catch {
       this.post({ type: "tool_result", id: call.id, ok: false, error: `${call.name} failed: aborted` });
       return;

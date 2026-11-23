@@ -4,6 +4,7 @@ import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { dirnameCrossPlatform, isAbsolute, relativeCrossPlatform, resolveCrossPlatformPath } from "../util/path";
 import { type RuntimeToolHost, requestToolApprovalOutcome, resolveRejectedApproval } from "./capabilities";
+import { appendPostWriteNote, type WriteToolOptions, type WrittenFile } from "./lsp/post-edit";
 import { createPatchDiffRenderPayload, createTextRenderPayload } from "./render-payload";
 import { seekSequence } from "./text-match";
 
@@ -39,7 +40,7 @@ interface PatchTouchedPath {
 const BEGIN_MARKER = "*** Begin Patch";
 const END_MARKER = "*** End Patch";
 
-export interface ApplyPatchOptions {
+export interface ApplyPatchOptions extends WriteToolOptions {
   strict?: boolean;
 }
 
@@ -191,7 +192,19 @@ It is important to remember:
 
       const summaryLines = changes.map((change) => summarizeChange(change, cwd));
 
-      const output = `Success. Updated the following files:\n${summaryLines.join("\n")}`;
+      const written: WrittenFile[] = changes.flatMap((change): WrittenFile[] => {
+        if (change.type === "delete") return [{ path: change.sourcePath, before: change.before }];
+        const target = { path: change.targetPath, before: change.before, after: change.after };
+        return change.type === "move" && change.sourcePath !== change.targetPath
+          ? [{ path: change.sourcePath, before: change.before }, target]
+          : [target];
+      });
+      const output = await appendPostWriteNote(
+        `Success. Updated the following files:\n${summaryLines.join("\n")}`,
+        options,
+        written,
+        ctx.signal,
+      );
       return {
         output,
         render: createPatchDiffRenderPayload(

@@ -59,6 +59,7 @@ import {
   collectSupersededPluginPackages,
 } from "../tools/bundled-provider";
 import type { ApprovalHandler, RuntimeRequestOptions } from "../tools/capabilities";
+import { shutdownLspManager } from "../tools/lsp";
 import { collectPluginHooks, type PluginDiscoveryMode } from "../tools/plugin-loader";
 import { ShellProcessRegistry } from "../tools/shell-processes";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
@@ -348,6 +349,7 @@ export class DiligentAppServer {
         await runtime.goal?.close();
       }),
     );
+    await shutdownLspManager();
   }
 
   subscribeToThread(connectionId: string, threadId: string): string {

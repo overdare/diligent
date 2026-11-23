@@ -6,6 +6,8 @@ export type { RuntimeConfig } from "./runtime";
 export { loadRuntimeConfig } from "./runtime";
 export type {
   DiligentConfig,
+  LspConfig,
+  LspServerConfig,
   McpHttpServerConfig,
   McpOAuthConfig,
   McpServerConfig,
