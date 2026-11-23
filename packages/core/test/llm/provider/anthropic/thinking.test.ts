@@ -51,12 +51,10 @@ class MockAnthropicClient {
     },
   };
 
-  beta = {
-    files: {
-      upload: async (params: unknown) => {
-        anthropicFileUploads.push(params);
-        return { id: `file_${anthropicFileUploads.length}` };
-      },
+  files = {
+    upload: async (params: unknown) => {
+      anthropicFileUploads.push(params);
+      return { id: `file_${anthropicFileUploads.length}` };
     },
   };
 }
@@ -99,13 +97,14 @@ async function collectRequest(model: Model, options: StreamOptions = { effort: "
 }
 
 describe("createAnthropicStream", () => {
-  test("constructs the SDK client with explicit timeout and no retries", async () => {
+  test("constructs the SDK client with explicit timeout, no retries, and the key in X-Api-Key", async () => {
     await collectRequest(baseModel({}));
 
     expect(anthropicConstructorOptions).toHaveLength(1);
     expect(anthropicConstructorOptions[0]).toEqual({
       apiKey: "test-key",
       baseURL: "https://api.anthropic.com",
+      defaultHeaders: { "X-Api-Key": "test-key", Authorization: null },
       timeout: PROVIDER_RESPONSE_HEADER_TIMEOUT_MS,
       maxRetries: 0,
     });
@@ -125,6 +124,7 @@ describe("createAnthropicStream", () => {
     expect(anthropicConstructorOptions[0]).toEqual({
       apiKey: "test-key",
       baseURL: "https://example.anthropic.local",
+      defaultHeaders: { "X-Api-Key": "test-key", Authorization: null },
       timeout: PROVIDER_RESPONSE_HEADER_TIMEOUT_MS,
       maxRetries: 0,
     });
@@ -428,7 +428,7 @@ describe("createAnthropicStream", () => {
     await expect(stream.result()).rejects.toThrow("does not define thinking budgets");
   });
 
-  test("uses caller temperature for models that do not support thinking", async () => {
+  test("never sends caller temperature, which API version 2026-10-21 rejects", async () => {
     const request = await collectRequest(
       baseModel({
         supportsThinking: false,
@@ -438,7 +438,7 @@ describe("createAnthropicStream", () => {
 
     expect(request.thinking).toBeUndefined();
     expect(request.output_config).toBeUndefined();
-    expect(request.temperature).toBe(0.25);
+    expect(request.temperature).toBeUndefined();
   });
 
   test("adds Anthropic native web_search tool for provider web capability", async () => {

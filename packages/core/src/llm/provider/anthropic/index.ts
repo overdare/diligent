@@ -10,7 +10,7 @@ import { CONTEXT_OVERFLOW_ERROR_MESSAGE, ProviderError, ProviderErrorReason, Pro
 import { PROVIDER_RESPONSE_HEADER_TIMEOUT_MS } from "../timeouts";
 import { ANTHROPIC_FILES_BETA, getAnthropicImageFiles, isFileSourceRejection } from "./image-files";
 import { convertMessages } from "./messages";
-import { toAnthropicBlocks } from "./request";
+import { anthropicApiKeyHeaders, toAnthropicBlocks } from "./request";
 import {
   convertTools,
   createProviderToolUseBlock,
@@ -38,9 +38,8 @@ export function getAnthropicInstrumentationTarget() {
 
 type TextBlock = Extract<ContentBlock, { type: "text" }>;
 type TextCitation = NonNullable<TextBlock["citations"]>[number];
-// The installed SDK types do not yet expose these documented thinking fields.
-type ThinkingConfigWithDisplay = Anthropic.ThinkingConfigParam & {
-  display: "summarized";
+// The installed SDK types do not yet expose the documented `block_binding` thinking field.
+type ThinkingConfigWithBinding = Anthropic.ThinkingConfigParam & {
   block_binding?: { prefix_mismatch_behavior: "drop_block" };
 };
 
@@ -51,6 +50,7 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
   const client = new Anthropic({
     apiKey: resolvedApiKey,
     baseURL: resolvedSdkBaseUrl,
+    defaultHeaders: anthropicApiKeyHeaders(resolvedApiKey),
     timeout: PROVIDER_RESPONSE_HEADER_TIMEOUT_MS,
     maxRetries: 0,
   });
@@ -80,17 +80,16 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
           model.modelId === "claude-sonnet-5-5" ||
           model.modelId === "claude-haiku-5-5";
 
-        let thinkingConfig: Record<string, unknown>;
-        if (!model.supportsThinking) {
-          thinkingConfig = options.temperature !== undefined ? { temperature: options.temperature } : {};
-        } else {
+        // API version 2026-10-21 rejects temperature, top_p, and top_k with a 400, so options.temperature is not sent.
+        let thinkingConfig: Record<string, unknown> = {};
+        if (model.supportsThinking) {
           if (model.supportsAdaptiveThinking) {
             thinkingConfig = {
               thinking: {
                 type: "adaptive",
                 display: "summarized",
                 ...(usesThinkingBindingControls && { block_binding: { prefix_mismatch_behavior: "drop_block" } }),
-              } as ThinkingConfigWithDisplay,
+              } as ThinkingConfigWithBinding,
               output_config: { effort: effort === "xhigh" && !model.supportsXhighEffort ? "max" : effort },
             };
           } else {
@@ -111,7 +110,7 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
                 type: "enabled",
                 budget_tokens: budgetTokens,
                 display: "summarized",
-              } as ThinkingConfigWithDisplay,
+              } as ThinkingConfigWithBinding,
             };
           }
         }
@@ -260,7 +259,7 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
           type: "usage",
           usage: assistantMessage.usage,
         });
-        if ((finalMessage.stop_reason as string | null) === "model_context_window_exceeded") {
+        if (finalMessage.stop_reason === "model_context_window_exceeded") {
           stream.push({
             type: "error",
             error: new ProviderError(CONTEXT_OVERFLOW_ERROR_MESSAGE, {

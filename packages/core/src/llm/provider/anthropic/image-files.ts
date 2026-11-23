@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { createLogger } from "@diligent/logging";
+import { anthropicApiKeyHeaders } from "./request";
 
 const logger = createLogger({ scope: "llm:anthropic-files" });
 
@@ -37,9 +38,7 @@ export class AnthropicImageFiles {
       const fileId = await this.fileIdFor(block.source.data, block.source.media_type);
       if (!fileId) return block;
       usesFiles = true;
-      // SDK 0.78 types only list base64 and url image sources; the Messages API accepts `file`.
-      const source = { type: "file", file_id: fileId } as unknown as Anthropic.ImageBlockParam["source"];
-      return { ...block, source };
+      return { ...block, source: { type: "file", file_id: fileId } };
     };
 
     const referenced = await Promise.all(
@@ -115,9 +114,13 @@ export function getAnthropicImageFiles(apiKey: string, baseUrl: string): Anthrop
   if (existing) return existing;
   let client: Anthropic | undefined;
   const store = new AnthropicImageFiles(async (bytes, mediaType, filename) => {
-    client ??= new Anthropic({ apiKey, baseURL: ANTHROPIC_OFFICIAL_BASE_URL });
-    // The SDK's beta files resource already sends the Files beta header.
-    const uploaded = await client.beta.files.upload({ file: await toFile(bytes, filename, { type: mediaType }) });
+    client ??= new Anthropic({
+      apiKey,
+      baseURL: ANTHROPIC_OFFICIAL_BASE_URL,
+      defaultHeaders: anthropicApiKeyHeaders(apiKey),
+    });
+    // Uploads use the generally available Files API, which needs no beta header.
+    const uploaded = await client.files.upload({ file: await toFile(bytes, filename, { type: mediaType }) });
     return uploaded.id;
   });
   storesByApiKey.set(apiKey, store);

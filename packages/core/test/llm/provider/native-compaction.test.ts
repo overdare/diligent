@@ -627,7 +627,7 @@ describe("native compaction adapters", () => {
 
     expect(capturedUrl).toBe("https://api.anthropic.com/v1/messages");
     expect(capturedHeaders["x-api-key"]).toBe("sk-ant");
-    expect(capturedHeaders["anthropic-version"]).toBe("2023-06-01");
+    expect(capturedHeaders["anthropic-version"]).toBe("2026-10-21");
     expect(capturedHeaders["anthropic-beta"]).toBe("compact-2026-01-12");
     expect(capturedBody.model).toBe(TEST_ANTHROPIC_MODEL_ID);
     expect(capturedBody.max_tokens).toBe(4096);
