@@ -65,7 +65,7 @@ Use `bash_wait` with the returned `process_id`:
 
 - Omit `yield_time_ms` to wait up to 10 seconds, or set it to `0` to poll. Each call returns only new output.
 - Set `input` to write to stdin. Include `\n` when the command reads a line. The first write requires approval for
-  that process. This is a pipe, not a PTY.
+  that process. Without `tty` this is a pipe; with `tty` it is typed into the terminal (see below).
 - Set `terminate: true` to stop the command and collect its final output. On POSIX, termination uses the same
   `SIGTERM` grace period as foreground cancellation.
 
@@ -73,6 +73,27 @@ Only the originating session can use a process ID. A background command survives
 `bash` has yielded. Diligent stops it when the thread is deleted, the child agent finishes, or the app server shuts
 down. IDs do not survive a restart. Each session can track up to 16 processes. Unread output is bounded, and a final
 result can be collected once. If you limit output with `max_output_tokens`, the status and process ID stay visible.
+
+### Terminal commands
+
+Pass `tty: true` to `bash` when a program needs a terminal: it prompts only on a TTY, checks `isatty`, or reads a
+password-style line. It works for foreground commands and with `yield_time_ms`. On macOS and Linux the command runs in a
+new pseudo-terminal of 120 columns by 40 rows:
+
+- stdout and stderr share the terminal, so the output is one stream with no `[stderr]` section.
+- Diligent removes escape sequences (colors, cursor movement, titles) and turns the terminal's `\r\n` into `\n`. A lone
+  `\r`, as used by progress bars, starts a new line. The model, the TUI, and the VS Code extension all receive this
+  plain text, because neither client renders terminal escape sequences.
+- `PAGER` and `GIT_PAGER` default to `cat` and `TERM` defaults to `xterm-256color`, so pagers cannot wait for a keypress.
+  Values already set in your environment win. Sensitive variables are filtered as for every `bash` command.
+- `bash_wait` `input` is typed into the terminal, which echoes it back like an interactive session. Control characters
+  work as keystrokes; for example `\u0003` sends Ctrl-C to the command.
+- Timeouts, cancellation, `terminate`, thread deletion, child-agent completion, and app-server shutdown stop the whole
+  process group with the same `SIGTERM` grace period and `SIGKILL` as for pipe commands.
+
+Windows has no pseudo-terminal support yet. `bash` does not offer `tty` there, and a call that sets it anyway fails
+with an error instead of running the command on pipes. Code mode `exec` cells reject `tty` for nested `tools.bash`
+calls, as they reject `yield_time_ms`; use a direct `bash` call instead.
 
 ## Bundled product tools
 

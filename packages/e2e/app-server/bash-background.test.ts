@@ -263,3 +263,64 @@ test.if(process.platform !== "win32")("child completion stops the child's backgr
     await app.close();
   }
 });
+
+/** Polls because process death has no event to await; a Linux zombie counts as dead because it cannot run. */
+async function waitUntilDead(pid: number): Promise<boolean> {
+  for (const deadline = Date.now() + 1000; Date.now() < deadline; await Bun.sleep(25)) {
+    try {
+      process.kill(pid, 0);
+      if (process.platform === "linux" && (await readFile(`/proc/${pid}/stat`, "utf8")).match(/\) Z /)) return true;
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+
+test.if(process.platform !== "win32")(
+  "a tty background command takes terminal input and its whole group stops with the thread",
+  async () => {
+    const app = await setup("on", createPermissionEngine([]));
+    const approved: string[] = [];
+    app.client.onServerRequest(async (request) => {
+      if (request.method !== "approval/request") throw new Error(`Unexpected request ${request.method}`);
+      approved.push(request.params.request.toolName);
+      return { method: request.method, result: { decision: "once" } };
+    });
+    try {
+      const threadId = await app.client.initAndStartThread(app.cwd);
+      const { item: started } = await app.call(threadId, {
+        id: "start-tty",
+        name: "bash",
+        input: {
+          command: [
+            `sh -c 'trap "" TERM HUP; echo $$ > stubborn.pid; exec sleep 30' &`,
+            `[ -t 0 ] && printf 'name? '`,
+            `read name`,
+            String.raw`printf '\033[32mhello %s\033[0m\n' "$name"`,
+            `wait`,
+          ].join("\n"),
+          tty: true,
+          yield_time_ms: 350,
+        },
+      });
+      expect(started.output).toContain("name? ");
+
+      const { item: answered } = await app.call(threadId, {
+        id: "answer",
+        name: "bash_wait",
+        input: { process_id: processId(started.output), input: "world\n", yield_time_ms: 350 },
+      });
+      expect(answered.output).toContain("hello world\n");
+      expect(answered.output).not.toContain("\x1b");
+      expect(approved).toEqual(["bash", "bash_wait"]);
+
+      const pid = Number(await readFile(join(app.cwd, "stubborn.pid"), "utf8"));
+      expect(pid).toBeGreaterThan(0);
+      await app.client.request("thread/delete", { threadId });
+      expect(await waitUntilDead(pid)).toBe(true);
+    } finally {
+      await app.close();
+    }
+  },
+);

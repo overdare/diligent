@@ -4,7 +4,8 @@ import type { Tool, ToolContext, ToolResult } from "@diligent/core/tool-contract
 import { MAX_OUTPUT_BYTES, truncateHeadTail, truncateTail } from "@diligent/core/tool-contract";
 import { existsSync } from "fs";
 import { z } from "zod";
-import { spawnProcess } from "../util/process";
+import { spawnProcess, spawnTerminal, TERMINAL_UNSUPPORTED_MESSAGE } from "../util/process";
+import { TerminalTextDecoder } from "../util/terminal-output";
 import { type RuntimeToolHost, requestToolApprovalOutcome, resolveRejectedApproval } from "./capabilities";
 import { createCommandRenderPayload } from "./render-payload";
 import { SHELL_INPUT_LIMIT, type ShellProcess, type ShellProcessRegistry } from "./shell-processes";
@@ -29,12 +30,22 @@ const outputBudget = z
   .max(250_000)
   .optional()
   .describe("Maximum output tokens (default 10000 for background commands).");
-const BashParams = ForegroundBashParams.extend({
+const AllBashParams = ForegroundBashParams.extend({
   yield_time_ms: yieldTime
     .optional()
     .describe("Return early while the command keeps running. Omit to run in the foreground."),
   max_output_tokens: outputBudget,
+  tty: z
+    .boolean()
+    .optional()
+    .describe(
+      "Run in a pseudo-terminal for programs that need one (prompts, isatty checks). Output is one stream without terminal escape sequences.",
+    ),
 });
+/** Windows has no PTY backend yet, so `tty` is not offered there; `guardTty` rejects it if sent anyway. */
+const TTY_SUPPORTED = process.platform !== "win32";
+// The Windows variant only lacks an optional key, so the wider type stays accurate: `tty` is always undefined there.
+const BashParams = (TTY_SUPPORTED ? AllBashParams : AllBashParams.omit({ tty: true })) as typeof AllBashParams;
 const ForegroundOnlyBashParams = ForegroundBashParams.strict();
 const BackgroundOnlyBashParams = BashParams.omit({ timeout: true }).extend({
   yield_time_ms: yieldTime.describe("Return after this many milliseconds while the process keeps running."),
@@ -42,10 +53,30 @@ const BackgroundOnlyBashParams = BashParams.omit({ timeout: true }).extend({
 const BashWaitParams = z.object({
   process_id: z.string().min(1).describe("ID returned by a yielded bash call in this session."),
   yield_time_ms: yieldTime.optional().describe("Maximum wait in ms (default 10000); use 0 to poll without waiting."),
-  input: z.string().max(SHELL_INPUT_LIMIT).optional().describe("Text to write to stdin. Include a newline if needed."),
+  input: z
+    .string()
+    .max(SHELL_INPUT_LIMIT)
+    .optional()
+    .describe("Text to write to stdin, or to the terminal for tty processes. Include a newline if needed."),
   terminate: z.boolean().optional().describe("Stop the process and return its remaining output."),
   max_output_tokens: outputBudget,
 });
+
+/**
+ * Without a PTY backend the schema omits `tty`, and plain parsing would silently drop it and run on pipes. Reject an
+ * explicit request instead, because a program that needs a terminal behaves differently without one.
+ */
+function guardTty<T extends z.ZodType>(schema: T): ((raw: unknown) => z.infer<T>) | undefined {
+  if (TTY_SUPPORTED) return undefined;
+  return (raw) => {
+    if (typeof raw === "object" && raw !== null && "tty" in raw && raw.tty === true) {
+      throw new Error(TERMINAL_UNSUPPORTED_MESSAGE);
+    }
+    const parsed = schema.safeParse(raw);
+    if (!parsed.success) throw new Error(z.prettifyError(parsed.error));
+    return parsed.data;
+  };
+}
 
 export function isYieldingBash(tool: Tool): boolean {
   return tool.name === "bash" && tool.parameters === BashParams;
@@ -53,12 +84,13 @@ export function isYieldingBash(tool: Tool): boolean {
 
 export function restrictBash(tool: Tool, mode: "foreground" | "background"): Tool {
   return mode === "foreground"
-    ? { ...tool, description: BASH_DESCRIPTION, parameters: ForegroundOnlyBashParams }
+    ? { ...tool, description: BASH_DESCRIPTION, parameters: ForegroundOnlyBashParams, parseArgs: undefined }
     : {
         ...tool,
         description:
           "Run a shell command in the background. Use bash_wait to read output, send stdin, or terminate it.",
         parameters: BackgroundOnlyBashParams,
+        parseArgs: guardTty(BackgroundOnlyBashParams),
       };
 }
 
@@ -169,108 +201,159 @@ export function filterSensitiveEnv(env: NodeJS.ProcessEnv): Record<string, strin
   return filtered;
 }
 
+/**
+ * A terminal makes pagers interactive and nobody can press `q` for the model, so pagers default to `cat`. `TERM`
+ * defaults to the terminal type the PTY emulates. Values the user already set win.
+ */
+function commandEnv(tty: boolean | undefined): Record<string, string | undefined> {
+  const env = filterSensitiveEnv(process.env);
+  return tty ? { TERM: "xterm-256color", PAGER: "cat", GIT_PAGER: "cat", ...env } : env;
+}
+
+type ForegroundArgs = z.infer<typeof ForegroundBashParams> & { tty?: boolean };
+
+interface CommandRun {
+  cwd: string;
+  signal: AbortSignal;
+  /** The shell has finished even if its process group still needs time to exit. */
+  onExit: () => void;
+  onOutput?: (text: string) => void;
+}
+
+/** Pipes keep stdout and stderr apart; stderr follows under a `[stderr]` marker. */
+async function runWithPipes(argv: string[], run: CommandRun): Promise<{ exitCode: number | null; output: string }> {
+  const proc = spawnProcess(argv, {
+    cwd: run.cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+    env: commandEnv(false),
+    signal: run.signal,
+    cleanupGroupOnExit: true,
+  });
+  proc.once("exit", run.onExit);
+
+  const stdoutChunks: Buffer[] = [];
+  const stderrChunks: Buffer[] = [];
+  const stdoutDecoder = new TextDecoder();
+  const stderrDecoder = new TextDecoder();
+  proc.stdout?.on("data", (c: Buffer) => {
+    stdoutChunks.push(c);
+    run.onOutput?.(stdoutDecoder.decode(c, { stream: true }));
+  });
+  proc.stderr?.on("data", (c: Buffer) => {
+    stderrChunks.push(c);
+    run.onOutput?.(stderrDecoder.decode(c, { stream: true }));
+  });
+
+  let exitCode: number | null = null;
+  try {
+    exitCode = await proc.exited;
+  } catch {
+    // process killed — exitCode stays null
+  }
+
+  const stdout = Buffer.concat(stdoutChunks).toString();
+  const stderr = Buffer.concat(stderrChunks).toString();
+  return { exitCode, output: stderr ? `${stdout}${stdout ? "\n" : ""}[stderr]\n${stderr}` : stdout };
+}
+
+/** A terminal merges stdout and stderr into one stream; escape sequences are removed for every reader. */
+async function runInTerminal(argv: string[], run: CommandRun): Promise<{ exitCode: number | null; output: string }> {
+  const decoder = new TerminalTextDecoder();
+  let output = "";
+  const append = (text: string) => {
+    if (!text) return;
+    output += text;
+    run.onOutput?.(text);
+  };
+  const proc = spawnTerminal(argv, {
+    cwd: run.cwd,
+    env: commandEnv(true),
+    signal: run.signal,
+    cleanupGroupOnExit: true,
+    onData: (data) => append(decoder.write(data)),
+    onExit: run.onExit,
+  });
+  const exitCode = await proc.exited;
+  append(decoder.end());
+  return { exitCode, output };
+}
+
+async function runForeground(
+  cwd: string,
+  host: RuntimeToolHost | undefined,
+  args: ForegroundArgs,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const rejection = await approveCommand(args, ctx, host);
+  if (rejection) return rejection;
+
+  const timeout = args.timeout ?? DEFAULT_TIMEOUT;
+
+  const shellArgs = resolveShell(args.command);
+
+  let timedOut = false;
+  let aborted = false;
+
+  const ac = new AbortController();
+
+  const timer = setTimeout(() => {
+    timedOut = true;
+    ac.abort();
+  }, timeout);
+
+  const onAbort = () => {
+    if (ac.signal.aborted) return;
+    clearTimeout(timer);
+    aborted = true;
+    ac.abort();
+  };
+  ctx.signal.addEventListener("abort", onAbort, { once: true });
+
+  const disarmCancellation = () => {
+    clearTimeout(timer);
+    ctx.signal.removeEventListener("abort", onAbort);
+  };
+  const live = ctx.onUpdate ? createLiveOutput(ctx.onUpdate) : undefined;
+  const run: CommandRun = { cwd, signal: ac.signal, onExit: disarmCancellation, onOutput: live?.push };
+  let exitCode: number | null;
+  let output: string;
+  try {
+    ({ exitCode, output } = await (args.tty ? runInTerminal : runWithPipes)(shellArgs, run));
+  } finally {
+    disarmCancellation();
+    live?.close();
+  }
+
+  let header = "";
+  if (timedOut) header = `[Timed out after ${timeout / 1000}s]\n`;
+  if (aborted) header = `[Aborted by user]\n`;
+  if (exitCode !== 0 && exitCode !== null) header += `[Exit code: ${exitCode}]\n`;
+
+  // The full output is returned so code mode scripts receive it whole; the executor truncates the
+  // model-facing copy (keeping the status header and the recent tail) and spills the rest to disk.
+  const finalOutput = header + output;
+  const isError = timedOut || aborted || exitCode !== 0;
+  return {
+    output: finalOutput,
+    render: createCommandRenderPayload(args.command, header + truncateTail(output, MAX_OUTPUT_BYTES).output, isError),
+    truncateDirection: "head_tail",
+    metadata: {
+      error: isError,
+      exitCode,
+      timedOut,
+      aborted,
+      ...(args.description && { description: args.description }),
+    },
+  };
+}
+
 export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof ForegroundBashParams> {
   return {
     name: "bash",
     description: BASH_DESCRIPTION,
     parameters: ForegroundBashParams,
-    async execute(args, ctx): Promise<ToolResult> {
-      const rejection = await approveCommand(args, ctx, host);
-      if (rejection) return rejection;
-
-      const timeout = args.timeout ?? DEFAULT_TIMEOUT;
-
-      const shellArgs = resolveShell(args.command);
-
-      let timedOut = false;
-      let aborted = false;
-
-      const ac = new AbortController();
-
-      const timer = setTimeout(() => {
-        timedOut = true;
-        ac.abort();
-      }, timeout);
-
-      const onAbort = () => {
-        if (ac.signal.aborted) return;
-        clearTimeout(timer);
-        aborted = true;
-        ac.abort();
-      };
-      ctx.signal.addEventListener("abort", onAbort, { once: true });
-
-      const proc = spawnProcess(shellArgs, {
-        cwd,
-        stdout: "pipe",
-        stderr: "pipe",
-        env: filterSensitiveEnv(process.env) as NodeJS.ProcessEnv,
-        signal: ac.signal,
-        cleanupGroupOnExit: true,
-      });
-      const disarmCancellation = () => {
-        clearTimeout(timer);
-        ctx.signal.removeEventListener("abort", onAbort);
-      };
-      // The shell has finished even if its process group still needs time to exit.
-      proc.once("exit", disarmCancellation);
-
-      const stdoutChunks: Buffer[] = [];
-      const stderrChunks: Buffer[] = [];
-      const live = ctx.onUpdate ? createLiveOutput(ctx.onUpdate) : undefined;
-      const stdoutDecoder = new TextDecoder();
-      const stderrDecoder = new TextDecoder();
-      proc.stdout?.on("data", (c: Buffer) => {
-        stdoutChunks.push(c);
-        live?.push(stdoutDecoder.decode(c, { stream: true }));
-      });
-      proc.stderr?.on("data", (c: Buffer) => {
-        stderrChunks.push(c);
-        live?.push(stderrDecoder.decode(c, { stream: true }));
-      });
-
-      let exitCode: number | null = null;
-      try {
-        exitCode = await proc.exited;
-      } catch {
-        // process killed — exitCode stays null
-      } finally {
-        disarmCancellation();
-        live?.close();
-      }
-
-      const stdout = Buffer.concat(stdoutChunks).toString();
-      const stderr = Buffer.concat(stderrChunks).toString();
-
-      let output = stdout;
-      if (stderr) output += `${output ? "\n" : ""}[stderr]\n${stderr}`;
-
-      let header = "";
-      if (timedOut) header = `[Timed out after ${timeout / 1000}s]\n`;
-      if (aborted) header = `[Aborted by user]\n`;
-      if (exitCode !== 0 && exitCode !== null) header += `[Exit code: ${exitCode}]\n`;
-
-      // The full output is returned so code mode scripts receive it whole; the executor truncates the
-      // model-facing copy (keeping the status header and the recent tail) and spills the rest to disk.
-      const finalOutput = header + output;
-      const isError = timedOut || aborted || exitCode !== 0;
-      return {
-        output: finalOutput,
-        render: createCommandRenderPayload(
-          args.command,
-          header + truncateTail(output, MAX_OUTPUT_BYTES).output,
-          isError,
-        ),
-        truncateDirection: "head_tail",
-        metadata: {
-          error: isError,
-          exitCode,
-          timedOut,
-          aborted,
-          ...(args.description && { description: args.description }),
-        },
-      };
-    },
+    execute: (args, ctx) => runForeground(cwd, host, args, ctx),
   };
 }
 
@@ -338,15 +421,15 @@ function createYieldingBashTool(
   host: RuntimeToolHost | undefined,
   registry: ShellProcessRegistry,
 ): Tool<typeof BashParams> {
-  const foreground = createBashTool(cwd, host);
   return {
-    ...foreground,
-    description: `${foreground.description} Set yield_time_ms to keep the command running and return a process ID for bash_wait.`,
+    name: "bash",
+    description: `${BASH_DESCRIPTION} Set yield_time_ms to keep the command running and return a process ID for bash_wait.`,
     parameters: BashParams,
+    parseArgs: guardTty(BashParams),
     async execute(args, ctx) {
       const yieldMs = args.yield_time_ms;
       if (yieldMs === undefined) {
-        const result = await foreground.execute(args, ctx);
+        const result = await runForeground(cwd, host, args, ctx);
         if (args.max_output_tokens !== undefined) result.maxOutputBytes = args.max_output_tokens * 4;
         return result;
       }
@@ -358,7 +441,8 @@ function createYieldingBashTool(
 
       const entry = registry.start(owner, args.command, resolveShell(args.command), {
         cwd,
-        env: filterSensitiveEnv(process.env),
+        env: commandEnv(args.tty),
+        tty: args.tty,
       });
       const abort = () => entry.stop("aborted");
       ctx.signal.addEventListener("abort", abort, { once: true });
@@ -400,7 +484,7 @@ function createBashWaitTool(
   return {
     name: "bash_wait",
     description:
-      "Read new output from a yielded bash process, optionally send stdin or terminate it. No PTY is allocated.",
+      "Read new output from a yielded bash process, optionally send input (keystrokes for tty processes) or terminate it.",
     parameters: BashWaitParams,
     preserveEmptyArgs: ["input"],
     async execute(args, ctx) {

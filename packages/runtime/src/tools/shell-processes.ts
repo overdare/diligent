@@ -1,6 +1,7 @@
 // @summary Session-owned subprocesses backing yielded bash commands
 
-import { type SpawnOptions, spawnProcess } from "../util/process";
+import { type SpawnOptions, spawnProcess, spawnTerminal } from "../util/process";
+import { TerminalTextDecoder } from "../util/terminal-output";
 
 const PROCESS_LIMIT = 16;
 const OUTPUT_LIMIT = 512 * 1024; // UTF-16 code units, at most 1 MiB of text per process.
@@ -10,13 +11,23 @@ export const SHELL_INPUT_LIMIT = 16 * 1024;
 
 type StopReason = "aborted" | "terminated" | "expired";
 type Completion = { exitCode: number | null; reason?: StopReason; error?: string };
+export type ShellProcessOptions = Pick<SpawnOptions, "cwd" | "env"> & { tty?: boolean };
+
+/** Output and input of a spawned command, either over pipes or a pseudo-terminal. */
+interface ShellIo {
+  readonly exited: Promise<number>;
+  /** Called once after `exited`: closes input and waits, bounded, for output still in flight. */
+  drain(): Promise<void>;
+  /** Returns an error message instead of writing when input cannot be accepted. */
+  write(input: string): string | undefined;
+}
 
 /** Process IDs are only usable by the session that spawned them, including within a shared collab registry. */
 export class ShellProcessRegistry {
   private readonly sessions = new Map<string, Map<string, ShellProcess>>();
   private closed = false;
 
-  start(owner: string, command: string, argv: string[], options: Pick<SpawnOptions, "cwd" | "env">): ShellProcess {
+  start(owner: string, command: string, argv: string[], options: ShellProcessOptions): ShellProcess {
     if (this.closed) throw new Error("Shell process registry is shutting down");
     const entries = this.sessions.get(owner) ?? new Map<string, ShellProcess>();
     if (entries.size === PROCESS_LIMIT) {
@@ -65,10 +76,9 @@ export class ShellProcess {
   inputApproved = false;
   busy = false;
   private readonly controller = new AbortController();
-  private readonly child: ReturnType<typeof spawnProcess>;
+  private readonly io: ShellIo;
   private reason?: StopReason;
   private retention?: ReturnType<typeof setTimeout>;
-  private stdinError?: Error;
   private observer?: { finish(): void; onOutput?: (delta: string) => void };
   private chunks: string[] = [];
   private head = 0;
@@ -76,9 +86,30 @@ export class ShellProcess {
   private droppedChars = 0;
   private lastStderr = false;
 
-  constructor(command: string, argv: string[], options: Pick<SpawnOptions, "cwd" | "env">, expire: () => void) {
+  constructor(command: string, argv: string[], options: ShellProcessOptions, expire: () => void) {
     this.command = command;
-    this.child = spawnProcess(argv, {
+    const { tty, ...spawnOptions } = options;
+    const io = tty ? this.spawnTerminal(argv, spawnOptions) : this.spawnPipes(argv, spawnOptions);
+    this.io = io;
+    const lifetime = setTimeout(() => this.stop("expired"), LIFETIME_MS).unref();
+    this.done = (async () => {
+      let exitCode: number | null = null;
+      let error: string | undefined;
+      try {
+        exitCode = await io.exited;
+      } catch (cause) {
+        error = cause instanceof Error ? cause.message : String(cause);
+      }
+      await io.drain();
+      clearTimeout(lifetime);
+      this.completion = { exitCode, reason: this.reason, error };
+      this.retention = setTimeout(expire, LIFETIME_MS).unref();
+      this.observer?.finish();
+    })();
+  }
+
+  private spawnPipes(argv: string[], options: Pick<SpawnOptions, "cwd" | "env">): ShellIo {
+    const child = spawnProcess(argv, {
       ...options,
       stdin: "pipe",
       stdout: "pipe",
@@ -86,41 +117,54 @@ export class ShellProcess {
       signal: this.controller.signal,
       cleanupGroupOnExit: true,
     });
-    const child = this.child;
     const stdout = new TextDecoder();
     const stderr = new TextDecoder();
+    let stdinError: Error | undefined;
     child.stdout?.on("data", (chunk: Buffer) => this.append(stdout.decode(chunk, { stream: true }), false));
     child.stderr?.on("data", (chunk: Buffer) => this.append(stderr.decode(chunk, { stream: true }), true));
     child.stdin?.on("error", (error: Error) => {
-      this.stdinError = error;
+      stdinError = error;
     });
     const closed = Promise.withResolvers<void>();
     child.once("close", () => closed.resolve());
-    const lifetime = setTimeout(() => this.stop("expired"), LIFETIME_MS).unref();
-    this.done = (async () => {
-      let exitCode: number | null = null;
-      let error: string | undefined;
-      try {
-        exitCode = await child.exited;
-      } catch (cause) {
-        error = cause instanceof Error ? cause.message : String(cause);
-      }
-      // A descendant outside the process group can still hold inherited pipes open. Bound the drain.
-      const drain = setTimeout(() => {
-        child.stdout?.destroy();
-        child.stderr?.destroy();
-        closed.resolve();
-      }, PIPE_DRAIN_MS);
-      child.stdin?.destroy();
-      await closed.promise;
-      clearTimeout(drain);
-      clearTimeout(lifetime);
-      this.append(stdout.decode(), false);
-      this.append(stderr.decode(), true);
-      this.completion = { exitCode, reason: this.reason, error };
-      this.retention = setTimeout(expire, LIFETIME_MS).unref();
-      this.observer?.finish();
-    })();
+    return {
+      exited: child.exited,
+      drain: async () => {
+        // A descendant outside the process group can still hold inherited pipes open. Bound the drain.
+        const drain = setTimeout(() => {
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+          closed.resolve();
+        }, PIPE_DRAIN_MS);
+        child.stdin?.destroy();
+        await closed.promise;
+        clearTimeout(drain);
+        this.append(stdout.decode(), false);
+        this.append(stderr.decode(), true);
+      },
+      write: (input) => {
+        const stdin = child.stdin;
+        if (!stdin?.writable || stdinError) return "Process stdin is closed";
+        if (stdin.writableLength + Buffer.byteLength(input) > SHELL_INPUT_LIMIT) return "Process stdin buffer is full";
+        stdin.write(input);
+      },
+    };
+  }
+
+  /** Terminal output is one stream, so it never gets a `[stderr]` section. */
+  private spawnTerminal(argv: string[], options: Pick<SpawnOptions, "cwd" | "env">): ShellIo {
+    const output = new TerminalTextDecoder();
+    const child = spawnTerminal(argv, {
+      ...options,
+      signal: this.controller.signal,
+      cleanupGroupOnExit: true,
+      onData: (data) => this.append(output.write(data), false),
+    });
+    return {
+      exited: child.exited,
+      drain: async () => this.append(output.end(), false),
+      write: (input) => (child.write(input) ? undefined : "Process terminal is closed"),
+    };
   }
 
   readonly command: string;
@@ -151,10 +195,8 @@ export class ShellProcess {
   }
 
   write(input: string): string | undefined {
-    const stdin = this.child.stdin;
-    if (this.completion || this.reason || !stdin?.writable || this.stdinError) return "Process stdin is closed";
-    if (stdin.writableLength + Buffer.byteLength(input) > SHELL_INPUT_LIMIT) return "Process stdin buffer is full";
-    stdin.write(input);
+    if (this.completion || this.reason) return "Process stdin is closed";
+    return this.io.write(input);
   }
 
   takeOutput(): string {

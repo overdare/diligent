@@ -7,33 +7,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolContext } from "@diligent/core/tool-contract";
 import { createBashTool } from "@diligent/runtime/tools";
+import { isAlive, waitUntilDead } from "../helpers/process";
 
 const bashTool = createBashTool(process.cwd());
 const posix = process.platform !== "win32";
-
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    if (process.platform === "linux") {
-      // An orphan can be a zombie until PID 1 reaps it. It cannot execute or hold pipes open.
-      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-      return stat[stat.lastIndexOf(")") + 2] !== "Z";
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// Process death is an OS event with no completion signal to await, so poll until a bounded deadline.
-async function waitUntilDead(pid: number, deadlineMs = 3000): Promise<boolean> {
-  const start = Date.now();
-  while (Date.now() - start < deadlineMs) {
-    if (!isAlive(pid)) return true;
-    await Bun.sleep(25);
-  }
-  return !isAlive(pid);
-}
 
 describe.if(posix)("bash process groups", () => {
   test("foreground Bash cleans up descendants even when the shell exits successfully", async () => {

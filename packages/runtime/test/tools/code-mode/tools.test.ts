@@ -9,9 +9,12 @@ import {
   type ToolRegistry,
   type ToolResult,
   type ToolRunScope,
+  toToolInputSchema,
 } from "@diligent/core/tool-contract";
 import { applyCodeMode, type CodeModeResultMetadata, CodeModeSession } from "@diligent/runtime/tools";
 import { z } from "zod";
+import { createBashTools } from "../../../src/tools/bash";
+import { ShellProcessRegistry } from "../../../src/tools/shell-processes";
 
 const sessions: CodeModeSession[] = [];
 
@@ -484,5 +487,29 @@ describe("background dispatch", () => {
     release.resolve();
     expect((await next).output).toBe("edited:next");
     await run.close();
+  });
+});
+
+describe.if(process.platform !== "win32")("nested bash", () => {
+  test.each([
+    ["tty", { tty: true }],
+    ["yield_time_ms", { yield_time_ms: 0 }],
+  ] as const)("rejects %s inside exec while direct bash keeps it", async (key, extra) => {
+    const registry = new ShellProcessRegistry();
+    try {
+      const { exposed, exec } = setup(createBashTools(process.cwd(), undefined, registry), "on");
+      const args = JSON.stringify({ command: "printf nested-ran", ...extra });
+      const result = await exec.execute(
+        { code: `try { text(await tools.bash(${args})); } catch (error) { text(error.message); }` },
+        makeCtx("call-1"),
+      );
+
+      expect(result.output).toContain(`Unrecognized key: "${key}"`);
+      expect(result.output).not.toContain("nested-ran");
+      const direct = exposed.find((tool) => tool.name === "bash")!;
+      expect(toToolInputSchema(direct).properties).toHaveProperty(key);
+    } finally {
+      await registry.dispose();
+    }
   });
 });
