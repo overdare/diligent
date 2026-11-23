@@ -14,6 +14,14 @@ let tmpRoot = "";
 const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
 let originalStorageNamespace: string | undefined;
 
+// Assigning `undefined` to process.env stores the string "undefined" (Node semantics, Bun >= 1.4).
+function restoreHomeEnv(home: string | undefined, userProfile: string | undefined): void {
+  if (home === undefined) delete process.env.HOME;
+  else process.env.HOME = home;
+  if (userProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = userProfile;
+}
+
 function makePaths(base: string): DiligentPaths {
   return {
     root: join(base, ".diligent"),
@@ -76,8 +84,7 @@ describe("loadRuntimeConfig", () => {
         knowledgeIntervalTurns: 0,
       });
     } finally {
-      process.env.HOME = originalHome;
-      process.env.USERPROFILE = originalUserProfile;
+      restoreHomeEnv(originalHome, originalUserProfile);
     }
   });
 
@@ -160,8 +167,7 @@ describe("loadRuntimeConfig", () => {
     try {
       config = await loadRuntimeConfig(tmpRoot, paths);
     } finally {
-      process.env.HOME = originalHome;
-      process.env.USERPROFILE = originalUserProfile;
+      restoreHomeEnv(originalHome, originalUserProfile);
     }
 
     expect(config.agents).toHaveLength(1);
@@ -207,8 +213,7 @@ describe("loadRuntimeConfig", () => {
       expect(config.agentDefinitions.some((agent) => agent.name === "general")).toBe(true);
       expect(config.systemPrompt.some((section) => section.label === "agents")).toBe(false);
     } finally {
-      process.env.HOME = originalHome;
-      process.env.USERPROFILE = originalUserProfile;
+      restoreHomeEnv(originalHome, originalUserProfile);
     }
   });
 
@@ -236,8 +241,7 @@ describe("loadRuntimeConfig", () => {
       expect(first.diligent.userId).toBe(stored);
       expect(stored).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     } finally {
-      process.env.HOME = originalHome;
-      process.env.USERPROFILE = originalUserProfile;
+      restoreHomeEnv(originalHome, originalUserProfile);
     }
   });
 
@@ -263,8 +267,7 @@ describe("loadRuntimeConfig", () => {
       expect(config.diligent.userId).toBe("explicit-user");
       expect(await Bun.file(fallbackPath).exists()).toBe(false);
     } finally {
-      process.env.HOME = originalHome;
-      process.env.USERPROFILE = originalUserProfile;
+      restoreHomeEnv(originalHome, originalUserProfile);
     }
   });
 
@@ -296,8 +299,7 @@ describe("loadRuntimeConfig", () => {
       expect(config.diligent.userId).toBe("sample-host-user");
       expect(config.authStore.mode).toBe("auto");
     } finally {
-      process.env.HOME = originalHome;
-      process.env.USERPROFILE = originalUserProfile;
+      restoreHomeEnv(originalHome, originalUserProfile);
     }
   });
 
@@ -336,8 +338,7 @@ describe("loadRuntimeConfig", () => {
       expect(config.model?.provider).toBe("vertex");
       expect(config.model).toMatchObject(getDefaultModelRef("vertex"));
     } finally {
-      process.env.HOME = originalHome;
-      process.env.USERPROFILE = originalUserProfile;
+      restoreHomeEnv(originalHome, originalUserProfile);
     }
   });
 
@@ -362,8 +363,7 @@ describe("loadRuntimeConfig", () => {
       expect(config.model?.provider).toBe("openai");
       expect(config.model).toMatchObject(getDefaultModelRef("openai"));
     } finally {
-      process.env.HOME = originalHome;
-      process.env.USERPROFILE = originalUserProfile;
+      restoreHomeEnv(originalHome, originalUserProfile);
     }
   });
 
@@ -396,8 +396,7 @@ describe("loadRuntimeConfig", () => {
       expect(config.model?.provider).toBe("zai-coding-plan");
       expect(config.model).toMatchObject(getDefaultModelRef("zai-coding-plan"));
     } finally {
-      process.env.HOME = originalHome;
-      process.env.USERPROFILE = originalUserProfile;
+      restoreHomeEnv(originalHome, originalUserProfile);
     }
   });
 
@@ -423,8 +422,7 @@ describe("loadRuntimeConfig", () => {
       const config = await loadRuntimeConfig(tmpRoot, paths);
       expect(config.authStore.mode).toBe("keyring");
     } finally {
-      process.env.HOME = originalHome;
-      process.env.USERPROFILE = originalUserProfile;
+      restoreHomeEnv(originalHome, originalUserProfile);
     }
   });
 
@@ -480,8 +478,7 @@ describe("loadRuntimeConfig", () => {
       expect(config.providerManager.hasKeyFor("chatgpt")).toBe(false);
       expect(await Bun.file(authFile).exists()).toBe(false);
     } finally {
-      process.env.HOME = originalHome;
-      process.env.USERPROFILE = originalUserProfile;
+      restoreHomeEnv(originalHome, originalUserProfile);
       globalThis.fetch = originalFetch;
     }
   });
@@ -514,8 +511,7 @@ describe("loadRuntimeConfig", () => {
       expect(config.skills).toEqual([]);
       expect(config.systemPrompt.some((section) => section.label === "skills")).toBe(false);
     } finally {
-      process.env.HOME = originalHome;
-      process.env.USERPROFILE = originalUserProfile;
+      restoreHomeEnv(originalHome, originalUserProfile);
     }
   });
 
@@ -544,8 +540,7 @@ describe("loadRuntimeConfig", () => {
       expect(config.skills).toEqual([]);
       expect(config.configLayers.project?.skills?.enabled).toBe(false);
     } finally {
-      process.env.HOME = originalHome;
-      process.env.USERPROFILE = originalUserProfile;
+      restoreHomeEnv(originalHome, originalUserProfile);
     }
   });
 });
