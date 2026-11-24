@@ -36,7 +36,7 @@ import type { DiligentPaths } from "../infrastructure/index";
 import { loadMemorySection } from "../memory/index";
 import { buildBaseSystemPrompt } from "../prompt/index";
 import type { SkillMetadata } from "../skills/index";
-import { discoverSkills, filterAvailableSkills, renderSkillsSection, resolveSkillStates } from "../skills/index";
+import { loadActiveSkills, renderSkillsSection } from "../skills/index";
 import type { BundledToolProvider } from "../tools/bundled-provider";
 import { buildDefaultTools } from "../tools/defaults";
 import { buildSystemPromptWithMemory, discoverInstructions } from "./instructions";
@@ -165,18 +165,13 @@ export async function loadRuntimeConfig(
 
   const memorySection = await loadMemorySection(paths.memory, config.memory);
 
-  // Load skills
-  let discoveredSkills: SkillMetadata[] = [];
-  let skills: SkillMetadata[] = [];
-  let skillsSection = "";
-  const skillDiscoveryResult = await discoverSkills({
+  const { discovered: discoveredSkills, skills } = await loadActiveSkills({
     cwd,
-    additionalPaths: config.skills?.paths,
+    config: config.skills,
+    layers,
+    disabledSkillNames,
   });
-  discoveredSkills = skillDiscoveryResult.skills;
-  skills = filterAvailableSkills(resolveSkillStates(discoveredSkills, config.skills, layers));
-  skills = skills.filter((skill) => !disabledSkillNames.has(skill.name));
-  skillsSection = renderSkillsSection(skills);
+  const skillsSection = renderSkillsSection(skills);
 
   let agents: AgentMetadata[] = [];
   let agentsSection = "";
@@ -186,7 +181,7 @@ export async function loadRuntimeConfig(
       cwd,
       paths,
       toolsConfig: config.tools,
-      skills,
+      skills: { skills },
       enableCollabTools: false,
       mcpServers: config.mcpServers,
       // Include product-owned bundled tools so agent frontmatter

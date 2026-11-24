@@ -139,7 +139,7 @@ export interface ThreadHandlersContext {
   getBundledToolProviders: () => BundledToolProvider[];
   getDisabledToolNames?: () => ReadonlySet<string>;
   getMcpServers: () => DiligentConfig["mcpServers"];
-  getSkillNames: () => string[];
+  getSkillNames: (cwd: string) => string[] | Promise<string[]>;
   setActiveThreadId: (threadId: string | null) => void;
 }
 

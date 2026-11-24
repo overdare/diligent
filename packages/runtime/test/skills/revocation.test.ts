@@ -40,7 +40,7 @@ test("global revocation blocks a project override while preserving unrelated ski
 test("cached skill tool rechecks revocation before returning instructions", async () => {
   const f = await fixture();
   const { skills } = await discoverSkills({ cwd: f.root, globalConfigDir: f.global });
-  const tool = createSkillTool(skills);
+  const tool = createSkillTool({ skills });
   await writeFile(f.state, JSON.stringify(revokedState));
   const result = await tool.execute(
     { name: "bad" },

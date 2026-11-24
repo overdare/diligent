@@ -119,13 +119,16 @@ async function initializeTurnRuntime(
  * Resolve the slash-skill invocation (if any), normalize attachments, and assemble the
  * user message object that will be passed to the session manager.
  */
-function prepareTurnMessage(
+async function prepareTurnMessage(
   ctx: ThreadHandlersContext,
   params: TurnStartParams,
   runtime: ThreadRuntime,
-): { userMessage: UserMessage; content: UserMessage["content"] } {
+): Promise<{ userMessage: UserMessage; content: UserMessage["content"] }> {
   const timestamp = Date.now();
-  const slashSkill = parseSlashSkillInvocation(params.message, new Set(ctx.getSkillNames()));
+  let slashSkill: ReturnType<typeof parseSlashSkillInvocation> = null;
+  if (params.message.trimStart().startsWith("/")) {
+    slashSkill = parseSlashSkillInvocation(params.message, new Set(await ctx.getSkillNames(runtime.cwd)));
+  }
   let messageForTurn: string;
   if (slashSkill) {
     let followUpInstruction: string = "After loading the skill, continue with the user's request.";
@@ -321,7 +324,7 @@ export async function handleTurnStart(
         content: params.message,
       };
     } else {
-      preparedTurn = prepareTurnMessage(ctx, params, runtime);
+      preparedTurn = await prepareTurnMessage(ctx, params, runtime);
     }
     const { userMessage, content } = preparedTurn;
     const userItemId = generateEntryId();

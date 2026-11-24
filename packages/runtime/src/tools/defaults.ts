@@ -10,7 +10,6 @@ import { getGlobalConfigPath } from "../config";
 import type { DiligentConfig } from "../config/schema";
 import { createGoalTools, type GoalToolHost } from "../goals/tools";
 import type { DiligentPaths } from "../infrastructure";
-import type { SkillMetadata } from "../skills";
 import { createApplyPatchTool } from "./apply-patch";
 import { createBashTools } from "./bash";
 import type { BundledToolProvider, TextGenerationFn } from "./bundled-provider";
@@ -29,7 +28,7 @@ import { createReadImageTool } from "./read-image";
 import { createRequestUserInputTool } from "./request-user-input";
 import { createSearchMemoryTool } from "./search-memory";
 import { ShellProcessRegistry } from "./shell-processes";
-import { createSkillTool } from "./skill";
+import { createSkillTool, type SkillCatalog } from "./skill";
 import { createUpdateMemoryTool } from "./update-memory";
 import { createWebTool } from "./web";
 
@@ -47,7 +46,7 @@ export interface BuildDefaultToolsOptions {
   paths?: DiligentPaths;
   collabDeps?: Omit<CollabToolDeps, "cwd" | "paths" | "parentTools">;
   toolsConfig?: DiligentConfig["tools"];
-  skills?: SkillMetadata[];
+  skills?: SkillCatalog;
   parentToolOverride?: Tool[];
   enableCollabTools?: boolean;
   /**
@@ -106,7 +105,7 @@ export async function buildDefaultTools(options: BuildDefaultToolsOptions): Prom
     paths,
     collabDeps,
     toolsConfig,
-    skills = [],
+    skills = { skills: [] },
     parentToolOverride,
     enableCollabTools = true,
     existingRegistry,

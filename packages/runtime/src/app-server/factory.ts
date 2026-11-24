@@ -24,7 +24,7 @@ import { createGoalContextHook } from "../goals/tools";
 import { createLocalImageLoader, type DiligentPaths, ensureDiligentDir, toolOutputStore } from "../infrastructure";
 import { loadMemorySection } from "../memory";
 import { withToolInstructions } from "../prompt/tool-instructions";
-import { discoverSkills } from "../skills";
+import { type ActiveSkills, loadActiveSkills, renderSkillsSection, type SkillMetadata } from "../skills";
 import {
   type BundledToolProvider,
   createBundledAgentLoopHooks,
@@ -42,23 +42,33 @@ import type { CreateAgentArgs, DiligentAppServerConfig } from "./server";
 
 const logger = createLogger({ scope: "runtime.app-server.config" });
 
-function withSkillGuardrail(runtimeConfig: RuntimeConfig) {
-  const hasSkillSection = runtimeConfig.systemPrompt.some((section) => section.label === "skills");
-  if (hasSkillSection || runtimeConfig.skills.length === 0) {
-    return runtimeConfig.systemPrompt;
+const SKILL_SECTION_SUCCESSORS: Record<string, true> = { agents: true, instructions: true, additional: true };
+
+/** Replace any earlier skill catalog in the prompt with the skills discovered for this agent. */
+function withSkills(systemPrompt: SystemSection[], skills: SkillMetadata[]): SystemSection[] {
+  const sections = systemPrompt.filter(
+    (section) => section.label !== "skills" && section.label !== "skill_usage_guardrail",
+  );
+  const content = renderSkillsSection(skills);
+  if (!content) {
+    if (skills.length === 0) return sections;
+    return [
+      ...sections,
+      {
+        label: "skill_usage_guardrail",
+        content: [
+          "Skills must be loaded through the skill tool.",
+          "Do not use read to open SKILL.md directly.",
+          "When the user names an available skill or the task matches its cataloged workflow, call skill first. Related keywords alone are not a match.",
+        ].join("\n"),
+      },
+    ];
   }
 
-  return [
-    ...runtimeConfig.systemPrompt,
-    {
-      label: "skill_usage_guardrail",
-      content: [
-        "Skills must be loaded through the skill tool.",
-        "Do not use read to open SKILL.md directly.",
-        "When the user names an available skill or the task matches its cataloged workflow, call skill first. Related keywords alone are not a match.",
-      ].join("\n"),
-    },
-  ];
+  const previousIndex = systemPrompt.findIndex((section) => section.label === "skills");
+  const successorIndex = sections.findIndex((section) => SKILL_SECTION_SUCCESSORS[section.label] === true);
+  const insertAt = previousIndex >= 0 ? previousIndex : successorIndex >= 0 ? successorIndex : sections.length;
+  return [...sections.slice(0, insertAt), { label: "skills", content }, ...sections.slice(insertAt)];
 }
 
 function applyModeToPrompt(mode: Mode, systemPrompt: RuntimeConfig["systemPrompt"]) {
@@ -122,17 +132,23 @@ interface AgentAssemblyOptions {
   request: CreateAgentArgs;
   runtimeConfig: RuntimeConfig;
   getPaths: () => Promise<DiligentPaths>;
+  loadSkills: (cwd: string) => Promise<ActiveSkills>;
   bundledToolProviders?: BundledToolProvider[];
   pluginDiscovery: PluginDiscoveryMode;
   transformTools?: CreateAppServerConfigOptions["transformTools"];
   toolOutputStore?: ToolOutputFileStore;
 }
 
-async function buildRuntimeAgentTools(args: AgentAssemblyOptions, parentSystemPrompt: SystemSection[]) {
+async function buildRuntimeAgentTools(
+  args: AgentAssemblyOptions,
+  parentSystemPrompt: SystemSection[],
+  activeSkills: ActiveSkills,
+) {
   const {
     request,
     runtimeConfig,
     getPaths,
+    loadSkills,
     bundledToolProviders,
     pluginDiscovery,
     transformTools,
@@ -212,7 +228,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions, parentSystemPr
       codeMode,
     },
     toolsConfig: runtimeConfig.diligent.tools,
-    skills: runtimeConfig.skills,
+    skills: { skills: activeSkills.skills, errors: activeSkills.errors, reload: () => loadSkills(cwd) },
     enableCollabTools: true,
     existingRegistry: existingAgent?.registry,
     host: createRuntimeToolHost(approve, ask),
@@ -284,12 +300,17 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
   const { cwd, mode, effort, fastMode, model: modelRef } = request;
   const model = resolveModel(modelRef);
   const activeMode = (mode ?? "default") as Mode;
+  const activeSkills = await args.loadSkills(cwd);
   const systemPrompt = await withLatestMemory(
-    withSkillGuardrail(runtimeConfig),
+    withSkills(runtimeConfig.systemPrompt, activeSkills.skills),
     await getPaths(),
     runtimeConfig.diligent.memory,
   );
-  const { tools, registry, codeModeSession, availableTools } = await buildRuntimeAgentTools(args, systemPrompt);
+  const { tools, registry, codeModeSession, availableTools } = await buildRuntimeAgentTools(
+    args,
+    systemPrompt,
+    activeSkills,
+  );
   // Tool assembly syncs MCP auth first; read that same cached status for the prompt note.
   const promptSections = await appendMcpNeedsAuthNote(systemPrompt, runtimeConfig.diligent.mcpServers);
   const llmCompactionFn = runtimeConfig.providerManager.createNativeCompactionForProvider(
@@ -406,9 +427,28 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
     pathsPromise ??= ensureDiligentDir(cwd);
     return pathsPromise;
   };
+  const resolveSkillConfig = async (requestCwd: string) => {
+    if (requestCwd === cwd) {
+      return { config: runtimeConfig.diligent.skills, layers: runtimeConfig.configLayers ?? {} };
+    }
+    const loaded = await loadDiligentConfig(requestCwd);
+    return { config: loaded.config.skills, layers: loaded.layers };
+  };
+  // Skills are rediscovered per request cwd so threads see skills installed after startup and in their own project.
+  const loadSkills = async (requestCwd: string) => {
+    const { config, layers } = await resolveSkillConfig(requestCwd);
+    const active = await loadActiveSkills({
+      cwd: requestCwd,
+      config,
+      layers,
+      disabledSkillNames: runtimeConfig.disabledSkillNames,
+    });
+    return { config, layers, ...active };
+  };
   const assemblyOptions = {
     runtimeConfig,
     getPaths,
+    loadSkills,
     bundledToolProviders,
     pluginDiscovery,
     transformTools,
@@ -434,15 +474,18 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
     createAgent: (args: CreateAgentArgs): Promise<RuntimeAgent> =>
       createRuntimeAgent({ ...assemblyOptions, request: args }),
     refreshAgentTools: async (agent, request) => {
+      const activeSkills = await loadSkills(request.cwd);
+      const systemPrompt = withSkills(agent.systemPrompt, activeSkills.skills);
       const { tools, availableTools } = await buildRuntimeAgentTools(
         {
           ...assemblyOptions,
           request: { ...request, existingAgent: agent },
         },
-        agent.systemPrompt,
+        systemPrompt,
+        activeSkills,
       );
       agent.tools = tools;
-      agent.systemPrompt = withToolInstructions(agent.systemPrompt, availableTools);
+      agent.systemPrompt = withToolInstructions(systemPrompt, availableTools);
     },
     getGoalsConfig: () => runtimeConfig.diligent.goals,
     streamFunction: runtimeConfig.streamFunction,
@@ -463,24 +506,12 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
     },
     skillConfig: {
       resolve: async (requestCwd) => {
-        if (requestCwd === cwd) {
-          return {
-            cwd,
-            config: runtimeConfig.diligent.skills,
-            layers: runtimeConfig.configLayers ?? {},
-            discoveredSkills: (runtimeConfig.discoveredSkills ?? []).filter(
-              (skill) => !experimentManagedSkillNames.has(skill.name),
-            ),
-          };
-        }
-
-        const loaded = await loadDiligentConfig(requestCwd);
-        const discovered = await discoverSkills({ cwd: requestCwd, additionalPaths: loaded.config.skills?.paths });
+        const { config, layers, discovered } = await loadSkills(requestCwd);
         return {
           cwd: requestCwd,
-          config: loaded.config.skills,
-          layers: loaded.layers,
-          discoveredSkills: discovered.skills.filter((skill) => !experimentManagedSkillNames.has(skill.name)),
+          config,
+          layers,
+          discoveredSkills: discovered.filter((skill) => !experimentManagedSkillNames.has(skill.name)),
         };
       },
     },
@@ -523,7 +554,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
     authStore: runtimeConfig.authStore,
     permissionEngine: runtimeConfig.permissionEngine,
     denialBreakerThreshold: runtimeConfig.diligent.approvals?.denialBreakerThreshold,
-    skillNames: runtimeConfig.skills.map((skill) => skill.name),
+    getSkillNames: async (requestCwd) => (await loadSkills(requestCwd)).skills.map((skill) => skill.name),
     hooks: runtimeConfig.diligent.hooks,
     bundledToolProviders,
     mcpServers: runtimeConfig.diligent.mcpServers,
@@ -532,8 +563,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
   };
 
   // Assigned after `config` exists so it can refresh the frozen snapshots (`mcpServers`,
-  // `skillNames`, `hooks`) alongside the mutable `runtimeConfig` fields that `createAgent`
-  // reads live on every call.
+  // `hooks`) alongside the mutable `runtimeConfig` fields that `createAgent` reads live on every call.
   config.reloadConfig = async (): Promise<ConfigReloadResult> => {
     const paths = await getPaths();
     const fresh = await loadRuntimeConfig(cwd, paths, {
@@ -555,7 +585,6 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
     runtimeConfig.disabledSkillNames = fresh.disabledSkillNames;
     runtimeConfig.disabledAgentNames = fresh.disabledAgentNames;
     config.mcpServers = fresh.diligent.mcpServers;
-    config.skillNames = fresh.skills.map((skill) => skill.name);
     config.hooks = fresh.diligent.hooks;
     return { skills: fresh.skills.map((skill) => ({ name: skill.name, description: skill.description })) };
   };

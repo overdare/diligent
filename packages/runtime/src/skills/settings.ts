@@ -1,8 +1,12 @@
 // @summary Resolves layered config gates for discovered skills.
 
+import { createLogger } from "@diligent/logging";
 import type { DiligentConfigLayers } from "../config/loader";
 import type { DiligentConfig } from "../config/schema";
-import type { SkillMetadata } from "./types";
+import { discoverSkills } from "./discovery";
+import type { SkillLoadError, SkillMetadata } from "./types";
+
+const logger = createLogger({ scope: "runtime.skills" });
 
 export type SkillStateReason = "enabled" | "disabled_by_user" | "skills_disabled";
 export type SkillSettingController = "default" | "global" | "project";
@@ -62,4 +66,33 @@ export function resolveSkillStates(
 
 export function filterAvailableSkills(states: ResolvedSkillState[]): SkillMetadata[] {
   return states.filter((state) => state.available).map((state) => state.skill);
+}
+
+export interface ActiveSkillsOptions {
+  cwd: string;
+  config: DiligentConfig["skills"] | undefined;
+  layers: DiligentConfigLayers;
+  disabledSkillNames?: ReadonlySet<string>;
+}
+
+export interface ActiveSkills {
+  discovered: SkillMetadata[];
+  skills: SkillMetadata[];
+  errors: SkillLoadError[];
+}
+
+/** Discover skills on disk for `cwd` and keep the ones layered config and experiment gates allow. */
+export async function loadActiveSkills(options: ActiveSkillsOptions): Promise<ActiveSkills> {
+  const { cwd, config, layers, disabledSkillNames } = options;
+  const { skills: discovered, errors } = await discoverSkills({ cwd, additionalPaths: config?.paths });
+  for (const error of errors) {
+    logger.warn("skill_load_failed", {
+      message: `[skills] Skipped ${error.path}: ${error.message}`,
+      fields: { path: error.path },
+    });
+  }
+  const skills = filterAvailableSkills(resolveSkillStates(discovered, config, layers)).filter(
+    (skill) => !disabledSkillNames?.has(skill.name),
+  );
+  return { discovered, skills, errors };
 }

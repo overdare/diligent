@@ -158,8 +158,8 @@ export interface DiligentAppServerConfig {
   openBrowser?: (url: string) => void;
   /** Convert an absolute image path to a URL for web clients (omit if not needed) */
   toImageUrl?: (absPath: string) => string | undefined;
-  /** Loaded skill names for slash-command disambiguation in turn/start. */
-  skillNames?: string[];
+  /** Active skill names for a thread cwd, used for slash-command disambiguation in turn/start. */
+  getSkillNames?: (cwd: string) => Promise<string[]>;
   /** Default effort from config (defaults to "medium") */
   defaultEffort?: ThinkingEffort;
   /** Permission policy engine loaded from runtime config (yolo/rules). */
@@ -1222,7 +1222,7 @@ export class DiligentAppServer {
       getDisabledToolNames: () =>
         resolveExperimentGates(this.config.experimentConfig?.getExperiments() ?? []).disabledToolNames,
       getMcpServers: () => this.config.mcpServers,
-      getSkillNames: () => this.config.skillNames ?? [],
+      getSkillNames: async (cwd: string) => (await this.config.getSkillNames?.(cwd)) ?? [],
       setActiveThreadId: (threadId: string | null) => {
         this.activeThreadId = threadId;
       },

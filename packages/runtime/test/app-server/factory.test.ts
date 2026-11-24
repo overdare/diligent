@@ -143,7 +143,6 @@ describe("createAppServerConfig", () => {
     expect(config.modelConfig).toBeDefined();
     expect(config.modelConfig?.currentModel).toMatchObject({ provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID });
     expect(config.defaultEffort).toBe("medium");
-    expect(config.skillNames).toEqual([]);
   });
 
   it("propagates explicit plugin discovery through config and agent assembly", async () => {
@@ -236,21 +235,51 @@ describe("createAppServerConfig", () => {
     expect(config.defaultEffort).toBe("high");
   });
 
-  it("passes skill names for slash disambiguation", () => {
-    const runtimeConfig = makeRuntimeConfig({
-      skills: [
-        {
-          name: "tidy-plan",
-          description: "desc",
-          path: "/tmp/skills/tidy-plan/SKILL.md",
-          baseDir: "/tmp/skills/tidy-plan",
-          source: "project",
-          disableModelInvocation: false,
-        },
-      ],
-    });
-    const config = createAppServerConfig({ cwd: "/tmp/test", runtimeConfig });
-    expect(config.skillNames).toEqual(["tidy-plan"]);
+  it("gives a new thread the skills installed in its own cwd after the server started", async () => {
+    const originalHome = process.env.HOME;
+    const fakeHome = await mkdtemp(join(tmpdir(), "diligent-factory-home-"));
+    const startupCwd = await mkdtemp(join(tmpdir(), "diligent-factory-startup-"));
+    const threadCwd = await mkdtemp(join(tmpdir(), "diligent-factory-thread-"));
+    tempHomes.push(fakeHome, startupCwd, threadCwd);
+    process.env.HOME = fakeHome;
+
+    try {
+      const runtimeConfig = makeRuntimeConfig({ diligent: { tools: { codeMode: "off" } } });
+      const config = createAppServerConfig({ cwd: startupCwd, runtimeConfig });
+
+      const skillDir = join(threadCwd, ".diligent", "skills", "FunctionalAsset");
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(
+        join(skillDir, "SKILL.md"),
+        ["---", "name: functional-asset", "description: Build functional assets", "---", "", "# Steps"].join("\n"),
+      );
+
+      const agent = await config.createAgent({
+        cwd: threadCwd,
+        mode: "default",
+        effort: "medium",
+        model: runtimeConfig.model,
+        approve: async () => ({ decision: "once" }),
+        ask: async () => null,
+      });
+      const skillsSection = agent.systemPrompt.find((section) => section.label === "skills")?.content ?? "";
+      const skillTool = agent.tools.find((tool) => tool.name === "skill");
+      const loaded = await skillTool?.execute(
+        { name: "functional-asset" },
+        { toolCallId: "tc", signal: new AbortController().signal, abort: () => {} },
+      );
+
+      expect(skillsSection).toContain("functional-asset");
+      expect(loaded?.output).toContain("# Steps");
+      expect(await config.getSkillNames?.(threadCwd)).toEqual(["functional-asset"]);
+      expect(await config.getSkillNames?.(startupCwd)).toEqual([]);
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+    }
   });
 
   it("merges overrides for toImageUrl and openBrowser", () => {
@@ -833,7 +862,6 @@ describe("reloadConfig", () => {
     try {
       const runtimeConfig = makeRuntimeConfig();
       const config = createAppServerConfig({ cwd: projectRoot, runtimeConfig });
-      expect(config.skillNames).toEqual([]);
 
       const skillDir = join(projectRoot, ".diligent", "skills", "my-skill");
       await mkdir(skillDir, { recursive: true });
@@ -848,7 +876,6 @@ describe("reloadConfig", () => {
       expect(result?.skills).toEqual([{ name: "my-skill", description: "A reloaded skill" }]);
       expect(runtimeConfig.discoveredSkills.map((skill) => skill.name)).toEqual(["my-skill"]);
       expect(runtimeConfig.skills.map((skill) => skill.name)).toEqual(["my-skill"]);
-      expect(config.skillNames).toEqual(["my-skill"]);
     } finally {
       if (originalHome === undefined) {
         delete process.env.HOME;
@@ -886,7 +913,6 @@ describe("reloadConfig", () => {
       expect(result?.skills).toEqual([]);
       expect(runtimeConfig.discoveredSkills.map((skill) => skill.name)).toEqual(["my-skill"]);
       expect(runtimeConfig.skills).toEqual([]);
-      expect(config.skillNames).toEqual([]);
     } finally {
       if (originalHome === undefined) {
         delete process.env.HOME;

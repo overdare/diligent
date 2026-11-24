@@ -83,14 +83,14 @@ describe("parseFrontmatter", () => {
     expect(result.error).toContain("exceeds 64 characters");
   });
 
-  it("returns error when description is too long", () => {
+  it("keeps a description longer than the catalog display limit", () => {
     const longDesc = "a".repeat(1025);
     const content = ["---", "name: my-skill", `description: ${longDesc}`, "---", "body"].join("\n");
 
     const result = parseFrontmatter(content, "/test/SKILL.md");
-    expect("error" in result).toBe(true);
-    if (!("error" in result)) return;
-    expect(result.error).toContain("exceeds 1024 characters");
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.frontmatter.description).toBe(longDesc);
   });
 
   it("returns error when no opening --- is present", () => {
