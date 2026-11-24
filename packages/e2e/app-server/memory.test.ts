@@ -1,7 +1,7 @@
 // @summary App-server e2e tests for memory CRUD and filesystem persistence
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ensureDiligentDir } from "@diligent/runtime";
@@ -28,38 +28,45 @@ describe("memory", () => {
     const added = (await client.request("memory/update", {
       action: "upsert",
       threadId,
-      type: "pattern",
+      type: "feedback",
+      name: "Focused tests",
       content: "Use focused tests before the full suite",
-      tags: ["tests"],
     })) as {
-      entry: { id: string; type: string; content: string; confidence: number };
+      entry: { id: string; name: string; description: string; type: string; content: string };
     };
     expect(added.entry).toMatchObject({
-      type: "pattern",
+      id: "focused-tests",
+      name: "Focused tests",
+      description: "Use focused tests before the full suite",
+      type: "feedback",
       content: "Use focused tests before the full suite",
-      confidence: 0.8,
     });
 
     const updated = (await client.request("memory/update", {
       action: "upsert",
       threadId,
       id: added.entry.id,
-      type: "backlog",
+      type: "project",
+      description: "Run focused tests first",
       content: "Run focused tests before the full suite",
-      tags: ["tests", "workflow"],
     })) as {
       entry: { id: string; type: string; content: string };
     };
     expect(updated.entry).toMatchObject({
       id: added.entry.id,
-      type: "backlog",
+      type: "project",
       content: "Run focused tests before the full suite",
     });
 
     const listed = (await client.request("memory/list", { threadId, limit: 10 })) as {
       data: Array<{ id: string; type: string }>;
     };
-    expect(listed.data).toContainEqual(expect.objectContaining({ id: added.entry.id, type: "backlog" }));
+    expect(listed.data).toContainEqual(expect.objectContaining({ id: added.entry.id, type: "project" }));
+
+    const paths = await ensureDiligentDir(tmpDir);
+    expect(await readFile(join(paths.memory, "MEMORY.md"), "utf8")).toContain(
+      "- [Focused tests](focused-tests.md) — Run focused tests first",
+    );
 
     const deleted = (await client.request("memory/update", {
       action: "delete",
@@ -68,12 +75,35 @@ describe("memory", () => {
     })) as { deleted: boolean };
     expect(deleted.deleted).toBe(true);
 
-    const paths = await ensureDiligentDir(tmpDir);
     const persisted = await readMemory(paths.memory);
     expect(persisted.some((entry) => entry.id === added.entry.id)).toBe(false);
+    expect(await readFile(join(paths.memory, "MEMORY.md"), "utf8")).not.toContain("focused-tests.md");
   });
 
-  test("memory/update honors a caller-defined id for new entries like the agent tool", async () => {
+  test("memory/list returns memory files written by another agent into the project memory directory", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-memory-"));
+    const paths = await ensureDiligentDir(tmpDir);
+    await writeFile(
+      join(paths.memory, "combat-damage.md"),
+      "---\nname: combat-damage\ndescription: Server-authoritative hitscan\nmetadata:\n  type: project\n---\n\nDamage is computed on the server.\n",
+    );
+    const server = createTestServer({ cwd: tmpDir });
+    client = createProtocolClient(server);
+    const threadId = await client.initAndStartThread(tmpDir);
+
+    const listed = (await client.request("memory/list", { threadId })) as { data: unknown[] };
+
+    expect(listed.data).toEqual([
+      expect.objectContaining({
+        id: "combat-damage",
+        description: "Server-authoritative hitscan",
+        type: "project",
+        content: "Damage is computed on the server.",
+      }),
+    ]);
+  });
+
+  test("memory/update honors a caller-defined id and rejects ids that are not file names", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-memory-"));
     const server = createTestServer({ cwd: tmpDir });
     client = createProtocolClient(server);
@@ -83,10 +113,13 @@ describe("memory", () => {
       action: "upsert",
       threadId,
       id: "project.runtime",
-      type: "preference",
+      type: "feedback",
       content: "Use Bun",
     })) as { entry: { id: string } };
 
     expect(created.entry.id).toBe("project.runtime");
+    await expect(
+      client.request("memory/update", { action: "upsert", threadId, id: "../outside", type: "project", content: "x" }),
+    ).rejects.toThrow("Invalid memory id");
   });
 });

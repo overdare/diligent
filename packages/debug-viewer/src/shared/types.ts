@@ -189,16 +189,15 @@ export type SessionEntry =
   | SteeringEntry
   | ErrorEntry;
 
-// Memory (D081)
+// Memory: one `<id>.md` file per memory in the project memory directory
 export interface MemoryEntry {
   id: string;
-  timestamp: number;
-  sessionId: string;
-  type: "pattern" | "discovery" | "preference" | "correction" | "backlog";
+  name: string;
+  description: string;
+  type: "user" | "feedback" | "project" | "reference";
   content: string;
-  confidence: number;
-  supersedes?: string;
-  tags: string[];
+  modified: string;
+  sessionId?: string;
 }
 
 // Derived types

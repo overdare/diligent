@@ -12,6 +12,7 @@ import {
   discoverInstructions,
   discoverSkills,
   getBuiltinAgentDefinitions,
+  type MemoryEntry,
   type RuntimeConfig,
   renderSkillsSection,
   type SkillMetadata,
@@ -149,6 +150,28 @@ export async function exactFile(root: string, path: string): Promise<string | un
   } catch {
     return undefined;
   }
+}
+
+/** Fixture files for a `.diligent/memory` directory holding `entries` and their MEMORY.md index. */
+export function memoryFixtureFiles(entries: MemoryEntry[]): Record<string, string> {
+  const files: Record<string, string> = {};
+  for (const entry of entries) {
+    files[`.diligent/memory/${entry.id}.md`] = [
+      "---",
+      `name: ${JSON.stringify(entry.name)}`,
+      `description: ${JSON.stringify(entry.description)}`,
+      "metadata:",
+      `  type: ${entry.type}`,
+      `  modified: ${JSON.stringify(entry.modified)}`,
+      "---",
+      "",
+      entry.content,
+      "",
+    ].join("\n");
+  }
+  const lines = entries.map((entry) => `- [${entry.name}](${entry.id}.md) — ${entry.description}`);
+  files[".diligent/memory/MEMORY.md"] = ["# Memory Index", "", ...lines, ""].join("\n");
+  return files;
 }
 
 export function seededToken(seed: string, prefix: string): string {

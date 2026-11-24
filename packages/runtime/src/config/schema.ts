@@ -172,6 +172,7 @@ export const DiligentConfigSchema = z
         enabled: z.boolean().optional(),
         // Agent turns without update_memory before the model is reminded to record durable memory. Unset: off.
         nudgeInterval: z.number().int().positive().optional(),
+        // Token budget and line cap for the MEMORY.md index injected into the system prompt.
         injectionBudget: z.number().int().positive().optional(),
         maxItems: z.number().int().positive().optional(),
       })

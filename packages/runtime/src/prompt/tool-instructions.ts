@@ -11,13 +11,13 @@ export function withToolInstructions(sections: SystemSection[], tools: readonly 
   const instructions: string[] = [];
   if (names.has("search_memory")) {
     instructions.push(
-      "Use search_memory to recall durable user preferences and locate an existing entry before revising it.",
+      "Use search_memory to recall project context that the memory index does not show and to find an existing memory before revising it.",
     );
   }
   if (names.has("update_memory")) {
     instructions.push(
-      "Use update_memory only for durable user preferences, with type='preference'. Update an existing entry when it covers the same preference.",
-      "Do not store immediate task intent, implementation plans, discoveries, backlog items, or records of completed work.",
+      "Use update_memory to keep this project's memory current for future sessions: decisions and why they were made, remaining work, where references live, and the user's durable preferences and corrections. Revise the existing memory when one covers the same topic, and delete one that is no longer true.",
+      "Do not store the current request, transient plans, or details already recorded in code, project docs, or git history.",
     );
   }
   if (instructions.length > 0) {

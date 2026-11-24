@@ -1,106 +1,237 @@
-// @summary Persistent JSONL memory store with tolerant reads and serialized atomic writes
+// @summary Markdown memory directory: one frontmatter file per memory plus the MEMORY.md index
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, rm } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { MemoryEntrySchema } from "../protocol/index";
+import { stringify as stringifyYaml } from "yaml";
+import { parseYamlFrontmatter } from "../frontmatter/yaml";
+import { MemoryTypeSchema } from "../protocol/index";
 import type { MemoryEntry } from "./types";
 
-export const MEMORY_FILENAME = "memory.jsonl";
+/**
+ * The directory layout matches Claude Code auto memory, so agents of either harness pointed at the
+ * same directory share one memory: `MEMORY.md` lists `- [name](<id>.md) — description` lines and each
+ * `<id>.md` carries `name`, `description`, and `metadata.type` frontmatter above a Markdown body.
+ */
+export const MEMORY_INDEX_FILENAME = "MEMORY.md";
+
+const MEMORY_INDEX_HEADER = "# Memory Index";
+const MEMORY_FILE_EXTENSION = ".md";
+const MEMORY_ID_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N}._-]{0,127}$/u;
+const MAX_GENERATED_ID_LENGTH = 48;
+const MAX_DESCRIPTION_LENGTH = 150;
 
 export interface MemoryFile {
-  entries: MemoryEntry[];
-  /** Raw lines that are not valid entries. They are kept on disk so a bad line never costs other entries. */
-  invalidLines: string[];
-}
-
-export interface MemoryMutation<T> {
-  /** Next full entry list; omit to leave the store untouched. */
-  entries?: MemoryEntry[];
-  result: T;
+  /** Parsed entry; absent when the file has no valid frontmatter type. */
+  entry?: MemoryEntry;
+  /** Raw frontmatter, kept so fields written by other tools survive a rewrite. */
+  frontmatter: Record<string, unknown>;
 }
 
 const writeQueues = new Map<string, Promise<unknown>>();
 
-function memoryFilePath(memoryPath: string): string {
-  return join(memoryPath, MEMORY_FILENAME);
+/** Ids are file stems: a letter or digit, then letters, digits, ".", "_", or "-"; never the index name. */
+export function isMemoryId(id: string): boolean {
+  return MEMORY_ID_PATTERN.test(id) && id.toLowerCase() !== MEMORY_INDEX_FILENAME.slice(0, -3).toLowerCase();
 }
 
-/** Read the store, separating valid entries from unreadable lines instead of failing the whole read. */
-export async function readMemoryFile(memoryPath: string): Promise<MemoryFile> {
-  const file = Bun.file(memoryFilePath(memoryPath));
-  if (!(await file.exists())) return { entries: [], invalidLines: [] };
-
-  const entries: MemoryEntry[] = [];
-  const invalidLines: string[] = [];
-  for (const line of (await file.text()).split("\n")) {
-    if (!line.trim()) continue;
-    const entry = parseEntry(line);
-    if (entry) entries.push(entry);
-    else invalidLines.push(line);
-  }
-  return { entries, invalidLines };
+/** Ids of every memory file in the directory, readable or not. */
+export async function listMemoryFileIds(memoryPath: string): Promise<string[]> {
+  const names = await readdir(memoryPath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return [] as string[];
+    throw error;
+  });
+  return names
+    .filter((name) => name.endsWith(MEMORY_FILE_EXTENSION))
+    .map((name) => name.slice(0, -MEMORY_FILE_EXTENSION.length))
+    .filter(isMemoryId);
 }
 
-/** Read all valid memory entries from the store. */
+/** Read one memory file, or undefined when it does not exist. */
+export async function readMemoryFile(memoryPath: string, id: string): Promise<MemoryFile | undefined> {
+  const path = memoryFilePath(memoryPath, id);
+  const info = await stat(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (!info?.isFile()) return undefined;
+  return parseMemoryFile(id, await Bun.file(path).text(), path, info.mtime);
+}
+
+/** Read every valid memory entry, most recently modified first. Files without valid frontmatter are skipped. */
 export async function readMemory(memoryPath: string): Promise<MemoryEntry[]> {
-  return (await readMemoryFile(memoryPath)).entries;
+  const files = await Promise.all((await listMemoryFileIds(memoryPath)).map((id) => readMemoryFile(memoryPath, id)));
+  return files
+    .flatMap((file) => (file?.entry ? [file.entry] : []))
+    .sort((left, right) => right.modified.localeCompare(left.modified) || left.id.localeCompare(right.id));
 }
 
-/**
- * Read-modify-write the store. Mutations on the same store run one at a time within this process,
- * and the file is replaced atomically so readers never observe a partial write.
- */
-export function mutateMemory<T>(
-  memoryPath: string,
-  mutate: (entries: MemoryEntry[]) => MemoryMutation<T> | Promise<MemoryMutation<T>>,
-): Promise<T> {
-  const filePath = memoryFilePath(memoryPath);
-  const run = async (): Promise<T> => {
-    const current = await readMemoryFile(memoryPath);
-    const mutation = await mutate(current.entries);
-    if (mutation.entries) await replaceFile(filePath, mutation.entries, current.invalidLines);
-    return mutation.result;
-  };
+/** Read the MEMORY.md index text, or "" when it does not exist. */
+export async function readMemoryIndex(memoryPath: string): Promise<string> {
+  const file = Bun.file(join(memoryPath, MEMORY_INDEX_FILENAME));
+  return (await file.exists()) ? file.text() : "";
+}
 
-  const previous = writeQueues.get(filePath) ?? Promise.resolve();
+export async function writeMemoryIndex(memoryPath: string, index: string): Promise<void> {
+  await writeAtomic(join(memoryPath, MEMORY_INDEX_FILENAME), index);
+}
+
+/** Write a memory file, keeping unrelated frontmatter fields from `previous`. */
+export async function writeMemoryFile(
+  memoryPath: string,
+  entry: MemoryEntry,
+  previous: Record<string, unknown>,
+): Promise<void> {
+  const rest = { ...previous };
+  delete rest.name;
+  delete rest.description;
+  delete rest.metadata;
+  const frontmatter = {
+    name: entry.name,
+    description: entry.description,
+    ...rest,
+    metadata: {
+      ...(isRecord(previous.metadata) ? previous.metadata : {}),
+      type: entry.type,
+      modified: entry.modified,
+      ...(entry.sessionId ? { originSessionId: entry.sessionId } : {}),
+    },
+  };
+  const text = `---\n${stringifyYaml(frontmatter, { lineWidth: 0 })}---\n\n${entry.content}\n`;
+  await writeAtomic(memoryFilePath(memoryPath, entry.id), text);
+}
+
+/** Remove a memory file. Returns whether it existed. */
+export async function removeMemoryFile(memoryPath: string, id: string): Promise<boolean> {
+  const path = memoryFilePath(memoryPath, id);
+  if (!(await Bun.file(path).exists())) return false;
+  await rm(path, { force: true });
+  return true;
+}
+
+/** Run a mutation of one memory directory; mutations of the same directory run one at a time in this process. */
+export function withMemoryLock<T>(memoryPath: string, run: () => Promise<T>): Promise<T> {
+  const previous = writeQueues.get(memoryPath) ?? Promise.resolve();
   const next = previous.then(run, run);
   const settled = next.catch(() => undefined);
-  writeQueues.set(filePath, settled);
+  writeQueues.set(memoryPath, settled);
   void settled.then(() => {
-    if (writeQueues.get(filePath) === settled) writeQueues.delete(filePath);
+    if (writeQueues.get(memoryPath) === settled) writeQueues.delete(memoryPath);
   });
   return next;
 }
 
-/** Append a memory entry to the store. */
-export async function appendMemory(memoryPath: string, entry: MemoryEntry): Promise<void> {
-  await mutateMemory(memoryPath, (entries) => ({ entries: [...entries, entry], result: undefined }));
+export function formatIndexLine(entry: Pick<MemoryEntry, "id" | "name" | "description">): string {
+  const title = entry.name.replace(/[[\]\\]/g, (char) => `\\${char}`);
+  const description = toSingleLine(entry.description);
+  return `- [${title}](${entry.id}${MEMORY_FILE_EXTENSION})${description ? ` — ${description}` : ""}`;
 }
 
-/** Replace all valid entries in the store. Unreadable lines already on disk are preserved. */
-export async function writeMemory(memoryPath: string, entries: MemoryEntry[]): Promise<void> {
-  await mutateMemory(memoryPath, () => ({ entries, result: undefined }));
+/** Replace the index line linking to `id`, or append one. Other lines, including other tools' edits, are kept. */
+export function upsertIndexLine(index: string, id: string, line: string): string {
+  const pattern = indexLinkPattern(id);
+  const lines = index.trim() ? index.replace(/\n+$/, "").split("\n") : [MEMORY_INDEX_HEADER, ""];
+  let replaced = false;
+  const next = lines.flatMap((current) => {
+    if (!pattern.test(current)) return [current];
+    if (replaced) return [];
+    replaced = true;
+    return [line];
+  });
+  if (!replaced) next.push(line);
+  return `${next.join("\n")}\n`;
 }
 
-function parseEntry(line: string): MemoryEntry | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    return null;
+/** Remove every index line linking to `id`. */
+export function removeIndexLines(index: string, id: string): string {
+  const pattern = indexLinkPattern(id);
+  const lines = index.split("\n");
+  const next = lines.filter((line) => !pattern.test(line));
+  return next.length === lines.length ? index : next.join("\n");
+}
+
+/** A one-line summary of memory content for its description. */
+export function summarizeMemoryContent(content: string): string {
+  const firstLine =
+    content
+      .split("\n")
+      .map((line) => line.replace(/^\s*(?:#+|[-*+]|\d+\.)\s+/, "").trim())
+      .find(Boolean) ?? "";
+  const line = toSingleLine(firstLine);
+  return line.length > MAX_DESCRIPTION_LENGTH ? `${line.slice(0, MAX_DESCRIPTION_LENGTH - 1).trimEnd()}…` : line;
+}
+
+/** Derive an unused id from `base`. `taken` holds lowercased ids, since file names may be case-insensitive. */
+export function allocateMemoryId(base: string, taken: ReadonlySet<string>): string {
+  const slug =
+    base
+      .normalize("NFKC")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, "-")
+      .replace(/^-+/, "")
+      .slice(0, MAX_GENERATED_ID_LENGTH)
+      .replace(/-+$/, "") || "memory";
+  const stem = isMemoryId(slug) ? slug : `memory-${slug}`;
+  if (!taken.has(stem)) return stem;
+  for (let suffix = 2; ; suffix++) {
+    const candidate = `${stem}-${suffix}`;
+    if (!taken.has(candidate)) return candidate;
   }
-  // Validate only; keep the original object so fields written by newer versions survive a rewrite.
-  return MemoryEntrySchema.safeParse(value).success ? (value as MemoryEntry) : null;
 }
 
-async function replaceFile(filePath: string, entries: MemoryEntry[], invalidLines: string[]): Promise<void> {
-  const lines = [...entries.map((entry) => JSON.stringify(entry)), ...invalidLines];
-  const text = lines.length > 0 ? `${lines.join("\n")}\n` : "";
-  const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
-  await mkdir(dirname(filePath), { recursive: true });
+function parseMemoryFile(id: string, text: string, path: string, mtime: Date): MemoryFile {
+  const parsed = parseYamlFrontmatter(text, path);
+  if ("error" in parsed) return { frontmatter: {} };
+  const { frontmatter, body } = parsed;
+  const metadata = isRecord(frontmatter.metadata) ? frontmatter.metadata : {};
+  const type = MemoryTypeSchema.safeParse(metadata.type ?? frontmatter.type);
+  if (!type.success) return { frontmatter };
+  const sessionId = asString(metadata.originSessionId);
+  return {
+    frontmatter,
+    entry: {
+      id,
+      name: asString(frontmatter.name) ?? id,
+      description: asString(frontmatter.description) ?? "",
+      type: type.data,
+      content: body.trim(),
+      modified: asTimestamp(metadata.modified ?? frontmatter.modified) ?? mtime.toISOString(),
+      ...(sessionId ? { sessionId } : {}),
+    },
+  };
+}
+
+function memoryFilePath(memoryPath: string, id: string): string {
+  return join(memoryPath, `${id}${MEMORY_FILE_EXTENSION}`);
+}
+
+function indexLinkPattern(id: string): RegExp {
+  const escaped = `${id}${MEMORY_FILE_EXTENSION}`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\]\\((?:\\./)?${escaped}\\)`);
+}
+
+function toSingleLine(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function asTimestamp(value: unknown): string | undefined {
+  const time = value instanceof Date ? value.getTime() : typeof value === "string" ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(time) ? new Date(time).toISOString() : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function writeAtomic(path: string, text: string): Promise<void> {
+  const tempPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  await mkdir(dirname(path), { recursive: true });
   try {
     await Bun.write(tempPath, text);
-    await rename(tempPath, filePath);
+    await rename(tempPath, path);
   } catch (error) {
     await rm(tempPath, { force: true });
     throw error;

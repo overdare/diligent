@@ -15,7 +15,7 @@ import { createYoloPermissionEngine } from "../../src/approval";
 import type { RuntimeConfig } from "../../src/config/runtime";
 import { toolOutputStore } from "../../src/infrastructure";
 
-import { writeMemory } from "../../src/memory/store";
+import { upsertMemory } from "../../src/memory/repository";
 import type { BundledToolProvider, BundledToolProviderContext } from "../../src/tools/bundled-provider";
 import { makeAssistant, makeStreamFn } from "../helpers/collab";
 
@@ -707,15 +707,12 @@ describe("createAppServerConfig", () => {
     });
     const config = createAppServerConfig({ cwd: projectRoot, runtimeConfig });
     const paths = await config.resolvePaths(projectRoot);
-    await writeMemory(paths.memory, [
-      {
-        id: "project.preference",
-        timestamp: "2026-07-12T00:00:00.000Z",
-        type: "preference",
-        content: "Use npm for package scripts.",
-        confidence: 0.8,
-      },
-    ]);
+    await upsertMemory(paths.memory, {
+      id: "package-scripts",
+      type: "feedback",
+      description: "Use npm for package scripts.",
+      content: "Use npm for package scripts.",
+    });
 
     const firstAgent = await config.createAgent({
       cwd: projectRoot,
@@ -726,15 +723,12 @@ describe("createAppServerConfig", () => {
       ask: async () => null,
     });
 
-    await writeMemory(paths.memory, [
-      {
-        id: "project.preference",
-        timestamp: "2026-07-12T00:01:00.000Z",
-        type: "preference",
-        content: "Use Bun for package scripts.",
-        confidence: 0.8,
-      },
-    ]);
+    await upsertMemory(paths.memory, {
+      id: "package-scripts",
+      type: "feedback",
+      description: "Use Bun for package scripts.",
+      content: "Use Bun for package scripts.",
+    });
     const nextSessionAgent = await config.createAgent({
       cwd: projectRoot,
       mode: "default",
@@ -751,36 +745,6 @@ describe("createAppServerConfig", () => {
     expect(nextMemory).toHaveLength(1);
     expect(nextMemory[0]?.content).toContain("Use Bun for package scripts.");
     expect(nextMemory[0]?.content).not.toContain("stale memory from startup");
-  });
-
-  it("creates agents with readable memory when the store contains a corrupt line", async () => {
-    const projectRoot = await mkdtemp(join(tmpdir(), "diligent-factory-memory-"));
-    tempHomes.push(projectRoot);
-    const config = createAppServerConfig({
-      cwd: projectRoot,
-      runtimeConfig: makeRuntimeConfig({ systemPrompt: [{ label: "base", content: "test" }] }),
-    });
-    const paths = await config.resolvePaths(projectRoot);
-    const valid = {
-      id: "project.preference",
-      timestamp: "2026-07-12T00:00:00.000Z",
-      type: "preference",
-      content: "Use Bun for package scripts.",
-      confidence: 0.8,
-    };
-    await writeFile(join(paths.memory, "memory.jsonl"), `${JSON.stringify(valid)}\n{"id":"trunc\n`);
-
-    const agent = await config.createAgent({
-      cwd: projectRoot,
-      mode: "default",
-      effort: "medium",
-      model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
-      approve: async () => ({ decision: "once" }),
-      ask: async () => null,
-    });
-
-    const memory = agent.systemPrompt.find((section) => section.label === "memory");
-    expect(memory?.content).toContain("Use Bun for package scripts.");
   });
 
   it("keeps collab registry parent tools aligned with execute mode filtering", async () => {

@@ -1,6 +1,6 @@
 // @summary Tests for update_memory tool upsert and delete operations
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolContext } from "@diligent/core/tool-contract";
@@ -23,112 +23,63 @@ describe("update_memory tool", () => {
     if (tmpDir) await rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("creates memory entry via upsert", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
-    const tool = createUpdateMemoryTool(tmpDir, "session-123");
-
-    const result = await tool.execute(
-      { action: "upsert", type: "pattern", content: "Use Bun.spawn for processes" },
-      makeCtx(),
-    );
-
-    expect(result.output).toContain("Memory saved");
-    expect(result.output).toContain("pattern");
-    expect(result.render).toBeDefined();
-    expect(result.render?.outputSummary).toBe("1 memory entry saved");
-    expect(result.render?.blocks[0]).toMatchObject({ type: "key_value" });
-
-    const entries = await readMemory(tmpDir);
-    expect(entries).toHaveLength(1);
-    expect(entries[0].type).toBe("pattern");
-    expect(entries[0].content).toBe("Use Bun.spawn for processes");
-    expect(entries[0].confidence).toBe(0.8);
-    expect(entries[0].sessionId).toBe("session-123");
-  });
-
-  it("creates a new memory entry with a caller-defined stable id", async () => {
+  it("creates a memory file with its session and an index line", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
     const tool = createUpdateMemoryTool(tmpDir, "session-123");
 
     const result = await tool.execute(
       {
         action: "upsert",
-        id: "sample-host.current_plan",
-        type: "backlog",
-        content: "[PROJECT_CURRENT_PLAN]\nremaining:\n- Add HP UI",
+        type: "project",
+        name: "Combat damage",
+        description: "Damage is server-authoritative",
+        content: "Decision: hitscan on the server.\nWhy: client hits allowed speed hacks.",
       },
       makeCtx(),
     );
 
-    expect(result.output).toContain("Memory saved");
-    expect(result.metadata).toMatchObject({ memoryId: "sample-host.current_plan", updated: false });
-
-    const entries = await readMemory(tmpDir);
-    expect(entries).toHaveLength(1);
-    expect(entries[0].id).toBe("sample-host.current_plan");
+    expect(result.output).toBe("Memory saved: combat-damage [project] Damage is server-authoritative");
+    expect(result.render?.outputSummary).toBe("1 memory entry saved");
+    expect(result.metadata).toMatchObject({ memoryId: "combat-damage", updated: false });
+    expect(await readMemory(tmpDir)).toMatchObject([
+      {
+        id: "combat-damage",
+        type: "project",
+        content: "Decision: hitscan on the server.\nWhy: client hits allowed speed hacks.",
+        sessionId: "session-123",
+      },
+    ]);
+    expect(await readFile(join(tmpDir, "MEMORY.md"), "utf8")).toContain(
+      "- [Combat damage](combat-damage.md) — Damage is server-authoritative",
+    );
   });
 
-  it("updates existing entry when id is provided", async () => {
+  it("updates an existing memory when its id is provided", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
     const tool = createUpdateMemoryTool(tmpDir);
-
-    await tool.execute({ action: "upsert", type: "backlog", content: "Investigate flaky test" }, makeCtx());
-    const seededEntries = await readMemory(tmpDir);
-    const seededId = seededEntries[0]?.id;
-    if (!seededId) throw new Error("Expected seeded memory entry");
+    await tool.execute({ action: "upsert", id: "current-plan", type: "project", content: "Add HP UI" }, makeCtx());
 
     const updateResult = await tool.execute(
-      {
-        action: "upsert",
-        id: seededId,
-        type: "backlog",
-        content: "Investigate flaky test in CI",
-        tags: ["ci"],
-      },
+      { action: "upsert", id: "current-plan", type: "project", content: "Add floating damage numbers" },
       makeCtx(),
     );
 
     expect(updateResult.output).toContain("Memory updated");
-    expect(updateResult.render).toBeDefined();
     expect(updateResult.render?.outputSummary).toBe("1 memory entry updated");
-
-    const entries = await readMemory(tmpDir);
-    expect(entries).toHaveLength(1);
-    expect(entries[0].id).toBe(seededId);
-    expect(entries[0].content).toBe("Investigate flaky test in CI");
-    expect(entries[0].confidence).toBe(0.8);
-    expect(entries[0].tags).toEqual(["ci"]);
+    expect(await readMemory(tmpDir)).toMatchObject([{ id: "current-plan", content: "Add floating damage numbers" }]);
   });
 
-  it("deletes an existing entry", async () => {
+  it("deletes an existing memory", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
     const tool = createUpdateMemoryTool(tmpDir);
+    await tool.execute({ action: "upsert", id: "concise", type: "feedback", content: "Prefer concise" }, makeCtx());
 
-    await tool.execute({ action: "upsert", type: "preference", content: "Prefer concise responses" }, makeCtx());
-    const entriesBeforeDelete = await readMemory(tmpDir);
-    const seededId = entriesBeforeDelete[0]?.id;
-    if (!seededId) throw new Error("Expected seeded memory entry");
+    const deleteResult = await tool.execute({ action: "delete", id: "concise" }, makeCtx());
+    const missingResult = await tool.execute({ action: "delete", id: "concise" }, makeCtx());
 
-    const deleteResult = await tool.execute({ action: "delete", id: seededId }, makeCtx());
-
-    expect(deleteResult.output).toContain("Memory deleted");
-    expect(deleteResult.render).toBeDefined();
+    expect(deleteResult.output).toBe("Memory deleted: concise");
     expect(deleteResult.render?.outputSummary).toBe("1 memory entry deleted");
-    const entries = await readMemory(tmpDir);
-    expect(entries).toHaveLength(0);
-  });
-
-  it("does not request approval", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
-    const tool = createUpdateMemoryTool(tmpDir);
-
-    const result = await tool.execute(
-      { action: "upsert", type: "pattern", content: "No approval required" },
-      makeCtx(),
-    );
-
-    expect(result.output).toContain("Memory saved");
-    const entries = await readMemory(tmpDir);
-    expect(entries).toHaveLength(1);
+    expect(missingResult.output).toBe("Memory not found: concise");
+    expect(await readMemory(tmpDir)).toEqual([]);
   });
 });

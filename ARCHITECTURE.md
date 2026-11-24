@@ -336,7 +336,7 @@ The effective prompt is assembled from:
 - environment variables such as current date, cwd, and platform
 - discovered `AGENTS.md` instructions
 - optional config-level custom instructions
-- ranked memory injection
+- project memory index injection
 - discovered skills section
 - mode-specific suffixes (`default`, `plan`, `execute`)
 
@@ -479,22 +479,23 @@ Built-in tools read `RuntimeToolHost.approveWithOutcome`. `RuntimeToolHost.appro
 
 ### Memory
 
-Memory is persisted separately from sessions and injected back into the system prompt.
+Memory is persisted separately from sessions and injected back into the system prompt. It records what a later session in the same project would otherwise rediscover: decisions and their reasons, remaining work, where references live, and durable user preferences and corrections.
 
-- storage: project-local JSONL at `.<namespace>/memory/memory.jsonl`; startup moves a pre-rename `knowledge/knowledge.jsonl` there unless a memory store already exists
+- storage: the project memory directory `.<namespace>/memory/`, in the Claude Code auto memory format: one `<id>.md` file per memory with `name`, `description`, and `metadata.type` (`user`, `feedback`, `project`, `reference`) frontmatter above a Markdown body, and a `MEMORY.md` index of `- [name](<id>.md) — description` lines
 - API surface: `memory/list` and `memory/update`
-- runtime tools: `search_memory` and `update_memory`
+- runtime tools: `search_memory` and `update_memory`; agents read a memory file's full text with the ordinary `read` tool
+- legacy stores: `ensureDiligentDir` moves a pre-rename `knowledge/knowledge.jsonl` to `memory/memory.jsonl` unless a JSONL or converted store already exists, then converts `memory/memory.jsonl` into memory files (superseded and unreadable entries are skipped, existing memory files are never overwritten, and the original is kept as `memory/.memory.jsonl.migrated`) and rewrites the generated `knowledge/` ignore rule; the config loader renames a `knowledge` config key to `memory` in place; session reads map `search_knowledge` / `update_knowledge` tool calls to the memory tool names
 - write actions: `upsert` and `delete`
 
-Memory ranking and injection are runtime concerns, not frontend concerns.
+Because the format is shared, another agent harness pointed at the same directory (for Claude Code, `autoMemoryDirectory`) reads and writes the same memory. Diligent keeps frontmatter fields and index lines it did not write.
 
-`packages/runtime/src/memory/repository.ts` owns every mutation and lookup. The `update_memory` / `search_memory` tools and the `memory/update` RPC call it, so agent and client writes follow the same rules: an explicit id updates or creates that entry, and restating an active entry with the same type and content without an id refreshes it instead of adding a duplicate.
+Memory injection is a runtime concern, not a frontend concern.
 
-The store (`memory/store.ts`) serializes read-modify-write mutations per file within the process and replaces the file atomically. Lines that are not valid entries are skipped on read and preserved on rewrite, so one corrupt line never blocks agent creation or discards other entries. Separate processes writing the same project store are not coordinated.
+`packages/runtime/src/memory/repository.ts` owns every mutation and lookup. The `update_memory` / `search_memory` tools and the `memory/update` RPC call it, so agent and client writes follow the same rules: an explicit id updates or creates that file, restating an existing memory with the same type and content without an id refreshes it instead of adding a duplicate, and every write updates the memory's `MEMORY.md` line in place. Ids are file stems; anything that is not a plain file name is rejected.
 
-Startup and per-agent injection share `loadMemorySection`.
+The store (`memory/store.ts`) serializes mutations per directory within the process and replaces each file atomically. Files without valid frontmatter are skipped on read and left on disk. Separate processes writing the same directory are not coordinated.
 
-Both automatic injection and `search_memory` exclude superseded entries. Injection ranks by confidence, then newest timestamp, and skips entries that exceed the remaining estimated token budget. The item limit counts entries actually included; if none fit, no memory section is injected.
+Startup and per-agent injection share `loadMemorySection`. It injects the memory directory path and the leading `MEMORY.md` lines that fit `memory.maxItems` (default 200 lines) and `memory.injectionBudget`, noting how many lines were cut; memory files themselves are read on demand. An empty or missing index injects no memory section.
 
 Search supports exact IDs, ID prefixes, and case-insensitive Unicode keyword matching, including Korean. A supplied query with no searchable characters returns no matches rather than listing all entries.
 

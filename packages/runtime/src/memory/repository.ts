@@ -1,15 +1,29 @@
 // @summary Single owner of memory mutations and lookup shared by agent tools and client RPC
-import { rankMemory } from "./ranker";
-import { mutateMemory } from "./store";
+import {
+  allocateMemoryId,
+  formatIndexLine,
+  isMemoryId,
+  listMemoryFileIds,
+  type MemoryFile,
+  readMemory,
+  readMemoryFile,
+  readMemoryIndex,
+  removeIndexLines,
+  removeMemoryFile,
+  summarizeMemoryContent,
+  upsertIndexLine,
+  withMemoryLock,
+  writeMemoryFile,
+  writeMemoryIndex,
+} from "./store";
 import type { MemoryEntry, MemoryType } from "./types";
-
-const DEFAULT_CONFIDENCE = 0.8;
 
 export interface MemoryUpsertInput {
   id?: string;
   type: MemoryType;
+  name?: string;
+  description?: string;
   content: string;
-  tags?: string[];
   sessionId?: string;
 }
 
@@ -27,62 +41,94 @@ export interface MemoryQuery {
 }
 
 /**
- * Create or revise an entry. An explicit id updates that entry or creates it under that id.
- * Without an id, restating an active entry with the same type and content refreshes it instead of adding a copy.
+ * Create or revise a memory file and its MEMORY.md line. An explicit id updates that file or creates it.
+ * Without an id, restating an existing memory with the same type and content refreshes it instead of adding a copy.
  */
 export function upsertMemory(memoryPath: string, input: MemoryUpsertInput): Promise<MemoryUpsertResult> {
-  const id = input.id?.trim();
+  const requestedId = input.id?.trim() || undefined;
+  if (requestedId && !isMemoryId(requestedId)) {
+    return Promise.reject(
+      new Error(
+        `Invalid memory id "${requestedId}": start with a letter or digit, then use letters, digits, ".", "_", or "-"`,
+      ),
+    );
+  }
   const content = input.content.trim();
-  const now = new Date().toISOString();
+  if (!content) return Promise.reject(new Error("Memory content is required"));
 
-  return mutateMemory<MemoryUpsertResult>(memoryPath, (entries) => {
-    const index = id ? entries.findIndex((entry) => entry.id === id) : findDuplicateIndex(entries, input.type, content);
-
-    if (index >= 0) {
-      const existing = entries[index];
-      const entry: MemoryEntry = {
-        ...existing,
-        type: input.type,
-        content,
-        tags: input.tags ?? existing.tags,
-        timestamp: now,
-      };
-      const next = [...entries];
-      next[index] = entry;
-      return { entries: next, result: { entry, status: id ? "updated" : "duplicate" } };
+  return withMemoryLock(memoryPath, async () => {
+    let id = requestedId;
+    let status: MemoryUpsertStatus = "updated";
+    let existing: MemoryFile | undefined;
+    if (id) {
+      existing = await readMemoryFile(memoryPath, id);
+      if (!existing) status = "created";
+    } else {
+      const normalized = normalizeContent(content);
+      const duplicate = (await readMemory(memoryPath)).find(
+        (entry) => entry.type === input.type && normalizeContent(entry.content) === normalized,
+      );
+      if (duplicate) {
+        id = duplicate.id;
+        existing = await readMemoryFile(memoryPath, id);
+        status = "duplicate";
+      } else {
+        const taken = new Set((await listMemoryFileIds(memoryPath)).map((fileId) => fileId.toLowerCase()));
+        id = allocateMemoryId(
+          input.name?.trim() || input.description?.trim() || summarizeMemoryContent(content),
+          taken,
+        );
+        status = "created";
+      }
     }
 
+    const previous = existing?.entry;
+    const sessionId = previous?.sessionId ?? input.sessionId;
     const entry: MemoryEntry = {
-      id: id || crypto.randomUUID(),
-      timestamp: now,
-      sessionId: input.sessionId,
+      id,
+      name: input.name?.trim() || previous?.name || id,
+      description:
+        input.description?.trim() ||
+        (previous && normalizeContent(previous.content) === normalizeContent(content)
+          ? previous.description
+          : summarizeMemoryContent(content)),
       type: input.type,
       content,
-      confidence: DEFAULT_CONFIDENCE,
-      tags: input.tags,
+      modified: new Date().toISOString(),
+      ...(sessionId ? { sessionId } : {}),
     };
-    return { entries: [...entries, entry], result: { entry, status: "created" } };
+    await writeMemoryFile(memoryPath, entry, existing?.frontmatter ?? {});
+    const index = await readMemoryIndex(memoryPath);
+    await writeMemoryIndex(memoryPath, upsertIndexLine(index, id, formatIndexLine(entry)));
+    return { entry, status };
   });
 }
 
-/** Delete an entry by id. Returns whether an entry was removed. */
+/** Delete a memory file and its MEMORY.md line. Returns whether anything was removed. */
 export function deleteMemory(memoryPath: string, id: string): Promise<boolean> {
-  return mutateMemory(memoryPath, (entries) => {
-    const next = entries.filter((entry) => entry.id !== id);
-    if (next.length === entries.length) return { result: false };
-    return { entries: next, result: true };
+  const trimmed = id.trim();
+  if (!isMemoryId(trimmed)) return Promise.resolve(false);
+  return withMemoryLock(memoryPath, async () => {
+    const removedFile = await removeMemoryFile(memoryPath, trimmed);
+    const index = await readMemoryIndex(memoryPath);
+    const nextIndex = removeIndexLines(index, trimmed);
+    if (nextIndex !== index) await writeMemoryIndex(memoryPath, nextIndex);
+    return removedFile || nextIndex !== index;
   });
 }
 
 /**
- * Find active entries by exact id, id prefix, and/or query tokens.
+ * Find entries by exact id, id prefix, and/or query tokens matched against name, description, and content.
  * Query matches are ordered by matched token count, then exact token matches, then recency.
  */
 export function searchMemory(entries: MemoryEntry[], { id, idPrefix, query }: MemoryQuery): MemoryEntry[] {
   const queryTokens = tokenize(query);
   const hasQuery = Boolean(query?.trim());
-  return rankMemory(entries)
-    .map((entry) => ({ entry, score: scoreEntry(entry.content, queryTokens) }))
+  return entries
+    .map((entry) => ({
+      entry,
+      score: scoreEntry(`${entry.name}\n${entry.description}\n${entry.content}`, queryTokens),
+    }))
     .filter(({ entry, score }) => {
       if (id && entry.id !== id) return false;
       if (idPrefix && !entry.id.startsWith(idPrefix)) return false;
@@ -96,17 +142,9 @@ export function searchMemory(entries: MemoryEntry[], { id, idPrefix, query }: Me
       if (right.score.exactTokenCount !== left.score.exactTokenCount) {
         return right.score.exactTokenCount - left.score.exactTokenCount;
       }
-      return right.entry.timestamp.localeCompare(left.entry.timestamp);
+      return right.entry.modified.localeCompare(left.entry.modified);
     })
     .map(({ entry }) => entry);
-}
-
-function findDuplicateIndex(entries: MemoryEntry[], type: MemoryType, content: string): number {
-  const supersededIds = new Set(entries.flatMap((entry) => (entry.supersedes ? [entry.supersedes] : [])));
-  const normalized = normalizeContent(content);
-  return entries.findIndex(
-    (entry) => !supersededIds.has(entry.id) && entry.type === type && normalizeContent(entry.content) === normalized,
-  );
 }
 
 function normalizeContent(content: string): string {

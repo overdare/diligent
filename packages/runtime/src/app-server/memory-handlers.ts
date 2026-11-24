@@ -1,7 +1,7 @@
 // @summary Memory CRUD request handlers extracted from thread-handlers.ts
 
 import { deleteMemory, upsertMemory } from "../memory/repository";
-import { readMemory } from "../memory/store";
+import { isMemoryId, readMemory } from "../memory/store";
 import type { MemoryEntry, MemoryType } from "../protocol/index";
 import type { ThreadHandlersContext } from "./thread-handlers";
 
@@ -23,8 +23,9 @@ export async function handleMemoryUpdate(
     action: "upsert" | "delete";
     id?: string;
     type?: MemoryType;
+    name?: string;
+    description?: string;
     content?: string;
-    tags?: string[];
   },
 ): Promise<{ entry?: MemoryEntry; deleted?: boolean }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
@@ -41,11 +42,16 @@ export async function handleMemoryUpdate(
     throw Object.assign(new Error("Memory type and content are required for upsert action"), { code: -32602 });
   }
 
+  if (params.id?.trim() && !isMemoryId(params.id.trim())) {
+    throw Object.assign(new Error(`Invalid memory id: ${params.id}`), { code: -32602 });
+  }
+
   const { entry } = await upsertMemory(paths.memory, {
     id: params.id,
     type: params.type,
+    name: params.name,
+    description: params.description,
     content: params.content,
-    tags: params.tags,
     sessionId: runtime.id,
   });
   return { entry };

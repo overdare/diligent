@@ -1,9 +1,9 @@
-// @summary Upsert or delete persistent memory entries across sessions
+// @summary Upsert or delete project memory files across sessions
 
 import type { Tool, ToolContext, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { deleteMemory, type MemoryUpsertStatus, upsertMemory } from "../memory/repository";
-import type { MemoryType } from "../memory/types";
+import { MemoryTypeSchema } from "../protocol/index";
 import { createUpdateMemoryRenderPayload } from "./render-payload";
 
 const UPSERT_OUTPUT_PREFIX: Record<MemoryUpsertStatus, string> = {
@@ -11,8 +11,6 @@ const UPSERT_OUTPUT_PREFIX: Record<MemoryUpsertStatus, string> = {
   updated: "Memory updated",
   duplicate: "Memory already saved; refreshed existing entry",
 };
-
-const memoryTypeSchema = z.enum(["pattern", "discovery", "preference", "correction", "backlog"]);
 
 const updateMemorySchema = z
   .object({
@@ -24,11 +22,20 @@ const updateMemorySchema = z
       .string()
       .optional()
       .describe(
-        "Memory entry id. May be a caller-defined stable key or generated UUID. Required for delete. Optional for upsert; if provided for a new entry, that id is used.",
+        "Memory id: the memory file name without '.md', such as 'combat-damage-model'. Required for delete. For upsert, pass the id of the memory being revised; omit it to create one with a generated id.",
       ),
-    type: memoryTypeSchema.optional().describe("Memory category for upsert."),
-    content: z.string().optional().describe("Memory text to store for upsert."),
-    tags: z.array(z.string()).optional().describe("Optional tags for upsert."),
+    type: MemoryTypeSchema.optional().describe(
+      "Required for upsert. 'project': decisions with their reasons, constraints, and remaining work. 'reference': where external or long-form material lives. 'feedback': how the user wants work done, including corrections. 'user': facts about the user.",
+    ),
+    name: z.string().optional().describe("Short title shown in the MEMORY.md index."),
+    description: z
+      .string()
+      .optional()
+      .describe("One-line summary for the MEMORY.md index that tells a future session when to read this memory."),
+    content: z
+      .string()
+      .optional()
+      .describe("Required for upsert. Full Markdown text of the memory; it replaces the previous text."),
   })
   .superRefine((value, ctx) => {
     if (value.action === "delete") {
@@ -62,12 +69,11 @@ export function createUpdateMemoryTool(memoryPath: string, sessionId?: string): 
   return {
     name: "update_memory",
     description:
-      "Create, update, or delete persistent memory entries across sessions. " +
-      "Store only durable user preferences and use type='preference' for upserts. " +
-      "Do not create entries for patterns, discoveries, corrections, or backlog items. " +
-      "When the user says they want to do or build something, think carefully about whether it expresses a durable preference or is simply the work to do right now; in most cases it is immediate task intent, not memory. " +
-      "Do not store transient current-turn intent or immediate implementation plans. " +
-      "Use action='upsert' to save/update an entry, optionally with a stable caller-defined id, or action='delete' with id to remove one.",
+      "Create, update, or delete a project memory: one Markdown file in this project's memory directory plus its line in MEMORY.md, which later sessions in this project load at start. " +
+      "Record what a later session would otherwise have to rediscover: decisions and why they were made, remaining work, where references live (link a path such as a docs/ file instead of copying it), and the user's durable preferences and corrections. " +
+      "When a decision or the remaining work changes, update the existing memory by its id instead of adding another. " +
+      "Do not store the current request, step-by-step plans for this turn, or anything readable from the code, project docs, or git history. " +
+      "Use action='delete' with id to remove a memory that is no longer true.",
     parameters: updateMemorySchema,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
       if (args.action === "delete") {
@@ -90,12 +96,13 @@ export function createUpdateMemoryTool(memoryPath: string, sessionId?: string): 
 
       const { entry, status } = await upsertMemory(memoryPath, {
         id: args.id,
-        type: args.type as MemoryType,
+        type: args.type!,
+        name: args.name,
+        description: args.description,
         content: args.content!,
-        tags: args.tags,
         sessionId,
       });
-      const output = `${UPSERT_OUTPUT_PREFIX[status]}: [${entry.type}] ${entry.content}`;
+      const output = `${UPSERT_OUTPUT_PREFIX[status]}: ${entry.id} [${entry.type}] ${entry.description}`;
       return {
         output,
         render: createUpdateMemoryRenderPayload(args, output, false),

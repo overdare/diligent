@@ -1,7 +1,7 @@
 // @summary Runtime eval for deleting one durable preference while completing an independent workspace task
 
 import { join } from "node:path";
-import { type MemoryEntry, readMemory } from "@diligent/runtime";
+import { type MemoryEntry, readMemory, readMemoryIndex } from "@diligent/runtime";
 import type { RuntimeEvalTask, RuntimeVerifierResult } from "../../runtime-task";
 import type { EvalProfile } from "../../task";
 import { RuntimeGrade } from "./grading";
@@ -9,6 +9,7 @@ import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
   exactFile,
+  memoryFixtureFiles,
   type RuntimeFixtureWorld,
   seededToken,
   sha256Text,
@@ -29,7 +30,7 @@ export interface MemoryForgetWorld extends RuntimeFixtureWorld {
 export const memoryForgetTask: RuntimeEvalTask<MemoryForgetWorld> = {
   id: "memory-forget",
   description: "Delete one durable preference while completing an unrelated exact workspace task.",
-  fixtureVersion: "memory-forget-v6",
+  fixtureVersion: "memory-forget-v7",
   limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 5, maxToolCalls: 5, timeoutMs: 180_000 },
   statePolicy: {
     allowedMutations: ["infrastructure", "sessions", "memory"],
@@ -47,24 +48,22 @@ export const memoryForgetTask: RuntimeEvalTask<MemoryForgetWorld> = {
     const taskValue = seededToken(seed, "FORGET_TASK");
     const controlEntry: MemoryEntry = {
       id: "preference.control-format",
-      timestamp: "2026-07-18T00:01:00.000Z",
-      type: "preference",
+      name: "Control format",
+      description: "Preferred control format",
+      type: "feedback",
       content: `Preferred control format is ${seededToken(seed, "CONTROL")}.`,
-      confidence: 0.9,
-      tags: ["control", "format"],
+      modified: "2026-07-18T00:01:00.000Z",
     };
     const targetEntry: MemoryEntry = {
       id: memoryId,
-      timestamp: "2026-07-18T00:00:00.000Z",
-      type: "preference",
+      name: "Deployment window",
+      description: "Preferred deployment window",
+      type: "feedback",
       content: targetContent,
-      confidence: 0.8,
-      tags: ["deployment", "window"],
+      modified: "2026-07-18T00:00:00.000Z",
     };
     const expected = `${taskValue}\n`;
-    await writeFixture(root, {
-      ".diligent/memory/memory.jsonl": `${JSON.stringify(targetEntry)}\n${JSON.stringify(controlEntry)}\n`,
-    });
+    await writeFixture(root, memoryFixtureFiles([targetEntry, controlEntry]));
     return {
       root,
       seed,
@@ -122,12 +121,15 @@ async function createMemoryRuntimeConfig(world: MemoryForgetWorld, profile: Eval
 
 async function verifyForgottenMemory(world: MemoryForgetWorld, signal: AbortSignal): Promise<RuntimeVerifierResult> {
   const started = performance.now();
-  const entries = await readMemory(join(world.root, ".diligent/memory"));
+  const memoryPath = join(world.root, ".diligent/memory");
+  const entries = await readMemory(memoryPath);
+  const index = await readMemoryIndex(memoryPath);
   const output = await exactFile(world.root, OUTPUT_PATH);
-  const storeText = JSON.stringify(entries);
+  const storeText = JSON.stringify(entries) + index;
   const validStore =
     entries.length === 1 &&
     JSON.stringify(entries[0]) === JSON.stringify(world.controlEntry) &&
+    index.includes(`(${world.controlEntry.id}.md)`) &&
     !entries.some((entry) => entry.id === world.memoryId) &&
     !storeText.includes(world.targetContent) &&
     !storeText.includes(world.forgottenValue);

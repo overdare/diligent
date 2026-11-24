@@ -1,69 +1,57 @@
-// @summary Tests for rendering ranked memory within configured limits
-import { describe, expect, it } from "bun:test";
-import { buildMemorySection } from "@diligent/runtime/memory";
-import { makeMemoryEntry } from "../helpers/memory";
+// @summary Tests for injecting the MEMORY.md index within configured limits
+import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { buildMemorySection, loadMemorySection } from "@diligent/runtime/memory";
 
-describe("Memory Injector", () => {
-  it("builds section from entries", () => {
-    const entries = [
-      makeMemoryEntry({ type: "pattern", content: "Use Bun.spawn for process execution" }),
-      makeMemoryEntry({ type: "preference", content: "Always use TypeScript strict mode" }),
-    ];
+const INDEX =
+  "# Memory Index\n\n- [Combat](combat.md) — server-authoritative hitscan\n- [Publish](publish.md) — last publish state\n";
 
-    const section = buildMemorySection(entries, 8192);
-    expect(section).toContain("[pattern] Use Bun.spawn");
-    expect(section).toContain("[preference] Always use TypeScript strict mode");
+describe("memory injector", () => {
+  let tmpDir: string;
+
+  afterEach(async () => {
+    if (tmpDir) await rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("returns empty string for no entries", () => {
-    expect(buildMemorySection([], 8192)).toBe("");
+  it("injects the memory directory and the index lines", () => {
+    const section = buildMemorySection(INDEX, "/project/.diligent/memory");
+
+    expect(section).toContain("Memory directory: /project/.diligent/memory");
+    expect(section).toContain("- [Combat](combat.md) — server-authoritative hitscan\n- [Publish](publish.md)");
+    expect(section).not.toContain("more lines are not shown");
   });
 
-  it("skips oversized entries and applies maxItems to entries that actually fit", () => {
-    const entries = [
-      makeMemoryEntry({ content: "x".repeat(2000), confidence: 0.9 }),
-      makeMemoryEntry({ content: "Prefer concise responses", confidence: 0.8 }),
-      makeMemoryEntry({ content: "Prefer detailed responses", confidence: 0.7 }),
-    ];
-
-    const section = buildMemorySection(entries, 64, 1);
-
-    expect(section).toContain("Prefer concise responses");
-    expect(section).not.toContain("x".repeat(2000));
-    expect(section).not.toContain("Prefer detailed responses");
-    expect(Math.ceil(section.length / 4)).toBeLessThanOrEqual(64);
+  it("returns no section for a missing or blank index", () => {
+    expect(buildMemorySection("", "/m")).toBe("");
+    expect(buildMemorySection("\n  \n", "/m")).toBe("");
   });
 
-  it("returns no section when no entry fits the budget", () => {
-    const entries = [makeMemoryEntry({ content: "x".repeat(2000) })];
+  it("stops at the line cap and says how much of the index is not shown", () => {
+    const section = buildMemorySection(INDEX, "/m", 8192, 3);
 
-    expect(buildMemorySection(entries, 1)).toBe("");
-    expect(buildMemorySection(entries, 64)).toBe("");
-    expect(buildMemorySection(entries, 8192, 0)).toBe("");
+    expect(section).toContain("- [Combat](combat.md)");
+    expect(section).not.toContain("- [Publish](publish.md)");
+    expect(section).toContain("(MEMORY.md continues; 1 more lines are not shown.)");
   });
 
-  it("injects the latest preference when equally confident entries exceed maxItems", () => {
-    const entries = [
-      makeMemoryEntry({ content: "Prefer concise responses", timestamp: "2026-01-01T00:00:00Z" }),
-      makeMemoryEntry({ content: "Prefer detailed responses", timestamp: "2026-10-26T00:00:00Z" }),
-    ];
+  it("keeps the section within the token budget", () => {
+    const index = `# Memory Index\n\n${Array.from({ length: 100 }, (_, i) => `- [Item ${i}](item-${i}.md) — ${"x".repeat(60)}`).join("\n")}\n`;
 
-    const section = buildMemorySection(entries, 8192, 1);
+    const section = buildMemorySection(index, "/m", 512);
 
-    expect(section).toContain("Prefer detailed responses");
-    expect(section).not.toContain("Prefer concise responses");
+    expect(section.length).toBeLessThanOrEqual(512 * 4);
+    expect(section).toContain("more lines are not shown.)");
+    expect(section).toContain("- [Item 0](item-0.md)");
+    expect(section).not.toContain("- [Item 99](item-99.md)");
   });
 
-  it("uses configured maxItems when provided", () => {
-    const entries = Array.from({ length: 10 }, (_, i) =>
-      makeMemoryEntry({ id: `m-${i}`, confidence: (10 - i) / 10, content: `Configured item ${i}` }),
-    );
+  it("loads MEMORY.md from the memory directory unless memory is disabled", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "memory-inject-"));
+    await writeFile(join(tmpDir, "MEMORY.md"), INDEX);
 
-    const section = buildMemorySection(entries, 8192, 5);
-    const lines = section.split("\n").filter((line) => line.startsWith("- ["));
-
-    expect(lines).toHaveLength(5);
-    expect(lines[4]).toContain("Configured item 4");
-    expect(section).not.toContain("Configured item 5");
+    expect(await loadMemorySection(tmpDir, undefined)).toContain("- [Publish](publish.md) — last publish state");
+    expect(await loadMemorySection(tmpDir, { enabled: false })).toBe("");
   });
 });

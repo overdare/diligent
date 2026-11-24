@@ -77,32 +77,37 @@ describe("search render payload builders", () => {
 });
 
 describe("update memory render payload builder", () => {
-  test("renders key value + tags badges + output summary", () => {
+  test("renders key value + output summary", () => {
     const payload = createUpdateMemoryRenderPayload(
       {
         action: "upsert",
         id: "k1",
-        type: "pattern",
+        type: "feedback",
+        name: "Batched reads",
+        description: "Batch independent reads",
         content: "Prefer batched tool calls for independent reads",
-        tags: ["workflow", "perf"],
       },
-      "Memory saved: [pattern] Prefer batched tool calls",
+      "Memory saved: k1 [feedback] Batch independent reads",
       false,
     );
 
     expect(payload).toBeDefined();
-    expect(payload?.inputSummary).toBe("pattern: Prefer batched tool calls for independent reads");
+    expect(payload?.inputSummary).toBe("feedback: Prefer batched tool calls for independent reads");
     expect(payload?.outputSummary).toBe("1 memory entry updated");
-    expect(payload?.blocks[0]).toEqual({
-      type: "key_value",
-      items: [
-        { key: "action", value: "upsert" },
-        { key: "id", value: "k1" },
-        { key: "type", value: "pattern" },
-        { key: "content", value: "Prefer batched tool calls for independent reads" },
-        { key: "tags", value: "workflow, perf" },
-      ],
-    });
+    expect(payload?.blocks).toEqual([
+      {
+        type: "key_value",
+        items: [
+          { key: "action", value: "upsert" },
+          { key: "id", value: "k1" },
+          { key: "type", value: "feedback" },
+          { key: "name", value: "Batched reads" },
+          { key: "description", value: "Batch independent reads" },
+          { key: "content", value: "Prefer batched tool calls for independent reads" },
+        ],
+      },
+      { type: "summary", text: "Memory saved: k1 [feedback] Batch independent reads", tone: "success" },
+    ]);
   });
 });
 

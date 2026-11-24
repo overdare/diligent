@@ -34,7 +34,6 @@ describe("withToolInstructions", () => {
     const prompt = withToolInstructions(base, [{ name: "update_memory" }]);
     const instruction = prompt.find((section) => section.label === "memory_instruction")?.content ?? "";
     expect(instruction).toContain("update_memory");
-    expect(instruction).toContain("durable user preferences");
     expect(instruction).not.toContain("search_memory");
   });
 });

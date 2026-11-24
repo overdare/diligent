@@ -1,7 +1,7 @@
 // @summary Manages .diligent directory structure with paths and gitignore setup
 import { mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { migrateLegacyKnowledgeStore } from "../memory/legacy";
+import { migrateLegacyMemoryStore } from "../memory/legacy";
 
 export const DEFAULT_STORAGE_NAMESPACE = "diligent";
 
@@ -89,7 +89,7 @@ export async function ensureDiligentDir(
   await ensureDir(paths.memory);
   await ensureDir(paths.skills);
   await ensureDir(paths.images);
-  await migrateLegacyKnowledgeStore(paths.root, paths.memory);
+  await migrateLegacyMemoryStore(paths.root, paths.memory);
   await ensureGitignore(join(paths.root, ".gitignore"));
 
   return paths;

@@ -1,98 +1,124 @@
-// @summary Tests for persistent memory storage
+// @summary Tests for the Markdown memory directory format shared with Claude Code auto memory
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appendMemory, readMemory, readMemoryFile, writeMemory } from "@diligent/runtime/memory";
-import { makeMemoryEntry } from "../helpers/memory";
+import { readMemory, upsertMemory } from "@diligent/runtime/memory";
+import { parse as parseYaml } from "yaml";
 
-describe("Memory Store", () => {
+const CLAUDE_WRITTEN_FILE = `---
+name: combat-damage-model
+description: "Server-authoritative hitscan; damage is applied only on the server"
+metadata:
+  node_type: memory
+  type: project
+  originSessionId: 63893700-cb00-4508-a273-f004cb7e79a1
+---
+
+Decision: damage is computed on the server with hitscan rays.
+**Why:** client-side hits allowed speed hacks.
+`;
+
+const CLAUDE_WRITTEN_INDEX = `# Memory Index
+
+- [Combat damage model](combat-damage-model.md) — server-authoritative hitscan
+- [User profile](user-profile.md) — prefers Korean answers
+`;
+
+describe("memory directory", () => {
   let tmpDir: string;
 
   afterEach(async () => {
     if (tmpDir) await rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("append and read roundtrip", async () => {
+  it("reads memory files written by Claude Code", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
-    const entry = makeMemoryEntry({ content: "Use Bun.spawn" });
+    await writeFile(join(tmpDir, "MEMORY.md"), CLAUDE_WRITTEN_INDEX);
+    await writeFile(join(tmpDir, "combat-damage-model.md"), CLAUDE_WRITTEN_FILE);
 
-    await appendMemory(tmpDir, entry);
-    const entries = await readMemory(tmpDir);
-
-    expect(entries).toHaveLength(1);
-    expect(entries[0].content).toBe("Use Bun.spawn");
-    expect(entries[0].id).toBe(entry.id);
+    expect(await readMemory(tmpDir)).toEqual([
+      {
+        id: "combat-damage-model",
+        name: "combat-damage-model",
+        description: "Server-authoritative hitscan; damage is applied only on the server",
+        type: "project",
+        content:
+          "Decision: damage is computed on the server with hitscan rays.\n**Why:** client-side hits allowed speed hacks.",
+        modified: expect.any(String),
+        sessionId: "63893700-cb00-4508-a273-f004cb7e79a1",
+      },
+    ]);
   });
 
-  it("reads from empty store", async () => {
+  it("skips the index, hidden files, and files without a memory type", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
-    const entries = await readMemory(tmpDir);
-    expect(entries).toEqual([]);
+    await writeFile(join(tmpDir, "MEMORY.md"), CLAUDE_WRITTEN_INDEX);
+    await writeFile(join(tmpDir, ".draft.md"), CLAUDE_WRITTEN_FILE);
+    await writeFile(join(tmpDir, "notes.md"), "plain notes without frontmatter\n");
+    await writeFile(join(tmpDir, "unknown.md"), "---\nname: unknown\nmetadata:\n  type: scratch\n---\nbody\n");
+
+    expect(await readMemory(tmpDir)).toEqual([]);
   });
 
-  it("appends multiple entries", async () => {
+  it("writes files Claude Code can read and keeps frontmatter and index lines written by other tools", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
-    await appendMemory(tmpDir, makeMemoryEntry({ content: "first" }));
-    await appendMemory(tmpDir, makeMemoryEntry({ content: "second" }));
-    await appendMemory(tmpDir, makeMemoryEntry({ content: "third" }));
+    await writeFile(join(tmpDir, "MEMORY.md"), CLAUDE_WRITTEN_INDEX);
+    await writeFile(join(tmpDir, "combat-damage-model.md"), CLAUDE_WRITTEN_FILE);
 
-    const entries = await readMemory(tmpDir);
-    expect(entries).toHaveLength(3);
-    expect(entries[0].content).toBe("first");
-    expect(entries[2].content).toBe("third");
+    await upsertMemory(tmpDir, {
+      id: "combat-damage-model",
+      type: "project",
+      name: "Combat damage model",
+      description: "Floating damage numbers replace the HP bar",
+      content: "Decision: show floating damage numbers.\n**Why:** playtesters could not read the HP bar on mobile.",
+    });
+
+    const text = await readFile(join(tmpDir, "combat-damage-model.md"), "utf8");
+    const [, frontmatter, body] = text.split(/^---$/m);
+    expect(parseYaml(frontmatter)).toEqual({
+      name: "Combat damage model",
+      description: "Floating damage numbers replace the HP bar",
+      metadata: {
+        node_type: "memory",
+        type: "project",
+        originSessionId: "63893700-cb00-4508-a273-f004cb7e79a1",
+        modified: expect.any(String),
+      },
+    });
+    expect(body.trim()).toBe(
+      "Decision: show floating damage numbers.\n**Why:** playtesters could not read the HP bar on mobile.",
+    );
+    expect(await readFile(join(tmpDir, "MEMORY.md"), "utf8")).toBe(`# Memory Index
+
+- [Combat damage model](combat-damage-model.md) — Floating damage numbers replace the HP bar
+- [User profile](user-profile.md) — prefers Korean answers
+`);
   });
 
-  it("reads valid entries around unreadable lines and keeps those lines on rewrite", async () => {
+  it("leaves only memory files and the index after concurrent writes", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
-    const valid = makeMemoryEntry({ id: "valid", content: "Use Bun" });
-    await writeFile(
-      join(tmpDir, "memory.jsonl"),
-      `${JSON.stringify(valid)}\n{"id":"truncated\n{"id":"missing-fields"}\n`,
+
+    await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        upsertMemory(tmpDir, { id: `c-${i}`, type: "project", content: `Item ${i}` }),
+      ),
     );
 
-    const file = await readMemoryFile(tmpDir);
-    expect(file.entries.map((entry) => entry.id)).toEqual(["valid"]);
-    expect(file.invalidLines).toEqual(['{"id":"truncated', '{"id":"missing-fields"}']);
-
-    await appendMemory(tmpDir, makeMemoryEntry({ id: "added" }));
-    const text = await readFile(join(tmpDir, "memory.jsonl"), "utf8");
-    expect(text).toContain('{"id":"truncated');
-    expect(text).toContain('{"id":"missing-fields"}');
-    expect((await readMemory(tmpDir)).map((entry) => entry.id)).toEqual(["valid", "added"]);
+    const names = (await readdir(tmpDir)).sort();
+    expect(names).toEqual(["MEMORY.md", ...Array.from({ length: 20 }, (_, i) => `c-${i}.md`)].sort());
+    const index = await readFile(join(tmpDir, "MEMORY.md"), "utf8");
+    expect(index.split("\n").filter((line) => line.startsWith("- ["))).toHaveLength(20);
   });
 
-  it("keeps fields it does not know about when rewriting", async () => {
+  it("continues processing writes after a failed write", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
-    const future = { ...makeMemoryEntry({ id: "future" }), reviewedAt: "2026-10-26T00:00:00Z" };
-    await writeFile(join(tmpDir, "memory.jsonl"), `${JSON.stringify(future)}\n`);
+    await writeFile(join(tmpDir, "blocked.md"), "not a directory");
 
-    await appendMemory(tmpDir, makeMemoryEntry({ id: "added" }));
+    const failed = upsertMemory(join(tmpDir, "blocked.md"), { type: "project", content: "never written" });
+    const written = upsertMemory(tmpDir, { id: "after-failure", type: "project", content: "written" });
 
-    const [first] = await readMemory(tmpDir);
-    expect(first).toMatchObject({ id: "future", reviewedAt: "2026-10-26T00:00:00Z" });
-  });
-
-  it("does not lose concurrent appends", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
-
-    await Promise.all(Array.from({ length: 20 }, (_, i) => appendMemory(tmpDir, makeMemoryEntry({ id: `c-${i}` }))));
-
-    const ids = (await readMemory(tmpDir)).map((entry) => entry.id).sort();
-    expect(ids).toHaveLength(20);
-    expect(await readdir(tmpDir)).toEqual(["memory.jsonl"]);
-  });
-
-  it("continues processing writes after a failed mutation", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
-    const { mutateMemory } = await import("@diligent/runtime/memory");
-
-    const failed = mutateMemory(tmpDir, () => {
-      throw new Error("boom");
-    });
-    const written = writeMemory(tmpDir, [makeMemoryEntry({ id: "after-failure" })]);
-
-    await expect(failed).rejects.toThrow("boom");
+    await expect(failed).rejects.toThrow();
     await written;
     expect((await readMemory(tmpDir)).map((entry) => entry.id)).toEqual(["after-failure"]);
   });

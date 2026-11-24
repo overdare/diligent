@@ -1,5 +1,5 @@
 export { buildMemorySection, loadMemorySection, type MemoryInjectionConfig } from "./injector";
-export { rankMemory } from "./ranker";
+export { migrateLegacyMemoryStore } from "./legacy";
 export {
   deleteMemory,
   type MemoryQuery,
@@ -9,13 +9,5 @@ export {
   searchMemory,
   upsertMemory,
 } from "./repository";
-export {
-  appendMemory,
-  type MemoryFile,
-  type MemoryMutation,
-  mutateMemory,
-  readMemory,
-  readMemoryFile,
-  writeMemory,
-} from "./store";
-export type { MemoryConfig, MemoryEntry, MemoryType } from "./types";
+export { isMemoryId, MEMORY_INDEX_FILENAME, readMemory, readMemoryIndex } from "./store";
+export type { MemoryEntry, MemoryType } from "./types";
