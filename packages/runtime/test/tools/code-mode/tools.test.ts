@@ -508,7 +508,11 @@ describe.if(process.platform !== "win32")("nested bash", () => {
       expect(result.output).toContain(`Unrecognized key: "${key}"`);
       expect(result.output).not.toContain("nested-ran");
       const direct = exposed.find((tool) => tool.name === "bash")!;
-      expect(toToolInputSchema(direct).properties).toHaveProperty(key);
+      const schema = toToolInputSchema(direct);
+      const branches = (schema.anyOf ?? [schema]) as (typeof schema)[];
+      const directBranch = branches.find((branch) => Object.hasOwn(branch.properties as object, key));
+      expect(directBranch?.properties).toHaveProperty(key);
+      if (key === "interactive") expect(directBranch?.properties).not.toHaveProperty("yield_time_ms");
     } finally {
       await registry.dispose();
     }

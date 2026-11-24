@@ -30,10 +30,7 @@ const outputBudget = z
   .max(250_000)
   .optional()
   .describe("Maximum output tokens (default 10000 for background commands).");
-const AllBashParams = ForegroundBashParams.extend({
-  yield_time_ms: yieldTime
-    .optional()
-    .describe("Return early while the command keeps running. Omit to run in the foreground."),
+const TerminalForegroundBashParams = ForegroundBashParams.extend({
   max_output_tokens: outputBudget,
   tty: z
     .boolean()
@@ -41,16 +38,12 @@ const AllBashParams = ForegroundBashParams.extend({
     .describe(
       "Run in a pseudo-terminal for programs that need one (prompts, isatty checks). Output has no terminal escape sequences. Windows PTYs run PowerShell.",
     ),
-  interactive: z
-    .boolean()
-    .optional()
-    .describe(
-      "Open a private PTY for direct user input, such as credentials. Requires an interactive client. Foreground only; the model gets exit status, not terminal output. Windows PTYs run PowerShell.",
-    ),
+}).strict();
+const PipedBashParams = TerminalForegroundBashParams.omit({ tty: true }).extend({
+  yield_time_ms: yieldTime.optional().describe("Return early while the command keeps running. Omit for foreground."),
 });
-const PipedBashParams = AllBashParams.omit({ tty: true, interactive: true }) as typeof AllBashParams;
 const ForegroundOnlyBashParams = ForegroundBashParams.strict();
-const BackgroundBashParams = AllBashParams.omit({ interactive: true, timeout: true }).extend({
+const BackgroundBashParams = TerminalForegroundBashParams.omit({ timeout: true }).extend({
   yield_time_ms: yieldTime.describe("Return after this many milliseconds while the process keeps running."),
 });
 const PipedBackgroundBashParams = BackgroundBashParams.omit({ tty: true });
@@ -59,7 +52,11 @@ const PRIVATE_BASH_DESCRIPTION =
 const PrivateBashParams = ForegroundBashParams.extend({
   interactive: z.literal(true).describe("Open a private terminal for user input. Requires an interactive client."),
 }).strict();
-const CodeModeBashParams = z.union([PrivateBashParams, BackgroundBashParams.strict()]);
+const TerminalBashParams = z.union([PrivateBashParams, TerminalForegroundBashParams, BackgroundBashParams]);
+const CodeModeBashParams = z.union([PrivateBashParams, BackgroundBashParams]);
+
+type BashArgs = z.infer<typeof TerminalForegroundBashParams> & { interactive?: true; yield_time_ms?: number };
+
 const BashWaitParams = z.object({
   process_id: z.string().min(1).describe("ID returned by a yielded bash call in this session."),
   yield_time_ms: yieldTime.optional().describe("Maximum wait in ms (default 10000); use 0 to poll without waiting."),
@@ -76,18 +73,11 @@ const BashWaitParams = z.object({
  * Without a PTY backend the schema omits `tty`, and plain parsing would silently drop it and run on pipes. Reject an
  * explicit request instead, because a program that needs a terminal behaves differently without one.
  */
-function guardBashParams<T extends z.ZodType>(
-  schema: T,
-  tty: boolean,
-  interactive: boolean,
-): (raw: unknown) => z.infer<T> {
+function guardBashParams<T extends z.ZodType>(schema: T, tty: boolean): (raw: unknown) => z.infer<T> {
   return (raw) => {
     if (typeof raw === "object" && raw !== null) {
       if (!tty && (("tty" in raw && raw.tty === true) || ("interactive" in raw && raw.interactive === true))) {
         throw new Error(TERMINAL_UNSUPPORTED_MESSAGE);
-      }
-      if (!interactive && "interactive" in raw && raw.interactive === true) {
-        throw new Error("Use a direct foreground Bash call to open a private terminal");
       }
     }
     const parsed = schema.safeParse(raw);
@@ -97,11 +87,11 @@ function guardBashParams<T extends z.ZodType>(
 }
 
 export function isYieldingBash(tool: Tool): boolean {
-  return tool.name === "bash" && (tool.parameters === AllBashParams || tool.parameters === PipedBashParams);
+  return tool.name === "bash" && (tool.parameters === TerminalBashParams || tool.parameters === PipedBashParams);
 }
 
 export function supportsPrivateBash(tool: Tool): boolean {
-  return tool.name === "bash" && tool.parameters === AllBashParams;
+  return tool.name === "bash" && tool.parameters === TerminalBashParams;
 }
 
 export function restrictBash(tool: Tool, mode: "foreground" | "background-or-private" | "private"): Tool {
@@ -118,7 +108,7 @@ export function restrictBash(tool: Tool, mode: "foreground" | "background-or-pri
       ...tool,
       description: backgroundDescription,
       parameters: PipedBackgroundBashParams,
-      parseArgs: guardBashParams(PipedBackgroundBashParams, false, false),
+      parseArgs: guardBashParams(PipedBackgroundBashParams, false),
     };
   }
   return {
@@ -496,14 +486,16 @@ function createYieldingBashTool(
   cwd: string,
   host: RuntimeToolHost | undefined,
   registry: ShellProcessRegistry,
-): Tool<typeof AllBashParams> {
+): Tool<z.ZodType<BashArgs>> {
   const tty = !!registry.terminalSpawner;
-  const parameters = tty ? AllBashParams : PipedBashParams;
+  const parameters: z.ZodType<BashArgs> = tty ? TerminalBashParams : PipedBashParams;
   return {
     name: "bash",
-    description: `${BASH_DESCRIPTION} Set yield_time_ms to keep the command running and return a process ID for bash_wait.`,
+    description:
+      `${BASH_DESCRIPTION} Set yield_time_ms to keep the command running and return a process ID for bash_wait.` +
+      (tty ? ` ${PRIVATE_BASH_DESCRIPTION}` : ""),
     parameters,
-    parseArgs: guardBashParams(parameters, tty, true),
+    parseArgs: guardBashParams(parameters, tty),
     async execute(args, ctx) {
       if (args.tty && !tty) return shellError(TERMINAL_UNSUPPORTED_MESSAGE);
       const yieldMs = args.yield_time_ms;
