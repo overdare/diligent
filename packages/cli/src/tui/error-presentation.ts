@@ -8,13 +8,13 @@ function formatClientError(error: ClientError): { message: string; hint?: string
   const recovery = error.presentation?.recovery;
 
   switch (recovery?.kind) {
-    case "configure_provider":
-      return {
-        message,
-        hint: recovery.provider
-          ? `Run /provider set ${recovery.provider} to reconnect.`
-          : "Run /provider to reconnect.",
-      };
+    case "configure_provider": {
+      let hint = "Run /provider to reconnect.";
+      if (recovery.provider) {
+        hint = `Run /provider set ${recovery.provider} to reconnect.`;
+      }
+      return { message, hint };
+    }
     case "start_new_thread":
       return { message, hint: "Run /new to start a new chat." };
     case "retry":
@@ -32,10 +32,9 @@ export function formatClientErrorText(error: ClientError): string {
 /** Local clock time for a transcript error; older days also show the date. */
 export function formatErrorTime(timestamp: number, now: number): string {
   const date = new Date(timestamp);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const clock = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
   if (date.toDateString() === new Date(now).toDateString()) return clock;
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${clock}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${clock}`;
 }
 
 /** Transcript lines for an error at the point it happened; the hint is shown only while recovery applies. */

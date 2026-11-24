@@ -31,7 +31,6 @@ export type CodeModeWorkerMessage =
  */
 export function codeModeWorkerMain(): void {
   const vm = process.getBuiltinModule("node:vm") as typeof NodeVm;
-  const send = (message: CodeModeWorkerMessage) => postMessage(message);
   const pending = new Map<number, { resolve: (value: string) => void; reject: (error: unknown) => void }>();
   const exitSignal = Symbol("exit");
   let finished = false;
@@ -51,20 +50,25 @@ export function codeModeWorkerMain(): void {
   const describeError = (error: unknown): string => {
     if (error && typeof error === "object") {
       const { name, message, stack } = error as { name?: unknown; message?: unknown; stack?: unknown };
-      const header =
-        typeof message === "string" ? `${typeof name === "string" ? name : "Error"}: ${message}` : undefined;
-      const frames =
-        typeof stack === "string"
-          ? stack
-              .split("\n")
-              .filter((line) => line.includes("exec.js"))
-              .map((line) => line.trim())
-          : [];
+      let header: string | undefined;
+      if (typeof message === "string") {
+        header = `${typeof name === "string" ? name : "Error"}: ${message}`;
+      }
+      let frames: string[];
+      if (typeof stack === "string") {
+        frames = stack
+          .split("\n")
+          .filter((line) => line.includes("exec.js"))
+          .map((line) => line.trim());
+      } else {
+        frames = [];
+      }
       if (header) return [header, ...frames.map((frame) => `    ${frame}`)].join("\n");
     }
     return stringify(error);
   };
 
+  // biome-ignore lint/plugin/no-tiny-function: eight readers share this guarded property read
   const field = (value: unknown, key: string): unknown =>
     value !== null && typeof value === "object" ? Reflect.get(value, key) : undefined;
 
@@ -100,6 +104,7 @@ export function codeModeWorkerMain(): void {
       const at = `exec.js:${location.line}${location.column ? `:${location.column}` : ""}`;
       out.push(`    at ${at}${location.detail ? ` (${location.detail})` : ""}`);
       const width = String(location.line).length;
+      // biome-ignore lint/plugin/no-tiny-function: names the message clipping rule used by two messages
       const clip = (text: string) => (text.length > 160 ? `${text.slice(0, 157)}...` : text);
       if (location.line > 1) {
         out.push(`  ${String(location.line - 1).padStart(width)} | ${clip(lines[location.line - 2])}`);
@@ -120,7 +125,7 @@ export function codeModeWorkerMain(): void {
   const finish = (error?: string) => {
     if (finished) return;
     finished = true;
-    send(error === undefined ? { type: "done" } : { type: "done", error });
+    postMessage(error === undefined ? { type: "done" } : { type: "done", error });
   };
 
   const run = (start: Extract<CodeModeHostMessage, { type: "start" }>) => {
@@ -150,7 +155,7 @@ export function codeModeWorkerMain(): void {
         }
         const id = nextCallId++;
         pending.set(id, { resolve, reject: (message) => reject(new GuestError(String(message))) });
-        send({ type: "tool_call", id, name: tool.name, input: wireInput });
+        postMessage({ type: "tool_call", id, name: tool.name, input: wireInput });
         return promise;
       };
     // Built from entries rather than `tools[name] = fn`, which CodeQL reports as a write keyed by message data
@@ -166,17 +171,23 @@ export function codeModeWorkerMain(): void {
         JSON.stringify(start.tools.map(({ globalName, description }) => ({ name: globalName, description }))),
       ),
       text: (value: unknown) => {
-        if (!finished) send({ type: "text", text: stringify(value) });
+        if (!finished) postMessage({ type: "text", text: stringify(value) });
       },
       image: (value: unknown) => {
-        const imageUrl =
-          typeof value === "string"
-            ? value
-            : value && typeof value === "object" && typeof (value as { image_url?: unknown }).image_url === "string"
-              ? (value as { image_url: string }).image_url
-              : undefined;
+        let imageUrl: string | undefined;
+        if (typeof value === "string") {
+          imageUrl = value;
+        } else if (
+          value &&
+          typeof value === "object" &&
+          typeof (value as { image_url?: unknown }).image_url === "string"
+        ) {
+          imageUrl = (value as { image_url: string }).image_url;
+        } else {
+          imageUrl = undefined;
+        }
         if (imageUrl === undefined) throw new GuestError("image() expects a data: URL string or { image_url }");
-        if (!finished) send({ type: "image", imageUrl });
+        if (!finished) postMessage({ type: "image", imageUrl });
       },
       exit: () => {
         finish();
@@ -187,14 +198,14 @@ export function codeModeWorkerMain(): void {
         const json = JSON.stringify(value);
         if (json === undefined) throw new GuestError("store() value must be JSON-serializable");
         store.set(key, json);
-        send({ type: "store", key, value: json });
+        postMessage({ type: "store", key, value: json });
       },
       load: (key: unknown) => {
         const json = typeof key === "string" ? store.get(key) : undefined;
         return json === undefined ? undefined : guestJson.parse(json);
       },
       yield_control: () => {
-        if (!finished) send({ type: "yield" });
+        if (!finished) postMessage({ type: "yield" });
       },
       setTimeout: (callback: unknown, delayMs?: unknown) => {
         if (typeof callback !== "function") throw new GuestError("setTimeout() callback must be a function");
@@ -236,7 +247,7 @@ export function codeModeWorkerMain(): void {
     }
     Promise.resolve(completion).then(
       (value) => {
-        if (value !== undefined && !finished) send({ type: "text", text: stringify(value) });
+        if (value !== undefined && !finished) postMessage({ type: "text", text: stringify(value) });
         finish();
       },
       (error) => finish(error === exitSignal ? undefined : describeError(error)),

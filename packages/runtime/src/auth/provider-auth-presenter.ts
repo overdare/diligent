@@ -13,10 +13,6 @@ export interface ProviderAuthPresentationStatus {
   oauthConnected: boolean | undefined;
 }
 
-function maskKey(key: string): string {
-  return key.length > 7 ? `${key.slice(0, 7)}...` : key;
-}
-
 export class ProviderAuthPresenter {
   private readonly externalAuth: Partial<Record<ProviderName, ExternalProviderAuthPresentation>> = {};
 
@@ -34,9 +30,19 @@ export class ProviderAuthPresenter {
     const configured = this.providerManager.hasKeyFor(provider);
     const apiKey = this.providerManager.getApiKey(provider);
     const external = this.externalAuth[provider];
+    let maskedKey: string | undefined;
+    if (configured) {
+      if (!apiKey) {
+        maskedKey = external?.maskedKey;
+      } else if (apiKey.length > 7) {
+        maskedKey = `${apiKey.slice(0, 7)}...`;
+      } else {
+        maskedKey = apiKey;
+      }
+    }
     return {
       configured,
-      maskedKey: configured ? (apiKey ? maskKey(apiKey) : external?.maskedKey) : undefined,
+      maskedKey,
       oauthConnected: external?.oauth ? configured : undefined,
     };
   }

@@ -20,11 +20,12 @@ interface AnthropicTextBlock {
 
 export function toAnthropicBlocks(sections: SystemSection[]): AnthropicTextBlock[] {
   return sections.map((section, index) => {
-    const attrs = section.tagAttributes
-      ? Object.entries(section.tagAttributes)
-          .map(([key, value]) => ` ${key}="${value}"`)
-          .join("")
-      : "";
+    let attrs: string = "";
+    if (section.tagAttributes) {
+      attrs = Object.entries(section.tagAttributes)
+        .map(([key, value]) => ` ${key}="${value}"`)
+        .join("");
+    }
     const rendered = section.tag ? `<${section.tag}${attrs}>\n${section.content}\n</${section.tag}>` : section.content;
     const text = index < sections.length - 1 ? `${rendered}\n\n` : rendered;
     return {

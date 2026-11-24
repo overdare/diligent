@@ -283,15 +283,16 @@ describe("SessionManager", () => {
       ...makeManagerConfig(dir, streamFn),
       onStop: (async () => {
         stopCalls += 1;
-        return stopCalls === 1
-          ? {
-              continueWith: {
-                role: "user",
-                content: "legacy Stop feedback must be ignored",
-                timestamp: Date.now(),
-              },
-            }
-          : undefined;
+        if (stopCalls === 1) {
+          return {
+            continueWith: {
+              role: "user",
+              content: "legacy Stop feedback must be ignored",
+              timestamp: Date.now(),
+            },
+          };
+        }
+        return undefined;
       }) as never,
     });
     await mgr.create();

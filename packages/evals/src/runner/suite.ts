@@ -103,10 +103,6 @@ function validateSelection(tasks: readonly AnyEvalTask[], profiles: readonly Eva
   if (tasks.length === 0) throw new Error("No eval tasks were selected.");
   if (profiles.length === 0) throw new Error("No eval profiles were selected.");
   if (new Set(tasks.map((task) => task.id)).size !== tasks.length) throw new Error("Duplicate eval task ID.");
-  const profileKeys = profiles.map(profileKey);
+  const profileKeys = profiles.map((profile) => `${profile.provider}:${profile.model}:${profile.effort}`);
   if (new Set(profileKeys).size !== profileKeys.length) throw new Error("Duplicate eval profile.");
-}
-
-function profileKey(profile: EvalProfile): string {
-  return `${profile.provider}:${profile.model}:${profile.effort}`;
 }

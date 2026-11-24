@@ -80,9 +80,8 @@ export function resolveModel(ref: ModelRef): ModelCard {
 }
 
 export function listModels(provider?: ProviderName): ModelCard[] {
-  return provider
-    ? Object.values(MODEL_CATALOG[provider])
-    : providers.flatMap((name) => Object.values(MODEL_CATALOG[name]));
+  if (provider) return Object.values(MODEL_CATALOG[provider]);
+  return providers.flatMap((name) => Object.values(MODEL_CATALOG[name]));
 }
 
 export function sameModelRef(a: ModelRef | undefined, b: ModelRef | undefined): boolean {

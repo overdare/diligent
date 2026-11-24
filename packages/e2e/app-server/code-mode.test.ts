@@ -144,11 +144,12 @@ describe("code mode", () => {
     expect(waitEnd?.type === "tool_end" ? waitEnd.output : "").toBe("Script completed\nwritten");
 
     const read = (await client.request("thread/read", { threadId })) as ThreadReadResponse;
-    const tools = read.items.flatMap((item) =>
-      item.type === "toolCall" && item.output !== undefined
-        ? [`${item.toolCallId}<${item.parentToolCallId ?? ""}`]
-        : [],
-    );
+    const tools = read.items.flatMap((item) => {
+      if (item.type === "toolCall" && item.output !== undefined) {
+        return [`${item.toolCallId}<${item.parentToolCallId ?? ""}`];
+      }
+      return [];
+    });
     expect(tools).toEqual(["tc-exec<", "tc-exec#1<tc-exec", "tc-wait<"]);
   });
 });

@@ -58,9 +58,10 @@ export function toCodeModeIdentifier(name: string): string {
  * list, so their descriptions and TypeScript declarations move into this description.
  */
 export function buildExecDescription(codeMode: "on" | "only", nestedTools: Tool[], directOnlyTools: Tool[]): string {
-  const directOnly = directOnlyTools.length
-    ? `These tools must be called directly, not through \`tools\`: ${directOnlyTools.map((tool) => `\`${tool.name}\``).join(", ")}.`
-    : "";
+  let directOnly: string = "";
+  if (directOnlyTools.length) {
+    directOnly = `These tools must be called directly, not through \`tools\`: ${directOnlyTools.map((tool) => `\`${tool.name}\``).join(", ")}.`;
+  }
   if (codeMode === "on") {
     return [
       EXEC_DESCRIPTION,
@@ -83,16 +84,18 @@ export function buildExecDescription(codeMode: "on" | "only", nestedTools: Tool[
 export function renderJsonSchemaType(schema: unknown, indentLevel = 0, depth = 0): string {
   if (!schema || typeof schema !== "object" || depth > MAX_SCHEMA_DEPTH) return "unknown";
   const node = schema as Record<string, unknown>;
-  const next = (child: unknown) => renderJsonSchemaType(child, indentLevel, depth + 1);
 
   if ("const" in node) return JSON.stringify(node.const);
   if (Array.isArray(node.enum)) return node.enum.map((value) => JSON.stringify(value)).join(" | ") || "never";
   for (const key of ["anyOf", "oneOf"] as const) {
     const variants = node[key];
-    if (Array.isArray(variants) && variants.length > 0) return variants.map((variant) => next(variant)).join(" | ");
+    if (Array.isArray(variants) && variants.length > 0)
+      return variants.map((variant) => renderJsonSchemaType(variant, indentLevel, depth + 1)).join(" | ");
   }
-  if (Array.isArray(node.allOf) && node.allOf.length > 0) return node.allOf.map((part) => next(part)).join(" & ");
-  if (Array.isArray(node.type)) return node.type.map((type) => next({ ...node, type })).join(" | ");
+  if (Array.isArray(node.allOf) && node.allOf.length > 0)
+    return node.allOf.map((part) => renderJsonSchemaType(part, indentLevel, depth + 1)).join(" & ");
+  if (Array.isArray(node.type))
+    return node.type.map((type) => renderJsonSchemaType({ ...node, type }, indentLevel, depth + 1)).join(" | ");
 
   switch (node.type) {
     case "string":
@@ -105,7 +108,7 @@ export function renderJsonSchemaType(schema: unknown, indentLevel = 0, depth = 0
     case "null":
       return "null";
     case "array": {
-      const item = next(node.items);
+      const item = renderJsonSchemaType(node.items, indentLevel, depth + 1);
       return /^[\w.$]+$/.test(item) ? `${item}[]` : `Array<${item}>`;
     }
   }
@@ -114,25 +117,28 @@ export function renderJsonSchemaType(schema: unknown, indentLevel = 0, depth = 0
 }
 
 function renderObjectType(node: Record<string, unknown>, indentLevel: number, depth: number): string {
-  const properties =
-    node.properties && typeof node.properties === "object"
-      ? Object.entries(node.properties as Record<string, unknown>)
-      : [];
+  let properties: [string, unknown][];
+  if (node.properties && typeof node.properties === "object") {
+    properties = Object.entries(node.properties as Record<string, unknown>);
+  } else {
+    properties = [];
+  }
   const required = new Set(Array.isArray(node.required) ? node.required : []);
   const additional = node.additionalProperties;
   if (properties.length === 0) {
-    return additional && typeof additional === "object"
-      ? `Record<string, ${renderJsonSchemaType(additional, indentLevel, depth + 1)}>`
-      : "Record<string, unknown>";
+    if (additional && typeof additional === "object") {
+      return `Record<string, ${renderJsonSchemaType(additional, indentLevel, depth + 1)}>`;
+    }
+    return "Record<string, unknown>";
   }
 
   const indent = "  ".repeat(indentLevel);
   const lines = properties.map(([key, value]) => {
     const name = /^[A-Za-z_$][\w$]*$/.test(key) ? key : JSON.stringify(key);
-    const description =
-      value && typeof value === "object" && typeof (value as { description?: unknown }).description === "string"
-        ? (value as { description: string }).description.replace(/\s+/g, " ").replace(/\*\//g, "* /").trim()
-        : "";
+    let description: string = "";
+    if (value && typeof value === "object" && typeof (value as { description?: unknown }).description === "string") {
+      description = (value as { description: string }).description.replace(/\s+/g, " ").replace(/\*\//g, "* /").trim();
+    }
     const comment = description ? `${indent}  /** ${description} */\n` : "";
     const optional = required.has(key) ? "" : "?";
     return `${comment}${indent}  ${name}${optional}: ${renderJsonSchemaType(value, indentLevel + 1, depth + 1)};`;

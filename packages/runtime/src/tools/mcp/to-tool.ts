@@ -15,6 +15,7 @@ const logger = createLogger({ scope: "runtime.mcp.tool" });
 /** Provider function-name limit (OpenAI caps at 64). */
 const MAX_TOOL_NAME_BYTES = 64;
 
+// biome-ignore lint/plugin/no-tiny-function: names the tool-name sanitizing formula used by two name parts
 function sanitize(part: string): string {
   return part.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
@@ -119,9 +120,8 @@ export async function callMcpToolWithApproval(args: {
   );
   if (approval.decision === "reject") {
     // MCP calls have always let the turn continue after a user rejection.
-    return approval.source === "user"
-      ? { output: "Tool call rejected by user." }
-      : resolveRejectedApproval(approval, ctx);
+    if (approval.source === "user") return { output: "Tool call rejected by user." };
+    return resolveRejectedApproval(approval, ctx);
   }
 
   const result = await manager.call(serverName, toolName, rawArgs, ctx.signal);

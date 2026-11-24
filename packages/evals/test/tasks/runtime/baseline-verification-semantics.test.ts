@@ -18,7 +18,9 @@ describe("baseline verification semantics", () => {
 
   test("project-fix fails a wrong end state regardless of verification calls", () => {
     const wrongSource = projectFixExecution();
-    wrongSource.workspace.final.entries = [file("src/value.ts", "other-hash")];
+    wrongSource.workspace.final.entries = [
+      { path: "src/value.ts", kind: "file" as const, size: 1, sha256: "other-hash" },
+    ];
     expect(projectFixTask.evaluate(wrongSource)).toMatchObject({ passed: false, dimension: "semantic_goal" });
 
     const failingVerifier = projectFixExecution();
@@ -171,8 +173,12 @@ function projectFixExecution() {
   };
   const execution = baseExecution(world, [turn(0, "repair", [assistant("Implemented and verified.")])]);
   execution.toolCalls = verificationTraces(0);
-  execution.workspace.initial.entries = [file("src/value.ts", "initial-hash")];
-  execution.workspace.final.entries = [file("src/value.ts", world.expectedHash)];
+  execution.workspace.initial.entries = [
+    { path: "src/value.ts", kind: "file" as const, size: 1, sha256: "initial-hash" },
+  ];
+  execution.workspace.final.entries = [
+    { path: "src/value.ts", kind: "file" as const, size: 1, sha256: world.expectedHash },
+  ];
   return execution;
 }
 
@@ -195,7 +201,9 @@ function planToExecuteExecution() {
   execution.toolCalls = verificationTraces(1);
   execution.toolCalls[0]!.input = { file_path: "$WORKSPACE/spec/private-contract.txt" };
   execution.toolCalls[0]!.turnIndex = 0;
-  execution.workspace.final.entries = [file("src/value.ts", world.expectedHash)];
+  execution.workspace.final.entries = [
+    { path: "src/value.ts", kind: "file" as const, size: 1, sha256: world.expectedHash },
+  ];
   return execution;
 }
 
@@ -305,8 +313,4 @@ function assistant(text: string): Message {
     stopReason: "end_turn",
     timestamp: 0,
   };
-}
-
-function file(path: string, sha256: string) {
-  return { path, kind: "file" as const, size: 1, sha256 };
 }

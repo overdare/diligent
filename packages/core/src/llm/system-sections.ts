@@ -9,11 +9,12 @@ export function flattenSections(sections: SystemSection[]): string {
   return sections
     .map((s) => {
       if (!s.tag) return s.content;
-      const attrs = s.tagAttributes
-        ? Object.entries(s.tagAttributes)
-            .map(([k, v]) => ` ${k}="${v}"`)
-            .join("")
-        : "";
+      let attrs: string = "";
+      if (s.tagAttributes) {
+        attrs = Object.entries(s.tagAttributes)
+          .map(([k, v]) => ` ${k}="${v}"`)
+          .join("");
+      }
       return `<${s.tag}${attrs}>\n${s.content}\n</${s.tag}>`;
     })
     .join("\n\n");

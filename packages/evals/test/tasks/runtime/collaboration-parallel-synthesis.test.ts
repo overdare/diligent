@@ -186,16 +186,19 @@ function fixtureStream(
   let parentCall = 0;
   const childCalls = [0, 0];
   const tokens = [seeded(seed, "NORTH_FACT"), seeded(seed, "SOUTH_FACT")];
-  const callIds: Record<keyof typeof CALL_IDS, string> = assembledOptions.generatedIds
-    ? {
-        spawnNorth: "runtime-spawn-north",
-        spawnSouth: "runtime-spawn-south",
-        readNorth: "runtime-read-north",
-        readSouth: "runtime-read-south",
-        wait: "runtime-wait",
-        write: "runtime-write",
-      }
-    : CALL_IDS;
+  let callIds: Record<keyof typeof CALL_IDS, string>;
+  if (assembledOptions.generatedIds) {
+    callIds = {
+      spawnNorth: "runtime-spawn-north",
+      spawnSouth: "runtime-spawn-south",
+      readNorth: "runtime-read-north",
+      readSouth: "runtime-read-south",
+      wait: "runtime-wait",
+      write: "runtime-write",
+    };
+  } else {
+    callIds = CALL_IDS;
+  }
   return (model, context, options) => {
     const childIndex = regionIndex(context);
     if (childIndex !== undefined) {
@@ -206,28 +209,33 @@ function fixtureStream(
       const filePath =
         recovering && call === 1 ? relativePath : join(cwdFromContext(context, "runtime_context"), relativePath);
       const readId = `${childIndex === 0 ? callIds.readNorth : callIds.readSouth}${recovering && call === 1 ? "-relative" : ""}`;
-      const response = isReadCall
-        ? assistantMessage(
-            [
-              assembledOptions.childExec
-                ? {
-                    type: "tool_call",
-                    id: readId,
-                    name: "exec",
-                    input: { code: `return await tools.read({ file_path: ${JSON.stringify(filePath)} });` },
-                  }
-                : { type: "tool_call", id: readId, name: "read", input: { file_path: filePath } },
-            ],
-            "tool_use",
-          )
-        : assistantMessage([
+      let response: AssistantMessage;
+      if (isReadCall && assembledOptions.childExec) {
+        response = assistantMessage(
+          [
             {
-              type: "text",
-              text: assembledOptions.verboseChildReport
-                ? `Here is the exact file content:\n\n\`\`\`\n${tokens[childIndex]}\n\`\`\``
-                : tokens[childIndex]!,
+              type: "tool_call",
+              id: readId,
+              name: "exec",
+              input: { code: `return await tools.read({ file_path: ${JSON.stringify(filePath)} });` },
             },
-          ]);
+          ],
+          "tool_use",
+        );
+      } else if (isReadCall) {
+        response = assistantMessage(
+          [{ type: "tool_call", id: readId, name: "read", input: { file_path: filePath } }],
+          "tool_use",
+        );
+      } else {
+        let text: string;
+        if (assembledOptions.verboseChildReport) {
+          text = `Here is the exact file content:\n\n\`\`\`\n${tokens[childIndex]}\n\`\`\``;
+        } else {
+          text = tokens[childIndex]!;
+        }
+        response = assistantMessage([{ type: "text", text }]);
+      }
       const delay = isReadCall ? 15 + childIndex * 10 + call * 2 : 45 + childIndex * 10;
       return delayedMessage(response, model, options.signal, delay);
     }
@@ -247,18 +255,24 @@ function parentResponse(
   callIds: Record<keyof typeof CALL_IDS, string>,
   assembledOptions: AssembledExecutionOptions,
 ) {
-  const spawn = (id: string, region: "north" | "south") => ({
-    type: "tool_call" as const,
-    id,
-    name: "spawn_agent",
-    input: {
-      message: assembledOptions.semanticSpawnInputs
-        ? `Retrieve the exact contents of regions/${region}/coordination.fact and return only the contents.`
-        : `Read only regions/${region}/coordination.fact exactly once. Return only its exact token.`,
-      description: `Retrieve ${region} coordination fact`,
-      agent_type: "explore",
-    },
-  });
+  const spawn = (id: string, region: "north" | "south") => {
+    let message: string;
+    if (assembledOptions.semanticSpawnInputs) {
+      message = `Retrieve the exact contents of regions/${region}/coordination.fact and return only the contents.`;
+    } else {
+      message = `Read only regions/${region}/coordination.fact exactly once. Return only its exact token.`;
+    }
+    return {
+      type: "tool_call" as const,
+      id,
+      name: "spawn_agent",
+      input: {
+        message,
+        description: `Retrieve ${region} coordination fact`,
+        agent_type: "explore",
+      },
+    };
+  };
   if (call === 1)
     return assistantMessage([spawn(callIds.spawnNorth, "north"), spawn(callIds.spawnSouth, "south")], "tool_use");
   if (call === 2)
@@ -285,28 +299,32 @@ function parentResponse(
       ],
       "tool_use",
     );
-  if (call === 3 || (call === 4 && assembledOptions.relativeEditRecovery))
+  if (call === 3 || (call === 4 && assembledOptions.relativeEditRecovery)) {
+    let input: { file_path: string; old_string: string; new_string: string; replace_all: boolean } | { patch: string };
+    if (profile.provider === "anthropic") {
+      input = {
+        file_path: join(cwdFromContext(context, "base"), "parallel-synthesis.txt"),
+        old_string: "",
+        new_string: `${tokens[0]}\n${tokens[1]}\n`,
+        replace_all: false,
+      };
+    } else {
+      input = {
+        patch: `*** Begin Patch\n*** Add File: parallel-synthesis.txt\n+${tokens[0]}\n+${tokens[1]}\n*** End Patch`,
+      };
+    }
     return assistantMessage(
       [
         {
           type: "tool_call",
           id: callIds.write,
           name: profile.provider === "anthropic" ? "edit" : "apply_patch",
-          input:
-            profile.provider === "anthropic"
-              ? {
-                  file_path: join(cwdFromContext(context, "base"), "parallel-synthesis.txt"),
-                  old_string: "",
-                  new_string: `${tokens[0]}\n${tokens[1]}\n`,
-                  replace_all: false,
-                }
-              : {
-                  patch: `*** Begin Patch\n*** Add File: parallel-synthesis.txt\n+${tokens[0]}\n+${tokens[1]}\n*** End Patch`,
-                },
+          input,
         },
       ],
       "tool_use",
     );
+  }
   return assistantMessage([{ type: "text", text: "PARALLEL_SYNTHESIS_RECORDED" }]);
 }
 

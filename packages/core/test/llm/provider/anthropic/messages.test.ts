@@ -1,6 +1,5 @@
 // @summary Tests for Anthropic message conversion and replay filtering
 import { describe, expect, test } from "bun:test";
-import type Anthropic from "@anthropic-ai/sdk";
 import {
   appendAnthropicConvertedMessage,
   applyAnthropicLastUserCacheBreakpoint,
@@ -40,10 +39,6 @@ function makeAssistantMessage(overrides?: Partial<AssistantMessage>): AssistantM
 
 function anthropicWebSearchCall(id: string): ContentBlock {
   return { type: "provider_tool_use", id, provider: "anthropic", name: "web_search", input: { query: "diligent" } };
-}
-
-function nativeWebSearchCall(id: string): Anthropic.ServerToolUseBlockParam {
-  return { type: "server_tool_use", id, name: "web_search", input: { query: "diligent" } };
 }
 
 describe("Anthropic message conversion", () => {
@@ -615,7 +610,12 @@ describe("Anthropic message conversion", () => {
         { role: "tool_result", toolCallId: "toolu_1", toolName: "bash", output: "ok", isError: false, timestamp: 3 },
       ]);
 
-      expect(converted[1]?.content).toContainEqual(nativeWebSearchCall("srvtoolu_deferred"));
+      expect(converted[1]?.content).toContainEqual({
+        type: "server_tool_use",
+        id: "srvtoolu_deferred",
+        name: "web_search",
+        input: { query: "diligent" },
+      });
     });
 
     test("keeps a call whose empty result arrived in the following response", async () => {
@@ -638,7 +638,12 @@ describe("Anthropic message conversion", () => {
         { role: "user", content: "thanks", timestamp: 5 },
       ]);
 
-      expect(converted[1]?.content).toContainEqual(nativeWebSearchCall("srvtoolu_deferred"));
+      expect(converted[1]?.content).toContainEqual({
+        type: "server_tool_use",
+        id: "srvtoolu_deferred",
+        name: "web_search",
+        input: { query: "diligent" },
+      });
       expect(converted[3]?.content).toContainEqual({
         type: "web_search_tool_result",
         tool_use_id: "srvtoolu_deferred",

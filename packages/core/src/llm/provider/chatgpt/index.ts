@@ -99,10 +99,10 @@ export function summarizeChatGPTWebSocketPayload(payload: Record<string, unknown
   if (typeof payload.delta === "string") return `${type} deltaChars=${payload.delta.length}`;
 
   if (type === "response.completed" || type === "response.incomplete" || type === "response.failed") {
-    const response =
-      payload.response && typeof payload.response === "object"
-        ? (payload.response as Record<string, unknown>)
-        : undefined;
+    let response: Record<string, unknown> | undefined;
+    if (payload.response && typeof payload.response === "object") {
+      response = payload.response as Record<string, unknown>;
+    }
     const status = typeof response?.status === "string" ? response.status : undefined;
     const usage =
       response?.usage && typeof response.usage === "object" ? (response.usage as Record<string, unknown>) : undefined;
@@ -121,12 +121,12 @@ export function summarizeChatGPTWebSocketPayload(payload: Record<string, unknown
   if (type === "error") {
     const rawError = payload.error;
     const error = rawError && typeof rawError === "object" ? (rawError as Record<string, unknown>) : undefined;
-    const status =
-      typeof payload.status === "number"
-        ? payload.status
-        : typeof payload.status_code === "number"
-          ? payload.status_code
-          : undefined;
+    let status: number | undefined;
+    if (typeof payload.status === "number") {
+      status = payload.status;
+    } else {
+      status = typeof payload.status_code === "number" ? payload.status_code : undefined;
+    }
     const code = typeof error?.code === "string" ? error.code : undefined;
     const errorType = typeof error?.type === "string" ? error.type : undefined;
     const message =
@@ -190,12 +190,12 @@ function debugChatGPTHttpRequest(
 }
 
 function toChatGPTWebSocketError(payload: Record<string, unknown>): ProviderError {
-  const status =
-    typeof payload.status === "number"
-      ? payload.status
-      : typeof payload.status_code === "number"
-        ? payload.status_code
-        : undefined;
+  let status: number | undefined;
+  if (typeof payload.status === "number") {
+    status = payload.status;
+  } else {
+    status = typeof payload.status_code === "number" ? payload.status_code : undefined;
+  }
   const rawError = payload.error;
   const error = rawError && typeof rawError === "object" ? (rawError as Record<string, unknown>) : undefined;
   const message =
@@ -341,10 +341,10 @@ async function streamChatGPTWebSocket(input: {
     if (event.type !== "start") emittedEvents += 1;
   });
 
-  let chained: ResponsesChainedInput | undefined =
-    channel.chain && channel.chain.connectionId === channel.session.openConnectionId
-      ? planResponsesChainedInput(channel.chain.baseline, requestBody)
-      : undefined;
+  let chained: ResponsesChainedInput | undefined;
+  if (channel.chain && channel.chain.connectionId === channel.session.openConnectionId) {
+    chained = planResponsesChainedInput(channel.chain.baseline, requestBody);
+  }
   let started = false;
   for (;;) {
     channel.chain = undefined;
@@ -517,20 +517,24 @@ export function createChatGPTStream(
         const requestText = JSON.stringify(requestBody);
         const debugHttpSse = process.env.DILIGENT_DEBUG_CHATGPT_HTTP_SSE === "1";
         const requestByteLength = debugHttpSse ? new TextEncoder().encode(requestText).byteLength : 0;
-        const requestSummary = debugHttpSse
-          ? summarizeChatGPTWebSocketPayload({
-              ...requestBody,
-              type: "response.create",
-            })
-          : "";
+        let requestSummary: string = "";
+        if (debugHttpSse) {
+          requestSummary = summarizeChatGPTWebSocketPayload({
+            ...requestBody,
+            type: "response.create",
+          });
+        }
         if (debugHttpSse) {
           debugChatGPTHttpRequest("sending", requestByteLength, requestSummary, { sessionId: options.sessionId });
         }
         const headerTimeoutMs = Math.max(1, providerOptions.httpHeaderTimeoutMs ?? PROVIDER_RESPONSE_HEADER_TIMEOUT_MS);
         const headerTimeoutController = new AbortController();
-        const fetchSignal = options.signal
-          ? AbortSignal.any([options.signal, headerTimeoutController.signal])
-          : headerTimeoutController.signal;
+        let fetchSignal: AbortSignal;
+        if (options.signal) {
+          fetchSignal = AbortSignal.any([options.signal, headerTimeoutController.signal]);
+        } else {
+          fetchSignal = headerTimeoutController.signal;
+        }
         let headerTimedOut = false;
         const headerTimeout = setTimeout(() => {
           headerTimedOut = true;
@@ -643,7 +647,12 @@ function decodeChatGPTHttpError(text: string): { code?: string; cause?: Error } 
     const rawError = (payload as Record<string, unknown>).error;
     if (!rawError || typeof rawError !== "object") return { cause: new Error(text) };
     const error = rawError as Record<string, unknown>;
-    const code = typeof error.code === "string" ? error.code : typeof error.type === "string" ? error.type : undefined;
+    let code: string | undefined;
+    if (typeof error.code === "string") {
+      code = error.code;
+    } else {
+      code = typeof error.type === "string" ? error.type : undefined;
+    }
     return { code, cause: Object.assign(new Error(text), { error: rawError, ...(code ? { code } : {}) }) };
   } catch {
     return { cause: new Error(text) };

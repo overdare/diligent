@@ -207,12 +207,15 @@ describe("session-resume", () => {
     await client1.sendTurnAndWait(threadId, "second request");
     client1.close();
 
-    const liveError = failedTurn.flatMap((notification) =>
-      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT &&
-      notification.params.event.type === "error"
-        ? [notification.params.event.error]
-        : [],
-    );
+    const liveError = failedTurn.flatMap((notification) => {
+      if (
+        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT &&
+        notification.params.event.type === "error"
+      ) {
+        return [notification.params.event.error];
+      }
+      return [];
+    });
     expect(liveError).toHaveLength(1);
     expect(liveError[0]?.presentation?.recovery).toEqual({ kind: "retry" });
 

@@ -29,12 +29,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+// biome-ignore lint/plugin/no-tiny-function: 34 parsers share this coercion
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
-}
-
-function asBoolean(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
 }
 
 function parseTimestamp(value: unknown): number {
@@ -50,6 +47,7 @@ function parseTimestamp(value: unknown): number {
   return Date.now();
 }
 
+// biome-ignore lint/plugin/no-tiny-function: twelve parsers share this coercion
 function asParentId(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
@@ -153,14 +151,16 @@ export function detectEntryType(raw: Record<string, unknown>, context?: DetectEn
     }
     if (msg.role === "assistant") {
       const model = asString(msg.model) ?? "unknown";
-      const stopReason =
+      let stopReason: "end_turn" | "tool_use" | "max_tokens" | "error" | "aborted" = "error";
+      if (
         msg.stopReason === "end_turn" ||
         msg.stopReason === "tool_use" ||
         msg.stopReason === "max_tokens" ||
         msg.stopReason === "error" ||
         msg.stopReason === "aborted"
-          ? msg.stopReason
-          : "error";
+      ) {
+        stopReason = msg.stopReason;
+      }
       return {
         id,
         parentId,
@@ -185,7 +185,7 @@ export function detectEntryType(raw: Record<string, unknown>, context?: DetectEn
         toolCallId,
         toolName,
         output: typeof msg.output === "string" ? msg.output : String(msg.output ?? ""),
-        isError: asBoolean(msg.isError) ?? false,
+        isError: (typeof msg.isError === "boolean" ? msg.isError : undefined) ?? false,
         timestamp: messageTimestamp,
       };
     }
@@ -208,14 +208,16 @@ export function detectEntryType(raw: Record<string, unknown>, context?: DetectEn
     const id = asString(raw.id);
     const model = asString(raw.model);
     if (!id || !model) return null;
-    const stopReason =
+    let stopReason: "end_turn" | "tool_use" | "max_tokens" | "error" | "aborted" = "error";
+    if (
       raw.stopReason === "end_turn" ||
       raw.stopReason === "tool_use" ||
       raw.stopReason === "max_tokens" ||
       raw.stopReason === "error" ||
       raw.stopReason === "aborted"
-        ? raw.stopReason
-        : "error";
+    ) {
+      stopReason = raw.stopReason;
+    }
     return {
       id,
       parentId: asParentId(raw.parentId),
@@ -239,7 +241,7 @@ export function detectEntryType(raw: Record<string, unknown>, context?: DetectEn
       toolCallId,
       toolName,
       output: typeof raw.output === "string" ? raw.output : String(raw.output ?? ""),
-      isError: asBoolean(raw.isError) ?? false,
+      isError: (typeof raw.isError === "boolean" ? raw.isError : undefined) ?? false,
       timestamp: parseTimestamp(raw.timestamp),
     };
   }
@@ -261,12 +263,18 @@ export function detectEntryType(raw: Record<string, unknown>, context?: DetectEn
     if (!id || !summary) return null;
     let details: CompactionEntry["details"];
     if (isRecord(raw.details)) {
-      const readFiles = Array.isArray(raw.details.readFiles)
-        ? raw.details.readFiles.filter((item): item is string => typeof item === "string")
-        : [];
-      const modifiedFiles = Array.isArray(raw.details.modifiedFiles)
-        ? raw.details.modifiedFiles.filter((item): item is string => typeof item === "string")
-        : [];
+      let readFiles: string[];
+      if (Array.isArray(raw.details.readFiles)) {
+        readFiles = raw.details.readFiles.filter((item): item is string => typeof item === "string");
+      } else {
+        readFiles = [];
+      }
+      let modifiedFiles: string[];
+      if (Array.isArray(raw.details.modifiedFiles)) {
+        modifiedFiles = raw.details.modifiedFiles.filter((item): item is string => typeof item === "string");
+      } else {
+        modifiedFiles = [];
+      }
       details = { readFiles, modifiedFiles };
     }
     return {
@@ -430,13 +438,6 @@ export function parseSessionText(text: string, context?: DetectEntryContext): Se
 }
 
 /**
- * Get the ID of an entry (session_header uses id field, messages use id field).
- */
-function getEntryId(entry: SessionEntry): string {
-  return entry.id;
-}
-
-/**
  * Get the parentId of an entry, if it has one.
  */
 function getParentId(entry: SessionEntry): string | undefined {
@@ -455,7 +456,7 @@ export function buildTree(entries: SessionEntry[]): SessionTree {
   const roots: string[] = [];
 
   for (const entry of entries) {
-    const id = getEntryId(entry);
+    const id = entry.id;
     entryMap.set(id, entry);
 
     const parentId = getParentId(entry);

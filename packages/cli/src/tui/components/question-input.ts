@@ -62,13 +62,12 @@ export class QuestionInput implements Component {
       const isFocused = i === this.selectedIndex;
       const isChecked = this.selected.has(i);
       const marker = isFocused ? `${t.accent}▸${t.reset}` : " ";
-      const checkbox = this.allowMultiple
-        ? isChecked
-          ? `${t.success}☑${t.reset}`
-          : `${t.dim}☐${t.reset}`
-        : isChecked
-          ? "(●)"
-          : "( )";
+      let checkbox: string;
+      if (this.allowMultiple) {
+        checkbox = isChecked ? `${t.success}☑${t.reset}` : `${t.dim}☐${t.reset}`;
+      } else {
+        checkbox = isChecked ? "(●)" : "( )";
+      }
       const { label, description } = this.opts[i];
       const labelPart = isFocused ? `${t.bold}${label}${t.reset}` : label;
       const descPart = description ? `  ${t.dim}· ${description}${t.reset}` : "";
@@ -85,10 +84,12 @@ export class QuestionInput implements Component {
         this.options.placeholder ?? (this.opts.length > 0 ? "or type a custom answer…" : "type your answer…");
 
       if (this.onInputRow) {
-        const field =
-          this.value.length === 0
-            ? `${t.dim}${placeholder}${t.reset}`
-            : `${before}${t.inverse}${cursorChar}${t.reset}${after}`;
+        let field: string;
+        if (this.value.length === 0) {
+          field = `${t.dim}${placeholder}${t.reset}`;
+        } else {
+          field = `${before}${t.inverse}${cursorChar}${t.reset}${after}`;
+        }
         const marker = `${t.accent}▸${t.reset}`;
         rows.push(`    ${marker} ${field}`);
       } else {

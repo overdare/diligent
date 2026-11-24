@@ -52,7 +52,7 @@ export const autoCompactionResumeTask: RuntimeEvalTask<AutoCompactionResumeWorld
   },
   async setup(seed, root) {
     const facts = [seededToken(seed, "ORBIT"), seededToken(seed, "CIPHER"), seededToken(seed, "ANCHOR")];
-    const expected = renderArtifact(facts);
+    const expected = `ORBIT=${facts[0]}\nCIPHER=${facts[1]}\nANCHOR=${facts[2]}\n`;
     const control = `${seededToken(seed, "CONTROL")}\n`;
     const summaryBody = [
       "## Goal",
@@ -95,16 +95,18 @@ export const autoCompactionResumeTask: RuntimeEvalTask<AutoCompactionResumeWorld
     const actual = await exactFile(world.root, world.targetPath);
     const valid = !signal.aborted && actual === world.expected;
     const factsPresent = actual !== undefined && world.facts.every((fact) => actual.includes(fact));
+    let stderr = "";
+    if (!valid && factsPresent) {
+      stderr = "format_contract: Artifact kept every seeded fact but violated the declared line envelope.\n";
+    } else if (!valid) {
+      stderr = "semantic_goal: Artifact bytes did not reconstruct all seeded compacted facts.\n";
+    }
     return {
       argv: ["auto-compaction-resume-verifier", world.targetPath],
       exitCode: valid ? 0 : 1,
       elapsedMs: Math.round(performance.now() - started),
       stdout: valid ? `Exact compacted-context artifact verified: ${world.expectedHash}\n` : "",
-      stderr: valid
-        ? ""
-        : factsPresent
-          ? "format_contract: Artifact kept every seeded fact but violated the declared line envelope.\n"
-          : "semantic_goal: Artifact bytes did not reconstruct all seeded compacted facts.\n",
+      stderr,
       timedOut: signal.aborted,
     };
   },
@@ -209,8 +211,4 @@ function hasUndeclaredProjectEntry(input: RuntimeEvalExecution<AutoCompactionRes
       !entry.path.startsWith(".diligent/") &&
       !allowed.has(entry.path),
   );
-}
-
-function renderArtifact(facts: string[]): string {
-  return `ORBIT=${facts[0]}\nCIPHER=${facts[1]}\nANCHOR=${facts[2]}\n`;
 }

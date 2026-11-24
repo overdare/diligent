@@ -76,54 +76,64 @@ async function assembledExecution(transport: "direct" | "exec"): Promise<Executi
       childCall += 1;
       const cwd = cwdFromContext(context, "runtime_context");
       const paths = Array.from({ length: 6 }, (_, index) =>
-        join(cwd, `reference-map/region-${index + 1}`, sourceFile(index)),
+        join(
+          cwd,
+          `reference-map/region-${index + 1}`,
+          ["primary.txt", "routing.md", "marker.conf", "entry.txt", "reference.md", "routing.conf"][index]!,
+        ),
       );
-      if (childCall === 1)
-        return sequenceStream([
-          assistantMessage(
-            transport === "exec"
-              ? [
-                  {
-                    type: "tool_call",
-                    id: "explore-exec",
-                    name: "exec",
-                    input: {
-                      code: `const out = []; for (const file_path of ${JSON.stringify(paths)}) out.push(await tools.read({ file_path })); return out.join("\\n");`,
-                    },
-                  },
-                ]
-              : paths.map((file_path, index) => ({
-                  type: "tool_call" as const,
-                  id: `explore-read-${index}`,
-                  name: "read",
-                  input: { file_path },
-                })),
-            "tool_use",
-          ),
-        ])(model, context, options);
+      if (childCall === 1) {
+        let toolCalls:
+          | { type: "tool_call"; id: string; name: string; input: { file_path: string } }[]
+          | { type: "tool_call"; id: string; name: string; input: { code: string } }[];
+        if (transport === "exec") {
+          toolCalls = [
+            {
+              type: "tool_call",
+              id: "explore-exec",
+              name: "exec",
+              input: {
+                code: `const out = []; for (const file_path of ${JSON.stringify(paths)}) out.push(await tools.read({ file_path })); return out.join("\\n");`,
+              },
+            },
+          ];
+        } else {
+          toolCalls = paths.map((file_path, index) => ({
+            type: "tool_call" as const,
+            id: `explore-read-${index}`,
+            name: "read",
+            input: { file_path },
+          }));
+        }
+        return sequenceStream([assistantMessage(toolCalls, "tool_use")])(model, context, options);
+      }
       return sequenceStream([assistantMessage([{ type: "text", text: facts.join("\n") }])])(model, context, options);
     }
     parentCall += 1;
-    const response =
-      parentCall === 1
-        ? assistantMessage(
-            [
-              {
-                type: "tool_call",
-                id: "explore-spawn",
-                name: "spawn_agent",
-                input: { message: "Find every region_marker under reference-map/.", agent_type: "explore" },
-              },
-            ],
-            "tool_use",
-          )
-        : parentCall === 2
-          ? assistantMessage(
-              [{ type: "tool_call", id: "explore-wait", name: "wait", input: { ids: [spawnedThreadId(context)] } }],
-              "tool_use",
-            )
-          : assistantMessage([{ type: "text", text: facts.join("\n") }]);
-    return sequenceStream([response])(model, context, options);
+    if (parentCall === 1) {
+      return sequenceStream([
+        assistantMessage(
+          [
+            {
+              type: "tool_call",
+              id: "explore-spawn",
+              name: "spawn_agent",
+              input: { message: "Find every region_marker under reference-map/.", agent_type: "explore" },
+            },
+          ],
+          "tool_use",
+        ),
+      ])(model, context, options);
+    }
+    if (parentCall === 2) {
+      return sequenceStream([
+        assistantMessage(
+          [{ type: "tool_call", id: "explore-wait", name: "wait", input: { ids: [spawnedThreadId(context)] } }],
+          "tool_use",
+        ),
+      ])(model, context, options);
+    }
+    return sequenceStream([assistantMessage([{ type: "text", text: facts.join("\n") }])])(model, context, options);
   };
   const result = await runRuntimeEvalExecution({
     task: {
@@ -140,10 +150,6 @@ async function assembledExecution(transport: "direct" | "exec"): Promise<Executi
   });
   expect(result.failures, JSON.stringify(result.execution.toolCalls)).toEqual([]);
   return result.execution as Execution;
-}
-
-function sourceFile(index: number): string {
-  return ["primary.txt", "routing.md", "marker.conf", "entry.txt", "reference.md", "routing.conf"][index]!;
 }
 
 function cwdFromContext(context: StreamContext, label: "base" | "runtime_context"): string {

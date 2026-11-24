@@ -65,15 +65,14 @@ export class AgentProgressTracker {
       turns: this.turns,
       tool_calls: this.toolCalls,
       ...(current ? { current_tool: { name: current.label, running_ms: now - current.startedAt } } : {}),
-      ...(!current && this.lastTool
-        ? {
-            last_tool: {
-              name: this.lastTool.label,
-              ended_ms_ago: now - this.lastTool.endedAt,
-              ...(this.lastTool.isError ? { is_error: true } : {}),
-            },
-          }
-        : {}),
+      ...(!current &&
+        this.lastTool && {
+          last_tool: {
+            name: this.lastTool.label,
+            ended_ms_ago: now - this.lastTool.endedAt,
+            ...(this.lastTool.isError ? { is_error: true } : {}),
+          },
+        }),
       ...(this.lastMessage ? { last_message: this.lastMessage } : {}),
       idle_ms: now - this.lastEventAt,
     };

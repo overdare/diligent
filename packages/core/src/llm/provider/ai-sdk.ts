@@ -197,7 +197,7 @@ export async function consumeAISDKStreamParts<TState>(
   const startedToolCalls = new Set<string>();
   let text = "";
   let thinking = "";
-  let usage = emptyUsage();
+  let usage: Usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
   let stopReason: StopReason = "end_turn";
   stream.push({ type: "start" });
 
@@ -321,8 +321,4 @@ export function mapAISDKUsage(usage: LanguageModelUsage): Usage {
     cacheReadTokens,
     cacheWriteTokens,
   };
-}
-
-function emptyUsage(): Usage {
-  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
 }

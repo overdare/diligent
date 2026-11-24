@@ -18,7 +18,8 @@ export interface OpenAIWebContentState {
 }
 
 function getProviderName(provider: string): ProviderName {
-  return provider === "chatgpt" ? "chatgpt" : provider === "anthropic" ? "anthropic" : "openai";
+  if (provider === "chatgpt") return "chatgpt";
+  return provider === "anthropic" ? "anthropic" : "openai";
 }
 
 export function getProviderToolUseId(item: Record<string, unknown>): string | undefined {
@@ -35,11 +36,8 @@ function getWebAction(item: Record<string, unknown>): Record<string, unknown> | 
 }
 
 function getCapabilityName(actionType: unknown): ProviderToolUseBlock["name"] | undefined {
-  return actionType === "search"
-    ? "web_search"
-    : actionType === "open_page" || actionType === "find_in_page"
-      ? "web_fetch"
-      : undefined;
+  if (actionType === "search") return "web_search";
+  return actionType === "open_page" || actionType === "find_in_page" ? "web_fetch" : undefined;
 }
 
 export function createProviderToolUseBlock(
@@ -52,7 +50,13 @@ export function createProviderToolUseBlock(
   const status = typeof item.status === "string" ? item.status : undefined;
   const name = getCapabilityName(actionType) ?? (item.type === "web_search_call" ? "web_search" : undefined);
   if (!id || !name) return undefined;
-  const input = action ?? (actionType ? { type: actionType } : status === "in_progress" ? { type: "search" } : {});
+  let fallbackInput: Record<string, unknown> = {};
+  if (actionType) {
+    fallbackInput = { type: actionType };
+  } else if (status === "in_progress") {
+    fallbackInput = { type: "search" };
+  }
+  const input = action ?? fallbackInput;
   const sources = normalizeSources(item);
   return {
     type: "provider_tool_use",
@@ -65,9 +69,12 @@ export function createProviderToolUseBlock(
 
 function normalizeSources(item: Record<string, unknown>): Array<Record<string, unknown>> {
   const action = getWebAction(item);
-  return Array.isArray(action?.sources)
-    ? action.sources.filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object")
-    : [];
+  if (Array.isArray(action?.sources)) {
+    return action.sources.filter(
+      (value): value is Record<string, unknown> => Boolean(value) && typeof value === "object",
+    );
+  }
+  return [];
 }
 
 export function debugWebSearchPayload(
@@ -196,10 +203,10 @@ function extractCitations(part: {
     const annotationType = raw.type;
     const startIndex = typeof raw.start_index === "number" ? raw.start_index : undefined;
     const endIndex = typeof raw.end_index === "number" ? raw.end_index : undefined;
-    const citedText =
-      startIndex !== undefined && endIndex !== undefined && endIndex > startIndex
-        ? text.slice(startIndex, endIndex)
-        : undefined;
+    let citedText: string | undefined;
+    if (startIndex !== undefined && endIndex !== undefined && endIndex > startIndex) {
+      citedText = text.slice(startIndex, endIndex);
+    }
 
     if (
       (annotationType === "url_citation" || annotationType === "web_search_result_location") &&

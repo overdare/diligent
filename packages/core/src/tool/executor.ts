@@ -6,6 +6,7 @@ import {
   MAX_OUTPUT_BYTES,
   shouldTruncate,
   TRUNCATION_WARNING,
+  type TruncationResult,
   truncateHead,
   truncateHeadTail,
   truncateTail,
@@ -76,12 +77,14 @@ export async function executeTool(
   const maxBytes = options?.maxOutputBytes ?? result.maxOutputBytes ?? MAX_OUTPUT_BYTES;
   if (shouldTruncate(result.output, maxBytes)) {
     const direction = result.truncateDirection ?? "tail";
-    const truncated =
-      direction === "head"
-        ? truncateHead(result.output, maxBytes)
-        : direction === "head_tail"
-          ? truncateHeadTail(result.output, maxBytes)
-          : truncateTail(result.output, maxBytes);
+    let truncated: TruncationResult;
+    if (direction === "head") {
+      truncated = truncateHead(result.output, maxBytes);
+    } else if (direction === "head_tail") {
+      truncated = truncateHeadTail(result.output, maxBytes);
+    } else {
+      truncated = truncateTail(result.output, maxBytes);
+    }
 
     let savedPath: string | undefined;
     try {

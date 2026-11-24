@@ -38,10 +38,6 @@ const TEST_OAUTH_TOKENS: OpenAIOAuthTokens = {
   },
 };
 
-function authOptions(path: string, mode: "file" | "keyring" | "auto" | "ephemeral") {
-  return { path, mode } as const;
-}
-
 function createFakeKeytar(initial?: Record<string, string>, behavior?: { failLoad?: boolean; failSave?: boolean }) {
   const store = new Map(Object.entries(initial ?? {}));
   return {
@@ -121,7 +117,7 @@ describe("keyring metadata", () => {
 
 describe("file storage", () => {
   test("returns {} when file does not exist", async () => {
-    const result = await loadAuthStore(authOptions(join(TEST_ROOT, "nonexistent.jsonc"), "file"));
+    const result = await loadAuthStore({ path: join(TEST_ROOT, "nonexistent.jsonc"), mode: "file" } as const);
     expect(result).toEqual({});
   });
 
@@ -129,7 +125,7 @@ describe("file storage", () => {
     const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, JSON.stringify({ anthropic: "sk-ant-123", openai: "sk-456", "zai-coding-plan": "zai-789" }));
 
-    const result = await loadAuthStore(authOptions(path, "file"));
+    const result = await loadAuthStore({ path, mode: "file" } as const);
     expect(result.anthropic).toBe("sk-ant-123");
     expect(result.openai).toBe("sk-456");
     expect(result["zai-coding-plan"]).toBe("zai-789");
@@ -139,7 +135,7 @@ describe("file storage", () => {
     const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, '{\n  // primary provider\n  "anthropic": "sk-ant-123"\n}\n');
 
-    const result = await loadAuthStore(authOptions(path, "file"));
+    const result = await loadAuthStore({ path, mode: "file" } as const);
     expect(result.anthropic).toBe("sk-ant-123");
   });
 
@@ -148,15 +144,15 @@ describe("file storage", () => {
     process.env.TEST_ANTHROPIC_KEY = "sk-from-env";
     await Bun.write(path, JSON.stringify({ anthropic: "{env:TEST_ANTHROPIC_KEY}" }));
 
-    const result = await loadAuthStore(authOptions(path, "file"));
+    const result = await loadAuthStore({ path, mode: "file" } as const);
     expect(result.anthropic).toBe("sk-from-env");
     delete process.env.TEST_ANTHROPIC_KEY;
   });
 
   test("saves and preserves mixed credentials", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
-    await saveAuthKey("anthropic", "sk-ant", authOptions(path, "file"));
-    await saveOAuthTokens(TEST_OAUTH_TOKENS, authOptions(path, "file"));
+    await saveAuthKey("anthropic", "sk-ant", { path, mode: "file" } as const);
+    await saveOAuthTokens(TEST_OAUTH_TOKENS, { path, mode: "file" } as const);
 
     const content = JSON.parse(await Bun.file(path).text());
     expect(content.anthropic).toBe("sk-ant");
@@ -165,7 +161,7 @@ describe("file storage", () => {
 
   test.skipIf(process.platform === "win32")("sets file permissions to 0o600", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
-    await saveAuthKey("gemini", "AIza-test", authOptions(path, "file"));
+    await saveAuthKey("gemini", "AIza-test", { path, mode: "file" } as const);
     const st = await stat(path);
     expect(st.mode & 0o777).toBe(0o600);
   });
@@ -174,7 +170,7 @@ describe("file storage", () => {
     const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, JSON.stringify({ anthropic: "sk-ant", chatgpt_oauth: TEST_OAUTH_TOKENS }));
 
-    await removeOAuthTokens(authOptions(path, "file"));
+    await removeOAuthTokens({ path, mode: "file" } as const);
 
     const content = JSON.parse(await Bun.file(path).text());
     expect(content.anthropic).toBe("sk-ant");
@@ -190,14 +186,14 @@ describe("keyring storage", () => {
     const fake = createFakeKeytar({ [`${service}:${account}`]: JSON.stringify({ anthropic: "sk-keyring" }) });
     __setKeytarForTests(fake.adapter);
 
-    const result = await loadAuthStore(authOptions(path, "keyring"));
+    const result = await loadAuthStore({ path, mode: "keyring" } as const);
     expect(result.anthropic).toBe("sk-keyring");
   });
 
   test("load returns empty when keyring backend is unavailable", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
 
-    await expect(loadAuthStore(authOptions(path, "keyring"))).resolves.toEqual({});
+    await expect(loadAuthStore({ path, mode: "keyring" } as const)).resolves.toEqual({});
   });
 
   test("saving to keyring removes fallback file", async () => {
@@ -206,7 +202,7 @@ describe("keyring storage", () => {
     const fake = createFakeKeytar();
     __setKeytarForTests(fake.adapter);
 
-    await saveAuthKey("anthropic", "sk-keyring", authOptions(path, "keyring"));
+    await saveAuthKey("anthropic", "sk-keyring", { path, mode: "keyring" } as const);
 
     const exists = await Bun.file(path).exists();
     expect(exists).toBe(false);
@@ -228,7 +224,7 @@ describe("auto storage fallback", () => {
     const fake = createFakeKeytar({ [`${service}:${account}`]: JSON.stringify({ anthropic: "keyring-key" }) });
     __setKeytarForTests(fake.adapter);
 
-    const result = await loadAuthStore(authOptions(path, "auto"));
+    const result = await loadAuthStore({ path, mode: "auto" } as const);
     expect(result).toEqual({
       anthropic: "keyring-key",
       openai: "file-openai-key",
@@ -242,7 +238,7 @@ describe("auto storage fallback", () => {
     const fake = createFakeKeytar();
     __setKeytarForTests(fake.adapter);
 
-    const result = await loadAuthStore(authOptions(path, "auto"));
+    const result = await loadAuthStore({ path, mode: "auto" } as const);
     expect(result.anthropic).toBe("file-key");
   });
 
@@ -252,7 +248,7 @@ describe("auto storage fallback", () => {
     const fake = createFakeKeytar(undefined, { failLoad: true });
     __setKeytarForTests(fake.adapter);
 
-    const result = await loadAuthStore(authOptions(path, "auto"));
+    const result = await loadAuthStore({ path, mode: "auto" } as const);
     expect(result.anthropic).toBe("file-key");
   });
 
@@ -261,7 +257,7 @@ describe("auto storage fallback", () => {
     const fake = createFakeKeytar(undefined, { failSave: true });
     __setKeytarForTests(fake.adapter);
 
-    await saveAuthKey("anthropic", "file-fallback-key", authOptions(path, "auto"));
+    await saveAuthKey("anthropic", "file-fallback-key", { path, mode: "auto" } as const);
 
     const content = JSON.parse(await Bun.file(path).text());
     expect(content.anthropic).toBe("file-fallback-key");
@@ -275,9 +271,9 @@ describe("auto storage fallback", () => {
     const fake = createFakeKeytar({ [`${service}:${account}`]: JSON.stringify({ anthropic: "keyring-key" }) });
     __setKeytarForTests(fake.adapter);
 
-    await removeAuthKey("anthropic", authOptions(path, "auto"));
+    await removeAuthKey("anthropic", { path, mode: "auto" } as const);
 
-    const result = await loadAuthStore(authOptions(path, "auto"));
+    const result = await loadAuthStore({ path, mode: "auto" } as const);
     expect(result).toEqual({ openai: "file-openai-key" });
     expect(await Bun.file(path).exists()).toBe(false);
   });
@@ -291,10 +287,10 @@ describe("auto storage fallback", () => {
     const fake = createFakeKeytar({ [keyringEntry]: JSON.stringify({ anthropic: "keyring-key" }) });
     __setKeytarForTests(fake.adapter);
 
-    await removeAuthKey("anthropic", authOptions(path, "auto"));
-    await removeAuthKey("openai", authOptions(path, "auto"));
+    await removeAuthKey("anthropic", { path, mode: "auto" } as const);
+    await removeAuthKey("openai", { path, mode: "auto" } as const);
 
-    expect(await loadAuthStore(authOptions(path, "auto"))).toEqual({});
+    expect(await loadAuthStore({ path, mode: "auto" } as const)).toEqual({});
     expect(await Bun.file(path).exists()).toBe(false);
     expect(fake.store.has(keyringEntry)).toBe(false);
   });
@@ -304,10 +300,10 @@ describe("ephemeral storage", () => {
   test("stores credentials only in memory", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
 
-    await saveAuthKey("anthropic", "mem-key", authOptions(path, "ephemeral"));
-    await saveOAuthTokens(TEST_OAUTH_TOKENS, authOptions(path, "ephemeral"));
+    await saveAuthKey("anthropic", "mem-key", { path, mode: "ephemeral" } as const);
+    await saveOAuthTokens(TEST_OAUTH_TOKENS, { path, mode: "ephemeral" } as const);
 
-    const loaded = await loadAuthStore(authOptions(path, "ephemeral"));
+    const loaded = await loadAuthStore({ path, mode: "ephemeral" } as const);
     expect(loaded.anthropic).toBe("mem-key");
     expect(loaded.chatgpt_oauth).toEqual(TEST_OAUTH_TOKENS);
     expect(await Bun.file(path).exists()).toBe(false);
@@ -315,18 +311,18 @@ describe("ephemeral storage", () => {
 
   test("delete clears the in-memory entry", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
-    await saveAuthKey("anthropic", "mem-key", authOptions(path, "ephemeral"));
+    await saveAuthKey("anthropic", "mem-key", { path, mode: "ephemeral" } as const);
 
-    await removeAuthKey("anthropic", authOptions(path, "ephemeral"));
+    await removeAuthKey("anthropic", { path, mode: "ephemeral" } as const);
 
-    const loaded = await loadAuthStore(authOptions(path, "ephemeral"));
+    const loaded = await loadAuthStore({ path, mode: "ephemeral" } as const);
     expect(loaded).toEqual({});
   });
 });
 
 describe("loadOAuthTokens", () => {
   test("returns undefined when file does not exist", async () => {
-    const result = await loadOAuthTokens(authOptions(join(TEST_ROOT, "missing.jsonc"), "file"));
+    const result = await loadOAuthTokens({ path: join(TEST_ROOT, "missing.jsonc"), mode: "file" } as const);
     expect(result).toBeUndefined();
   });
 
@@ -337,7 +333,7 @@ describe("loadOAuthTokens", () => {
     const fake = createFakeKeytar({ [`${service}:${account}`]: JSON.stringify({ chatgpt_oauth: TEST_OAUTH_TOKENS }) });
     __setKeytarForTests(fake.adapter);
 
-    const result = await loadOAuthTokens(authOptions(path, "auto"));
+    const result = await loadOAuthTokens({ path, mode: "auto" } as const);
     expect(result).toEqual(TEST_OAUTH_TOKENS);
   });
 });

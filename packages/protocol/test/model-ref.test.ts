@@ -18,12 +18,15 @@ describe("ModelRef protocol contract", () => {
     expect(ModelRefSchema.safeParse("chatgpt-5.5").success).toBe(false);
 
     for (const schema of [ThreadStartParamsSchema, TurnStartParamsSchema, ConfigSetParamsSchema]) {
-      const base =
-        schema === ThreadStartParamsSchema
-          ? { cwd: "/tmp/work" }
-          : schema === TurnStartParamsSchema
-            ? { message: "hi" }
-            : {};
+      let base:
+        | { cwd: string; message?: undefined }
+        | { message: string; cwd?: undefined }
+        | { cwd?: undefined; message?: undefined };
+      if (schema === ThreadStartParamsSchema) {
+        base = { cwd: "/tmp/work" };
+      } else {
+        base = schema === TurnStartParamsSchema ? { message: "hi" } : {};
+      }
       expect(schema.safeParse({ ...base, model }).success).toBe(true);
       expect(schema.safeParse({ ...base, model: "chatgpt-5.5" }).success).toBe(false);
     }

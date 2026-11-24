@@ -70,9 +70,8 @@ export function createMcpResourceTools(
         { signal: ctx.signal },
       );
       if (approval.decision === "reject") {
-        return approval.source === "user"
-          ? { output: "Resource read rejected by user." }
-          : resolveRejectedApproval(approval, ctx);
+        if (approval.source === "user") return { output: "Resource read rejected by user." };
+        return resolveRejectedApproval(approval, ctx);
       }
       const result = await manager.readResource(server, uri, ctx.signal);
       return { output: result.text || "(empty resource)", metadata: { mcpServer: server, mcpResource: uri } };
@@ -127,9 +126,8 @@ export function createMcpPromptTools(servers: string[], manager: McpConnectionMa
         { signal: ctx.signal },
       );
       if (approval.decision === "reject") {
-        return approval.source === "user"
-          ? { output: "Prompt render rejected by user." }
-          : resolveRejectedApproval(approval, ctx);
+        if (approval.source === "user") return { output: "Prompt render rejected by user." };
+        return resolveRejectedApproval(approval, ctx);
       }
       const result = await manager.getPrompt(server, name, args, ctx.signal);
       const header = result.description ? `${result.description}\n\n` : "";

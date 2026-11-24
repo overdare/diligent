@@ -7,7 +7,12 @@ import type { Mode } from "../agent/mode";
 import type { AgentEvent } from "../agent-event";
 import { CollabSessionHandler, type HistoricalCollabAgent } from "./collab-session-handler";
 import { buildSessionContext, buildSessionTranscript } from "./context-builder";
-import { getSessionExecutionContext, resolveSessionRoot, runWithSessionExecutionContext } from "./execution-context";
+import {
+  getSessionExecutionContext,
+  resolveSessionRoot,
+  runWithSessionExecutionContext,
+  type SessionExecutionRoot,
+} from "./execution-context";
 import { SessionPersistence, type SessionReconcileResult } from "./persistence";
 import { SessionCache } from "./session-cache";
 import { SessionStateStore } from "./state-store";
@@ -248,14 +253,19 @@ export class SessionManager {
   async runWithOutcome(userMessage: Message, options?: SessionRunOptions): Promise<SessionRunOutcome> {
     // Root runs must announce busy synchronously, before the host returns turn/start.
     // Only child runs need asynchronous persisted ancestry resolution.
-    const rootSessionId = this.persistence.parentSession
-      ? await resolveSessionRoot(this.sessionId, this.persistence.parentSession, this.sessionsDir)
-      : this.sessionId;
+    let rootSessionId: string;
+    if (this.persistence.parentSession) {
+      rootSessionId = await resolveSessionRoot(this.sessionId, this.persistence.parentSession, this.sessionsDir);
+    } else {
+      rootSessionId = this.sessionId;
+    }
     const ambient = getSessionExecutionContext();
-    const rootRequest =
-      this.persistence.parentSession && ambient?.rootSessionId === rootSessionId
-        ? ambient.rootRequest
-        : { sessionId: rootSessionId, requestId: crypto.randomUUID() };
+    let rootRequest: SessionExecutionRoot;
+    if (this.persistence.parentSession && ambient?.rootSessionId === rootSessionId) {
+      rootRequest = ambient.rootRequest;
+    } else {
+      rootRequest = { sessionId: rootSessionId, requestId: crypto.randomUUID() };
+    }
     return runWithSessionExecutionContext(
       { sessionId: this.sessionId, rootSessionId, resumed: this.resumed, rootRequest },
       () => this.orchestrator.runWithOutcome(userMessage, options),

@@ -145,27 +145,31 @@ export async function buildProviderList(
   return PROVIDER_NAMES.map((provider) => {
     const presented = providerAuthPresenter?.getStatus(provider);
     const apiKey = providerManager?.getApiKey(provider);
+    let configured = presented?.configured;
+    if (configured === undefined) {
+      if (providerManager) {
+        configured = providerManager.hasKeyFor(provider);
+      } else if (provider === "chatgpt") {
+        configured = Boolean(oauthTokens);
+      } else {
+        configured = Boolean(keys?.[provider]);
+      }
+    }
+    let maskedKey = presented?.maskedKey;
+    if (maskedKey === undefined) {
+      if (apiKey) {
+        maskedKey = maskKey(apiKey);
+      } else if (provider === "chatgpt") {
+        if (oauthTokens) maskedKey = "ChatGPT OAuth";
+      } else if (keys?.[provider]) {
+        maskedKey = maskKey(keys[provider] as string);
+      }
+    }
     return {
       provider,
       descriptor: PROVIDER_DESCRIPTORS[provider],
-      configured:
-        presented?.configured ??
-        (providerManager
-          ? providerManager.hasKeyFor(provider)
-          : provider === "chatgpt"
-            ? Boolean(oauthTokens)
-            : Boolean(keys?.[provider])),
-      maskedKey:
-        presented?.maskedKey ??
-        (apiKey
-          ? maskKey(apiKey)
-          : provider === "chatgpt"
-            ? oauthTokens
-              ? "ChatGPT OAuth"
-              : undefined
-            : keys?.[provider]
-              ? maskKey(keys[provider] as string)
-              : undefined),
+      configured,
+      maskedKey,
       oauthConnected: presented?.oauthConnected ?? (provider === "chatgpt" ? Boolean(oauthTokens) : undefined),
     };
   });
@@ -199,10 +203,12 @@ export async function handleAuthSet(
   } catch (err) {
     const rawMessage = err instanceof Error ? err.message : "Unknown validation error";
     const displayName = PROVIDER_DESCRIPTORS[params.provider].displayName;
-    const message =
-      err instanceof ProviderError && err.reason === ProviderErrorReason.CredentialsRejected
-        ? `Invalid API key for ${displayName}. Please check the key and try again.`
-        : `Could not verify the ${displayName} API key: ${rawMessage}`;
+    let message: string;
+    if (err instanceof ProviderError && err.reason === ProviderErrorReason.CredentialsRejected) {
+      message = `Invalid API key for ${displayName}. Please check the key and try again.`;
+    } else {
+      message = `Could not verify the ${displayName} API key: ${rawMessage}`;
+    }
     logger.warn("api_key_verification_failed", {
       message: `[auth] ${params.provider} API key verification failed: ${message}`,
       error: err,
@@ -336,9 +342,12 @@ export async function handleImageUpload(args: {
   webUrl?: string;
 }> {
   const projectDirName = resolveProjectDirName();
-  const root = args.threadId
-    ? join(args.cwd, projectDirName, "images", args.threadId)
-    : join(args.cwd, projectDirName, "images", "drafts");
+  let root: string;
+  if (args.threadId) {
+    root = join(args.cwd, projectDirName, "images", args.threadId);
+  } else {
+    root = join(args.cwd, projectDirName, "images", "drafts");
+  }
   await mkdir(root, { recursive: true });
 
   let buffer: Buffer;
@@ -365,10 +374,12 @@ export async function handleImageUpload(args: {
     // Re-encode failure must not reject the upload — store the original.
   }
 
-  const ext =
-    stored.mediaType === args.params.mediaType
-      ? extname(args.params.fileName) || mediaTypeToExtension(args.params.mediaType)
-      : mediaTypeToExtension(stored.mediaType);
+  let ext: string;
+  if (stored.mediaType === args.params.mediaType) {
+    ext = extname(args.params.fileName) || mediaTypeToExtension(args.params.mediaType);
+  } else {
+    ext = mediaTypeToExtension(stored.mediaType);
+  }
   const safeBase = sanitizeFileStem(basename(args.params.fileName, extname(args.params.fileName)));
   const fileName = `${Date.now()}-${randomBytes(4).toString("hex")}-${safeBase}${ext}`;
   const absPath = join(root, fileName);

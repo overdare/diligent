@@ -28,15 +28,12 @@ export function stripExtendedLengthPrefix(path: string): string {
   return path;
 }
 
-function hasWindowsDrive(path: string): boolean {
-  return /^[a-zA-Z]:/.test(stripExtendedLengthPrefix(path));
-}
-
 function usesWindowsPathSemantics(path: string): boolean {
   const normalized = stripExtendedLengthPrefix(path);
-  return hasWindowsDrive(normalized) || normalized.startsWith("\\");
+  return /^[a-zA-Z]:/.test(stripExtendedLengthPrefix(normalized)) || normalized.startsWith("\\");
 }
 
+// biome-ignore lint/plugin/no-tiny-function: five call sites must normalize Windows paths identically
 function normalizeWindowsPath(path: string): string {
   return stripExtendedLengthPrefix(path).replace(/\//g, "\\");
 }

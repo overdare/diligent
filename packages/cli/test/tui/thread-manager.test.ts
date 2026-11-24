@@ -1,6 +1,6 @@
 // @summary Progressive TUI history, discovery, and navigation race regressions
 import { expect, mock, test } from "bun:test";
-import type { SessionSummary, ThreadHistoryResponse, ThreadItem } from "@diligent/protocol";
+import type { ThreadHistoryResponse, ThreadItem } from "@diligent/protocol";
 import { ChatView } from "../../src/tui/components/chat-view";
 import { ListPicker } from "../../src/tui/components/list-picker";
 import type { AppServerRpcClient } from "../../src/tui/rpc-client";
@@ -16,7 +16,6 @@ const page = (items: ThreadItem[], nextCursor?: string): ThreadHistoryResponse =
   items,
   nextCursor,
 });
-const session = (id: string): SessionSummary => ({ id, path: id, cwd: "/project", created: id, modified: id });
 function setup(request: (method: string, params: unknown) => Promise<unknown>) {
   const historyShown = Promise.withResolvers<void>();
   const chat = new ChatView({ requestRender: () => {} });
@@ -89,7 +88,8 @@ test("discovery publishes every batch including an empty intermediate page", asy
   let calls = 0;
   const { manager } = setup(async () => {
     calls++;
-    if (calls === 1) return { data: [session("a")], nextCursor: "two" };
+    if (calls === 1)
+      return { data: [{ id: "a", path: "a", cwd: "/project", created: "a", modified: "a" }], nextCursor: "two" };
     if (calls === 2) return { data: [], nextCursor: "three" };
     return last.promise;
   });
@@ -101,7 +101,7 @@ test("discovery publishes every batch including an empty intermediate page", asy
   });
   await firstBatches.promise;
   expect(batches).toEqual([["a"], ["a"]]);
-  last.resolve({ data: [session("z")] });
+  last.resolve({ data: [{ id: "z", path: "z", cwd: "/project", created: "z", modified: "z" }] });
   await listing;
   expect(batches.at(-1)).toEqual(["z", "a"]);
 });

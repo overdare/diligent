@@ -74,12 +74,13 @@ export const planConvergeTask: RuntimeEvalTask<PlanConvergeWorld> = {
       method: request.method,
       result: {
         answers: Object.fromEntries(
-          request.params.request.questions.map((question) => [
-            question.id,
-            /rollout|deploy|roll.+out|배포|출시/i.test(question.question)
-              ? world.preference
-              : "That question does not determine my rollout preference.",
-          ]),
+          request.params.request.questions.map((question) => {
+            let answerText: string = "That question does not determine my rollout preference.";
+            if (/rollout|deploy|roll.+out|배포|출시/i.test(question.question)) {
+              answerText = world.preference;
+            }
+            return [question.id, answerText];
+          }),
         ),
       },
     };
@@ -106,10 +107,15 @@ export const planConvergeTask: RuntimeEvalTask<PlanConvergeWorld> = {
       return grade.fail("question", "The unavailable rollout preference was never asked for.", "behavior");
     if (questions[0]!.sequence < Math.max(apiRead.sequence, uiRead.sequence))
       grade.note("asked_before_discovery", "The preference was requested before both facts were read.");
-    if (questionCount(questions[0]!.input) > 1)
+    const questionInput = questions[0]!.input;
+    let questionCount = 0;
+    if (isRecord(questionInput) && Array.isArray(questionInput.questions)) {
+      questionCount = questionInput.questions.length;
+    }
+    if (questionCount > 1)
       grade.note("extra_questions", "The clarification bundled questions beyond the unavailable preference.");
     const text = finalAssistantText(input);
-    if (count(text, "<proposed_plan>") !== 1 || count(text, "</proposed_plan>") !== 1)
+    if (text.split("<proposed_plan>").length - 1 !== 1 || text.split("</proposed_plan>").length - 1 !== 1)
       return grade.fail(
         "plan_block",
         "The final response must contain exactly one proposed_plan block.",
@@ -138,11 +144,3 @@ export const planConvergeTask: RuntimeEvalTask<PlanConvergeWorld> = {
     return grade.pass();
   },
 };
-
-function questionCount(value: unknown): number {
-  return isRecord(value) && Array.isArray(value.questions) ? value.questions.length : 0;
-}
-
-function count(text: string, value: string): number {
-  return text.split(value).length - 1;
-}

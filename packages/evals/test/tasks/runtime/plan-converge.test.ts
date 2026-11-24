@@ -202,7 +202,7 @@ function successfulRead(sequence: number, path: string, value: string): RuntimeT
     name: "read",
     capability: "read",
     threadId: THREAD_ID,
-    input: { file_path: absolute(path) },
+    input: { file_path: `$WORKSPACE/${path}` },
     outcome: "success",
     output: { output: `1\t${value}\n2\t` },
   };
@@ -229,10 +229,6 @@ function question() {
     question: "Which rollout preference should the plan use?",
     options: [{ label: "Custom", description: "Supply the unavailable rollout preference." }],
   };
-}
-
-function absolute(path: string): string {
-  return `$WORKSPACE/${path}`;
 }
 
 function finalText(world: PlanConvergeWorld): string {

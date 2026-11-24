@@ -104,7 +104,10 @@ async function scanSessionFiles(ctx: ThreadHandlersContext): Promise<ThreadListS
       return files;
     }),
   );
-  return perCwd.flat().sort((a, b) => (a.key < b.key ? 1 : a.key > b.key ? -1 : 0));
+  return perCwd.flat().sort((a, b) => {
+    if (a.key < b.key) return 1;
+    return a.key > b.key ? -1 : 0;
+  });
 }
 
 export async function handleThreadList(
@@ -166,17 +169,19 @@ export async function handleThreadList(
     }),
   );
   data.sort((a, b) => Date.parse(b.modified) - Date.parse(a.modified) || b.id.localeCompare(a.id));
+  let nextCursor: string | undefined;
+  if (hasMore) {
+    nextCursor = Buffer.from(
+      JSON.stringify({
+        version: 1,
+        after: page[page.length - 1].key,
+        ...(nextScanId ? { scan: nextScanId } : {}),
+      }),
+    ).toString("base64url");
+  }
   return {
     data,
-    nextCursor: hasMore
-      ? Buffer.from(
-          JSON.stringify({
-            version: 1,
-            after: page[page.length - 1].key,
-            ...(nextScanId ? { scan: nextScanId } : {}),
-          }),
-        ).toString("base64url")
-      : undefined,
+    nextCursor,
   };
 }
 
@@ -184,6 +189,7 @@ export function handleThreadHistory(
   ctx: ThreadHandlersContext,
   params: { threadId: string; cursor?: string; limit?: number },
 ): Promise<ThreadHistoryResponse> {
+  // biome-ignore lint/plugin/no-tiny-function: the same thunk is either scheduled on the history queue or run directly
   const read = () => readThreadHistory(ctx, params);
   return ctx.historyPriority ? ctx.historyPriority.run(read) : read();
 }

@@ -45,7 +45,6 @@ const requestGoal = () =>
     [{ id: "create", name: "create_goal", input: { objective: "Verify the fix" } }],
     "Goal requested",
   );
-const finishGoal = () => createGoalCompletionStream("Verification passed");
 async function readGoal(client: ProtocolTestClient, threadId: string) {
   return (await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse;
 }
@@ -55,11 +54,17 @@ test("model-invented limits are rejected before creation and a corrected request
     "Unused",
   );
   const valid = requestGoal();
-  const finish = finishGoal();
+  const finish = createGoalCompletionStream("Verification passed");
   let calls = 0;
   const { client, threadId } = await setup((...args) => {
     const index = calls++;
-    return (index === 0 ? limited : index === 1 ? valid : finish)(...args);
+    let streamFn: StreamFunction;
+    if (index === 0) {
+      streamFn = limited;
+    } else {
+      streamFn = index === 1 ? valid : finish;
+    }
+    return streamFn(...args);
   });
   await client.sendTurnAndWait(threadId, "Keep working until verified");
   await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "complete");
@@ -85,7 +90,7 @@ test("goal RPC executes with no goals configuration, but ordinary turns stay ord
 
 test("model creation hands off after the user turn, excluding its usage from the goal", async () => {
   const create = requestGoal();
-  const finish = finishGoal();
+  const finish = createGoalCompletionStream("Verification passed");
   let calls = 0;
   const { client, threadId, cwd } = await setup((...args) => (calls++ < 1 ? create : finish)(...args));
   await client.sendTurnAndWait(threadId, "Keep working until the fix is verified");
@@ -144,7 +149,7 @@ function heldReply() {
     ],
     "Requested",
   );
-  const finish = finishGoal();
+  const finish = createGoalCompletionStream("Verification passed");
   let calls = 0;
   const stream: StreamFunction = (...args) => (calls++ === 0 ? create : finish)(...args);
   const hold = (client: ProtocolTestClient) =>
@@ -187,10 +192,12 @@ for (const ending of [
     const held = heldReply();
     const { client, threadId, server, cwd } = await setup(held.stream);
     held.hold(client);
-    const turn =
-      ending === "disconnect"
-        ? client.request("turn/start", { threadId, message: "Continue until verified" })
-        : client.sendTurnAndWait(threadId, "Continue until verified");
+    let turn: Promise<unknown>;
+    if (ending === "disconnect") {
+      turn = client.request("turn/start", { threadId, message: "Continue until verified" });
+    } else {
+      turn = client.sendTurnAndWait(threadId, "Continue until verified");
+    }
     await held.waiting;
     expect(JSON.stringify(client.notifications)).toContain('\\"status\\":\\"pending\\"');
     if (ending === "interrupt") await client.request("turn/interrupt", { threadId });
@@ -289,11 +296,17 @@ test("duplicate and internal creation cannot replace the accepted objective", as
     "Requested",
   );
   const internalCreate = requestGoal();
-  const finish = finishGoal();
+  const finish = createGoalCompletionStream("Verification passed");
   let calls = 0;
   const { client, threadId } = await setup((...args) => {
     const index = calls++;
-    return (index < 1 ? create : index === 1 ? internalCreate : finish)(...args);
+    let streamFn: StreamFunction;
+    if (index < 1) {
+      streamFn = create;
+    } else {
+      streamFn = index === 1 ? internalCreate : finish;
+    }
+    return streamFn(...args);
   });
   await client.sendTurnAndWait(threadId, "Keep going until verified");
   await client.waitFor((n) => n.method === "thread/goal/updated" && n.params.goal?.status === "complete");
@@ -306,7 +319,7 @@ test("duplicate and internal creation cannot replace the accepted objective", as
 });
 
 test("model creation cannot replace an existing completed goal", async () => {
-  const done = finishGoal();
+  const done = createGoalCompletionStream("Verification passed");
   const create = requestGoal();
   let calls = 0;
   const { client, threadId } = await setup((...args) => (calls++ < 3 ? done : create)(...args));

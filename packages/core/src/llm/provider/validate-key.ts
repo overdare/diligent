@@ -95,6 +95,7 @@ async function requestValidation(url: string, init: RequestInit): Promise<void> 
   throw Object.assign(new Error(body || `Provider API error (${response.status})`), { status: response.status });
 }
 
+// biome-ignore lint/plugin/no-tiny-function: four endpoint URLs must join paths identically
 function joinUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
 }

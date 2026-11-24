@@ -84,6 +84,7 @@ export function createGeminiStream(apiKey?: string, baseUrl?: string): StreamFun
   });
 }
 
+// biome-ignore lint/plugin/no-tiny-function: implements the createProviderState factory contract
 function createGeminiProviderState(): GeminiProviderState {
   return { blocksByKey: new Map(), sourceResults: new Map() };
 }
@@ -92,15 +93,19 @@ export function handleGeminiProviderPart(part: TextStreamPart<ToolSet>, state: G
   const candidates: ContentBlock[] = [];
 
   if (part.type === "tool-call" && part.providerExecuted) {
-    const mappedName =
-      part.toolName === "google_search" ? "web_search" : part.toolName === "url_context" ? "web_fetch" : undefined;
+    let mappedName: "web_search" | "web_fetch" | undefined;
+    if (part.toolName === "google_search") {
+      mappedName = "web_search";
+    } else {
+      mappedName = part.toolName === "url_context" ? "web_fetch" : undefined;
+    }
     if (mappedName) {
       candidates.push({
         type: "provider_tool_use",
         id: part.toolCallId,
         provider: "gemini",
         name: mappedName,
-        input: toInputRecord(part.input),
+        input: toRecord(part.input),
       });
     }
   } else if (part.type === "source" && part.sourceType === "url") {
@@ -116,7 +121,11 @@ export function handleGeminiProviderPart(part: TextStreamPart<ToolSet>, state: G
 }
 
 function finalizeGeminiProviderState(state: GeminiProviderState): ContentBlock[] {
-  if (state.sourceResults.size === 0 || hasBlockType(state, "web_search_result")) return [];
+  if (
+    state.sourceResults.size === 0 ||
+    [...state.blocksByKey.values()].some((block) => block.type === "web_search_result")
+  )
+    return [];
 
   const existingUse = [...state.blocksByKey.values()].find(
     (block): block is ProviderToolUseBlock => block.type === "provider_tool_use" && block.name === "web_search",
@@ -150,9 +159,12 @@ export function extractGeminiWebBlocks(providerMetadata: Record<string, unknown>
     if (typeof web.uri !== "string" || web.uri.length === 0) return [];
     return [{ url: web.uri, ...(typeof web.title === "string" ? { title: web.title } : {}) }];
   });
-  const queries = Array.isArray(grounding.webSearchQueries)
-    ? grounding.webSearchQueries.filter((query): query is string => typeof query === "string")
-    : [];
+  let queries: string[];
+  if (Array.isArray(grounding.webSearchQueries)) {
+    queries = grounding.webSearchQueries.filter((query): query is string => typeof query === "string");
+  } else {
+    queries = [];
+  }
   if (results.length > 0 || queries.length > 0) {
     const toolUseId = "gemini-web-search";
     blocks.push(
@@ -214,10 +226,6 @@ function addNewBlocks(state: GeminiProviderState, candidates: ContentBlock[]): C
   return added;
 }
 
-function hasBlockType(state: GeminiProviderState, type: ContentBlock["type"]): boolean {
-  return [...state.blocksByKey.values()].some((block) => block.type === type);
-}
-
 function geminiWebBlockKey(block: ContentBlock): string {
   if (block.type === "provider_tool_use") return `${block.type}:${block.id}`;
   if (block.type === "web_search_result") return `${block.type}:${block.toolUseId}`;
@@ -225,12 +233,9 @@ function geminiWebBlockKey(block: ContentBlock): string {
   return JSON.stringify(block);
 }
 
+// biome-ignore lint/plugin/no-tiny-function: eight readers share this record coercion
 function toRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function toInputRecord(input: unknown): Record<string, unknown> {
-  return toRecord(input);
 }
 
 function resolveGeminiApiKey(apiKey?: string): string {
@@ -244,14 +249,14 @@ export function classifyGeminiError(err: unknown): ProviderError {
   if (err instanceof ProviderError) return err;
   if (err instanceof Error) {
     const record = err as unknown as Record<string, unknown>;
-    const status =
-      typeof record.statusCode === "number"
-        ? record.statusCode
-        : typeof record.status === "number"
-          ? record.status
-          : typeof record.code === "number"
-            ? record.code
-            : undefined;
+    let status: number | undefined;
+    if (typeof record.statusCode === "number") {
+      status = record.statusCode;
+    } else if (typeof record.status === "number") {
+      status = record.status;
+    } else {
+      status = typeof record.code === "number" ? record.code : undefined;
+    }
     const httpError = classifyProviderHttpError({ message: err.message, status, cause: err });
     if (httpError) return httpError;
     if (isGeminiContextOverflow(err.message)) {

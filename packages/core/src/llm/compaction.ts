@@ -141,10 +141,6 @@ export function resolveCompaction(provider: string): NativeCompactFn | undefined
 
 // --- Helpers ---
 
-function resolveCompactionPrompts(prompts?: CompactionPrompts): CompactionPrompts {
-  return prompts ?? DEFAULT_COMPACTION_PROMPTS;
-}
-
 async function withCompactionTimeout<T>(
   stage: CompactionTimeoutError["stage"],
   timeoutMs: number,
@@ -199,14 +195,19 @@ export async function generateSummary(
   model: Model,
   options: GenerateSummaryOptions,
 ): Promise<string> {
-  const prompts = resolveCompactionPrompts(options.prompts);
+  const prompts = options.prompts ?? DEFAULT_COMPACTION_PROMPTS;
   const prompt = prompts.summarization;
 
   // Ensure messages end with a user message — required when extended thinking is enabled
-  const summaryMessages =
-    messages.length > 0 && messages[messages.length - 1].role !== "user"
-      ? [...messages, { role: "user" as const, content: "Please provide the summary now.", timestamp: Date.now() }]
-      : messages;
+  let summaryMessages: Message[];
+  if (messages.length > 0 && messages[messages.length - 1].role !== "user") {
+    summaryMessages = [
+      ...messages,
+      { role: "user" as const, content: "Please provide the summary now.", timestamp: Date.now() },
+    ];
+  } else {
+    summaryMessages = messages;
+  }
 
   const context: StreamContext = {
     systemPrompt: [{ label: "system", content: prompt }],
@@ -247,23 +248,23 @@ export async function compactMessages(
 
   while (true) {
     const omitted = start - pinned;
-    const candidate =
-      omitted === 0
-        ? prepared
-        : [
-            ...prepared.slice(0, pinned),
-            {
-              role: "user" as const,
-              content: `[${omitted} oldest message${omitted === 1 ? " was" : "s were"} omitted so the summarization request fits the context window.]`,
-              timestamp: Date.now(),
-            },
-            ...prepared.slice(start),
-          ];
+    let candidate = prepared;
+    if (omitted !== 0) {
+      candidate = [
+        ...prepared.slice(0, pinned),
+        {
+          role: "user" as const,
+          content: `[${omitted} oldest message${omitted === 1 ? " was" : "s were"} omitted so the summarization request fits the context window.]`,
+          timestamp: Date.now(),
+        },
+        ...prepared.slice(start),
+      ];
+    }
     try {
       return await generateSummary(candidate, streamFunction, model, {
         signal,
         reservePercent: config.reservePercent,
-        prompts: resolveCompactionPrompts(config.prompts),
+        prompts: config.prompts ?? DEFAULT_COMPACTION_PROMPTS,
       });
     } catch (error) {
       if (!(error instanceof ProviderError) || error.errorType !== ProviderErrorType.ContextOverflow) throw error;
@@ -291,10 +292,11 @@ export async function compactMessages(
 export async function compact(input: LLMCompactInput): Promise<LLMCompactResult> {
   const nativeCompactFn = input.llmCompactionFn;
   const modelKey = `${input.model.provider}/${input.model.modelId}`;
-  const fallbackAction =
-    input.compactionSummary !== undefined
-      ? "preserving existing native compaction state"
-      : "falling back to local summarization";
+  let fallbackAction: "preserving existing native compaction state" | "falling back to local summarization" =
+    "falling back to local summarization";
+  if (input.compactionSummary !== undefined) {
+    fallbackAction = "preserving existing native compaction state";
+  }
 
   if (nativeCompactFn && nativeUnsupportedModels.get(nativeCompactFn)?.has(modelKey) !== true) {
     const nativeTimeoutMs = input.config.timeoutMs ?? DEFAULT_NATIVE_COMPACTION_TIMEOUT_MS;

@@ -34,10 +34,6 @@ const logger = createLogger({ scope: "runtime.collab" });
 
 type CollabStatusString = "pending" | "running" | "completed" | "errored" | "shutdown";
 
-function toCollabStatus(s: AgentStatus): CollabStatusString {
-  return s.kind;
-}
-
 function statusMessage(s: AgentStatus): string | undefined {
   if (s.kind === "completed") return s.output ?? undefined;
   if (s.kind === "errored") return s.error;
@@ -320,16 +316,43 @@ export class AgentRegistry {
       });
     }
 
-    const nestedAgentPolicy = effectivePolicy.allowNestedAgents
-      ? "Nested sub-agent tools were explicitly enabled for this run. Use them only if the parent instruction clearly requires further delegation; otherwise do the work yourself."
-      : "Nested sub-agent delegation is disabled for this run. Do not call spawn_agent, wait, send_input, or close_agent, and do not attempt to coordinate additional sub-agents.";
+    let nestedAgentPolicy =
+      "Nested sub-agent delegation is disabled for this run. Do not call spawn_agent, wait, send_input, or close_agent, and do not attempt to coordinate additional sub-agents.";
+    if (effectivePolicy.allowNestedAgents) {
+      nestedAgentPolicy =
+        "Nested sub-agent tools were explicitly enabled for this run. Use them only if the parent instruction clearly requires further delegation; otherwise do the work yourself.";
+    }
+    let agentRoleSections: { label: string; content: string }[];
+    if (agentDefinition.systemPromptPrefix) {
+      agentRoleSections = [{ label: "agent_role", content: agentDefinition.systemPromptPrefix }];
+    } else {
+      agentRoleSections = [];
+    }
+    let modeSections: { label: string; content: string }[];
+    if (this.deps.mode === "plan") {
+      modeSections = [
+        {
+          label: "mode",
+          content:
+            "The parent is in Plan Mode. Remain read-only, including when using external tools. Do not implement changes or mutate files, services, or user data. Return findings for the parent's plan.",
+        },
+      ];
+    } else if (this.deps.mode === "execute") {
+      modeSections = [
+        {
+          label: "mode",
+          content:
+            "The parent is in Execute Mode. Work autonomously on the assigned scope. Make routine implementation choices, but do not guess essential targets or authority. If required information is missing, finish independent work and report the blocker to the parent.",
+        },
+      ];
+    } else {
+      modeSections = [];
+    }
     const childSystemPrompt = [
       ...(this.deps.parentSystemPrompt ?? []).filter((section) =>
         ["base", "instructions", "additional", "memory", "skills", "skill_usage_guardrail"].includes(section.label),
       ),
-      ...(agentDefinition.systemPromptPrefix
-        ? [{ label: "agent_role", content: agentDefinition.systemPromptPrefix }]
-        : []),
+      ...agentRoleSections,
       {
         label: "runtime_context",
         content: `Current working directory: ${this.deps.cwd}`,
@@ -338,23 +361,7 @@ export class AgentRegistry {
         label: "nested_subagent_policy",
         content: nestedAgentPolicy,
       },
-      ...(this.deps.mode === "plan"
-        ? [
-            {
-              label: "mode",
-              content:
-                "The parent is in Plan Mode. Remain read-only, including when using external tools. Do not implement changes or mutate files, services, or user data. Return findings for the parent's plan.",
-            },
-          ]
-        : this.deps.mode === "execute"
-          ? [
-              {
-                label: "mode",
-                content:
-                  "The parent is in Execute Mode. Work autonomously on the assigned scope. Make routine implementation choices, but do not guess essential targets or authority. If required information is missing, finish independent work and report the blocker to the parent.",
-              },
-            ]
-          : []),
+      ...modeSections,
     ];
 
     // Only an explicit class selects another model; classless children inherit the parent directly.
@@ -380,33 +387,33 @@ export class AgentRegistry {
       getUserId: () => userId,
       onEntryAppended,
       runObserved: this.deps.runObserved,
-      onStop: onChildStop
-        ? (context) =>
-            onChildStop({
-              sessionId: childManager.sessionId,
-              sessionPath: childManager.sessionPath ?? "",
-              cwd: this.deps.cwd,
-              model: childModel,
-              provider: childModel.provider,
-              effort: childEffort,
-              userId,
-              context,
-            })
-        : undefined,
+      onStop:
+        onChildStop &&
+        ((context) =>
+          onChildStop({
+            sessionId: childManager.sessionId,
+            sessionPath: childManager.sessionPath ?? "",
+            cwd: this.deps.cwd,
+            model: childModel,
+            provider: childModel.provider,
+            effort: childEffort,
+            userId,
+            context,
+          })),
       agent: async (): Promise<RuntimeAgent> => {
-        const childAsk = this.deps.ask
-          ? (
-              request: import("../tools/user-input-types").UserInputRequest,
-              options?: import("../tools/capabilities").RuntimeRequestOptions,
-            ) =>
-              this.deps.ask!(
-                {
-                  ...request,
-                  source: { threadId: childManager.sessionId, nickname },
-                },
-                { signal: options?.signal ?? abortController.signal },
-              )
-          : undefined;
+        const childAsk =
+          this.deps.ask &&
+          ((
+            request: import("../tools/user-input-types").UserInputRequest,
+            options?: import("../tools/capabilities").RuntimeRequestOptions,
+          ) =>
+            this.deps.ask!(
+              {
+                ...request,
+                source: { threadId: childManager.sessionId, nickname },
+              },
+              { signal: options?.signal ?? abortController.signal },
+            ));
 
         const childDeps = {
           ...this.deps,
@@ -604,6 +611,7 @@ export class AgentRegistry {
       return status;
     });
 
+    // biome-ignore lint/plugin/no-tiny-function: listener identity: added and removed by reference
     const cancelGoal = () => abortController.abort();
     goalScope?.childStarted(threadId);
     goalScope?.signal.addEventListener("abort", cancelGoal, { once: true });
@@ -652,6 +660,7 @@ export class AgentRegistry {
       if (!isFinal(entry.status)) pending.push(entry);
     }
 
+    // biome-ignore lint/plugin/no-tiny-function: both result paths must snapshot statuses identically
     const snapshotStatuses = (): Record<string, AgentStatus> =>
       Object.fromEntries(ids.map((id) => [id, this.agents.get(id)!.status]));
 
@@ -666,7 +675,7 @@ export class AgentRegistry {
           return {
             threadId: id,
             nickname: entry.nickname,
-            status: toCollabStatus(status),
+            status: status.kind,
             // A running agent reports its progress digest instead of a final message.
             message: statusMessage(status) ?? (progress ? formatAgentProgress(progress) : undefined),
           };
@@ -711,22 +720,25 @@ export class AgentRegistry {
       }),
     );
 
-    const abortPromise = signal
-      ? new Promise<void>((resolve) => {
-          if (signal.aborted) {
+    let abortPromise: Promise<void>;
+    if (signal) {
+      abortPromise = new Promise<void>((resolve) => {
+        if (signal.aborted) {
+          timedOut = true;
+          resolve();
+          return;
+        }
+        abortHandler = () => {
+          if (!terminal) {
             timedOut = true;
             resolve();
-            return;
           }
-          abortHandler = () => {
-            if (!terminal) {
-              timedOut = true;
-              resolve();
-            }
-          };
-          signal.addEventListener("abort", abortHandler, { once: true });
-        })
-      : new Promise<void>(() => {}); // never resolves
+        };
+        signal.addEventListener("abort", abortHandler, { once: true });
+      });
+    } else {
+      abortPromise = new Promise<void>(() => {});
+    } // never resolves
 
     try {
       await Promise.race([Promise.all(racers), timeoutPromise, abortPromise]);
@@ -776,7 +788,7 @@ export class AgentRegistry {
       receiverThreadId: threadId,
       receiverNickname: entry.nickname,
       prompt: message,
-      status: toCollabStatus(entry.status),
+      status: entry.status.kind,
     });
   }
 
@@ -805,7 +817,7 @@ export class AgentRegistry {
       callId: closeCallId,
       childThreadId: threadId,
       nickname: entry.nickname,
-      status: toCollabStatus(finalStatus),
+      status: finalStatus.kind,
       message: statusMessage(finalStatus),
     });
 
@@ -845,12 +857,15 @@ export class AgentRegistry {
   restoreAgent(threadId: string, nickname: string, policy?: CollabResumePolicy): void {
     if (this.agents.has(threadId)) return; // already known
     const normalizedPolicyAllowedTools = normalizeToolAllowlist(policy?.allowedTools);
-    const resumePolicy = policy
-      ? {
-          ...policy,
-          ...(normalizedPolicyAllowedTools ? { allowedTools: normalizedPolicyAllowedTools } : {}),
-        }
-      : undefined;
+    let resumePolicy:
+      | { allowedTools?: string[]; agentType: string; modelClass?: ModelClass; allowNestedAgents: boolean }
+      | undefined;
+    if (policy) {
+      resumePolicy = {
+        ...policy,
+        ...(normalizedPolicyAllowedTools ? { allowedTools: normalizedPolicyAllowedTools } : {}),
+      };
+    }
     this.agents.set(threadId, {
       threadId,
       nickname,

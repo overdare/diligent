@@ -106,7 +106,14 @@ function truncateStringToBytes(str: string, maxBytes: number): string {
   let i = 0;
   while (i < str.length) {
     const codePoint = str.codePointAt(i)!;
-    const charBytes = codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
+    let charBytes: 4 | 1 | 2 | 3;
+    if (codePoint <= 0x7f) {
+      charBytes = 1;
+    } else if (codePoint <= 0x7ff) {
+      charBytes = 2;
+    } else {
+      charBytes = codePoint <= 0xffff ? 3 : 4;
+    }
     if (byteCount + charBytes > maxBytes) break;
     byteCount += charBytes;
     i += codePoint > 0xffff ? 2 : 1;

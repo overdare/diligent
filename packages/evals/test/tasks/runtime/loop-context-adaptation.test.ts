@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AssistantMessage } from "@diligent/core/message-contract";
 import type { StreamContext, StreamFunction } from "@diligent/core/provider-contract";
 import { DEFAULT_PROFILES } from "../../../src/profiles";
 import { runRuntimeEvalExecution } from "../../../src/runner/runtime-execution";
@@ -161,61 +162,68 @@ async function assembledExecution(
       const cwd = cwdFromContext(context);
       const brief = join(cwd, "deployment-brief.txt");
       const result = join(cwd, "RESULT.txt");
-      const write = (id: string, from: string | undefined, value: string) =>
-        assistantMessage(
-          [
-            profile.provider === "anthropic"
-              ? {
-                  type: "tool_call" as const,
-                  id,
-                  name: "edit",
-                  input: {
-                    file_path: result,
-                    old_string: from === undefined ? "" : `${from}\n`,
-                    new_string: `${value}\n`,
-                    replace_all: false,
-                  },
-                }
-              : {
-                  type: "tool_call" as const,
-                  id,
-                  name: "apply_patch",
-                  input: {
-                    patch:
-                      from === undefined
-                        ? `*** Begin Patch\n*** Add File: RESULT.txt\n+${value}\n*** End Patch`
-                        : `*** Begin Patch\n*** Update File: RESULT.txt\n@@\n-${from}\n+${value}\n*** End Patch`,
-                  },
+      const write = (id: string, from: string | undefined, value: string) => {
+        if (profile.provider === "anthropic") {
+          return assistantMessage(
+            [
+              {
+                type: "tool_call" as const,
+                id,
+                name: "edit",
+                input: {
+                  file_path: result,
+                  old_string: from === undefined ? "" : `${from}\n`,
+                  new_string: `${value}\n`,
+                  replace_all: false,
                 },
-          ],
+              },
+            ],
+            "tool_use",
+          );
+        }
+        let patch: string;
+        if (from === undefined) {
+          patch = `*** Begin Patch\n*** Add File: RESULT.txt\n+${value}\n*** End Patch`;
+        } else {
+          patch = `*** Begin Patch\n*** Update File: RESULT.txt\n@@\n-${from}\n+${value}\n*** End Patch`;
+        }
+        return assistantMessage(
+          [{ type: "tool_call" as const, id, name: "apply_patch", input: { patch } }],
           "tool_use",
         );
+      };
       const read = (id: string, path: string) =>
         assistantMessage([{ type: "tool_call", id, name: "read", input: { file_path: path } }], "tool_use");
-      stream ??= sequenceStream([
-        transport === "exec"
-          ? assistantMessage(
-              [
-                {
-                  type: "tool_call",
-                  id: "loop-exec-read",
-                  name: "exec",
-                  input: { code: `return await tools.read({ file_path: ${JSON.stringify(brief)} });` },
-                },
-              ],
-              "tool_use",
-            )
-          : read("loop-read-1", brief),
-        ...(scenario.longPath
-          ? [
-              read("loop-read-instructions", join(cwd, "AGENTS.md")),
-              write("loop-write-stale", undefined, initial),
-              write("loop-write-fix", initial, updated),
-              read("loop-confirm", result),
-            ]
-          : [write("loop-write-1", undefined, updated)]),
-        assistantMessage([{ type: "text", text: updated }]),
-      ]);
+      if (stream === undefined) {
+        let firstRead: AssistantMessage;
+        if (transport === "exec") {
+          firstRead = assistantMessage(
+            [
+              {
+                type: "tool_call",
+                id: "loop-exec-read",
+                name: "exec",
+                input: { code: `return await tools.read({ file_path: ${JSON.stringify(brief)} });` },
+              },
+            ],
+            "tool_use",
+          );
+        } else {
+          firstRead = read("loop-read-1", brief);
+        }
+        let middle: AssistantMessage[];
+        if (scenario.longPath) {
+          middle = [
+            read("loop-read-instructions", join(cwd, "AGENTS.md")),
+            write("loop-write-stale", undefined, initial),
+            write("loop-write-fix", initial, updated),
+            read("loop-confirm", result),
+          ];
+        } else {
+          middle = [write("loop-write-1", undefined, updated)];
+        }
+        stream = sequenceStream([firstRead, ...middle, assistantMessage([{ type: "text", text: updated }])]);
+      }
       return stream(model, context, options);
     },
   });

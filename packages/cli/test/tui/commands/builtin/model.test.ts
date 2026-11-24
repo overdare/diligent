@@ -10,12 +10,14 @@ import type { ListPickerItem } from "../../../../src/tui/components/list-picker"
 const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
 
 function makeConfig(modelId: string, providerManager: AppConfig["providerManager"]): AppConfig {
-  const ref =
-    modelId === "gpt-4o"
-      ? { provider: "openai" as const, modelId: "gpt-6.1-sol" }
-      : modelId.startsWith("gpt-")
-        ? { provider: "openai" as const, modelId }
-        : { provider: "anthropic" as const, modelId };
+  let ref: { provider: "openai"; modelId: string } | { provider: "anthropic"; modelId: string };
+  if (modelId === "gpt-4o") {
+    ref = { provider: "openai" as const, modelId: "gpt-6.1-sol" };
+  } else if (modelId.startsWith("gpt-")) {
+    ref = { provider: "openai" as const, modelId };
+  } else {
+    ref = { provider: "anthropic" as const, modelId };
+  }
   return {
     apiKey: "",
     model: resolveModel(ref),

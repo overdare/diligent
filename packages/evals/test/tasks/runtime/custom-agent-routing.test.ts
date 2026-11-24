@@ -72,25 +72,38 @@ describe("custom-agent-routing", () => {
 
   test("fails direct reads, decoy access or routing, missing delegation, wrong artifact, or wrong reply", async () => {
     const baseline = await assembledExecution(DEFAULT_PROFILES[0]!);
-    const read = (value: Execution) => value.toolCalls.find((call) => call.name === "read")!;
-    const spawn = (value: Execution) => value.toolCalls.find((call) => call.name === "spawn_agent")!;
     const cases: Array<[string, string, (value: Execution) => void]> = [
-      ["parent read", "custom_agent_routing.parent_read", (value) => (read(value).threadId = value.session.threadId)],
+      [
+        "parent read",
+        "custom_agent_routing.parent_read",
+        (value) => (value.toolCalls.find((call) => call.name === "read")!.threadId = value.session.threadId),
+      ],
       [
         "decoy read",
         "custom_agent_routing.decoy_access",
         (value) =>
-          value.toolCalls.push({ ...structuredClone(read(value)), input: { file_path: value.world.decoyPath } }),
+          value.toolCalls.push({
+            ...structuredClone(value.toolCalls.find((call) => call.name === "read")!),
+            input: { file_path: value.world.decoyPath },
+          }),
       ],
       [
         "decoy specialist",
         "custom_agent_routing.decoy_specialist",
-        (value) => (spawn(value).input = { message: "help", agent_type: value.world.decoyAgent.name }),
+        (value) =>
+          (value.toolCalls.find((call) => call.name === "spawn_agent")!.input = {
+            message: "help",
+            agent_type: value.world.decoyAgent.name,
+          }),
       ],
       [
         "generic specialist",
         "custom_agent_routing.routing",
-        (value) => (spawn(value).input = { message: "help", agent_type: "general" }),
+        (value) =>
+          (value.toolCalls.find((call) => call.name === "spawn_agent")!.input = {
+            message: "help",
+            agent_type: "general",
+          }),
       ],
       [
         "capsule never retrieved",
@@ -148,44 +161,59 @@ function fixtureStream(
 ): StreamFunction {
   let parentCall = 0;
   let childCall = 0;
-  const token = seeded(seed, "RELEASE_CAPSULE");
-  const callIds = assembledOptions.generatedIds
-    ? { spawn: "runtime-spawn", read: "runtime-read", wait: "runtime-wait", write: "runtime-write" }
-    : CALL_IDS;
-  const childReport = assembledOptions.wrappedChildReport
-    ? `Here is the exact capsule content:\n\n\`\`\`\n${token}\n\`\`\`\n\nComplete capsule identifier: ${token}.`
-    : token;
+  const token = `RELEASE_CAPSULE_${seed.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10) || "seed"}`;
+  let callIds: Record<keyof typeof CALL_IDS, string>;
+  if (assembledOptions.generatedIds) {
+    callIds = { spawn: "runtime-spawn", read: "runtime-read", wait: "runtime-wait", write: "runtime-write" };
+  } else {
+    callIds = CALL_IDS;
+  }
+  let childReport: string;
+  if (assembledOptions.wrappedChildReport) {
+    childReport = `Here is the exact capsule content:\n\n\`\`\`\n${token}\n\`\`\`\n\nComplete capsule identifier: ${token}.`;
+  } else {
+    childReport = token;
+  }
   return (model, context, options) => {
     const child = context.systemPrompt.some((section) => section.label === "agent_role");
-    const response = child
-      ? ++childCall === 1
-        ? assistantMessage(
-            [
-              assembledOptions.childExec
-                ? {
-                    type: "tool_call",
-                    id: callIds.read,
-                    name: "exec",
-                    input: {
-                      code: `return await tools.read({ file_path: ${JSON.stringify(join(cwdFromContext(context, "runtime_context"), "vault/current-release.capsule"))} });`,
-                    },
-                  }
-                : {
-                    type: "tool_call",
-                    id: callIds.read,
-                    name: "read",
-                    input: {
-                      file_path: join(cwdFromContext(context, "runtime_context"), "vault/current-release.capsule"),
-                    },
-                  },
-            ],
-            "tool_use",
-          )
-        : assistantMessage([{ type: "text", text: childReport }])
-      : parentResponse(++parentCall, profile, context, token, callIds, assembledOptions);
-    return child || parentCall !== 2 || assembledOptions.waitBeforeChildTrace
-      ? sequenceStream([response])(model, context, options)
-      : delayedMessage(response, model, options.signal);
+    let response: AssistantMessage;
+    if (!child) {
+      response = parentResponse(++parentCall, profile, context, token, callIds, assembledOptions);
+    } else if (++childCall !== 1) {
+      response = assistantMessage([{ type: "text", text: childReport }]);
+    } else if (assembledOptions.childExec) {
+      response = assistantMessage(
+        [
+          {
+            type: "tool_call",
+            id: callIds.read,
+            name: "exec",
+            input: {
+              code: `return await tools.read({ file_path: ${JSON.stringify(join(cwdFromContext(context, "runtime_context"), "vault/current-release.capsule"))} });`,
+            },
+          },
+        ],
+        "tool_use",
+      );
+    } else {
+      response = assistantMessage(
+        [
+          {
+            type: "tool_call",
+            id: callIds.read,
+            name: "read",
+            input: {
+              file_path: join(cwdFromContext(context, "runtime_context"), "vault/current-release.capsule"),
+            },
+          },
+        ],
+        "tool_use",
+      );
+    }
+    if (child || parentCall !== 2 || assembledOptions.waitBeforeChildTrace) {
+      return sequenceStream([response])(model, context, options);
+    }
+    return delayedMessage(response, model, options.signal);
   };
 }
 
@@ -219,34 +247,52 @@ function parentResponse(
   callIds: Record<keyof typeof CALL_IDS, string>,
   assembledOptions: AssembledExecutionOptions,
 ) {
-  if (call === 1)
+  if (call === 1) {
+    let progressTextParts: { type: "text"; text: string }[];
+    if (assembledOptions.includeProgressText) {
+      progressTextParts = [{ type: "text" as const, text: "I will delegate this to the release specialist." }];
+    } else {
+      progressTextParts = [];
+    }
+    let spawnMessage: string;
+    let spawnDescription: string;
+    if (assembledOptions.liveSpawnWording) {
+      spawnMessage =
+        "Retrieve the current release authorization capsule for this workspace. Inspect only the available release-authorization context and report the capsule without modifying files.";
+      spawnDescription = "Retrieve release authorization capsule";
+    } else {
+      spawnMessage =
+        "Read only vault/current-release.capsule exactly once. Return only the capsule token, without commentary or a trailing newline.";
+      spawnDescription = "Retrieve current release authorization";
+    }
     return assistantMessage(
       [
-        ...(assembledOptions.includeProgressText
-          ? [{ type: "text" as const, text: "I will delegate this to the release specialist." }]
-          : []),
+        ...progressTextParts,
         {
           type: "tool_call",
           id: callIds.spawn,
           name: "spawn_agent",
           input: {
-            message: assembledOptions.liveSpawnWording
-              ? "Retrieve the current release authorization capsule for this workspace. Inspect only the available release-authorization context and report the capsule without modifying files."
-              : "Read only vault/current-release.capsule exactly once. Return only the capsule token, without commentary or a trailing newline.",
-            ...(!assembledOptions.omitSpawnDescription
-              ? {
-                  description: assembledOptions.liveSpawnWording
-                    ? "Retrieve release authorization capsule"
-                    : "Retrieve current release authorization",
-                }
-              : {}),
+            message: spawnMessage,
+            ...(!assembledOptions.omitSpawnDescription && {
+              description: spawnDescription,
+            }),
             agent_type: "release-authorization-liaison",
           },
         },
       ],
       "tool_use",
     );
-  if (call === 2)
+  }
+  if (call === 2) {
+    let timeoutMs: number;
+    if (assembledOptions.maximumWaitTimeout) {
+      timeoutMs = 3_600_000;
+    } else if (assembledOptions.liveSpawnWording) {
+      timeoutMs = 900_000;
+    } else {
+      timeoutMs = 30_000;
+    }
     return assistantMessage(
       [
         {
@@ -255,20 +301,15 @@ function parentResponse(
           name: "wait",
           input: {
             ids: [spawnedThreadId(context)],
-            ...(!assembledOptions.omitWaitTimeout
-              ? {
-                  timeout_ms: assembledOptions.maximumWaitTimeout
-                    ? 3_600_000
-                    : assembledOptions.liveSpawnWording
-                      ? 900_000
-                      : 30_000,
-                }
-              : {}),
+            ...(!assembledOptions.omitWaitTimeout && {
+              timeout_ms: timeoutMs,
+            }),
           },
         },
       ],
       "tool_use",
     );
+  }
   if (call === 3 && assembledOptions.relativeWriteRecovery)
     return assistantMessage(
       [
@@ -300,31 +341,39 @@ function parentResponse(
       ],
       "tool_use",
     );
-  if (call === (assembledOptions.relativeWriteRecovery || assembledOptions.invalidPatchRecovery ? 4 : 3))
+  if (call === (assembledOptions.relativeWriteRecovery || assembledOptions.invalidPatchRecovery ? 4 : 3)) {
+    let progressText: { type: "text"; text: string }[];
+    if (assembledOptions.includeProgressText) {
+      progressText = [{ type: "text" as const, text: "I will record the specialist result." }];
+    } else {
+      progressText = [];
+    }
+    let input: { file_path: string; old_string: string; new_string: string; replace_all: boolean } | { patch: string };
+    if (profile.provider === "anthropic") {
+      input = {
+        file_path: join(cwdFromContext(context, "base"), "release-authorization.txt"),
+        old_string: "",
+        new_string: `${token}\n`,
+        replace_all: false,
+      };
+    } else {
+      input = {
+        patch: `*** Begin Patch\n*** Add File: release-authorization.txt\n+${token}\n*** End Patch${assembledOptions.trailingPatchNewline ? "\n" : ""}`,
+      };
+    }
     return assistantMessage(
       [
-        ...(assembledOptions.includeProgressText
-          ? [{ type: "text" as const, text: "I will record the specialist result." }]
-          : []),
+        ...progressText,
         {
           type: "tool_call",
           id: callIds.write,
           name: profile.provider === "anthropic" ? "edit" : "apply_patch",
-          input:
-            profile.provider === "anthropic"
-              ? {
-                  file_path: join(cwdFromContext(context, "base"), "release-authorization.txt"),
-                  old_string: "",
-                  new_string: `${token}\n`,
-                  replace_all: false,
-                }
-              : {
-                  patch: `*** Begin Patch\n*** Add File: release-authorization.txt\n+${token}\n*** End Patch${assembledOptions.trailingPatchNewline ? "\n" : ""}`,
-                },
+          input,
         },
       ],
       "tool_use",
     );
+  }
   return assistantMessage([{ type: "text", text: "RELEASE_AUTHORIZATION_RECORDED" }]);
 }
 
@@ -339,10 +388,6 @@ function spawnedThreadId(context: StreamContext): string {
   const match = JSON.stringify(context.messages).match(/\\"thread_id\\":\\"([^\\"]+)\\"/);
   if (!match?.[1]) throw new Error("Missing spawned child thread id in parent context.");
   return match[1];
-}
-
-function seeded(seed: string, prefix: string): string {
-  return `${prefix}_${seed.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10) || "seed"}`;
 }
 
 function setFinal(value: Execution, text: string): void {

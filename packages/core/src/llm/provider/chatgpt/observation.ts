@@ -18,10 +18,12 @@ function safely<T>(fn: () => T): T | undefined {
   }
 }
 
+// biome-ignore lint/plugin/no-tiny-function: three readers share this record coercion
 function object(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
 }
 
+// biome-ignore lint/plugin/no-tiny-function: five readers share this non-negative integer coercion
 function count(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
@@ -36,12 +38,12 @@ export function observeExchanges(
   const finish = (message?: AssistantMessage, error?: unknown) => {
     const current = active;
     active = undefined;
-    const failure =
-      error instanceof ProviderError
-        ? { errorType: error.errorType, statusCode: error.statusCode }
-        : message
-          ? undefined
-          : {};
+    let failure: Parameters<ModelExchangeObservation["end"]>[1];
+    if (error instanceof ProviderError) {
+      failure = { errorType: error.errorType, statusCode: error.statusCode };
+    } else if (!message) {
+      failure = {};
+    }
     safely(() => current?.end(message, failure));
   };
   stream.subscribe((event) => {

@@ -6,6 +6,7 @@ import { t } from "../theme";
 import { MarkdownView } from "./markdown-view";
 import { type ThreadItem, type ThreadStore, UserMessageView } from "./thread-store";
 
+// biome-ignore lint/plugin/no-tiny-function: names the ANSI-stripping regex
 function stripAnsi(line: string): string {
   return line.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "");
 }
@@ -28,17 +29,13 @@ function getCollapsedToolPreviewLines(item: Extract<ThreadItem, { kind: "tool_re
   return previewLines;
 }
 
-export function renderTranscriptLiveStack(store: ThreadStore, width: number): string[] {
-  return renderTranscriptLiveStackBlocks(store, width).flatMap((block) => block.lines);
-}
-
 export function renderTranscriptLiveStackBlocks(store: ThreadStore, width: number): RenderBlock[] {
   const { liveStackBlocks } = renderTranscriptSections(store, width, { includeActiveMarkdown: true });
   return liveStackBlocks;
 }
 
 export function renderTranscript(store: ThreadStore, width: number): string[] {
-  return renderTranscriptLiveStack(store, width);
+  return renderTranscriptLiveStackBlocks(store, width).flatMap((block) => block.lines);
 }
 
 export function renderCommittedTranscriptItems(
@@ -139,15 +136,19 @@ function renderTranscriptItemLines(item: ThreadItem, width: number, toolResultsE
   }
 
   if (item.kind === "thinking") {
-    return item.bodyLines.length > 0
-      ? [item.header, ...item.bodyLines.map((line) => `${t.boldOff}${t.dim}  ${line}${t.reset}`)]
-      : [item.header];
+    if (item.bodyLines.length > 0) {
+      return [item.header, ...item.bodyLines.map((line) => `${t.boldOff}${t.dim}  ${line}${t.reset}`)];
+    }
+    return [item.header];
   }
 
   if (item.kind === "tool_result") {
-    const hint = toolResultsExpanded
-      ? ` ${t.dim}(ctrl+o to collapse)${t.reset}`
-      : ` ${t.dim}(ctrl+o to expand)${t.reset}`;
+    let hint: string;
+    if (toolResultsExpanded) {
+      hint = ` ${t.dim}(ctrl+o to collapse)${t.reset}`;
+    } else {
+      hint = ` ${t.dim}(ctrl+o to expand)${t.reset}`;
+    }
     if (toolResultsExpanded) {
       const childLines: string[] = [];
       if (item.childDetail) {
@@ -239,10 +240,13 @@ export function renderTranscriptSections(
   for (const item of store.getItems()) {
     const shouldSeparate = shouldSeparateTranscriptItem(item, previousItem);
     if (shouldSeparate) {
-      pushSeparator(
-        historyLines,
-        item instanceof UserMessageView ? "item:user" : "kind" in item ? `item:${item.kind}` : "item:unknown",
-      );
+      let separatorReason: string;
+      if (item instanceof UserMessageView) {
+        separatorReason = "item:user";
+      } else {
+        separatorReason = "kind" in item ? `item:${item.kind}` : "item:unknown";
+      }
+      pushSeparator(historyLines, separatorReason);
     }
 
     if (item instanceof UserMessageView) {
@@ -267,9 +271,12 @@ export function renderTranscriptSections(
     }
 
     if (item.kind === "tool_result") {
-      const hint = store.isToolResultsExpanded()
-        ? ` ${t.dim}(ctrl+o to collapse)${t.reset}`
-        : ` ${t.dim}(ctrl+o to expand)${t.reset}`;
+      let hint: string;
+      if (store.isToolResultsExpanded()) {
+        hint = ` ${t.dim}(ctrl+o to collapse)${t.reset}`;
+      } else {
+        hint = ` ${t.dim}(ctrl+o to expand)${t.reset}`;
+      }
       historyLines.push(`${item.header}${hint}`);
       if (store.isToolResultsExpanded()) {
         historyLines.push(...item.details);

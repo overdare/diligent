@@ -39,9 +39,10 @@ export function resolveWorkspacePathForFlavor(root: string, candidate: string, f
 }
 
 export function normalizePlatformAlias(path: string): string {
-  return process.platform === "darwin" && (path.startsWith("/private/var/") || path.startsWith("/private/tmp/"))
-    ? path.slice("/private".length)
-    : path;
+  if (process.platform === "darwin" && (path.startsWith("/private/var/") || path.startsWith("/private/tmp/"))) {
+    return path.slice("/private".length);
+  }
+  return path;
 }
 
 /**

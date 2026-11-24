@@ -4,12 +4,8 @@ import { applyAgentEvents } from "../src/conversation-reducer";
 import { createInitialConversationLiveState } from "../src/conversation-state";
 import type { AgentEvent } from "../src/data-model";
 
-function initial() {
-  return createInitialConversationLiveState();
-}
-
 function apply(events: AgentEvent[]) {
-  return applyAgentEvents(initial(), events);
+  return applyAgentEvents(createInitialConversationLiveState(), events);
 }
 
 describe("applyAgentEvents / status_change", () => {
@@ -27,7 +23,7 @@ describe("applyAgentEvents / status_change", () => {
   });
 
   test("preserves existing overlayStatus when going idle", () => {
-    const state = { ...initial(), overlayStatus: "Working…" };
+    const state = { ...createInitialConversationLiveState(), overlayStatus: "Working…" };
     const next = applyAgentEvents(state, [{ type: "status_change", status: "idle" }]);
     expect(next.overlayStatus).toBeNull();
   });
@@ -47,7 +43,7 @@ describe("applyAgentEvents / turn_start", () => {
 
 describe("applyAgentEvents / message_start", () => {
   test("resets liveText, liveThinking and sets overlayStatus", () => {
-    const state = { ...initial(), liveText: "stale", liveThinking: "thinking" };
+    const state = { ...createInitialConversationLiveState(), liveText: "stale", liveThinking: "thinking" };
     const next = applyAgentEvents(state, [
       {
         type: "message_start",
@@ -79,7 +75,7 @@ describe("applyAgentEvents / message_delta", () => {
   };
 
   test("appends text_delta to liveText and clears overlayStatus", () => {
-    const state = { ...initial(), liveText: "hello" };
+    const state = { ...createInitialConversationLiveState(), liveText: "hello" };
     const next = applyAgentEvents(state, [
       {
         type: "message_delta",
@@ -117,7 +113,7 @@ describe("applyAgentEvents / message_delta", () => {
 
 describe("applyAgentEvents / message_end", () => {
   test("clears liveText and liveThinking", () => {
-    const state = { ...initial(), liveText: "hi", liveThinking: "hmm" };
+    const state = { ...createInitialConversationLiveState(), liveText: "hi", liveThinking: "hmm" };
     const next = applyAgentEvents(state, [
       {
         type: "message_end",
@@ -137,7 +133,7 @@ describe("applyAgentEvents / message_end", () => {
   });
 
   test("clears overlayStatus when no live tool is active", () => {
-    const state = { ...initial(), overlayStatus: "Thinking…", liveToolName: null };
+    const state = { ...createInitialConversationLiveState(), overlayStatus: "Thinking…", liveToolName: null };
     const next = applyAgentEvents(state, [
       {
         type: "message_end",
@@ -156,7 +152,7 @@ describe("applyAgentEvents / message_end", () => {
   });
 
   test("preserves overlayStatus when a live tool is active", () => {
-    const state = { ...initial(), overlayStatus: "bash…", liveToolName: "bash" };
+    const state = { ...createInitialConversationLiveState(), overlayStatus: "bash…", liveToolName: "bash" };
     const next = applyAgentEvents(state, [
       {
         type: "message_end",
@@ -223,7 +219,12 @@ describe("applyAgentEvents / tool_start", () => {
 
 describe("applyAgentEvents / tool_update", () => {
   test("appends partialResult to liveToolOutput", () => {
-    const state = { ...initial(), liveToolOutput: "line1\n", liveToolName: "bash", liveToolInput: "ls" };
+    const state = {
+      ...createInitialConversationLiveState(),
+      liveToolOutput: "line1\n",
+      liveToolName: "bash",
+      liveToolInput: "ls",
+    };
     const next = applyAgentEvents(state, [
       { type: "tool_update", itemId: "t1", toolCallId: "tc1", toolName: "bash", partialResult: "line2\n" },
     ]);
@@ -232,7 +233,7 @@ describe("applyAgentEvents / tool_update", () => {
   });
 
   test("updates overlayStatus to liveToolInput when input is present", () => {
-    const state = { ...initial(), liveToolInput: "find /" };
+    const state = { ...createInitialConversationLiveState(), liveToolInput: "find /" };
     const next = applyAgentEvents(state, [
       { type: "tool_update", itemId: "t1", toolCallId: "tc1", toolName: "bash", partialResult: "x" },
     ]);
@@ -243,7 +244,7 @@ describe("applyAgentEvents / tool_update", () => {
 describe("applyAgentEvents / tool_end", () => {
   test("clears live tool fields and overlayStatus", () => {
     const state = {
-      ...initial(),
+      ...createInitialConversationLiveState(),
       liveToolName: "bash",
       liveToolInput: "ls",
       liveToolOutput: "file.ts\n",
@@ -324,7 +325,7 @@ describe("applyAgentEvents / compaction", () => {
   });
 
   test("compaction_end clears overlayStatus", () => {
-    const state = { ...initial(), overlayStatus: "Compacting…" };
+    const state = { ...createInitialConversationLiveState(), overlayStatus: "Compacting…" };
     const next = applyAgentEvents(state, [
       { type: "compaction_end", tokensBefore: 2000, tokensAfter: 800, summary: "Compacted." },
     ]);
@@ -335,7 +336,7 @@ describe("applyAgentEvents / compaction", () => {
 describe("applyAgentEvents / error", () => {
   test("clears all live streaming fields", () => {
     const state = {
-      ...initial(),
+      ...createInitialConversationLiveState(),
       liveText: "partial",
       liveThinking: "hmm",
       liveToolName: "bash",
@@ -358,7 +359,7 @@ describe("applyAgentEvents / generic type preservation", () => {
     interface ExtendedState extends ReturnType<typeof createInitialConversationLiveState> {
       myExtra: string;
     }
-    const extended: ExtendedState = { ...initial(), myExtra: "preserved" };
+    const extended: ExtendedState = { ...createInitialConversationLiveState(), myExtra: "preserved" };
     const next = applyAgentEvents(extended, [{ type: "status_change", status: "busy" }]);
     expect(next.myExtra).toBe("preserved");
     expect(next.threadStatus).toBe("busy");
@@ -386,7 +387,7 @@ describe("applyAgentEvents / multi-event batch", () => {
   });
 
   test("empty event array returns equivalent state", () => {
-    const state = { ...initial(), liveText: "existing" };
+    const state = { ...createInitialConversationLiveState(), liveText: "existing" };
     const next = applyAgentEvents(state, []);
     expect(next.liveText).toBe("existing");
   });

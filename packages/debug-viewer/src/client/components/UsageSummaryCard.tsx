@@ -8,10 +8,6 @@ interface UsageSummaryCardProps {
   modelLimit?: number;
 }
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat().format(value);
-}
-
 function formatUsd(value: number): string {
   return new Intl.NumberFormat(undefined, {
     style: "currency",
@@ -34,33 +30,33 @@ export function UsageSummaryCard({ summary, loading, className, modelLimit = 3 }
       <div className="usage-summary-grid">
         <div className="usage-metric">
           <span className="usage-label">Sessions</span>
-          <span className="usage-value">{formatNumber(summary.sessionCount)}</span>
+          <span className="usage-value">{new Intl.NumberFormat().format(summary.sessionCount)}</span>
         </div>
         <div className="usage-metric">
           <span className="usage-label">Assistant msgs</span>
-          <span className="usage-value">{formatNumber(summary.assistantMessageCount)}</span>
+          <span className="usage-value">{new Intl.NumberFormat().format(summary.assistantMessageCount)}</span>
         </div>
         <div className="usage-metric">
           <span className="usage-label">Input tokens</span>
-          <span className="usage-value">{formatNumber(summary.totals.inputTokens)}</span>
+          <span className="usage-value">{new Intl.NumberFormat().format(summary.totals.inputTokens)}</span>
         </div>
         <div className="usage-metric">
           <span className="usage-label">Output tokens</span>
-          <span className="usage-value">{formatNumber(summary.totals.outputTokens)}</span>
+          <span className="usage-value">{new Intl.NumberFormat().format(summary.totals.outputTokens)}</span>
         </div>
         <div className="usage-metric">
           <span className="usage-label">Cache read</span>
-          <span className="usage-value">{formatNumber(summary.totals.cacheReadTokens)}</span>
+          <span className="usage-value">{new Intl.NumberFormat().format(summary.totals.cacheReadTokens)}</span>
         </div>
         <div className="usage-metric">
           <span className="usage-label">Cache write</span>
-          <span className="usage-value">{formatNumber(summary.totals.cacheWriteTokens)}</span>
+          <span className="usage-value">{new Intl.NumberFormat().format(summary.totals.cacheWriteTokens)}</span>
         </div>
       </div>
 
       <div className="usage-total-row">
         <span className="usage-total-label">Total tokens (in+out)</span>
-        <span className="usage-total-value">{formatNumber(summary.totals.totalTokens)}</span>
+        <span className="usage-total-value">{new Intl.NumberFormat().format(summary.totals.totalTokens)}</span>
       </div>
 
       <div className="usage-total-row usage-cost-row">
@@ -70,8 +66,8 @@ export function UsageSummaryCard({ summary, loading, className, modelLimit = 3 }
 
       {summary.unpricedMessageCount > 0 && (
         <div className="usage-note">
-          {formatNumber(summary.unpricedMessageCount)} assistant messages had unknown pricing and were excluded from
-          cost.
+          {new Intl.NumberFormat().format(summary.unpricedMessageCount)} assistant messages had unknown pricing and were
+          excluded from cost.
         </div>
       )}
 

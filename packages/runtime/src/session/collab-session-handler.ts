@@ -1,7 +1,6 @@
 // @summary Scans committed session history to restore sub-agent (collab) metadata on resume
 
 import type { ToolCallBlock } from "@diligent/core/message-contract";
-import type { ModelClass } from "@diligent/core/model-registry";
 import type { CollabResumePolicy } from "../collab/types";
 import type { SessionEntry } from "./types";
 
@@ -50,21 +49,19 @@ export class CollabSessionHandler {
 
 function policyFromSpawnCall(block: ToolCallBlock): HistoricalCollabAgent["policy"] {
   if (!isRecord(block.input)) return undefined;
-  const modelClass = isModelClass(block.input.model_class) ? block.input.model_class : undefined;
-  const allowedTools =
-    Array.isArray(block.input.allowed_tools) && block.input.allowed_tools.every((item) => typeof item === "string")
-      ? [...block.input.allowed_tools]
-      : undefined;
+  const rawModelClass = block.input.model_class;
+  const modelClass =
+    rawModelClass === "pro" || rawModelClass === "general" || rawModelClass === "lite" ? rawModelClass : undefined;
+  let allowedTools: string[] | undefined;
+  if (Array.isArray(block.input.allowed_tools) && block.input.allowed_tools.every((item) => typeof item === "string")) {
+    allowedTools = [...block.input.allowed_tools];
+  }
   return {
     agentType: typeof block.input.agent_type === "string" ? block.input.agent_type : "general",
     ...(modelClass && { modelClass }),
     ...(allowedTools?.length && { allowedTools }),
     allowNestedAgents: block.input.allow_nested_agents === true,
   };
-}
-
-function isModelClass(value: unknown): value is ModelClass {
-  return value === "pro" || value === "general" || value === "lite";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

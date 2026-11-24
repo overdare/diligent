@@ -16,14 +16,6 @@ import {
   type McpTransportFactory,
 } from "../../src/tools/mcp/client";
 
-function toolNamesFor(result: Awaited<ReturnType<typeof buildDefaultTools>>): string[] {
-  return result.tools.map((tool) => tool.name);
-}
-
-function stateNamesFor(result: Awaited<ReturnType<typeof buildDefaultTools>>): string[] {
-  return result.toolState.map((tool) => tool.name);
-}
-
 describe("buildDefaultTools MCP OAuth wiring", () => {
   afterEach(() => {
     __resetMcpManagerForTest();
@@ -53,7 +45,7 @@ describe("buildDefaultTools MCP OAuth wiring", () => {
       });
 
       expect(connections).toEqual([{ name: "remote", hasOAuthDeps: true, hasAuthProvider: true }]);
-      expect(toolNamesFor(result)).toContain("mcp__remote__echo");
+      expect(result.tools.map((tool) => tool.name)).toContain("mcp__remote__echo");
     } finally {
       await manager.disposeAll();
     }
@@ -134,8 +126,8 @@ describe("buildDefaultTools web gating", () => {
 describe("buildDefaultTools provider-specific edit tools", () => {
   test("shows all edit tool families when provider is not fixed", async () => {
     const result = await buildDefaultTools({ cwd: "/tmp" });
-    const names = toolNamesFor(result);
-    const stateNames = stateNamesFor(result);
+    const names = result.tools.map((tool) => tool.name);
+    const stateNames = result.toolState.map((tool) => tool.name);
 
     expect(names).toContain("apply_patch");
     expect(names).toContain("edit");
@@ -149,8 +141,8 @@ describe("buildDefaultTools provider-specific edit tools", () => {
     "preserves %s provider compatibility by exposing only apply_patch",
     async (provider) => {
       const result = await buildDefaultTools({ cwd: "/tmp", provider });
-      const names = toolNamesFor(result);
-      const stateNames = stateNamesFor(result);
+      const names = result.tools.map((tool) => tool.name);
+      const stateNames = result.toolState.map((tool) => tool.name);
 
       expect(names).toContain("apply_patch");
       expect(names).not.toContain("edit");
@@ -164,8 +156,8 @@ describe("buildDefaultTools provider-specific edit tools", () => {
   test("uses edit and multi_edit for a non-OpenAI provider", async () => {
     const provider = "anthropic";
     const result = await buildDefaultTools({ cwd: "/tmp", provider });
-    const names = toolNamesFor(result);
-    const stateNames = stateNamesFor(result);
+    const names = result.tools.map((tool) => tool.name);
+    const stateNames = result.toolState.map((tool) => tool.name);
 
     expect(names).not.toContain("apply_patch");
     expect(names).toContain("edit");
@@ -187,11 +179,11 @@ describe("buildDefaultTools provider-specific edit tools", () => {
       toolsConfig: { builtin: { apply_patch: true } },
     });
 
-    expect(toolNamesFor(openAiResult)).toContain("apply_patch");
-    expect(toolNamesFor(openAiResult)).not.toContain("edit");
-    expect(toolNamesFor(openAiResult)).not.toContain("multi_edit");
-    expect(toolNamesFor(anthropicResult)).not.toContain("apply_patch");
-    expect(toolNamesFor(anthropicResult)).toContain("edit");
-    expect(toolNamesFor(anthropicResult)).toContain("multi_edit");
+    expect(openAiResult.tools.map((tool) => tool.name)).toContain("apply_patch");
+    expect(openAiResult.tools.map((tool) => tool.name)).not.toContain("edit");
+    expect(openAiResult.tools.map((tool) => tool.name)).not.toContain("multi_edit");
+    expect(anthropicResult.tools.map((tool) => tool.name)).not.toContain("apply_patch");
+    expect(anthropicResult.tools.map((tool) => tool.name)).toContain("edit");
+    expect(anthropicResult.tools.map((tool) => tool.name)).toContain("multi_edit");
   });
 });

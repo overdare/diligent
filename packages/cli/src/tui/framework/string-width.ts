@@ -15,14 +15,17 @@ function isCombiningMark(codePoint: number): boolean {
   );
 }
 
+// biome-ignore lint/plugin/no-tiny-function: names the Unicode variation-selector code point ranges
 function isVariationSelector(codePoint: number): boolean {
   return (codePoint >= 0xfe00 && codePoint <= 0xfe0f) || (codePoint >= 0xe0100 && codePoint <= 0xe01ef);
 }
 
+// biome-ignore lint/plugin/no-tiny-function: names the Unicode emoji-modifier code point range
 function isEmojiModifier(codePoint: number): boolean {
   return codePoint >= 0x1f3fb && codePoint <= 0x1f3ff;
 }
 
+// biome-ignore lint/plugin/no-tiny-function: names the Unicode regional-indicator code point range
 function isRegionalIndicator(codePoint: number): boolean {
   return codePoint >= 0x1f1e6 && codePoint <= 0x1f1ff;
 }

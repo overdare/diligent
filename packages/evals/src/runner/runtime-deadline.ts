@@ -72,9 +72,8 @@ export class RuntimeDeadline {
   }
 
   private abortReason(): RuntimeDeadlineError {
-    return this.signal.reason instanceof RuntimeDeadlineError
-      ? this.signal.reason
-      : new RuntimeDeadlineError("root", "execution", this.timeoutMs);
+    if (this.signal.reason instanceof RuntimeDeadlineError) return this.signal.reason;
+    return new RuntimeDeadlineError("root", "execution", this.timeoutMs);
   }
 }
 

@@ -24,7 +24,6 @@ import {
   deriveToolStartState,
   deriveToolUpdateMessage,
   formatElapsedSeconds,
-  formatTokensRoundedK,
   getWorkingSpinnerFrame,
   isChildScopedStreamEvent,
   parseSpawnChildThreadId,
@@ -111,18 +110,18 @@ export class ThreadStore {
     const lines: string[] = [];
     const nowMs = Date.now();
     if (this.overlayStatus) {
-      const overlayDot =
-        this.overlayStatus.kind === "tool"
-          ? this.statusBlinkVisible
-            ? `${t.text}⏺${t.reset}`
-            : `${t.text} ${t.reset}`
-          : this.statusBlinkVisible
-            ? `${t.dim}⏺${t.reset}`
-            : `${t.dim} ${t.reset}`;
-      const message =
-        this.overlayStatus.kind === "tool"
-          ? `${t.text}${this.overlayStatus.message}${t.reset}`
-          : this.overlayStatus.message;
+      let overlayDot: string;
+      if (this.overlayStatus.kind === "tool") {
+        overlayDot = this.statusBlinkVisible ? `${t.text}⏺${t.reset}` : `${t.text} ${t.reset}`;
+      } else {
+        overlayDot = this.statusBlinkVisible ? `${t.dim}⏺${t.reset}` : `${t.dim} ${t.reset}`;
+      }
+      let message: string;
+      if (this.overlayStatus.kind === "tool") {
+        message = `${t.text}${this.overlayStatus.message}${t.reset}`;
+      } else {
+        message = this.overlayStatus.message;
+      }
       if (this.isCompleteStatusMessage(this.overlayStatus.message)) {
         lines.push(`${overlayDot} ${message}`);
       } else {
@@ -241,7 +240,7 @@ export class ThreadStore {
         return {
           kind: "plain" as const,
           lines: [
-            `${t.success}⏺${t.reset} ${t.dim}Compacted: ${summaryPrefix}${formatTokensRoundedK(compactionEvent.tokensBefore)} → ${formatTokensRoundedK(compactionEvent.tokensAfter)} tokens${t.reset}`,
+            `${t.success}⏺${t.reset} ${t.dim}Compacted: ${summaryPrefix}${Math.round(compactionEvent.tokensBefore / 1000)}k → ${Math.round(compactionEvent.tokensAfter / 1000)}k tokens${t.reset}`,
           ],
         };
       },

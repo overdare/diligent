@@ -36,17 +36,17 @@ export async function* iterateChatGPTJsonSse(
       let chunk: Awaited<ReturnType<typeof reader.read>>;
       try {
         const read = reader.read();
-        chunk =
-          options.idleTimeoutMs === undefined
-            ? await read
-            : await waitForOpenAIStreamProgress(read, {
-                idleTimeoutMs: options.idleTimeoutMs,
-                message:
-                  options.idleTimeoutMessage ?? `ChatGPT HTTP stream idle timeout after ${options.idleTimeoutMs}ms`,
-                signal: options.signal,
-                onTimeout: (error) => reader.cancel(error),
-                onAbort: (reason) => reader.cancel(reason),
-              });
+        if (options.idleTimeoutMs === undefined) {
+          chunk = await read;
+        } else {
+          chunk = await waitForOpenAIStreamProgress(read, {
+            idleTimeoutMs: options.idleTimeoutMs,
+            message: options.idleTimeoutMessage ?? `ChatGPT HTTP stream idle timeout after ${options.idleTimeoutMs}ms`,
+            signal: options.signal,
+            onTimeout: (error) => reader.cancel(error),
+            onAbort: (reason) => reader.cancel(reason),
+          });
+        }
       } catch (error) {
         if (options.signal?.aborted) return;
         throw error;

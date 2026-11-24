@@ -63,10 +63,6 @@ export class MarkdownView implements Component {
     return text;
   }
 
-  isEmpty(): boolean {
-    return this.committedRaw.length === 0 && this.buffer.length === 0;
-  }
-
   /** Reset for a new message */
   reset(): void {
     this.buffer = "";

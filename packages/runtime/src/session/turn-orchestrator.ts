@@ -45,11 +45,12 @@ function readObservedTurn(prompt: string, response?: AssistantMessage): { input?
   // Hosts may put attached metadata in a leading wrapper.
   const close = "\n</AttachedContext>";
   const end = trimmed.lastIndexOf(close);
-  const input = trimmed.startsWith("<AttachedContext>")
-    ? end === -1
-      ? undefined
-      : trimmed.slice(end + close.length).trimStart()
-    : prompt;
+  let input: string | undefined;
+  if (trimmed.startsWith("<AttachedContext>")) {
+    input = end === -1 ? undefined : trimmed.slice(end + close.length).trimStart();
+  } else {
+    input = prompt;
+  }
   const output = response?.content
     .filter((block) => block.type === "text")
     .map((block) => block.text)
@@ -122,31 +123,31 @@ export class TurnOrchestrator {
       const prompt =
         observe && !options?.internal && !this.ctx.persistence.parentSession ? options?.observationPrompt : undefined;
       let response: AssistantMessage | undefined;
-      const run = () =>
-        this.runInternal(
-          userMessage,
-          { ...options, turnScope },
-          prompt === undefined
-            ? undefined
-            : (message) => {
-                response = message;
-              },
+      let captureResponse: ((message: AssistantMessage | undefined) => void) | undefined;
+      if (prompt !== undefined) {
+        captureResponse = (message) => {
+          response = message;
+        };
+      }
+      // biome-ignore lint/plugin/no-tiny-function: the same thunk is handed to the observer or run directly
+      const run = () => this.runInternal(userMessage, { ...options, turnScope }, captureResponse);
+      let runOutcome: Promise<SessionRunOutcome>;
+      if (observe) {
+        runOutcome = observe(
+          {
+            sessionId: this.ctx.persistence.sessionId,
+            rootSessionId: getSessionExecutionContext()?.rootSessionId,
+            userId: this.ctx.config.getUserId?.(),
+            ...(prompt !== undefined && {
+              readTurnContent: () => readObservedTurn(prompt, response),
+            }),
+          },
+          run,
         );
-      return await (observe
-        ? observe(
-            {
-              sessionId: this.ctx.persistence.sessionId,
-              rootSessionId: getSessionExecutionContext()?.rootSessionId,
-              userId: this.ctx.config.getUserId?.(),
-              ...(prompt === undefined
-                ? {}
-                : {
-                    readTurnContent: () => readObservedTurn(prompt, response),
-                  }),
-            },
-            run,
-          )
-        : run());
+      } else {
+        runOutcome = run();
+      }
+      return await runOutcome;
     } finally {
       await turnScope.dispose();
     }
@@ -169,10 +170,11 @@ export class TurnOrchestrator {
     try {
       await this.executeRun(prepared.agent, userMessage, options.signal, options.turnScope);
       this.commitRun(prepared.turnStager);
-      outcome =
-        getAgentStopReason() === "interrupted" || options.signal?.aborted
-          ? { status: "interrupted" }
-          : { status: "completed" };
+      if (getAgentStopReason() === "interrupted" || options.signal?.aborted) {
+        outcome = { status: "interrupted" };
+      } else {
+        outcome = { status: "completed" };
+      }
     } catch (err) {
       const error = this.handleRunError(err, prepared.turnStager, getCurrentTurnId(), getLastAgentError());
       outcome = { status: "failed", error };
@@ -248,14 +250,16 @@ export class TurnOrchestrator {
 
   /** Queue a steering message. If agent is active, steers directly; otherwise queues locally. */
   steer(message: Message | string, id?: string): string {
-    const msg: Message =
-      typeof message === "string"
-        ? {
-            role: "user",
-            content: message,
-            timestamp: Date.now(),
-          }
-        : message;
+    let msg: Message;
+    if (typeof message === "string") {
+      msg = {
+        role: "user",
+        content: message,
+        timestamp: Date.now(),
+      };
+    } else {
+      msg = message;
+    }
     const steerId = id ?? `steer-${generateEntryId()}`;
     if (this._agent) {
       return this._agent.steer(msg, steerId);
@@ -289,10 +293,17 @@ export class TurnOrchestrator {
   getPendingSteers(): PendingSteer[] {
     const agentMessages = this._agent?.getPendingSteeringMessages() ?? [];
     return [...agentMessages, ...this.pendingMessages].map(({ id, message }) => {
-      const attachments =
-        message.role === "user" && Array.isArray(message.content)
-          ? message.content.filter((block) => block.type === "local_image")
-          : [];
+      let attachments: {
+        type: "local_image";
+        path: string;
+        mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+        fileName?: string | undefined;
+      }[];
+      if (message.role === "user" && Array.isArray(message.content)) {
+        attachments = message.content.filter((block) => block.type === "local_image");
+      } else {
+        attachments = [];
+      }
       return { id, content: getUserMessageText(message) ?? "", ...(attachments.length > 0 ? { attachments } : {}) };
     });
   }
@@ -450,14 +461,22 @@ export class TurnOrchestrator {
     const lastPersisted = summarizeLastPersistedMessage(this.ctx.state.getCommittedEntries());
     // Structured, content-free run context for diagnostics sinks (Sentry tags): which
     // provider/model failed and how big the turn was. Never put conversation content here.
-    const runContext = this._agent
-      ? {
-          provider: this._agent.model.provider,
-          modelId: this._agent.model.modelId,
-          toolCount: this._agent.tools.length,
-          entryCount: this.ctx.state.entryCount,
+    let runContext:
+      | {
+          provider: "anthropic" | "openai" | "chatgpt" | "gemini" | "vertex" | "zai-coding-plan";
+          modelId: string;
+          toolCount: number;
+          entryCount: number;
         }
-      : undefined;
+      | undefined;
+    if (this._agent) {
+      runContext = {
+        provider: this._agent.model.provider,
+        modelId: this._agent.model.modelId,
+        toolCount: this._agent.tools.length,
+        entryCount: this.ctx.state.entryCount,
+      };
+    }
     logger.error("run_failed", {
       sessionId: this.ctx.persistence.sessionId,
       turnId,

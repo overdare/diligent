@@ -24,6 +24,7 @@ const NON_CONTEXT_REQUEST_KEYS: Record<string, true> = {
   type: true,
 };
 
+// biome-ignore lint/plugin/no-tiny-function: names the digest formula that chain keys must share
 function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("base64");
 }

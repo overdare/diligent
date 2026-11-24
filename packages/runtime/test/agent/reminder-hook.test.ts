@@ -26,18 +26,17 @@ test("a due reminder that is not applicable can fire on the next turn", () => {
       messages: ready ? [{ role: "user", content: "Ready for review", timestamp: 0 }] : [message],
       compactedThisTurn: false,
     });
-  const afterTurn = (turnId: string) => hook.afterTurn?.({ turnId, message, toolResults: [] });
 
   expect(beforeTurn("1", true)).toBeUndefined();
-  afterTurn("1");
+  hook.afterTurn?.({ turnId: "1", message, toolResults: [] });
   expect(beforeTurn("2", true)).toBeUndefined();
-  afterTurn("2");
+  hook.afterTurn?.({ turnId: "2", message, toolResults: [] });
   expect(beforeTurn("3")).toBeUndefined();
-  afterTurn("3");
+  hook.afterTurn?.({ turnId: "3", message, toolResults: [] });
 
   expect(beforeTurn("4", true)).toEqual([
     { source: "review-reminder", content: "<system-reminder>\nReview the changes.\n</system-reminder>" },
   ]);
-  afterTurn("4");
+  hook.afterTurn?.({ turnId: "4", message, toolResults: [] });
   expect(beforeTurn("5", true)).toBeUndefined();
 });

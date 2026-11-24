@@ -35,17 +35,19 @@ export function resolveSkillStates(
   return skills.map((skill) => {
     const globalEnabled = globalOverrides[skill.name] ?? true;
     const effectiveEnabled = effectiveOverrides[skill.name] ?? true;
-    const controlledBy: SkillSettingController = Object.hasOwn(projectOverrides, skill.name)
-      ? "project"
-      : Object.hasOwn(globalOverrides, skill.name)
-        ? "global"
-        : "default";
+    let controlledBy: SkillSettingController;
+    if (Object.hasOwn(projectOverrides, skill.name)) {
+      controlledBy = "project";
+    } else {
+      controlledBy = Object.hasOwn(globalOverrides, skill.name) ? "global" : "default";
+    }
     const available = skillsEnabled && effectiveEnabled;
-    const reason: SkillStateReason = !skillsEnabled
-      ? "skills_disabled"
-      : effectiveEnabled
-        ? "enabled"
-        : "disabled_by_user";
+    let reason: SkillStateReason;
+    if (!skillsEnabled) {
+      reason = "skills_disabled";
+    } else {
+      reason = effectiveEnabled ? "enabled" : "disabled_by_user";
+    }
 
     return {
       skill,

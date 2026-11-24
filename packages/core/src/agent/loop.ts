@@ -92,7 +92,6 @@ export async function runAgentLoop(
   let itemCounter = 0;
   let turnNumber = 0;
   let stopReason: AgentStopReason = "completed";
-  const nextItemId = () => `item-${++itemCounter}`;
 
   stream.emit({ type: "agent_start" });
 
@@ -156,11 +155,12 @@ export async function runAgentLoop(
             loopRequest,
             { tools: config.tools, systemPrompt: config.systemPrompt, providerStream },
             stream,
-            nextItemId,
+            () => `item-${++itemCounter}`,
           );
           break;
         } catch (err) {
-          if (!isContextOverflowError(err) || retriedAfterContextOverflow) throw err;
+          const isContextOverflow = err instanceof ProviderError && err.errorType === ProviderErrorType.ContextOverflow;
+          if (!isContextOverflow || retriedAfterContextOverflow) throw err;
           let compacted = false;
           try {
             compacted = await compactAfterContextOverflow(
@@ -193,7 +193,7 @@ export async function runAgentLoop(
         AbortSignal.any([signal, batchAbortController.signal]),
         registry,
         stream,
-        nextItemId,
+        () => `item-${++itemCounter}`,
         () => toolAbortController.abort(),
         runtime.toolOutputStore,
         runtime.sessionId,
@@ -283,10 +283,6 @@ function createRunScope(signal: AbortSignal): { scope: ToolRunScope; close: () =
       while (tracked.size > 0) await Promise.all(tracked);
     },
   };
-}
-
-function isContextOverflowError(err: unknown): err is ProviderError {
-  return err instanceof ProviderError && err.errorType === ProviderErrorType.ContextOverflow;
 }
 
 async function compactIfNeeded(

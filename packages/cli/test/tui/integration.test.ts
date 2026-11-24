@@ -10,11 +10,6 @@ import { TUIRenderer } from "../../src/tui/framework/renderer";
 import { displayWidth } from "../../src/tui/framework/string-width";
 import type { Terminal } from "../../src/tui/framework/terminal";
 
-/** Minimal cast helper — test events don't need every field */
-function ev(e: unknown): AgentEvent {
-  return e as AgentEvent;
-}
-
 // ---------------------------------------------------------------------------
 // Terminal simulator (same as renderer.test.ts, minimal copy)
 // ---------------------------------------------------------------------------
@@ -193,14 +188,14 @@ function buildStack(rows = 40, columns = 120) {
   const sim = new TerminalSim(rows, columns);
   const terminal = makeTerminal(sim);
 
-  // We'll connect requestRender after renderer is created
-  const requestRender = () => renderer.forceRender();
-
+  // requestRender closures read `renderer`, which is created below
   const chatView = new ChatView({
-    requestRender,
+    requestRender: () => renderer.forceRender(),
     getCommitWidth: () => terminal.columns,
   });
-  const inputEditor = new InputEditor({ onSubmit: () => {}, onCancel: () => {}, onExit: () => {} }, requestRender);
+  const inputEditor = new InputEditor({ onSubmit: () => {}, onCancel: () => {}, onExit: () => {} }, () =>
+    renderer.forceRender(),
+  );
   const statusBar = new StatusBar();
   const bottomPane = new BottomPane(chatView.getLiveStackComponent(), inputEditor, statusBar);
 
@@ -281,7 +276,7 @@ describe("Integration: full tool execution cycle", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("run something");
 
-    chatView.handleEvent(ev({ type: "status_change", status: "busy" }));
+    chatView.handleEvent({ type: "status_change", status: "busy" } as AgentEvent);
 
     expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
     expect(sim.screen.some((line) => line.includes("Working…"))).toBe(true);
@@ -291,7 +286,7 @@ describe("Integration: full tool execution cycle", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("run something");
 
-    chatView.handleEvent(ev({ type: "status_change", status: "busy" }));
+    chatView.handleEvent({ type: "status_change", status: "busy" } as AgentEvent);
 
     const plainLines = sim.screen.map(stripAnsi);
     const separatorIndex = plainLines.findIndex((line) => /^─+$/.test(line.trim()));
@@ -303,23 +298,24 @@ describe("Integration: full tool execution cycle", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("keep working visible");
 
-    chatView.handleEvent(ev({ type: "status_change", status: "busy" }));
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m1", message: {} }));
-    chatView.handleEvent(
-      ev({ type: "message_delta", itemId: "m1", message: {}, delta: { type: "text_delta", delta: "x".repeat(600) } }),
-    );
+    chatView.handleEvent({ type: "status_change", status: "busy" } as AgentEvent);
+    chatView.handleEvent({ type: "message_start", itemId: "m1", message: {} } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m1",
+      message: {},
+      delta: { type: "text_delta", delta: "x".repeat(600) },
+    } as AgentEvent);
 
     expect(sim.screen.some((line) => line.includes("Working…"))).toBe(true);
 
-    chatView.handleEvent(
-      ev({
-        type: "turn_end",
-        threadId: "t1",
-        usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        cost: 0,
-        toolResults: [],
-      }),
-    );
+    chatView.handleEvent({
+      type: "turn_end",
+      threadId: "t1",
+      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      cost: 0,
+      toolResults: [],
+    } as AgentEvent);
 
     expect(sim.screen.some((line) => line.includes("Working…"))).toBe(false);
   });
@@ -327,16 +323,14 @@ describe("Integration: full tool execution cycle", () => {
   test("layout order keeps live stack between transcript and chat input", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("order check");
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m1", message: {} }));
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m1",
-        message: {},
-        delta: { type: "text_delta", delta: `${"s".repeat(600)} stream body text` },
-      }),
-    );
-    chatView.handleEvent(ev({ type: "status_change", status: "busy" }));
+    chatView.handleEvent({ type: "message_start", itemId: "m1", message: {} } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m1",
+      message: {},
+      delta: { type: "text_delta", delta: `${"s".repeat(600)} stream body text` },
+    } as AgentEvent);
+    chatView.handleEvent({ type: "status_change", status: "busy" } as AgentEvent);
 
     const plainLines = sim.screen.map(stripAnsi);
     const transcriptIndex = plainLines.findIndex((line) => line.includes("order check"));
@@ -352,7 +346,7 @@ describe("Integration: full tool execution cycle", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("compact please");
 
-    chatView.handleEvent(ev({ type: "compaction_start", estimatedTokens: 12345 }));
+    chatView.handleEvent({ type: "compaction_start", estimatedTokens: 12345 } as AgentEvent);
 
     expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
     expect(sim.screen.some((line) => line.includes("Compacting…"))).toBe(true);
@@ -362,17 +356,21 @@ describe("Integration: full tool execution cycle", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("run something");
 
-    chatView.handleEvent(ev({ type: "tool_start", toolName: "bash", toolCallId: "t1", itemId: "i1", input: {} }));
-    chatView.handleEvent(
-      ev({
-        type: "tool_end",
-        toolCallId: "t1",
-        itemId: "i1",
-        toolName: "bash",
-        output: "line1\nline2\nline3",
-        isError: false,
-      }),
-    );
+    chatView.handleEvent({
+      type: "tool_start",
+      toolName: "bash",
+      toolCallId: "t1",
+      itemId: "i1",
+      input: {},
+    } as AgentEvent);
+    chatView.handleEvent({
+      type: "tool_end",
+      toolCallId: "t1",
+      itemId: "i1",
+      toolName: "bash",
+      output: "line1\nline2\nline3",
+      isError: false,
+    } as AgentEvent);
 
     expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
   });
@@ -380,17 +378,21 @@ describe("Integration: full tool execution cycle", () => {
   test("historical tool result snapshot stays collapsed after commit", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("run something");
-    chatView.handleEvent(ev({ type: "tool_start", toolName: "bash", toolCallId: "t1", itemId: "i1", input: {} }));
-    chatView.handleEvent(
-      ev({
-        type: "tool_end",
-        toolCallId: "t1",
-        itemId: "i1",
-        toolName: "bash",
-        output: "line1\nline2\nline3",
-        isError: false,
-      }),
-    );
+    chatView.handleEvent({
+      type: "tool_start",
+      toolName: "bash",
+      toolCallId: "t1",
+      itemId: "i1",
+      input: {},
+    } as AgentEvent);
+    chatView.handleEvent({
+      type: "tool_end",
+      toolCallId: "t1",
+      itemId: "i1",
+      toolName: "bash",
+      output: "line1\nline2\nline3",
+      isError: false,
+    } as AgentEvent);
 
     let plainLines = sim.screen.map(stripAnsi);
     expect(plainLines.some((l) => l.includes("⏺ bash"))).toBe(true);
@@ -408,25 +410,21 @@ describe("Integration: full tool execution cycle", () => {
   test("collapsed grep tool header is renderpayload-first", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("search in file");
-    chatView.handleEvent(
-      ev({
-        type: "tool_start",
-        toolName: "grep",
-        toolCallId: "t2",
-        itemId: "i2",
-        input: { pattern: "TODO", path: "/Users/me/project/src/main.ts", include: "*.ts" },
-      }),
-    );
-    chatView.handleEvent(
-      ev({
-        type: "tool_end",
-        toolCallId: "t2",
-        itemId: "i2",
-        toolName: "grep",
-        output: "src/main.ts:1:// TODO",
-        isError: false,
-      }),
-    );
+    chatView.handleEvent({
+      type: "tool_start",
+      toolName: "grep",
+      toolCallId: "t2",
+      itemId: "i2",
+      input: { pattern: "TODO", path: "/Users/me/project/src/main.ts", include: "*.ts" },
+    } as AgentEvent);
+    chatView.handleEvent({
+      type: "tool_end",
+      toolCallId: "t2",
+      itemId: "i2",
+      toolName: "grep",
+      output: "src/main.ts:1:// TODO",
+      isError: false,
+    } as AgentEvent);
 
     const plainLines = sim.screen.map(stripAnsi);
     expect(plainLines.some((l) => l.includes("grep — /Users/me/project/src/main.ts"))).toBe(false);
@@ -440,27 +438,34 @@ describe("Integration: full tool execution cycle", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("do stuff");
 
-    chatView.handleEvent(ev({ type: "tool_start", toolName: "bash", toolCallId: "t1", itemId: "i1", input: {} }));
-    chatView.handleEvent(
-      ev({ type: "tool_end", toolCallId: "t1", itemId: "i1", toolName: "bash", output: "done", isError: false }),
-    );
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m1", message: {} }));
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m1",
-        message: {},
-        delta: { type: "text_delta", delta: "The result is done.\n" },
-      }),
-    );
-    chatView.handleEvent(ev({ type: "message_end", itemId: "m1", message: {} }));
-    chatView.handleEvent(
-      ev({
-        type: "usage",
-        usage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        cost: 0.001,
-      }),
-    );
+    chatView.handleEvent({
+      type: "tool_start",
+      toolName: "bash",
+      toolCallId: "t1",
+      itemId: "i1",
+      input: {},
+    } as AgentEvent);
+    chatView.handleEvent({
+      type: "tool_end",
+      toolCallId: "t1",
+      itemId: "i1",
+      toolName: "bash",
+      output: "done",
+      isError: false,
+    } as AgentEvent);
+    chatView.handleEvent({ type: "message_start", itemId: "m1", message: {} } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m1",
+      message: {},
+      delta: { type: "text_delta", delta: "The result is done.\n" },
+    } as AgentEvent);
+    chatView.handleEvent({ type: "message_end", itemId: "m1", message: {} } as AgentEvent);
+    chatView.handleEvent({
+      type: "usage",
+      usage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      cost: 0.001,
+    } as AgentEvent);
 
     // Only 2 "❯ ": one in user message history, one live input
     expect(sim.countOccurrences("❯ ")).toBe(2);
@@ -471,24 +476,20 @@ describe("Integration: full tool execution cycle", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("show your work");
 
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m1", message: {} }));
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m1",
-        message: {},
-        delta: { type: "thinking_delta", delta: "Considering option A and B." },
-      }),
-    );
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m1",
-        message: {},
-        delta: { type: "text_delta", delta: "Final answer.\n" },
-      }),
-    );
-    chatView.handleEvent(ev({ type: "message_end", itemId: "m1", message: {} }));
+    chatView.handleEvent({ type: "message_start", itemId: "m1", message: {} } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m1",
+      message: {},
+      delta: { type: "thinking_delta", delta: "Considering option A and B." },
+    } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m1",
+      message: {},
+      delta: { type: "text_delta", delta: "Final answer.\n" },
+    } as AgentEvent);
+    chatView.handleEvent({ type: "message_end", itemId: "m1", message: {} } as AgentEvent);
 
     expect(sim.screen.some((l) => l.includes("Thought for"))).toBe(true);
     expect(sim.screen.some((l) => l.includes("Considering option A and B."))).toBe(true);
@@ -500,24 +501,20 @@ describe("Integration: full tool execution cycle", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("show reasoning");
 
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m2", message: {} }));
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m2",
-        message: {},
-        delta: { type: "thinking_delta", delta: "Use **strong** signal and `code` marker." },
-      }),
-    );
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m2",
-        message: {},
-        delta: { type: "text_delta", delta: "Done.\n" },
-      }),
-    );
-    chatView.handleEvent(ev({ type: "message_end", itemId: "m2", message: {} }));
+    chatView.handleEvent({ type: "message_start", itemId: "m2", message: {} } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m2",
+      message: {},
+      delta: { type: "thinking_delta", delta: "Use **strong** signal and `code` marker." },
+    } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m2",
+      message: {},
+      delta: { type: "text_delta", delta: "Done.\n" },
+    } as AgentEvent);
+    chatView.handleEvent({ type: "message_end", itemId: "m2", message: {} } as AgentEvent);
 
     const allText = sim.screen.join("\n");
     expect(allText).toContain("Use **strong** signal and `code` marker.");
@@ -528,24 +525,20 @@ describe("Integration: full tool execution cycle", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("show reasoning");
 
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m3", message: {} }));
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m3",
-        message: {},
-        delta: { type: "thinking_delta", delta: "Line one\nLine two\n" },
-      }),
-    );
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m3",
-        message: {},
-        delta: { type: "text_delta", delta: "Final answer.\n" },
-      }),
-    );
-    chatView.handleEvent(ev({ type: "message_end", itemId: "m3", message: {} }));
+    chatView.handleEvent({ type: "message_start", itemId: "m3", message: {} } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m3",
+      message: {},
+      delta: { type: "thinking_delta", delta: "Line one\nLine two\n" },
+    } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m3",
+      message: {},
+      delta: { type: "text_delta", delta: "Final answer.\n" },
+    } as AgentEvent);
+    chatView.handleEvent({ type: "message_end", itemId: "m3", message: {} } as AgentEvent);
 
     const plainLines = sim.screen.map(stripAnsi);
     const thoughtLineIndex = plainLines.findIndex((line) => line.includes("Thought for"));
@@ -561,48 +554,38 @@ describe("Integration: full tool execution cycle", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("show reasoning");
 
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m4", message: {} }));
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m4",
-        message: {},
-        delta: { type: "thinking_delta", delta: "Line one" },
-      }),
-    );
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m4",
-        message: {},
-        delta: { type: "thinking_delta", delta: "\nLine two" },
-      }),
-    );
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m4",
-        message: {},
-        delta: { type: "thinking_delta", delta: "\n" },
-      }),
-    );
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m4",
-        message: {},
-        delta: { type: "text_delta", delta: "Answer starts now.\n" },
-      }),
-    );
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m4",
-        message: {},
-        delta: { type: "text_delta", delta: "Second sentence.\n" },
-      }),
-    );
-    chatView.handleEvent(ev({ type: "message_end", itemId: "m4", message: {} }));
+    chatView.handleEvent({ type: "message_start", itemId: "m4", message: {} } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m4",
+      message: {},
+      delta: { type: "thinking_delta", delta: "Line one" },
+    } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m4",
+      message: {},
+      delta: { type: "thinking_delta", delta: "\nLine two" },
+    } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m4",
+      message: {},
+      delta: { type: "thinking_delta", delta: "\n" },
+    } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m4",
+      message: {},
+      delta: { type: "text_delta", delta: "Answer starts now.\n" },
+    } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m4",
+      message: {},
+      delta: { type: "text_delta", delta: "Second sentence.\n" },
+    } as AgentEvent);
+    chatView.handleEvent({ type: "message_end", itemId: "m4", message: {} } as AgentEvent);
 
     const plainLines = sim.screen.map(stripAnsi);
     const thoughtLineIndex = plainLines.findIndex((line) => line.includes("Thought for"));
@@ -620,24 +603,20 @@ describe("Integration: full tool execution cycle", () => {
     const { sim, chatView } = buildStack(20, 28);
     chatView.addUserMessage("show reasoning");
 
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m5", message: {} }));
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m5",
-        message: {},
-        delta: { type: "thinking_delta", delta: "1234567890123456789012345678\n" },
-      }),
-    );
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m5",
-        message: {},
-        delta: { type: "text_delta", delta: "Answer line.\n" },
-      }),
-    );
-    chatView.handleEvent(ev({ type: "message_end", itemId: "m5", message: {} }));
+    chatView.handleEvent({ type: "message_start", itemId: "m5", message: {} } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m5",
+      message: {},
+      delta: { type: "thinking_delta", delta: "1234567890123456789012345678\n" },
+    } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m5",
+      message: {},
+      delta: { type: "text_delta", delta: "Answer line.\n" },
+    } as AgentEvent);
+    chatView.handleEvent({ type: "message_end", itemId: "m5", message: {} } as AgentEvent);
 
     const plainLines = sim.screen.map(stripAnsi);
     const thoughtLineIndex = plainLines.findIndex((line) => line.includes("Thought for"));
@@ -675,19 +654,21 @@ describe("Integration: full tool execution cycle", () => {
     chatView.addUserMessage("do lots of stuff");
 
     for (let i = 0; i < 5; i++) {
-      chatView.handleEvent(
-        ev({ type: "tool_start", toolName: `tool${i}`, toolCallId: `tc${i}`, itemId: `i${i}`, input: {} }),
-      );
-      chatView.handleEvent(
-        ev({
-          type: "tool_end",
-          toolCallId: `tc${i}`,
-          itemId: `i${i}`,
-          toolName: `tool${i}`,
-          output: `output of tool${i}\nwith two lines`,
-          isError: false,
-        }),
-      );
+      chatView.handleEvent({
+        type: "tool_start",
+        toolName: `tool${i}`,
+        toolCallId: `tc${i}`,
+        itemId: `i${i}`,
+        input: {},
+      } as AgentEvent);
+      chatView.handleEvent({
+        type: "tool_end",
+        toolCallId: `tc${i}`,
+        itemId: `i${i}`,
+        toolName: `tool${i}`,
+        output: `output of tool${i}\nwith two lines`,
+        isError: false,
+      } as AgentEvent);
     }
 
     expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
@@ -699,15 +680,13 @@ describe("Integration: streaming markdown — rapid commits", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("stream and clear");
 
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m-clear", message: {} }));
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m-clear",
-        message: {},
-        delta: { type: "text_delta", delta: `${"x".repeat(1100)} partial response in progress` },
-      }),
-    );
+    chatView.handleEvent({ type: "message_start", itemId: "m-clear", message: {} } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m-clear",
+      message: {},
+      delta: { type: "text_delta", delta: `${"x".repeat(1100)} partial response in progress` },
+    } as AgentEvent);
 
     expect(sim.screen.some((line) => line.includes("partial response in progress"))).toBe(false);
 
@@ -721,15 +700,13 @@ describe("Integration: streaming markdown — rapid commits", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("stream and interrupt");
 
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m-commit", message: {} }));
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m-commit",
-        message: {},
-        delta: { type: "text_delta", delta: "partial response kept" },
-      }),
-    );
+    chatView.handleEvent({ type: "message_start", itemId: "m-commit", message: {} } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m-commit",
+      message: {},
+      delta: { type: "text_delta", delta: "partial response kept" },
+    } as AgentEvent);
 
     chatView.clearActiveWithCommit();
 
@@ -742,7 +719,7 @@ describe("Integration: streaming markdown — rapid commits", () => {
     chatView.addUserMessage("explain the project");
 
     // Simulate LLM streaming paragraph by paragraph (each ends with \n)
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m1", message: {} }));
+    chatView.handleEvent({ type: "message_start", itemId: "m1", message: {} } as AgentEvent);
 
     const deltas = [
       "Hello! Welcome to the project.\n",
@@ -756,11 +733,14 @@ describe("Integration: streaming markdown — rapid commits", () => {
     ];
 
     for (const delta of deltas) {
-      chatView.handleEvent(
-        ev({ type: "message_delta", itemId: "m1", message: {}, delta: { type: "text_delta", delta } }),
-      );
+      chatView.handleEvent({
+        type: "message_delta",
+        itemId: "m1",
+        message: {},
+        delta: { type: "text_delta", delta },
+      } as AgentEvent);
     }
-    chatView.handleEvent(ev({ type: "message_end", itemId: "m1", message: {} }));
+    chatView.handleEvent({ type: "message_end", itemId: "m1", message: {} } as AgentEvent);
 
     // "❯ " in history (user message) + live input = 2
     expect(sim.countOccurrences("❯ ")).toBe(2);
@@ -777,11 +757,14 @@ describe("Integration: streaming markdown — rapid commits", () => {
     chatView.addLines(["welcome box", "tip line"]);
     chatView.addUserMessage("history");
 
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m-history", message: {} }));
+    chatView.handleEvent({ type: "message_start", itemId: "m-history", message: {} } as AgentEvent);
     for (const delta of Array.from({ length: 6 }, (_, index) => `${`body-${index + 1} `.repeat(32)}\n`)) {
-      chatView.handleEvent(
-        ev({ type: "message_delta", itemId: "m-history", message: {}, delta: { type: "text_delta", delta } }),
-      );
+      chatView.handleEvent({
+        type: "message_delta",
+        itemId: "m-history",
+        message: {},
+        delta: { type: "text_delta", delta },
+      } as AgentEvent);
     }
     const plainLines = sim.screen.map(stripAnsi);
     expect(plainLines.some((line) => line.includes("welcome box"))).toBe(true);
@@ -793,26 +776,22 @@ describe("Integration: streaming markdown — rapid commits", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("test");
 
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m1", message: {} }));
+    chatView.handleEvent({ type: "message_start", itemId: "m1", message: {} } as AgentEvent);
     // Partial bold: ** opens but no close yet
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m1",
-        message: {},
-        delta: { type: "text_delta", delta: "The project is in **Phase 4b" },
-      }),
-    );
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m1",
+      message: {},
+      delta: { type: "text_delta", delta: "The project is in **Phase 4b" },
+    } as AgentEvent);
     // Newline commits while bold is still open
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m1",
-        message: {},
-        delta: { type: "text_delta", delta: "** planning.\n" },
-      }),
-    );
-    chatView.handleEvent(ev({ type: "message_end", itemId: "m1", message: {} }));
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m1",
+      message: {},
+      delta: { type: "text_delta", delta: "** planning.\n" },
+    } as AgentEvent);
+    chatView.handleEvent({ type: "message_end", itemId: "m1", message: {} } as AgentEvent);
 
     expect(sim.countOccurrences("❯ ")).toBe(2);
     expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
@@ -827,25 +806,23 @@ describe("Integration: streaming markdown — rapid commits", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("go");
 
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m1", message: {} }));
+    chatView.handleEvent({ type: "message_start", itemId: "m1", message: {} } as AgentEvent);
 
     const lines = ["First line.\n", "Second line.\n", "Third line.\n"];
 
     for (const delta of lines) {
-      chatView.handleEvent(
-        ev({
-          type: "message_delta",
-          itemId: "m1",
-          message: {},
-          delta: { type: "text_delta", delta },
-        }),
-      );
+      chatView.handleEvent({
+        type: "message_delta",
+        itemId: "m1",
+        message: {},
+        delta: { type: "text_delta", delta },
+      } as AgentEvent);
       // Within a single render, no line should appear more than once
       const nonEmpty = contentLines(sim.screen);
       expect(nonEmpty.length).toBe(new Set(nonEmpty).size);
     }
 
-    chatView.handleEvent(ev({ type: "message_end", itemId: "m1", message: {} }));
+    chatView.handleEvent({ type: "message_end", itemId: "m1", message: {} } as AgentEvent);
     // After all commits, each line is visible exactly once
     expect(sim.screen.some((l) => l.includes("First line."))).toBe(true);
     expect(sim.screen.some((l) => l.includes("Second line."))).toBe(true);
@@ -859,16 +836,14 @@ describe("Integration: streaming markdown — rapid commits", () => {
     const { chatView } = buildStack(40, 24);
     chatView.addUserMessage("wrap check");
 
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m-wrap", message: {} }));
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m-wrap",
-        message: {},
-        delta: { type: "text_delta", delta: "우리는 대개 커다란 이별만 기억한다.\n" },
-      }),
-    );
-    chatView.handleEvent(ev({ type: "message_end", itemId: "m-wrap", message: {} }));
+    chatView.handleEvent({ type: "message_start", itemId: "m-wrap", message: {} } as AgentEvent);
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m-wrap",
+      message: {},
+      delta: { type: "text_delta", delta: "우리는 대개 커다란 이별만 기억한다.\n" },
+    } as AgentEvent);
+    chatView.handleEvent({ type: "message_end", itemId: "m-wrap", message: {} } as AgentEvent);
 
     const lines = chatView.render(24);
     for (const line of lines) {
@@ -882,31 +857,27 @@ describe("Integration: streaming markdown — rapid commits", () => {
     // Either way, same content must not appear twice on screen
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("go");
-    chatView.handleEvent(ev({ type: "message_start", itemId: "m1", message: {} }));
+    chatView.handleEvent({ type: "message_start", itemId: "m1", message: {} } as AgentEvent);
 
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m1",
-        message: {},
-        delta: { type: "text_delta", delta: "First line.\n" },
-      }),
-    );
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m1",
+      message: {},
+      delta: { type: "text_delta", delta: "First line.\n" },
+    } as AgentEvent);
     const afterFirst = contentLines(sim.screen);
     expect(afterFirst.length).toBe(new Set(afterFirst).size);
 
-    chatView.handleEvent(
-      ev({
-        type: "message_delta",
-        itemId: "m1",
-        message: {},
-        delta: { type: "text_delta", delta: "Second line.\n" },
-      }),
-    );
+    chatView.handleEvent({
+      type: "message_delta",
+      itemId: "m1",
+      message: {},
+      delta: { type: "text_delta", delta: "Second line.\n" },
+    } as AgentEvent);
     const afterSecond = contentLines(sim.screen);
     expect(afterSecond.length).toBe(new Set(afterSecond).size);
 
-    chatView.handleEvent(ev({ type: "message_end", itemId: "m1", message: {} }));
+    chatView.handleEvent({ type: "message_end", itemId: "m1", message: {} } as AgentEvent);
     const afterEnd = contentLines(sim.screen);
     expect(afterEnd.length).toBe(new Set(afterEnd).size);
     // Both lines are present and each appears exactly once

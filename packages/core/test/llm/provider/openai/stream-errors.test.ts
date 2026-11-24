@@ -15,10 +15,6 @@ function respondWithSSE(body: string): void {
     new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } })) as unknown as typeof fetch;
 }
 
-function namedErrorFrame(code: string, message: string): string {
-  return `event: error\ndata: ${JSON.stringify({ type: "error", code, message, param: null })}\n\n`;
-}
-
 async function streamEvents(): Promise<ProviderEvent[]> {
   const stream = createOpenAIStream("test-key", "https://openai.test/v1");
   return collectEvents(stream(TEST_MODEL, TEST_CONTEXT, {}));
@@ -32,7 +28,7 @@ describe("OpenAI Responses named SSE error frames", () => {
   test("keeps partial text and reports a mid-stream server error as retryable", async () => {
     respondWithSSE(
       `event: response.output_text.delta\ndata: ${JSON.stringify({ type: "response.output_text.delta", delta: "partial" })}\n\n` +
-        namedErrorFrame("server_error", "The server had an error while processing your request."),
+        `event: error\ndata: ${JSON.stringify({ type: "error", code: "server_error", message: "The server had an error while processing your request.", param: null })}\n\n`,
     );
 
     const events = await streamEvents();
@@ -53,7 +49,7 @@ describe("OpenAI Responses named SSE error frames", () => {
       { errorType: "context_overflow", isRetryable: false, reason: "context_window_exceeded" },
     ],
   ] as const)("classifies a %s frame by its code", async (code, message, expected) => {
-    respondWithSSE(namedErrorFrame(code, message));
+    respondWithSSE(`event: error\ndata: ${JSON.stringify({ type: "error", code, message, param: null })}\n\n`);
 
     expect(errorOf(await streamEvents())).toMatchObject(expected);
   });

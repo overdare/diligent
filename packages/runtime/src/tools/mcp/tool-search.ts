@@ -97,10 +97,10 @@ export function createMcpSearchTool(catalog: McpCatalogEntry[]): Tool {
         return { output: `No MCP tools matched${scope}. Call mcp_search_tools with no query to list all tools.` };
       }
 
-      const header =
-        scored.length > matched.length
-          ? `Showing ${matched.length} of ${scored.length} matches (refine your query to narrow).\n`
-          : "";
+      let header: string = "";
+      if (scored.length > matched.length) {
+        header = `Showing ${matched.length} of ${scored.length} matches (refine your query to narrow).\n`;
+      }
       return { output: `${header}${JSON.stringify(matched, null, 2)}` };
     },
   };

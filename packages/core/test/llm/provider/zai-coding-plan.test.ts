@@ -67,6 +67,12 @@ describe("GLM-5.3 Coding Plan Chat Completions contract", () => {
         for (const requestedEffort of efforts) {
           const effort = normalizeThinkingEffort(card, requestedEffort);
           expect(effort).toBe(requestedEffort === "medium" || requestedEffort === "xhigh" ? "low" : requestedEffort);
+          let userContent:
+            | "hello"
+            | { type: "image"; source: { type: "base64"; media_type: "image/png"; data: string } }[] = "hello";
+          if (card.supportsVision) {
+            userContent = [{ type: "image", source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" } }];
+          }
           await stream(
             card,
             {
@@ -74,9 +80,7 @@ describe("GLM-5.3 Coding Plan Chat Completions contract", () => {
               messages: [
                 {
                   role: "user",
-                  content: card.supportsVision
-                    ? [{ type: "image", source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" } }]
-                    : "hello",
+                  content: userContent,
                   timestamp: 1,
                 },
               ],

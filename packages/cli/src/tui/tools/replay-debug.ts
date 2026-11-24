@@ -162,6 +162,7 @@ class TerminalSim {
 }
 
 // Strip ANSI escape codes for comparison
+// biome-ignore lint/plugin/no-tiny-function: names the ANSI-stripping regex
 function stripAnsi(s: string): string {
   return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/\x1b_[^\x07]*\x07/g, "");
 }

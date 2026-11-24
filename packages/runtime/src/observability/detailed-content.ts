@@ -34,6 +34,7 @@ const CREDENTIAL_KEYS = new Set(
     "encryptedcontent",
   ].map((key) => key.toLowerCase()),
 );
+// biome-ignore lint/plugin/no-tiny-function: names the credential-key detection rule
 const credentialKey = (key: string) => CREDENTIAL_KEYS.has(key.replace(/[^a-z0-9]/gi, "").toLowerCase());
 const RAW_BINARY =
   /^(?:buffer|binary|blob|bytes|bytearray|base64|arraybuffer|sharedarraybuffer|dataview|(?:u?int(?:8|16|32)|uint8clamped|float(?:16|32|64)|big(?:u?int)64)array)$/i;
@@ -50,6 +51,7 @@ interface ObservationMessage {
   parts: JsonObject[];
 }
 
+// biome-ignore lint/plugin/no-tiny-function: eleven readers share this record coercion
 function object(value: unknown): JsonObject | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as JsonObject) : undefined;
 }
@@ -150,10 +152,11 @@ export function sanitizeDetailedValue(
   let rendered = typeof sanitized === "string" ? sanitized : (JSON.stringify(sanitized) ?? "");
   if (Buffer.byteLength(rendered) > MAX_DETAIL_BYTES) {
     state.truncated = true;
-    rendered =
-      typeof sanitized === "string"
-        ? clip(rendered, MAX_DETAIL_BYTES)
-        : JSON.stringify({ truncated: true, preview: clip(rendered, Math.floor(MAX_DETAIL_BYTES / 4)) });
+    if (typeof sanitized === "string") {
+      rendered = clip(rendered, MAX_DETAIL_BYTES);
+    } else {
+      rendered = JSON.stringify({ truncated: true, preview: clip(rendered, Math.floor(MAX_DETAIL_BYTES / 4)) });
+    }
   }
   return { value: rendered, truncated: state.truncated };
 }
@@ -167,10 +170,10 @@ function parse(value: unknown): unknown {
 }
 function parts(content: unknown, state: CleanState): JsonObject[] {
   if (typeof content === "string") return [{ type: "text", content: text(content, state) }];
-  if (!Array.isArray(content))
-    return content === undefined
-      ? []
-      : [{ type: "text", content: text(JSON.stringify(clean(content, state)) ?? "", state) }];
+  if (!Array.isArray(content)) {
+    if (content === undefined) return [];
+    return [{ type: "text", content: text(JSON.stringify(clean(content, state)) ?? "", state) }];
+  }
   return content.flatMap((item): JsonObject[] => {
     const block = object(item);
     if (!block) return typeof item === "string" ? [{ type: "text", content: text(item, state) }] : [];
@@ -205,21 +208,23 @@ function parts(content: unknown, state: CleanState): JsonObject[] {
         block.filePath ??
         (typeof block.image_url === "string" ? block.image_url : image?.url) ??
         source?.url;
-      if (typeof reference === "string" && !reference.startsWith("data:"))
+      if (typeof reference === "string" && !reference.startsWith("data:")) {
+        let modality: string;
+        if (typeof block.modality === "string") {
+          modality = text(block.modality, state);
+        } else if (kind.includes("audio")) {
+          modality = "audio";
+        } else {
+          modality = kind.includes("file") || kind === "uri" ? "file" : "image";
+        }
         return [
           {
             type: "uri",
-            modality:
-              typeof block.modality === "string"
-                ? text(block.modality, state)
-                : kind.includes("audio")
-                  ? "audio"
-                  : kind.includes("file") || kind === "uri"
-                    ? "file"
-                    : "image",
+            modality,
             uri: text(reference, state),
           },
         ];
+      }
       if (typeof block.file_id === "string") return [{ type: "file", file_id: text(block.file_id, state) }];
       return [{ type: "text", content: OMITTED }];
     }
@@ -228,22 +233,30 @@ function parts(content: unknown, state: CleanState): JsonObject[] {
 }
 function messages(value: unknown, direction: "input" | "output", state: CleanState): ObservationMessage[] {
   const decoded = parse(value);
-  if (typeof decoded === "string")
-    return decoded ? [{ role: direction === "input" ? "user" : "assistant", parts: parts(decoded, state) }] : [];
+  if (typeof decoded === "string") {
+    if (decoded) {
+      return [{ role: direction === "input" ? "user" : "assistant", parts: parts(decoded, state) }];
+    }
+    return [];
+  }
   const root = object(decoded);
   const result: ObservationMessage[] = [];
   if (direction === "input" && root) {
     const system = root.system ?? root.instructions;
     if (system !== undefined) result.push({ role: "system", parts: parts(system, state) });
   }
-  const list = Array.isArray(decoded)
-    ? decoded
-    : root
-      ? (root.messages ??
-        root.input ??
-        root.output ??
-        (Array.isArray(root.choices) ? root.choices.map((choice: unknown) => object(choice)?.message) : [root]))
-      : [];
+  let list: unknown;
+  if (Array.isArray(decoded)) {
+    list = decoded;
+  } else if (root) {
+    list =
+      root.messages ??
+      root.input ??
+      root.output ??
+      (Array.isArray(root.choices) ? root.choices.map((choice: unknown) => object(choice)?.message) : [root]);
+  } else {
+    list = [];
+  }
   if (typeof list === "string")
     result.push({ role: direction === "input" ? "user" : "assistant", parts: parts(list, state) });
   if (Array.isArray(list) && list.length > 4096) state.truncated = true;
@@ -268,14 +281,19 @@ function messages(value: unknown, direction: "input" | "output", state: CleanSta
         ["tool_result", "tool_call_response"].includes(String(object(block)?.type)),
       );
       for (const block of toolResults) result.push({ role: "tool", parts: parts([block], state) });
-      const rest = Array.isArray(content)
-        ? blocks.filter((block) => !["tool_result", "tool_call_response"].includes(String(object(block)?.type)))
-        : content;
+      let rest: unknown;
+      if (Array.isArray(content)) {
+        rest = blocks.filter((block) => !["tool_result", "tool_call_response"].includes(String(object(block)?.type)));
+      } else {
+        rest = content;
+      }
       const resultId = message.tool_call_id ?? (message.role === "function" ? message.name : undefined);
-      const mapped =
-        (message.role === "tool" || message.role === "function") && typeof resultId === "string"
-          ? [{ type: "tool_call_response", id: text(resultId, state), response: clean(content, state) }]
-          : parts(rest, state);
+      let mapped: JsonObject[];
+      if ((message.role === "tool" || message.role === "function") && typeof resultId === "string") {
+        mapped = [{ type: "tool_call_response", id: text(resultId, state), response: clean(content, state) }];
+      } else {
+        mapped = parts(rest, state);
+      }
       if (Array.isArray(message.tool_calls))
         for (const tool of message.tool_calls) {
           const call = object(tool);
@@ -285,14 +303,12 @@ function messages(value: unknown, direction: "input" | "output", state: CleanSta
               ...parts([{ type: "function_call", id: call.id, name: fn.name, arguments: fn.arguments }], state),
             );
         }
-      const role =
-        typeof message.role === "string" && /^(system|developer|user|assistant|tool|function)$/.test(message.role)
-          ? message.role === "function"
-            ? "tool"
-            : message.role
-          : direction === "input"
-            ? "user"
-            : "assistant";
+      let role: string;
+      if (typeof message.role === "string" && /^(system|developer|user|assistant|tool|function)$/.test(message.role)) {
+        role = message.role === "function" ? "tool" : message.role;
+      } else {
+        role = direction === "input" ? "user" : "assistant";
+      }
       if (mapped.length) result.push({ role, parts: mapped });
     }
   return result;
@@ -312,13 +328,10 @@ function indexed(
     const index = Number(match[1]);
     if (index >= 4096) continue;
     const row = rows.get(index) ?? { role: direction === "input" ? "user" : "assistant", parts: [] };
-    if (match[2] === "role")
-      row.role = /^(system|developer|user|assistant|tool|function)$/.test(value)
-        ? value === "function"
-          ? "tool"
-          : value
-        : row.role;
-    else if (match[2]?.endsWith("image.image.url"))
+    if (match[2] === "role") {
+      if (/^(system|developer|user|assistant|tool|function)$/.test(value))
+        row.role = value === "function" ? "tool" : value;
+    } else if (match[2]?.endsWith("image.image.url"))
       row.parts.push(...parts([{ type: "image_url", image_url: value }], state));
     else row.parts.push({ type: "text", content: text(value, state) });
     rows.set(index, row);
@@ -405,10 +418,11 @@ export function boundDetailedAttributes(
       }
     } else {
       const parsed = parse(value);
-      result[key] =
-        typeof parsed === "object" && parsed !== null
-          ? JSON.stringify({ truncated: true, preview: clip(value, Math.floor(limit / 4)) })
-          : clip(value, limit);
+      if (typeof parsed === "object" && parsed !== null) {
+        result[key] = JSON.stringify({ truncated: true, preview: clip(value, Math.floor(limit / 4)) });
+      } else {
+        result[key] = clip(value, limit);
+      }
     }
     result["diligent.content.truncated"] = true;
   }

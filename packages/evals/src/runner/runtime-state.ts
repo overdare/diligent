@@ -24,20 +24,28 @@ export function captureRuntimeState(
     const left = beforeByPath.get(path);
     const right = afterByPath.get(path);
     if (JSON.stringify(left) === JSON.stringify(right)) continue;
+    let change: "modified" | "removed" | "added";
+    if (left) {
+      change = right ? "modified" : "removed";
+    } else {
+      change = "added";
+    }
     diff.push({
       path,
       category: (right ?? left)!.category,
-      change: left ? (right ? "modified" : "removed") : "added",
+      change,
     });
   }
-  return { initial: before, final: after, diff: diff.sort(comparePath) };
+  return { initial: before, final: after, diff: diff.sort((left, right) => left.path.localeCompare(right.path)) };
 }
 
 export function classifyRuntimeState(
   snapshot: RuntimeWorldSnapshot,
   stateRoots: readonly string[],
 ): RuntimeStateEntry[] {
-  const roots = [...new Set(stateRoots.map(normalizeRoot))].sort((a, b) => b.length - a.length);
+  const roots = [...new Set(stateRoots.map((root) => root.replaceAll("\\", "/").replace(/\/$/, "")))].sort(
+    (a, b) => b.length - a.length,
+  );
   return snapshot.entries
     .flatMap((entry): RuntimeStateEntry[] => {
       const root = roots.find((candidate) => entry.path === candidate || entry.path.startsWith(`${candidate}/`));
@@ -45,7 +53,7 @@ export function classifyRuntimeState(
       const relative = entry.path.slice(root.length).replace(/^\//, "");
       return [{ ...entry, category: classifyRelativeStatePath(relative) }];
     })
-    .sort(comparePath);
+    .sort((left, right) => left.path.localeCompare(right.path));
 }
 
 export function projectSnapshotWithoutRuntimeState(
@@ -97,12 +105,4 @@ function classifyRelativeStatePath(path: string): RuntimeStateCategory {
   if (top === "memory") return "memory";
   if (top === "skills") return "skills";
   return "other";
-}
-
-function normalizeRoot(root: string): string {
-  return root.replaceAll("\\", "/").replace(/\/$/, "");
-}
-
-function comparePath(left: { path: string }, right: { path: string }): number {
-  return left.path.localeCompare(right.path);
 }

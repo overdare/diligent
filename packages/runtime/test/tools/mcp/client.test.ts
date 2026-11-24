@@ -192,14 +192,16 @@ describe("McpConnectionManager.sync", () => {
   });
 
   test("falls back to needs_auth when a silent refresh cannot authorize", async () => {
-    const alwaysInvalid: McpTransportFactory = (): Transport => startFailingTransport('{"error":"invalid_token"}');
     let refreshCalls = 0;
     // Refresh that cannot silently authorize (SDK would need interactive login).
     const refresh = async (): Promise<string> => {
       refreshCalls += 1;
       throw new NeedsAuthError("atlassian");
     };
-    const manager = new McpConnectionManager(alwaysInvalid, refresh);
+    const manager = new McpConnectionManager(
+      (): Transport => startFailingTransport('{"error":"invalid_token"}'),
+      refresh,
+    );
     manager.setOAuthDeps({ storeDir: "/tmp/mcp-oauth-test", openBrowser: () => {} });
 
     const runtimes = await manager.sync({ atlassian: { url: "https://example.test/mcp" } });

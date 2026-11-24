@@ -223,10 +223,9 @@ describe("host-provided Bash terminal", () => {
   test("uses the installed backend for foreground, background, and private terminals", async () => {
     const registry = new ShellProcessRegistry((argv, options) => {
       const exited = Promise.withResolvers<number>();
-      const output = (value: string) => options.onData(new TextEncoder().encode(value));
       options.signal?.addEventListener("abort", () => exited.resolve(1), { once: true });
       queueMicrotask(() => {
-        output("native prompt");
+        options.onData(new TextEncoder().encode("native prompt"));
         const command = argv.at(-1)!;
         const script = posix ? command : Buffer.from(command, "base64").toString("utf16le");
         if (!script.startsWith("private-command")) exited.resolve(0);
@@ -234,7 +233,7 @@ describe("host-provided Bash terminal", () => {
       return {
         exited: exited.promise,
         write(input) {
-          output(input);
+          options.onData(new TextEncoder().encode(input));
           exited.resolve(0);
           return true;
         },

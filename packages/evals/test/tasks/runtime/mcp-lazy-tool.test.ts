@@ -84,52 +84,64 @@ async function assembledExecution(
     profile,
     streamFunction(model, context, options) {
       call += 1;
-      const response =
-        call === 1
-          ? assistantMessage(
-              [
-                ...(includeProgressText ? [{ type: "text" as const, text: "Discovering the MCP tool." }] : []),
-                {
-                  type: "tool_call",
-                  id: "mcp-search-call-1",
-                  name: "mcp_search_tools",
-                  input: {
-                    query: "sterile expedition rendezvous",
-                    ...(omitSearchServer ? {} : { server: "fixture-logistics" }),
-                  },
+      if (call === 1) {
+        let parallelCalls: { type: "tool_call"; id: string; name: string; input: { query: string } }[];
+        if (parallelSearch) {
+          parallelCalls = [
+            {
+              type: "tool_call" as const,
+              id: "mcp-search-call-2",
+              name: "mcp_search_tools",
+              input: { query: "field" },
+            },
+          ];
+        } else {
+          parallelCalls = [];
+        }
+        return sequenceStream([
+          assistantMessage(
+            [
+              ...(includeProgressText ? [{ type: "text" as const, text: "Discovering the MCP tool." }] : []),
+              {
+                type: "tool_call",
+                id: "mcp-search-call-1",
+                name: "mcp_search_tools",
+                input: {
+                  query: "sterile expedition rendezvous",
+                  ...(omitSearchServer ? {} : { server: "fixture-logistics" }),
                 },
-                ...(parallelSearch
-                  ? [
-                      {
-                        type: "tool_call" as const,
-                        id: "mcp-search-call-2",
-                        name: "mcp_search_tools",
-                        input: { query: "field" },
-                      },
-                    ]
-                  : []),
-              ],
-              "tool_use",
-            )
-          : call === 2
-            ? assistantMessage(
-                [
-                  ...(includeProgressText ? [{ type: "text" as const, text: "Running the discovered MCP tool." }] : []),
-                  {
-                    type: "tool_call",
-                    id: "mcp-run-call-2",
-                    name: "mcp_run_tool",
-                    input: {
-                      server: "fixture-logistics",
-                      tool: "coordinate_sterile_field_unit",
-                      args: requestFor(seed),
-                    },
-                  },
-                ],
-                "tool_use",
-              )
-            : assistantMessage([{ type: "text", text: token(seed, "FIELD_UNIT_RECEIPT") }]);
-      return sequenceStream([response])(model, context, options);
+              },
+              ...parallelCalls,
+            ],
+            "tool_use",
+          ),
+        ])(model, context, options);
+      }
+      if (call === 2) {
+        return sequenceStream([
+          assistantMessage(
+            [
+              ...(includeProgressText ? [{ type: "text" as const, text: "Running the discovered MCP tool." }] : []),
+              {
+                type: "tool_call",
+                id: "mcp-run-call-2",
+                name: "mcp_run_tool",
+                input: {
+                  server: "fixture-logistics",
+                  tool: "coordinate_sterile_field_unit",
+                  args: requestFor(seed),
+                },
+              },
+            ],
+            "tool_use",
+          ),
+        ])(model, context, options);
+      }
+      return sequenceStream([assistantMessage([{ type: "text", text: token(seed, "FIELD_UNIT_RECEIPT") }])])(
+        model,
+        context,
+        options,
+      );
     },
   });
   expect(

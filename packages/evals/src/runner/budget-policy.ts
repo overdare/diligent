@@ -49,6 +49,7 @@ export function createBudgetGraceDiagnostics(
   return diagnostics;
 }
 
+// biome-ignore lint/plugin/no-tiny-function: names the runaway-budget formula shared by two limits
 function runawayLimit(target: number, minHeadroom: number): number {
   return Math.max(target * EVAL_RUNAWAY_POLICY.multiplier, target + minHeadroom);
 }

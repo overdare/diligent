@@ -7,25 +7,27 @@ type ToolItem = Extract<ThreadItem, { type: "toolCall" }>;
 function mergeToolItem(older: ToolItem, newer: ToolItem): ToolItem {
   // A result-only page does not know the original input/start/render fields.
   // Keep the start's position and data while taking completion data from the result.
-  const start =
-    newer.startedAt !== undefined && (older.startedAt === undefined || newer.startedAt < older.startedAt)
-      ? newer
-      : older;
-  const completed = newer.output !== undefined ? newer : older.output !== undefined ? older : newer;
+  let start = older;
+  if (newer.startedAt !== undefined && (older.startedAt === undefined || newer.startedAt < older.startedAt)) {
+    start = newer;
+  }
+  let completed = newer;
+  if (newer.output === undefined && older.output !== undefined) completed = older;
+  let render = start.render ?? completed.render;
+  if (start.render && completed.render) {
+    render = {
+      ...completed.render,
+      inputSummary: start.render.inputSummary ?? completed.render.inputSummary,
+      outputSummary: completed.render.outputSummary ?? start.render.outputSummary,
+    };
+  }
   return {
     ...older,
     ...newer,
     input: start.input ?? (start === older ? newer.input : older.input),
     timestamp: completed.timestamp ?? newer.timestamp ?? older.timestamp,
     startedAt: start.startedAt ?? older.startedAt ?? newer.startedAt,
-    render:
-      start.render && completed.render
-        ? {
-            ...completed.render,
-            inputSummary: start.render.inputSummary ?? completed.render.inputSummary,
-            outputSummary: completed.render.outputSummary ?? start.render.outputSummary,
-          }
-        : (start.render ?? completed.render),
+    render,
     parentToolCallId: older.parentToolCallId ?? newer.parentToolCallId,
     output: newer.output ?? older.output,
     outputImages: newer.outputImages ?? older.outputImages,

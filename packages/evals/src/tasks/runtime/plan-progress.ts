@@ -188,6 +188,7 @@ function validInProgressState(payload: ParsedPlan): boolean {
   return inProgress.length <= 1 && (unresolved.length === 0 || inProgress.length === 1);
 }
 
+// biome-ignore lint/plugin/no-tiny-function: names the plan-resolution rule checked at two points
 function isResolved(payload: ParsedPlan): boolean {
   return payload.steps.length > 0 && payload.steps.every((step) => ["done", "cancelled"].includes(step.status));
 }

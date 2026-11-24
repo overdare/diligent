@@ -9,7 +9,7 @@ import { buildWelcomeBanner } from "./app-presenter";
 import type { AppRuntimeState } from "./app-runtime-state";
 import type { ChatView } from "./components/chat-view";
 import type { InputEditor } from "./components/input-editor";
-import type { StatusBar } from "./components/status-bar";
+import type { StatusBar, StatusBarInfo } from "./components/status-bar";
 import type { TUIRenderer } from "./framework/renderer";
 import type { Terminal } from "./framework/terminal";
 import type { InputHistory } from "./input-history";
@@ -148,6 +148,18 @@ export class AppSessionLifecycle {
         activeModel = this.deps.config.model;
       }
     }
+    let goalInfo: StatusBarInfo["goal"];
+    if (goal) {
+      goalInfo = {
+        status: goal.status,
+        tokensUsed: goal.tokensUsed,
+        tokenBudget: goal.tokenBudget,
+        turnsUsed: goal.turnsUsed,
+        maxTurns: goal.maxTurns,
+        activeTimeMs: goal.activeTimeMs,
+        runStartedAt: goal.runStartedAt,
+      };
+    }
 
     this.deps.statusBar.update({
       model: modelId,
@@ -156,17 +168,7 @@ export class AppSessionLifecycle {
       effortLabel: thread.currentEffort,
       fastMode: this.deps.runtime.currentFastMode,
       supportsFastMode: activeModel.supportsFastMode,
-      goal: goal
-        ? {
-            status: goal.status,
-            tokensUsed: goal.tokensUsed,
-            tokenBudget: goal.tokenBudget,
-            turnsUsed: goal.turnsUsed,
-            maxTurns: goal.maxTurns,
-            activeTimeMs: goal.activeTimeMs,
-            runStartedAt: goal.runStartedAt,
-          }
-        : undefined,
+      goal: goalInfo,
     });
     this.deps.renderer.requestRender();
   }

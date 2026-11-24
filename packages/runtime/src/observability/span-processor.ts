@@ -88,9 +88,15 @@ export class ConsentSpanProcessor implements SpanProcessor {
       if (kind === "LLM" && span.status.code === SpanStatusCode.ERROR)
         attributes["diligent.error.category"] = "provider";
       if (kind === "LLM" || kind === "CHAIN" || kind === "TOOL") attributes["openinference.span.kind"] = kind;
+      let spanName: "diligent.llm" | "diligent.tool" | "diligent.workflow";
+      if (kind === "LLM") {
+        spanName = "diligent.llm";
+      } else {
+        spanName = kind === "TOOL" ? "diligent.tool" : "diligent.workflow";
+      }
       const projected: ReadableSpan = {
         ...span,
-        name: kind === "LLM" ? "diligent.llm" : kind === "TOOL" ? "diligent.tool" : "diligent.workflow",
+        name: spanName,
         attributes,
         resource: this.resource,
         events: [],

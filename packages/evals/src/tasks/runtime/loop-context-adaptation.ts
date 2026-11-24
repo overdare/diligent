@@ -154,14 +154,16 @@ export const loopContextAdaptationTask: RuntimeEvalTask<LoopContextAdaptationWor
     if (input.verifier?.timedOut)
       return grade.fail("verifier_timeout", "Independent verifier timed out.", "harness_terminal");
     const output = input.workspace.final.entries.find((entry) => entry.path === OUTPUT_PATH);
-    if (input.verifier?.exitCode !== 0 || output?.sha256 !== world.expectedHash)
-      return grade.fail(
-        "result",
-        output?.sha256 === sha256Text(`${world.initialValue}\n`)
-          ? "RESULT.txt kept the stale lane instead of the updated requirement."
-          : "RESULT.txt does not contain exactly the updated lane.",
-        "semantic_goal",
-      );
+    if (input.verifier?.exitCode !== 0 || output?.sha256 !== world.expectedHash) {
+      let message:
+        | "RESULT.txt kept the stale lane instead of the updated requirement."
+        | "RESULT.txt does not contain exactly the updated lane." =
+        "RESULT.txt does not contain exactly the updated lane.";
+      if (output?.sha256 === sha256Text(`${world.initialValue}\n`)) {
+        message = "RESULT.txt kept the stale lane instead of the updated requirement.";
+      }
+      return grade.fail("result", message, "semantic_goal");
+    }
     const answer = finalAssistantText(input);
     if (answer.includes(world.initialValue) && !answer.includes(world.injectedValue))
       return grade.fail("final_answer", "The final answer reported the stale lane as the result.", "semantic_goal");

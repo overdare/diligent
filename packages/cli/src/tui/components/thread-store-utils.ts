@@ -27,10 +27,6 @@ export interface CollabToolState {
   prompt?: string;
 }
 
-export function formatTokensRoundedK(n: number): string {
-  return `${Math.round(n / 1000)}k`;
-}
-
 export function formatElapsedSeconds(ms: number): string | null {
   if (ms < 1000) return null;
   const totalSeconds = Math.floor(ms / 1000);
@@ -98,7 +94,12 @@ export function buildChildDetailLines(payload: ThreadReadResponse): string[] {
 
     if (item.type === "toolCall") {
       toolCount++;
-      const status = item.isError ? "error" : typeof item.output === "undefined" ? "running" : "done";
+      let status: "error" | "running" | "done";
+      if (item.isError) {
+        status = "error";
+      } else {
+        status = typeof item.output === "undefined" ? "running" : "done";
+      }
       detailLines.push(`${t.dim}    tool: ${item.toolName} (${status})${t.reset}`);
       if (typeof item.output === "string") {
         const outputPreview = summarizeCollabLine(item.output, 120);
@@ -230,10 +231,12 @@ export function dedupeTextCitations(citations: TextCitation[]): TextCitation[] {
   const seen = new Set<string>();
   const deduped: TextCitation[] = [];
   for (const citation of citations) {
-    const key =
-      citation.type === "web_search_result_location"
-        ? `web:${citation.url}`
-        : `doc:${citation.documentIndex}:${citation.startCharIndex}-${citation.endCharIndex}`;
+    let key: string;
+    if (citation.type === "web_search_result_location") {
+      key = `web:${citation.url}`;
+    } else {
+      key = `doc:${citation.documentIndex}:${citation.startCharIndex}-${citation.endCharIndex}`;
+    }
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(citation);
@@ -366,10 +369,12 @@ export function createToolResultItem(lines: string[], summaryLine?: string): Too
 
 export function buildThinkingItem(text: string, elapsedMs?: number): ThreadItem {
   const icon = `${t.success}⏺${t.reset}`;
-  const header =
-    elapsedMs !== undefined
-      ? `${icon} ${t.bold}Thought for ${formatElapsedSeconds(elapsedMs) ?? "0s"}${t.reset}`
-      : `${icon} ${t.bold}Thought${t.reset}`;
+  let header: string;
+  if (elapsedMs !== undefined) {
+    header = `${icon} ${t.bold}Thought for ${formatElapsedSeconds(elapsedMs) ?? "0s"}${t.reset}`;
+  } else {
+    header = `${icon} ${t.bold}Thought${t.reset}`;
+  }
   return { kind: "thinking", header, bodyLines: splitThoughtLines(text) };
 }
 
@@ -393,14 +398,15 @@ export function deriveToolStartState(
     const agentType = (input?.agent_type as string | undefined) ?? "general";
     const description = (input?.description as string | undefined) ?? "";
     const promptText = typeof input?.message === "string" ? input.message : "";
-    const promptSummary = promptText
-      ? promptText.split("\n")[0].trim().slice(0, 72) + (promptText.length > 72 ? "…" : "")
-      : "";
-    spinnerLabel = description
-      ? `Spawning [${agentType}] ${description}…`
-      : promptSummary
-        ? `Spawning [${agentType}] ${promptSummary}`
-        : `Spawning [${agentType}]…`;
+    let promptSummary: string = "";
+    if (promptText) {
+      promptSummary = promptText.split("\n")[0].trim().slice(0, 72) + (promptText.length > 72 ? "…" : "");
+    }
+    if (description) {
+      spinnerLabel = `Spawning [${agentType}] ${description}…`;
+    } else {
+      spinnerLabel = promptSummary ? `Spawning [${agentType}] ${promptSummary}` : `Spawning [${agentType}]…`;
+    }
     prompt = promptText || undefined;
   } else if (toolName === "wait") {
     const ids = input?.ids;
@@ -459,23 +465,27 @@ export function buildToolEndItem(options: {
     // A yielded cell's background call commits after its parent's result, so a gutter would group it under an
     // unrelated row; label its origin instead.
     const marker = `${t.dim}↳ script ·${t.reset} `;
-    const backgroundItem: ThreadItem =
-      item.kind === "plain"
-        ? { ...item, lines: item.lines.map((line, index) => (index === 0 ? `${marker}${line}` : line)) }
-        : { ...item, header: `${marker}${item.header}` };
+    let backgroundItem: ThreadItem;
+    if (item.kind === "plain") {
+      backgroundItem = { ...item, lines: item.lines.map((line, index) => (index === 0 ? `${marker}${line}` : line)) };
+    } else {
+      backgroundItem = { ...item, header: `${marker}${item.header}` };
+    }
     return { ...result, item: backgroundItem };
   }
   // Calls made while their `exec`/`exec_wait` call runs finish before its result; a gutter groups them above it.
   const gutter = `${t.dim}  │${t.reset} `;
-  const nestedItem: ThreadItem =
-    item.kind === "plain"
-      ? { ...item, lines: item.lines.map((line) => `${gutter}${line}`) }
-      : {
-          ...item,
-          header: `${gutter}${item.header}`,
-          details: item.details.map((line) => `${gutter}${line}`),
-          ...(item.summaryLine ? { summaryLine: `│ ${item.summaryLine}` } : {}),
-        };
+  let nestedItem: ThreadItem;
+  if (item.kind === "plain") {
+    nestedItem = { ...item, lines: item.lines.map((line) => `${gutter}${line}`) };
+  } else {
+    nestedItem = {
+      ...item,
+      header: `${gutter}${item.header}`,
+      details: item.details.map((line) => `${gutter}${line}`),
+      ...(item.summaryLine ? { summaryLine: `│ ${item.summaryLine}` } : {}),
+    };
+  }
   return { ...result, item: nestedItem };
 }
 
@@ -510,8 +520,12 @@ function buildToolEndItemLines(options: {
         done?: boolean;
       }>) {
         const status = step.status ?? (step.done ? "done" : "pending");
-        const check =
-          status === "done" ? `${t.success}☑${t.reset}` : status === "in_progress" ? "▶" : `${t.dim}☐${t.reset}`;
+        let check: string;
+        if (status === "done") {
+          check = `${t.success}☑${t.reset}`;
+        } else {
+          check = status === "in_progress" ? "▶" : `${t.dim}☐${t.reset}`;
+        }
         const text = status === "done" ? `${t.dim}${step.text}${t.reset}` : step.text;
         lines.push(`  ${check} ${text}`);
       }

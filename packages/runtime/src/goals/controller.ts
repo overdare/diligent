@@ -299,10 +299,11 @@ export class GoalController {
     if (!this.goal) return;
     this.invalidate();
     this.goal.status = "budget_limited";
-    this.goal.reason =
-      this.goal.tokenBudget !== undefined && this.goal.tokensUsed >= this.goal.tokenBudget
-        ? "token_budget"
-        : "turn_limit";
+    if (this.goal.tokenBudget !== undefined && this.goal.tokensUsed >= this.goal.tokenBudget) {
+      this.goal.reason = "token_budget";
+    } else {
+      this.goal.reason = "turn_limit";
+    }
     void this.save().catch(() => {});
   }
   isCurrent(identity: GoalRunIdentity): boolean {

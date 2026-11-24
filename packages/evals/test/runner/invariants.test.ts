@@ -7,10 +7,6 @@ import { assistantMessage } from "../helpers/fake-stream";
 
 type EvalEvent = EvalExecution<unknown>["events"][number]["event"];
 
-function runtimeStatusChange(status: "idle" | "busy"): EvalEvent {
-  return { type: "status_change", status } as unknown as EvalEvent;
-}
-
 function executionWithMessages(messages: EvalExecution<unknown>["messages"]): EvalExecution<unknown> {
   const finalAssistant = assistantMessage([{ type: "text", text: "done" }]);
   return {
@@ -218,7 +214,9 @@ describe("checkStructuralInvariants", () => {
   });
 
   test("accepts the rerun busy status between sequential agent lifecycles when enabled", () => {
-    const input = executionWithSequentialLifecycles([runtimeStatusChange("busy")]);
+    const input = executionWithSequentialLifecycles([
+      { type: "status_change", status: "busy" } as unknown as EvalEvent,
+    ]);
 
     expect(checkStructuralInvariants(input, { allowMultipleAgentLifecycles: true })).toEqual([]);
   });
@@ -243,13 +241,13 @@ describe("checkStructuralInvariants", () => {
     beforeFirst.events.unshift({
       sequence: 0,
       relativeMs: 0,
-      event: runtimeStatusChange("busy"),
+      event: { type: "status_change", status: "busy" } as unknown as EvalEvent,
     });
     const afterLast = executionWithSequentialLifecycles();
     afterLast.events.push({
       sequence: afterLast.events.length + 1,
       relativeMs: 0,
-      event: runtimeStatusChange("busy"),
+      event: { type: "status_change", status: "busy" } as unknown as EvalEvent,
     });
 
     for (const input of [beforeFirst, afterLast]) {
@@ -262,7 +260,9 @@ describe("checkStructuralInvariants", () => {
   });
 
   test("rejects idle status between sequential agent lifecycles", () => {
-    const input = executionWithSequentialLifecycles([runtimeStatusChange("idle")]);
+    const input = executionWithSequentialLifecycles([
+      { type: "status_change", status: "idle" } as unknown as EvalEvent,
+    ]);
 
     expect(
       checkStructuralInvariants(input, { allowMultipleAgentLifecycles: true }).some(
@@ -272,7 +272,9 @@ describe("checkStructuralInvariants", () => {
   });
 
   test("boundary busy status does not hide overlapping agent lifecycles", () => {
-    const input = executionWithSequentialLifecycles([runtimeStatusChange("busy")]);
+    const input = executionWithSequentialLifecycles([
+      { type: "status_change", status: "busy" } as unknown as EvalEvent,
+    ]);
     const secondEnd = input.events.findLastIndex((snapshot) => snapshot.event.type === "agent_end");
     input.events.splice(secondEnd, 0, {
       sequence: 99,
@@ -288,7 +290,9 @@ describe("checkStructuralInvariants", () => {
   });
 
   test("boundary busy status does not hide unfinished nested lifecycle events", () => {
-    const input = executionWithSequentialLifecycles([runtimeStatusChange("busy")]);
+    const input = executionWithSequentialLifecycles([
+      { type: "status_change", status: "busy" } as unknown as EvalEvent,
+    ]);
     const firstTurnEnd = input.events.findIndex((snapshot) => snapshot.event.type === "turn_end");
     input.events.splice(firstTurnEnd, 1);
 
@@ -300,7 +304,9 @@ describe("checkStructuralInvariants", () => {
   });
 
   test("keeps single-lifecycle mode strict for rerun boundary status", () => {
-    const input = executionWithSequentialLifecycles([runtimeStatusChange("busy")]);
+    const input = executionWithSequentialLifecycles([
+      { type: "status_change", status: "busy" } as unknown as EvalEvent,
+    ]);
     const codes = checkStructuralInvariants(input).map((failure) => failure.code);
 
     expect(codes).toContain("core_contract.agent_start_count");

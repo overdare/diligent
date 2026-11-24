@@ -18,24 +18,25 @@ test("nested children emit independently attributed durable entries", async () =
     if (!stream) {
       const last = context.messages.at(-1);
       const text = last?.role === "user" && typeof last.content === "string" ? last.content : "";
-      stream =
-        text === "root task"
-          ? createToolUseStream(
-              [
-                {
-                  id: "first-child",
-                  name: "spawn_agent",
-                  input: { message: "nested task", agent_type: "general", allow_nested_agents: true },
-                },
-              ],
-              "root done",
-            )
-          : text === "nested task"
-            ? createToolUseStream(
-                [{ id: "grandchild", name: "spawn_agent", input: { message: "leaf task", agent_type: "general" } }],
-                "child done",
-              )
-            : createSimpleStream("leaf done");
+      if (text === "root task") {
+        stream = createToolUseStream(
+          [
+            {
+              id: "first-child",
+              name: "spawn_agent",
+              input: { message: "nested task", agent_type: "general", allow_nested_agents: true },
+            },
+          ],
+          "root done",
+        );
+      } else if (text === "nested task") {
+        stream = createToolUseStream(
+          [{ id: "grandchild", name: "spawn_agent", input: { message: "leaf task", agent_type: "general" } }],
+          "child done",
+        );
+      } else {
+        stream = createSimpleStream("leaf done");
+      }
       streams.set(id, stream);
     }
     return stream(model, context, options);

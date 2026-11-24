@@ -414,10 +414,10 @@ export class DiligentAppServer {
       const result = await dispatchClientRequest(this.buildRequestDispatchContext(), connectionId, parsed.data);
       return JSONRPCResponseSchema.parse({ id: request.data.id, result });
     } catch (error) {
-      const code =
-        error instanceof Error && typeof (error as unknown as { code?: unknown }).code === "number"
-          ? (error as unknown as { code: number }).code
-          : -32000;
+      let code: number = -32000;
+      if (error instanceof Error && typeof (error as unknown as { code?: unknown }).code === "number") {
+        code = (error as unknown as { code: number }).code;
+      }
       const message = error instanceof Error ? error.message : String(error);
       return this.errorResponse(request.data.id, code, message);
     }
@@ -486,14 +486,18 @@ export class DiligentAppServer {
       for (const registry of wiredRegistries) registry.setCollabEventHandler(undefined);
       if (runtime.currentTurnId === turnId) {
         resetTurnRuntimeState(runtime);
-        if (terminal)
+        if (terminal) {
+          let method: "turn/completed" | "turn/interrupted";
+          if (terminal === "completed") {
+            method = DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED;
+          } else {
+            method = DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED;
+          }
           await this.emit({
-            method:
-              terminal === "completed"
-                ? DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED
-                : DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED,
+            method,
             params: { threadId: runtime.id, turnId },
           });
+        }
         // A client may already have started a replacement from the terminal notification.
         if (runtime.currentTurnId === null)
           await this.emit({
@@ -507,19 +511,19 @@ export class DiligentAppServer {
   private async emitFromAgentEvent(threadId: string, turnId: string, event: AgentEvent): Promise<void> {
     const runtime = this.threads.get(threadId);
     if (!runtime || runtime.currentTurnId !== turnId) return;
-    const outboundEvent =
-      event.type === "error"
-        ? {
-            ...event,
-            error: presentRuntimeError(event.error, {
-              provider: this.resolveRuntimeProvider(runtime),
-              operation: "agent_turn",
-              retrySafe: true,
-            }),
-          }
-        : event.type === "compaction_end"
-          ? { ...event, summary: "Compacted" }
-          : event;
+    let outboundEvent = event;
+    if (event.type === "error") {
+      outboundEvent = {
+        ...event,
+        error: presentRuntimeError(event.error, {
+          provider: this.resolveRuntimeProvider(runtime),
+          operation: "agent_turn",
+          retrySafe: true,
+        }),
+      };
+    } else if (event.type === "compaction_end") {
+      outboundEvent = { ...event, summary: "Compacted" };
+    }
     const parsedAgentEvent = AgentEventSchema.safeParse(outboundEvent);
     if (parsedAgentEvent.success) {
       await this.emit({
@@ -700,6 +704,10 @@ export class DiligentAppServer {
     if (runtime) runtime.consecutivePolicyDenials = 0;
     if (policy?.action === "allow") return { decision: "once" };
 
+    let onUnavailable: (() => Promise<void>) | undefined;
+    if (runtime?.goalScope || runtime?.goal?.hasChildren) {
+      onUnavailable = () => runtime.goal!.pause("interaction_unavailable");
+    }
     const decision = await requestApprovalFromConnections({
       threadId,
       request,
@@ -707,10 +715,7 @@ export class DiligentAppServer {
       pendingServerRequests: this.pendingServerRequests,
       allocateServerRequestId: () => this.allocateServerRequestId(),
       signal,
-      onUnavailable:
-        runtime?.goalScope || runtime?.goal?.hasChildren
-          ? () => runtime.goal!.pause("interaction_unavailable")
-          : undefined,
+      onUnavailable,
       waitForConnection: !!runtime?.goalScope || !!runtime?.goal?.hasChildren,
     });
 
@@ -1217,15 +1222,11 @@ export class DiligentAppServer {
       getDisabledToolNames: () =>
         resolveExperimentGates(this.config.experimentConfig?.getExperiments() ?? []).disabledToolNames,
       getMcpServers: () => this.config.mcpServers,
-      getSkillNames: () => this.getSkillNames(),
+      getSkillNames: () => this.config.skillNames ?? [],
       setActiveThreadId: (threadId: string | null) => {
         this.activeThreadId = threadId;
       },
     };
-  }
-
-  private getSkillNames(): string[] {
-    return this.config.skillNames ?? [];
   }
 
   private errorResponse(

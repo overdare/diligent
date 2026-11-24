@@ -170,6 +170,7 @@ const ENV_PASSTHROUGH_ALLOWLIST = new Set(["GH_TOKEN", "GITHUB_TOKEN"]);
  * Convert Windows-style backslash paths to forward slashes so bash doesn't
  * strip them as escape sequences. e.g. C:\Users\foo → C:/Users/foo
  */
+// biome-ignore lint/plugin/no-tiny-function: names the Windows drive-path rewrite formula
 function normalizePathSeparators(command: string): string {
   return command.replace(/([A-Za-z]):\\([\w\\. -]*)/g, (_, drive, rest) => `${drive}:/${rest.replace(/\\/g, "/")}`);
 }
@@ -290,7 +291,13 @@ async function runWithPipes(argv: string[], run: CommandRun): Promise<{ exitCode
 
   const stdout = Buffer.concat(stdoutChunks).toString();
   const stderr = Buffer.concat(stderrChunks).toString();
-  return { exitCode, output: stderr ? `${stdout}${stdout ? "\n" : ""}[stderr]\n${stderr}` : stdout };
+  let output: string;
+  if (stderr) {
+    output = `${stdout}${stdout ? "\n" : ""}[stderr]\n${stderr}`;
+  } else {
+    output = stdout;
+  }
+  return { exitCode, output };
 }
 
 /** A terminal merges stdout and stderr into one stream; escape sequences are removed for every reader. */
@@ -382,9 +389,13 @@ async function runForeground(
       );
       output = "[Private terminal output is not shared with the agent.]";
     } else {
-      ({ exitCode, output } = await (spawnTty
-        ? runInTerminal(shellArgs, run, spawnTty)
-        : runWithPipes(shellArgs, run)));
+      let runResult: Promise<{ exitCode: number | null; output: string }>;
+      if (spawnTty) {
+        runResult = runInTerminal(shellArgs, run, spawnTty);
+      } else {
+        runResult = runWithPipes(shellArgs, run);
+      }
+      ({ exitCode, output } = await runResult);
     }
   } finally {
     disarmCancellation();
@@ -423,6 +434,7 @@ export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof
   };
 }
 
+// biome-ignore lint/plugin/no-tiny-function: ten error results share this shape
 function shellError(output: string): ToolResult {
   return { output, metadata: { error: true } };
 }
@@ -523,6 +535,7 @@ function createYieldingBashTool(
         env: commandEnv(args.tty),
         tty: args.tty,
       });
+      // biome-ignore lint/plugin/no-tiny-function: listener identity: added and removed by reference
       const abort = () => entry.stop("aborted");
       ctx.signal.addEventListener("abort", abort, { once: true });
       try {

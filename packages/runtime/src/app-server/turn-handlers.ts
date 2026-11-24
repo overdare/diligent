@@ -126,36 +126,37 @@ function prepareTurnMessage(
 ): { userMessage: UserMessage; content: UserMessage["content"] } {
   const timestamp = Date.now();
   const slashSkill = parseSlashSkillInvocation(params.message, new Set(ctx.getSkillNames()));
-  const messageForTurn = slashSkill
-    ? [
-        `The user invoked /${slashSkill.skillName}.`,
-        `Before any other action, call the "skill" tool with {"name":"${slashSkill.skillName}"}.`,
-        slashSkill.args
-          ? `After loading the skill, continue with this additional user instruction:\n${slashSkill.args}`
-          : "After loading the skill, continue with the user's request.",
-      ].join("\n\n")
-    : params.message;
+  let messageForTurn: string;
+  if (slashSkill) {
+    let followUpInstruction: string = "After loading the skill, continue with the user's request.";
+    if (slashSkill.args) {
+      followUpInstruction = `After loading the skill, continue with this additional user instruction:\n${slashSkill.args}`;
+    }
+    messageForTurn = [
+      `The user invoked /${slashSkill.skillName}.`,
+      `Before any other action, call the "skill" tool with {"name":"${slashSkill.skillName}"}.`,
+      followUpInstruction,
+    ].join("\n\n");
+  } else {
+    messageForTurn = params.message;
+  }
 
   const normalizedAttachments = params.attachments?.map((attachment) =>
     normalizeLocalImageAttachment(attachment, runtime.cwd),
   );
 
-  const content =
-    params.content && params.content.length > 0
-      ? params.content
-      : normalizedAttachments && normalizedAttachments.length > 0
-        ? [
-            ...((messageForTurn.trim().length > 0 ? [{ type: "text", text: messageForTurn }] : []) as Array<{
-              type: "text";
-              text: string;
-            }>),
-            ...normalizedAttachments,
-          ]
-        : messageForTurn;
+  let content: UserMessage["content"] = messageForTurn;
+  if (params.content && params.content.length > 0) {
+    content = params.content as UserMessage["content"];
+  } else if (normalizedAttachments && normalizedAttachments.length > 0) {
+    const textBlocks: Array<{ type: "text"; text: string }> = [];
+    if (messageForTurn.trim().length > 0) textBlocks.push({ type: "text", text: messageForTurn });
+    content = [...textBlocks, ...normalizedAttachments] as UserMessage["content"];
+  }
 
   return {
-    userMessage: { role: "user" as const, content: content as UserMessage["content"], timestamp },
-    content: content as UserMessage["content"],
+    userMessage: { role: "user" as const, content, timestamp },
+    content,
   };
 }
 
@@ -258,6 +259,7 @@ export async function handleTurnStart(
       if (!consuming) runtime.goal?.wake();
     });
   };
+  // biome-ignore lint/plugin/no-tiny-function: eight checks must agree on what the current turn is
   const isCurrent = () => runtime.currentTurnId === turnId && !controller.signal.aborted;
   const createGoal: NonNullable<GoalToolHost["create"]> = async (input, signal) => {
     signal.throwIfAborted();
@@ -312,16 +314,21 @@ export async function handleTurnStart(
     if (goal) await goal.waitForChildren(controller.signal);
     if (!isCurrent()) return { accepted: true };
 
-    const { userMessage, content } = internal
-      ? {
-          userMessage: { role: "user" as const, content: params.message, timestamp: Date.now() },
-          content: params.message,
-        }
-      : prepareTurnMessage(ctx, params, runtime);
+    let preparedTurn: { userMessage: UserMessage; content: UserMessage["content"] };
+    if (internal) {
+      preparedTurn = {
+        userMessage: { role: "user" as const, content: params.message, timestamp: Date.now() },
+        content: params.message,
+      };
+    } else {
+      preparedTurn = prepareTurnMessage(ctx, params, runtime);
+    }
+    const { userMessage, content } = preparedTurn;
     const userItemId = generateEntryId();
-    const hookOutcome = internal
-      ? { blocked: false as const, userMessage }
-      : await applyUserPromptHooks(ctx, params, runtime, content, userMessage, turnId, userItemId);
+    let hookOutcome: HookOutcome = { blocked: false, userMessage };
+    if (!internal) {
+      hookOutcome = await applyUserPromptHooks(ctx, params, runtime, content, userMessage, turnId, userItemId);
+    }
     if (hookOutcome.blocked || !isCurrent()) return { accepted: true };
     if (goal) {
       scope = (await goal.beginRun()) ?? undefined;
@@ -329,6 +336,7 @@ export async function handleTurnStart(
       // An explicit user message is still handled if its goal just exhausted a limit.
       if (scope) {
         runtime.goalScope = scope;
+        // biome-ignore lint/plugin/no-tiny-function: listener identity: added and removed by reference
         const abort = () => controller.abort();
         scope.signal.addEventListener("abort", abort, { once: true });
         unlinkAbort = () => scope?.signal.removeEventListener("abort", abort);
@@ -352,13 +360,10 @@ export async function handleTurnStart(
               .map((block) => block.text)
               .join("\n");
             goal!.observe(scope!.identity, { id: event.itemId, kind: "answer", text });
-            hasActivity ||= event.message.content.some((block) =>
-              block.type === "text"
-                ? !!block.text.trim()
-                : block.type === "thinking"
-                  ? !!block.thinking.trim() || !!block.providerState
-                  : true,
-            );
+            hasActivity ||= event.message.content.some((block) => {
+              if (block.type === "text") return !!block.text.trim();
+              return block.type === "thinking" ? !!block.thinking.trim() || !!block.providerState : true;
+            });
           }
           if (event.type === "usage") scope!.recordUsage({ sessionId: runtime.id, coreTurnId, ...event.usage });
         });
@@ -396,9 +401,11 @@ export async function handleTurnStart(
       .consumeTurn(
         runtime,
         runPromise.catch((error: unknown) => {
-          outcome = controller.signal.aborted
-            ? { status: "interrupted" }
-            : { status: "failed", error: toSerializableError(error) };
+          if (controller.signal.aborted) {
+            outcome = { status: "interrupted" };
+          } else {
+            outcome = { status: "failed", error: toSerializableError(error) };
+          }
           throw error;
         }),
         turnId,
@@ -444,9 +451,11 @@ export async function handleTurnStart(
       });
     return { accepted: true, userMessageId: internal ? undefined : userItemId };
   } catch (error) {
-    outcome = controller.signal.aborted
-      ? { status: "interrupted" }
-      : { status: "failed", error: toSerializableError(error) };
+    if (controller.signal.aborted) {
+      outcome = { status: "interrupted" };
+    } else {
+      outcome = { status: "failed", error: toSerializableError(error) };
+    }
     if (isCurrent()) await ctx.consumeTurn(runtime, Promise.reject(error), turnId);
     throw error;
   } finally {
@@ -513,21 +522,14 @@ export async function handleTurnSteer(
   const normalizedAttachments = attachments?.map((attachment) =>
     normalizeLocalImageAttachment(attachment, runtime.cwd),
   );
-  const message =
-    normalizedAttachments && normalizedAttachments.length > 0
-      ? {
-          role: "user" as const,
-          content: [
-            ...(content.trim().length > 0 ? ([{ type: "text", text: content }] as const) : []),
-            ...normalizedAttachments,
-          ],
-          timestamp: Date.now(),
-        }
-      : {
-          role: "user" as const,
-          content,
-          timestamp: Date.now(),
-        };
+  let messageContent: UserMessage["content"] = content;
+  if (normalizedAttachments && normalizedAttachments.length > 0) {
+    messageContent = [
+      ...(content.trim().length > 0 ? ([{ type: "text", text: content }] as const) : []),
+      ...normalizedAttachments,
+    ];
+  }
+  const message = { role: "user" as const, content: messageContent, timestamp: Date.now() };
   const queuedSteerId = runtime.manager.steer(message, steerId);
   return { queued: true, steerId: queuedSteerId };
 }

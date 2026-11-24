@@ -194,13 +194,15 @@ describe("createAnthropicStream", () => {
         },
       ],
     });
-    const fileRejection = () => new APIError(400, undefined, "file source not supported", new Headers());
 
     test("retries the same request inline and sends later images inline without uploading", async () => {
       anthropicCalls.length = 0;
       anthropicRequestOptions.length = 0;
       anthropicFileUploads.length = 0;
-      rejectMessagesRequest = (params) => (imageSource(params)?.type === "file" ? fileRejection() : undefined);
+      rejectMessagesRequest = (params) => {
+        if (imageSource(params)?.type !== "file") return undefined;
+        return new APIError(400, undefined, "file source not supported", new Headers());
+      };
       try {
         const streamFn = createAnthropicStream("rejected-files-key");
         const first = await streamFn(baseModel({}), imageContext("Zmlyc3Q="), { effort: "medium" }).result();
@@ -218,7 +220,7 @@ describe("createAnthropicStream", () => {
 
     test("keeps file references when the inline retry fails too", async () => {
       anthropicCalls.length = 0;
-      rejectMessagesRequest = () => fileRejection();
+      rejectMessagesRequest = () => new APIError(400, undefined, "file source not supported", new Headers());
       const streamFn = createAnthropicStream("unrelated-rejection-key");
       try {
         await expect(

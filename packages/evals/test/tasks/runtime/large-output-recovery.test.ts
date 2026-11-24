@@ -234,11 +234,15 @@ async function assembledExecution(
       call += 1;
       let response: Message;
       if (call === 1) {
+        let progressBlocks: { type: "text"; text: string }[];
+        if (includeProgressText) {
+          progressBlocks = [{ type: "text" as const, text: "Retrieving the bounded archived record." }];
+        } else {
+          progressBlocks = [];
+        }
         response = assistantMessage(
           [
-            ...(includeProgressText
-              ? [{ type: "text" as const, text: "Retrieving the bounded archived record." }]
-              : []),
+            ...progressBlocks,
             {
               type: "tool_call",
               id: "archive-fixture-1",
@@ -267,12 +271,13 @@ async function assembledExecution(
         );
       } else {
         expect(JSON.stringify(context.messages)).toContain(token(seed, "RECOVERY_FACT"));
-        response = assistantMessage([
-          ...(includeFinalThinking
-            ? [{ type: "thinking" as const, thinking: "The exact recovered value is ready." }]
-            : []),
-          { type: "text", text: token(seed, "RECOVERY_FACT") },
-        ]);
+        let thinkingBlocks: { type: "thinking"; thinking: string }[];
+        if (includeFinalThinking) {
+          thinkingBlocks = [{ type: "thinking" as const, thinking: "The exact recovered value is ready." }];
+        } else {
+          thinkingBlocks = [];
+        }
+        response = assistantMessage([...thinkingBlocks, { type: "text", text: token(seed, "RECOVERY_FACT") }]);
       }
       return sequenceStream([response])(model, context, options);
     },

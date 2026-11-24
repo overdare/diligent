@@ -1,0 +1,7 @@
+engine biome(1.0)
+language js(typescript, jsx)
+
+JsConditionalExpression() as $ternary where {
+  $ternary <: r"(?s).*\n.*",
+  register_diagnostic(span=$ternary, message="Multi-line ternary: rewrite it as statements (if/else, early return, or a lookup).")
+}

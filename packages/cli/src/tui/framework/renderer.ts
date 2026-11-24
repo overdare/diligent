@@ -8,6 +8,7 @@ import { CURSOR_MARKER } from "./types";
 /** Strip ANSI escape codes for measuring visible width */
 const ANSI_RE = new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;]*[a-zA-Z]`, "g");
 const ANSI_PRIVATE_RE = new RegExp(`${String.fromCharCode(0x1b)}\\[\\?[0-9;]*[a-zA-Z]`, "g");
+// biome-ignore lint/plugin/no-tiny-function: names the ANSI-stripping regex
 function stripAnsi(str: string): string {
   return str.replace(ANSI_RE, "").replace(ANSI_PRIVATE_RE, "");
 }

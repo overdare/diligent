@@ -248,10 +248,12 @@ export async function dispatchClientRequest(
       const conn = ctx.getConnection(connectionId);
       const selection = (conn?.threadSelection ?? 0) + 1;
       if (conn) conn.threadSelection = selection;
-      const result =
-        request.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START
-          ? await handleThreadStart(ctx.threadHandlersCtx, request.params)
-          : await handleThreadResume(ctx.threadHandlersCtx, request.params);
+      let result: { threadId: string } | { found: boolean; threadId?: string };
+      if (request.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START) {
+        result = await handleThreadStart(ctx.threadHandlersCtx, request.params);
+      } else {
+        result = await handleThreadResume(ctx.threadHandlersCtx, request.params);
+      }
       // A slow restore must not become the implicit target after a newer navigation.
       if (result.threadId && conn?.threadSelection === selection) {
         ctx.setConnectionCurrentThreadId(connectionId, result.threadId);

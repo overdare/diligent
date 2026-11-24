@@ -98,9 +98,11 @@ export function mergeConfig(base: DiligentConfig, override: DiligentConfig): Dil
       (merged as Record<string, unknown>)[key] = value;
     } else if (isPlainObject(value)) {
       const baseValue = (base as Record<string, unknown>)[key];
-      (merged as Record<string, unknown>)[key] = isPlainObject(baseValue)
-        ? mergePlainObjects(baseValue, value)
-        : mergePlainObjects({}, value);
+      if (isPlainObject(baseValue)) {
+        (merged as Record<string, unknown>)[key] = mergePlainObjects(baseValue, value);
+      } else {
+        (merged as Record<string, unknown>)[key] = mergePlainObjects({}, value);
+      }
     } else {
       (merged as Record<string, unknown>)[key] = value;
     }

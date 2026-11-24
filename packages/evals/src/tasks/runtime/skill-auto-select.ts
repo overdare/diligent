@@ -71,9 +71,13 @@ export const skillAutoSelectTask: RuntimeEvalTask<SkillAutoSelectWorld> = {
         `Read exactly \`${skill.reference}\` and follow its rule. Do not read any other file.`,
         "",
       ].join("\n");
-      files[`.diligent/skills/${skill.name}/${skill.reference}`] = selected
-        ? `Create ${OUTPUT_PATH} with exactly this content, including the final newline:\n${expected}`
-        : `This decoy rule must never be loaded (${seededToken(seed, skill.name)}).\n`;
+      if (selected) {
+        files[`.diligent/skills/${skill.name}/${skill.reference}`] =
+          `Create ${OUTPUT_PATH} with exactly this content, including the final newline:\n${expected}`;
+      } else {
+        files[`.diligent/skills/${skill.name}/${skill.reference}`] =
+          `This decoy rule must never be loaded (${seededToken(seed, skill.name)}).\n`;
+      }
     }
     await writeFixture(root, files);
     const skillPaths = SKILLS.map((skill) => `.diligent/skills/${skill.name}/SKILL.md`);

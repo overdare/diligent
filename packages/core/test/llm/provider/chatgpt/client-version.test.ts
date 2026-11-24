@@ -16,8 +16,7 @@ const CODEX_MINIMUM_CLIENT_VERSION = "0.155.0";
 const SUBSCRIPTION_MODEL = resolveModel({ provider: "chatgpt", modelId: "gpt-6.1-sol" });
 
 function isAtLeast(version: string, minimum: string): boolean {
-  const parse = (value: string) => value.split(".").map(Number);
-  const [actual, floor] = [parse(version), parse(minimum)];
+  const [actual, floor] = [version.split(".").map(Number), minimum.split(".").map(Number)];
   for (let index = 0; index < floor.length; index++) {
     const left = actual[index] ?? 0;
     const right = floor[index] ?? 0;

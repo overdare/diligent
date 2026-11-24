@@ -197,12 +197,13 @@ export async function handleThreadRead(
   }
 
   const messages = includeItems ? runtime.manager.getContext() : [];
-  const items = includeItems
-    ? applyLiveCollabStatusesToSnapshot(
-        buildThreadReadItems(runtime.manager.getTranscript() as ThreadReadTranscriptEntry[]),
-        runtime,
-      )
-    : [];
+  let items: ThreadItem[] = [];
+  if (includeItems) {
+    items = applyLiveCollabStatusesToSnapshot(
+      buildThreadReadItems(runtime.manager.getTranscript() as ThreadReadTranscriptEntry[]),
+      runtime,
+    );
+  }
 
   let totalCost = includeItems ? 0 : undefined;
   for (const msg of messages) {
@@ -220,6 +221,9 @@ export async function handleThreadRead(
     }
   }
 
+  let currentFastMode = runtime.fastMode ?? false;
+  if (includeItems) currentFastMode = runtime.manager.getCurrentFastMode() ?? runtime.fastMode ?? false;
+
   return {
     cwd: runtime.cwd,
     goal: goalSnapshot?.goal,
@@ -231,9 +235,7 @@ export async function handleThreadRead(
     isRunning: runtime.isRunning,
     currentMode: includeItems ? (runtime.manager.getCurrentMode() ?? runtime.mode) : runtime.mode,
     currentEffort: includeItems ? (runtime.manager.getCurrentEffort() ?? runtime.effort) : runtime.effort,
-    currentFastMode: includeItems
-      ? (runtime.manager.getCurrentFastMode() ?? runtime.fastMode ?? false)
-      : (runtime.fastMode ?? false),
+    currentFastMode,
     currentModel: includeItems ? (runtime.manager.getCurrentModel() ?? runtime.model) : runtime.model,
     totalCost,
   };

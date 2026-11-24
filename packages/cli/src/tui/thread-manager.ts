@@ -47,6 +47,7 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
     if (!rpc) throw new Error("App server is not initialized.");
     return rpc;
   };
+  // biome-ignore lint/plugin/no-tiny-function: nine progress reports share the optional-callback dispatch
   const progress = (message: string) => deps.showProgress?.(message);
   const manager: ThreadManager = {
     isReady: () => ready,

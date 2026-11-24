@@ -98,16 +98,19 @@ export function checkRuntimeInvariants(
     failures.push(failure("child_session", "A child session had no matching collaboration lifecycle event."));
   if (execution.workspace.final.entries.some((entry) => entry.kind === "symlink"))
     failures.push(failure("workspace_symlink", "A symlink appeared in the runtime workspace."));
-  const threadRelative =
-    execution.threadCwd === "$WORKSPACE"
-      ? ""
-      : execution.threadCwd.startsWith("$WORKSPACE/")
-        ? `${execution.threadCwd.slice("$WORKSPACE/".length)}/`
-        : undefined;
+  let threadRelative: string | undefined;
+  if (execution.threadCwd === "$WORKSPACE") {
+    threadRelative = "";
+  } else if (execution.threadCwd.startsWith("$WORKSPACE/")) {
+    threadRelative = `${execution.threadCwd.slice("$WORKSPACE/".length)}/`;
+  } else {
+    threadRelative = undefined;
+  }
   const runtimeStateRoots = [".diligent", ...(threadRelative === undefined ? [] : [`${threadRelative}.diligent`])];
-  const projectOnly = (snapshot: typeof execution.workspace.initial) =>
-    projectSnapshotWithoutRuntimeState(snapshot, runtimeStateRoots);
-  const diff = workspaceDiff(projectOnly(execution.workspace.initial), projectOnly(execution.workspace.final));
+  const diff = workspaceDiff(
+    projectSnapshotWithoutRuntimeState(execution.workspace.initial, runtimeStateRoots),
+    projectSnapshotWithoutRuntimeState(execution.workspace.final, runtimeStateRoots),
+  );
   if (diff.changedFiles.length > limits.maxChangedFiles)
     failures.push(budget("changed_files", `Changed ${diff.changedFiles.length} project files.`));
   if (diff.changedBytes > limits.maxChangedBytes)
@@ -135,7 +138,7 @@ export function checkRuntimeInvariants(
       failures.push(failure("session_parent_chain", "Session parent must point to an earlier entry."));
     if (entry.id) seen.add(entry.id);
   }
-  return dedupe(failures);
+  return [...new Map(failures.map((item) => [item.code, item])).values()];
 }
 
 function endsWithCancelledUserInput(messages: RuntimeEvalExecution<unknown>["turns"][number]["messages"]): boolean {
@@ -155,12 +158,12 @@ function checkAdvertisedToolSnapshots(execution: RuntimeEvalExecution<unknown>):
       failures.push(failure("advertised_tools_context", "Advertised tool cwd does not match the thread cwd."));
     if (snapshot.provider !== execution.profile.provider)
       failures.push(failure("advertised_tools_context", "Advertised tool provider does not match the eval profile."));
-    const disallowed =
-      snapshot.mode === "plan"
-        ? PLAN_MODE_DISALLOWED_TOOLS
-        : snapshot.mode === "execute"
-          ? EXECUTE_MODE_DISALLOWED_TOOLS
-          : new Set<string>();
+    let disallowed: Set<string>;
+    if (snapshot.mode === "plan") {
+      disallowed = PLAN_MODE_DISALLOWED_TOOLS;
+    } else {
+      disallowed = snapshot.mode === "execute" ? EXECUTE_MODE_DISALLOWED_TOOLS : new Set<string>();
+    }
     const unexpected = snapshot.tools.filter((tool) => disallowed.has(tool));
     if (unexpected.length > 0)
       failures.push(
@@ -206,6 +209,7 @@ function checkThreadReadSnapshots(execution: RuntimeEvalExecution<unknown>): Eva
     );
 
   const items = latest.items as Array<{ type?: string; itemId?: string; toolCallId?: string }>;
+  // biome-ignore lint/plugin/no-tiny-function: five checks share this item lookup
   const hasItem = (type: string, itemId: string) => items.some((item) => item.type === type && item.itemId === itemId);
   for (const rawLine of execution.session.lines.slice(1)) {
     const line = rawLine as {
@@ -241,12 +245,11 @@ function checkThreadReadSnapshots(execution: RuntimeEvalExecution<unknown>): Eva
   return failures;
 }
 
+// biome-ignore lint/plugin/no-tiny-function: 32 failure sites share this record shape
 function failure(code: string, message: string): EvalFailure {
   return { dimension: "runtime_policy", category: "runtime_contract", code: `runtime_contract.${code}`, message };
 }
+// biome-ignore lint/plugin/no-tiny-function: three budget checks share this record shape
 function budget(code: string, message: string): EvalFailure {
   return { dimension: "harness_terminal", category: "budget_exceeded", code: `budget_exceeded.${code}`, message };
-}
-function dedupe(failures: EvalFailure[]): EvalFailure[] {
-  return [...new Map(failures.map((item) => [item.code, item])).values()];
 }

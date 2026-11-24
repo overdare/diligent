@@ -88,16 +88,18 @@ export async function convertAnthropicMessage(
   localImageLoader?: LocalImageLoader,
 ): Promise<ConvertedAnthropicMessage> {
   if (message.role === "user") {
-    const content =
-      typeof message.content === "string"
-        ? [{ type: "text" as const, text: message.content }]
-        : (
-            await materializeUserContentBlocks(message.content, {
-              loader: localImageLoader,
-            })
-          ).map(convertContentBlock);
+    let userBlocks: Anthropic.Messages.ContentBlockParam[];
+    if (typeof message.content === "string") {
+      userBlocks = [{ type: "text" as const, text: message.content }];
+    } else {
+      userBlocks = (
+        await materializeUserContentBlocks(message.content, {
+          loader: localImageLoader,
+        })
+      ).map(convertContentBlock);
+    }
     return {
-      message: { role: "user", content },
+      message: { role: "user", content: userBlocks },
       coalesceWithPreviousUser: false,
     };
   }
@@ -116,24 +118,28 @@ export async function convertAnthropicMessage(
   }
 
   const hasImages = (message.outputImages?.length ?? 0) > 0;
+  let toolResultContent: string | (Anthropic.Messages.ImageBlockParam | { type: "text"; text: string })[];
+  if (hasImages) {
+    toolResultContent = [
+      ...(message.output ? [{ type: "text" as const, text: message.output }] : []),
+      ...(message.outputImages ?? []).map(
+        (image): Anthropic.ImageBlockParam => ({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: image.source.media_type as Anthropic.Base64ImageSource["media_type"],
+            data: image.source.data,
+          },
+        }),
+      ),
+    ];
+  } else {
+    toolResultContent = message.output;
+  }
   const toolResultBlock: Anthropic.ToolResultBlockParam = {
     type: "tool_result",
     tool_use_id: message.toolCallId,
-    content: hasImages
-      ? [
-          ...(message.output ? [{ type: "text" as const, text: message.output }] : []),
-          ...(message.outputImages ?? []).map(
-            (image): Anthropic.ImageBlockParam => ({
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: image.source.media_type as Anthropic.Base64ImageSource["media_type"],
-                data: image.source.data,
-              },
-            }),
-          ),
-        ]
-      : message.output,
+    content: toolResultContent,
     is_error: message.isError,
   };
   return {
@@ -273,47 +279,57 @@ function convertProviderToolUseBlock(block: ProviderToolUseBlock): Anthropic.Con
 
 function convertWebSearchResultBlock(block: WebSearchResultBlock): Anthropic.ContentBlockParam | undefined {
   if (block.provider !== "anthropic") return undefined;
+  let resultContent:
+    | Anthropic.Messages.WebSearchResultBlockParam[]
+    | { type: "web_search_tool_result_error"; error_code: Anthropic.WebSearchToolResultErrorCode };
+  if (block.error) {
+    resultContent = {
+      type: "web_search_tool_result_error",
+      error_code: block.error.code as Anthropic.WebSearchToolResultErrorCode,
+    };
+  } else {
+    resultContent = block.results.flatMap((result): Anthropic.WebSearchResultBlockParam[] => {
+      if (!result.encryptedContent) return [];
+      return [
+        {
+          type: "web_search_result",
+          url: result.url,
+          title: result.title ?? result.url,
+          encrypted_content: result.encryptedContent,
+          ...(result.pageAge ? { page_age: result.pageAge } : {}),
+        },
+      ];
+    });
+  }
   return {
     type: "web_search_tool_result",
     tool_use_id: block.toolUseId,
     caller: { type: "direct" },
-    content: block.error
-      ? {
-          type: "web_search_tool_result_error",
-          error_code: block.error.code as Anthropic.WebSearchToolResultErrorCode,
-        }
-      : block.results.flatMap((result): Anthropic.WebSearchResultBlockParam[] => {
-          if (!result.encryptedContent) return [];
-          return [
-            {
-              type: "web_search_result",
-              url: result.url,
-              title: result.title ?? result.url,
-              encrypted_content: result.encryptedContent,
-              ...(result.pageAge ? { page_age: result.pageAge } : {}),
-            },
-          ];
-        }),
+    content: resultContent,
   } as Anthropic.WebSearchToolResultBlockParam;
 }
 
 function convertWebFetchResultBlock(block: WebFetchResultBlock): Anthropic.ContentBlockParam | undefined {
   if (block.provider !== "anthropic") return undefined;
+  let content: Anthropic.WebFetchToolResultBlockParam["content"];
+  if (block.error) {
+    content = {
+      type: "web_fetch_tool_result_error",
+      error_code: block.error.code as Anthropic.WebFetchToolResultErrorCode,
+    };
+  } else {
+    content = {
+      type: "web_fetch_result",
+      url: block.url,
+      ...(block.retrievedAt ? { retrieved_at: block.retrievedAt } : {}),
+      content: toAnthropicFetchDocument(block.document),
+    };
+  }
   return {
     type: "web_fetch_tool_result",
     tool_use_id: block.toolUseId,
     caller: { type: "direct" },
-    content: block.error
-      ? {
-          type: "web_fetch_tool_result_error",
-          error_code: block.error.code as Anthropic.WebFetchToolResultErrorCode,
-        }
-      : {
-          type: "web_fetch_result",
-          url: block.url,
-          ...(block.retrievedAt ? { retrieved_at: block.retrievedAt } : {}),
-          content: toAnthropicFetchDocument(block.document),
-        },
+    content,
   } as Anthropic.WebFetchToolResultBlockParam;
 }
 

@@ -41,9 +41,10 @@ export function redactEvalText(value: string, secrets: readonly string[] = []): 
 function sanitizeValue(value: unknown, secrets: readonly string[], seen: WeakSet<object>): unknown {
   if (typeof value === "string") {
     const redacted = redactEvalText(value, secrets);
-    return redacted.length > 32_768
-      ? `${redacted.slice(0, 32_768)}\n...[truncated ${redacted.length - 32_768} chars]`
-      : redacted;
+    if (redacted.length > 32_768) {
+      return `${redacted.slice(0, 32_768)}\n...[truncated ${redacted.length - 32_768} chars]`;
+    }
+    return redacted;
   }
   if (value === null || typeof value === "number" || typeof value === "boolean") return value;
   if (value === undefined) return undefined;
@@ -53,11 +54,13 @@ function sanitizeValue(value: unknown, secrets: readonly string[], seen: WeakSet
   seen.add(value);
   const output: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
-    output[key] = SENSITIVE_KEY_PATTERN.test(key)
-      ? "[REDACTED]"
-      : key === "data" && "type" in value && value.type === "base64"
-        ? "[base64 omitted]"
-        : sanitizeValue(item, secrets, seen);
+    if (SENSITIVE_KEY_PATTERN.test(key)) {
+      output[key] = "[REDACTED]";
+    } else if (key === "data" && "type" in value && value.type === "base64") {
+      output[key] = "[base64 omitted]";
+    } else {
+      output[key] = sanitizeValue(item, secrets, seen);
+    }
   }
   seen.delete(value);
   return output;

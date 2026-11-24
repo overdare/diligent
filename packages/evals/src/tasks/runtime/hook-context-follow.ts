@@ -59,6 +59,7 @@ export const hookContextFollowTask: RuntimeEvalTask<HookContextFollowWorld> = {
   },
   createRuntimeConfig: createIsolatedFixtureRuntimeConfig,
   createBundledToolProviders(world): readonly BundledToolProvider[] {
+    // biome-ignore lint/plugin/no-tiny-function: the hook function carries a mode property, so it must be bound to a name
     const hook: PluginHookFn = async () => ({ blocked: false, additionalContext: world.injectedContext });
     hook.mode = "sync";
     return [{ id: "eval-user-prompt-hook", createTools: () => [], onUserPromptSubmit: hook }];

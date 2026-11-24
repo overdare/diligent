@@ -1,0 +1,22 @@
+engine biome(1.0)
+language js(typescript, jsx)
+
+pattern single_line_return() { JsFunctionBody(statements=[JsReturnStatement() as $ret]) where { $ret <: r"[^\n]*" } }
+
+pattern tiny_function_value() {
+  or {
+    JsArrowFunctionExpression(body=$body) where {
+      or { $body <: single_line_return(), and { $body <: not JsFunctionBody(), $body <: r"[^\n]*" } }
+    },
+    JsFunctionExpression(body=single_line_return())
+  }
+}
+
+or {
+  JsFunctionDeclaration(body=single_line_return()),
+  JsVariableDeclarator(initializer=JsInitializerClause(expression=tiny_function_value()))
+} as $fn where {
+  not $fn <: contains TsPredicateReturnType(),
+  or { $fn <: not within JsExport(), $fn <: within JsFunctionBody() },
+  register_diagnostic(span=$fn, message="Tiny private function: its whole body is one single-line expression. Inline it at the call site or give it real logic.")
+}

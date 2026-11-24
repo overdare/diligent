@@ -789,16 +789,15 @@ describe("Agent compactionSummary persistence", () => {
     });
 
     const bigContent = "x".repeat(200_001);
-    const userMsg = (text: string): Message => ({ role: "user", content: text + bigContent, timestamp: Date.now() });
 
     // First prompt: no compaction (first turn, not enough history)
-    await agent.prompt(userMsg("first"));
+    await agent.prompt({ role: "user", content: "first" + bigContent, timestamp: Date.now() });
     const summaryAfterFirst = (agent as unknown as { compactionSummary?: Record<string, unknown> }).compactionSummary;
     expect(summaryAfterFirst).toBeUndefined();
 
     // Second prompt: total messages (~100k tokens) exceed threshold (60k = 200k × 0.3)
     // Auto-compaction fires and the returned compactionSummary must be persisted on the Agent.
-    await agent.prompt(userMsg("second"));
+    await agent.prompt({ role: "user", content: "second" + bigContent, timestamp: Date.now() });
     const summaryAfterSecond = (agent as unknown as { compactionSummary?: Record<string, unknown> }).compactionSummary;
 
     expect(summaryAfterSecond).toEqual(compactionSummary);

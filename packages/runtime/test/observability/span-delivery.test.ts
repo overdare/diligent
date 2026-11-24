@@ -38,10 +38,9 @@ test("exports sanitized spans to the gateway as standard OTLP JSON", async () =>
 test("discards queued data after consent changes", async () => {
   let generation = 1;
   let sends = 0;
-  const getPolicy = () => ({ granted: true, generation, userId: "user-1", contentMode: "none" as const });
   const delivery = new SpanDelivery({
     baseUrl: "https://gateway.example",
-    getPolicy,
+    getPolicy: () => ({ granted: true, generation, userId: "user-1", contentMode: "none" as const }),
     resolveToken: async () => "token",
     fetch: async () => {
       sends++;
@@ -49,7 +48,7 @@ test("discards queued data after consent changes", async () => {
     },
   });
   const processor = new ConsentSpanProcessor({
-    getPolicy,
+    getPolicy: () => ({ granted: true, generation, userId: "user-1", contentMode: "none" as const }),
     isAuthorizedContext: () => true,
     onSpan: (span, policy) => delivery.enqueue(span, policy),
   });

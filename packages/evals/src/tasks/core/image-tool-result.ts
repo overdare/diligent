@@ -79,13 +79,12 @@ export const imageToolResultTask: EvalTask<ImageToolResultWorld> = {
         message: "The response did not classify both images in the correct order.",
         dimension: "semantic_goal",
       };
-    return finalText === execution.world.expected
-      ? { passed: true }
-      : {
-          passed: false,
-          code: "image_tool_result.format",
-          message: `Expected exact response bytes ${execution.world.expected}.`,
-          dimension: "format_contract",
-        };
+    if (finalText === execution.world.expected) return { passed: true };
+    return {
+      passed: false,
+      code: "image_tool_result.format",
+      message: `Expected exact response bytes ${execution.world.expected}.`,
+      dimension: "format_contract",
+    };
   },
 };

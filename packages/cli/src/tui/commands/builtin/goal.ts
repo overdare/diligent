@@ -46,13 +46,15 @@ export const goalCommand: Command = {
     });
     try {
       const change = parseGoalCommand(args, current.goal);
-      const response = change
-        ? await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_SET, {
-            threadId: ctx.threadId,
-            ...change,
-          })
-        : current;
-      ctx.displayLines(["", ...formatGoalLines(response.goal), ""]);
+      let goal = current.goal;
+      if (change) {
+        const updated = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_SET, {
+          threadId: ctx.threadId,
+          ...change,
+        });
+        goal = updated.goal;
+      }
+      ctx.displayLines(["", ...formatGoalLines(goal), ""]);
     } catch (error) {
       ctx.displayError(error instanceof Error ? error.message : String(error));
     }

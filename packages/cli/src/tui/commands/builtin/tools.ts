@@ -54,18 +54,18 @@ function buildSetParams(threadId: string | null, draft: ToolSettingsDraft): Tool
 function describeTool(tool: ToolDescriptor): string {
   const status = tool.enabled ? "on" : "off";
   const lock = tool.immutable ? " · locked" : "";
-  const reason =
-    tool.reason === "disabled_by_user"
-      ? " · disabled in settings"
-      : tool.reason === "plugin_disabled"
-        ? " · package disabled"
-        : tool.reason === "plugin_load_failed"
-          ? " · load failed"
-          : tool.reason === "conflict_dropped"
-            ? " · conflict"
-            : tool.reason === "invalid_plugin_tool"
-              ? " · invalid"
-              : "";
+  let reason: " · disabled in settings" | " · package disabled" | " · load failed" | " · conflict" | " · invalid" | "";
+  if (tool.reason === "disabled_by_user") {
+    reason = " · disabled in settings";
+  } else if (tool.reason === "plugin_disabled") {
+    reason = " · package disabled";
+  } else if (tool.reason === "plugin_load_failed") {
+    reason = " · load failed";
+  } else if (tool.reason === "conflict_dropped") {
+    reason = " · conflict";
+  } else {
+    reason = tool.reason === "invalid_plugin_tool" ? " · invalid" : "";
+  }
   return `${status}${lock}${reason}`;
 }
 
@@ -100,10 +100,6 @@ async function saveTools(ctx: CommandContext, draft: ToolSettingsDraft): Promise
   return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET, buildSetParams(ctx.threadId, draft));
 }
 
-function showPicker(ctx: CommandContext, title: string, items: ListPickerItem[]): Promise<string | null> {
-  return ctx.app.pick({ title, items, filterable: true });
-}
-
 function promptPackageName(ctx: CommandContext): Promise<string | null> {
   return ctx.app
     .prompt({
@@ -118,15 +114,23 @@ async function editBuiltins(ctx: CommandContext, state: ToolsListResponse, draft
   while (true) {
     const builtinTools = state.tools.filter((tool) => tool.source === "builtin");
     const items: ListPickerItem[] = [
-      ...builtinTools.map((tool) => ({
-        label: `${tool.immutable ? "🔒" : (draft.builtin[tool.name] ?? tool.enabled) ? "✓" : "✗"} ${tool.name}`,
-        description: describeTool(tool),
-        value: tool.name,
-      })),
+      ...builtinTools.map((tool) => {
+        let statusIcon: "🔒" | "✓" | "✗";
+        if (tool.immutable) {
+          statusIcon = "🔒";
+        } else {
+          statusIcon = (draft.builtin[tool.name] ?? tool.enabled) ? "✓" : "✗";
+        }
+        return {
+          label: `${statusIcon} ${tool.name}`,
+          description: describeTool(tool),
+          value: tool.name,
+        };
+      }),
       { label: "Back", description: "Return to tool settings", value: "__back" },
     ];
 
-    const choice = await showPicker(ctx, "Built-in tools", items);
+    const choice = await ctx.app.pick({ title: "Built-in tools", items, filterable: true });
     if (!choice || choice === "__back") return;
 
     const tool = builtinTools.find((entry) => entry.name === choice);
@@ -168,7 +172,7 @@ async function editPluginTools(
       { label: "Back", description: "Return to tool settings", value: "__back" },
     ];
 
-    const choice = await showPicker(ctx, pluginState.package, items);
+    const choice = await ctx.app.pick({ title: pluginState.package, items, filterable: true });
     if (!choice || choice === "__back") return;
 
     if (choice === "__toggle_package") {
@@ -234,7 +238,7 @@ async function editPlugins(ctx: CommandContext, state: ToolsListResponse, draft:
       { label: "Back", description: "Return to tool settings", value: "__back" },
     ];
 
-    const choice = await showPicker(ctx, "Plugin packages", items);
+    const choice = await ctx.app.pick({ title: "Plugin packages", items, filterable: true });
     if (!choice || choice === "__back") return;
 
     if (choice === "__add") {
@@ -295,7 +299,7 @@ export const toolsCommand: Command = {
         { label: "Close", description: "Exit without saving more changes", value: "__close" },
       ];
 
-      const choice = await showPicker(ctx, "Tool settings", items);
+      const choice = await ctx.app.pick({ title: "Tool settings", items, filterable: true });
       if (!choice || choice === "__close") {
         return;
       }

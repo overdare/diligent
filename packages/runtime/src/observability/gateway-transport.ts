@@ -54,8 +54,12 @@ export async function sendToGateway(options: GatewayTransportOptions): Promise<D
       const retryAfter = response.headers.get("retry-after");
       const seconds = retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter) : undefined;
       const date = retryAfter && seconds === undefined ? Date.parse(retryAfter) : Number.NaN;
-      const retryAfterMs =
-        seconds !== undefined ? seconds * 1000 : Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
+      let retryAfterMs: number | undefined;
+      if (seconds !== undefined) {
+        retryAfterMs = seconds * 1000;
+      } else {
+        retryAfterMs = Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
+      }
       return {
         status: "failed",
         retryable: response.status === 429 || response.status >= 500,

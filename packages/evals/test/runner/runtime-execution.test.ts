@@ -635,26 +635,28 @@ describe("runRuntimeEvalExecution", () => {
       profile: { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
       streamFunction: (() => {
         let call = 0;
-        return (model, context, options) =>
-          sequenceStream([
-            call++ === 0
-              ? assistantMessage(
-                  [
-                    {
-                      type: "tool_call",
-                      id: "unexpected-write",
-                      name: "edit",
-                      input: {
-                        file_path: join(fixtureRoot, "PROTECTED.txt"),
-                        old_string: "original\n",
-                        new_string: "wrong\n",
-                      },
+        return (model, context, options) => {
+          if (call++ === 0) {
+            return sequenceStream([
+              assistantMessage(
+                [
+                  {
+                    type: "tool_call",
+                    id: "unexpected-write",
+                    name: "edit",
+                    input: {
+                      file_path: join(fixtureRoot, "PROTECTED.txt"),
+                      old_string: "original\n",
+                      new_string: "wrong\n",
                     },
-                  ],
-                  "tool_use",
-                )
-              : assistantMessage([{ type: "text", text: "Done." }]),
-          ])(model, context, options);
+                  },
+                ],
+                "tool_use",
+              ),
+            ])(model, context, options);
+          }
+          return sequenceStream([assistantMessage([{ type: "text", text: "Done." }])])(model, context, options);
+        };
       })(),
     });
 
@@ -1130,22 +1132,24 @@ describe("runRuntimeEvalExecution", () => {
       profile: { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
       streamFunction: (() => {
         let call = 0;
-        return (model, context, options) =>
-          sequenceStream([
-            call++ === 0
-              ? assistantMessage(
-                  [
-                    {
-                      type: "tool_call",
-                      id: "write-1",
-                      name: "edit",
-                      input: { file_path: `${nestedCwd}/RESULT.txt`, old_string: "old\n", new_string: "nested\n" },
-                    },
-                  ],
-                  "tool_use",
-                )
-              : assistantMessage([{ type: "text", text: "done" }]),
-          ])(model, context, options);
+        return (model, context, options) => {
+          if (call++ === 0) {
+            return sequenceStream([
+              assistantMessage(
+                [
+                  {
+                    type: "tool_call",
+                    id: "write-1",
+                    name: "edit",
+                    input: { file_path: `${nestedCwd}/RESULT.txt`, old_string: "old\n", new_string: "nested\n" },
+                  },
+                ],
+                "tool_use",
+              ),
+            ])(model, context, options);
+          }
+          return sequenceStream([assistantMessage([{ type: "text", text: "done" }])])(model, context, options);
+        };
       })(),
     });
 
@@ -2120,18 +2124,20 @@ function imagePairStream(expected: string): StreamFunction {
     const results = context.messages.filter((message) => message.role === "tool_result") as Array<
       Message & { role: "tool_result"; toolName: string }
     >;
-    const response =
-      results.length === 0
-        ? assistantMessage(
-            [{ type: "tool_call", id: "image-a", name: "read_image", input: { file_path: paths[0] } }],
-            "tool_use",
-          )
-        : results.length === 1
-          ? assistantMessage(
-              [{ type: "tool_call", id: "image-b", name: "read_image", input: { file_path: paths[1] } }],
-              "tool_use",
-            )
-          : assistantMessage([{ type: "text", text: expected }]);
+    let response: AssistantMessage;
+    if (results.length === 0) {
+      response = assistantMessage(
+        [{ type: "tool_call", id: "image-a", name: "read_image", input: { file_path: paths[0] } }],
+        "tool_use",
+      );
+    } else if (results.length === 1) {
+      response = assistantMessage(
+        [{ type: "tool_call", id: "image-b", name: "read_image", input: { file_path: paths[1] } }],
+        "tool_use",
+      );
+    } else {
+      response = assistantMessage([{ type: "text", text: expected }]);
+    }
     return sequenceStream([response])(model, context, options);
   };
 }

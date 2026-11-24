@@ -51,10 +51,6 @@ export async function discoverSkills(options: DiscoveryOptions): Promise<SkillLo
   };
 }
 
-function resolveGlobalConfigDir(): string {
-  return join(process.env.HOME ?? process.env.USERPROFILE ?? homedir(), resolveProjectDirName());
-}
-
 function getDiscoveryRoots(options: DiscoveryOptions): Array<{ dir: string; source: SkillMetadata["source"] }> {
   const roots: Array<{ dir: string; source: SkillMetadata["source"] }> = [];
 
@@ -62,7 +58,8 @@ function getDiscoveryRoots(options: DiscoveryOptions): Array<{ dir: string; sour
   roots.push({ dir: join(options.cwd, resolveProjectDirName(), "skills"), source: "project" });
 
   // 2. Global
-  const globalDir = options.globalConfigDir ?? resolveGlobalConfigDir();
+  const globalDir =
+    options.globalConfigDir ?? join(process.env.HOME ?? process.env.USERPROFILE ?? homedir(), resolveProjectDirName());
   roots.push({ dir: join(globalDir, "skills"), source: "global" });
 
   // 3. Additional config paths

@@ -51,80 +51,87 @@ export function transformRuntimeTools(input: {
   const allowedCapabilities = new Set(input.policy.allowedCapabilities);
   return input.tools
     .filter((tool) => {
-      const capability = capabilityForTool(tool.name);
+      const capability = CAPABILITIES[tool.name] ?? "execute";
       return (!allowedTools || allowedTools.has(tool.name)) && allowedCapabilities.has(capability);
     })
-    .map((tool) => ({
-      ...tool,
-      description:
-        tool.name === "bash"
-          ? describeEvalCommandContract(tool.description, input.policy.allowedCommands)
-          : tool.description,
-      async execute(args, context) {
-        const capability = capabilityForTool(tool.name);
-        const trace: RuntimeToolTrace = {
-          sequence: input.traces.length + 1,
-          toolCallId: context.toolCallId,
-          name: tool.name,
-          capability,
-          input: normalizeEvidence(args, input.root, input.outputRoot),
-          ...(input.currentTurnIndex && { turnIndex: input.currentTurnIndex() }),
-          outcome: "success",
-        };
-        input.traces.push(trace);
-        try {
-          if (input.isTerminated()) rejectPolicy("execution_terminated", "Eval execution already terminated.");
-          if (input.traces.length > input.maxToolCalls) {
-            input.onBudgetExceeded("tool_call_limit");
-            rejectPolicy("tool_calls", `Tool-call budget exceeded (${input.maxToolCalls}).`);
-          }
-          enforceOperationLimit(tool.name, input);
+    .map((tool) => {
+      let description: string;
+      if (tool.name === "bash") {
+        description = describeEvalCommandContract(tool.description, input.policy.allowedCommands);
+      } else {
+        description = tool.description;
+      }
+      return {
+        ...tool,
+        description,
+        async execute(args, context) {
+          const capability = CAPABILITIES[tool.name] ?? "execute";
+          const trace: RuntimeToolTrace = {
+            sequence: input.traces.length + 1,
+            toolCallId: context.toolCallId,
+            name: tool.name,
+            capability,
+            input: normalizeEvidence(args, input.root, input.outputRoot),
+            ...(input.currentTurnIndex && { turnIndex: input.currentTurnIndex() }),
+            outcome: "success",
+          };
+          input.traces.push(trace);
           try {
-            validateToolInput(tool.name, args, input.root, input.policy, input.registeredReadPaths);
+            if (input.isTerminated()) rejectPolicy("execution_terminated", "Eval execution already terminated.");
+            if (input.traces.length > input.maxToolCalls) {
+              input.onBudgetExceeded("tool_call_limit");
+              rejectPolicy("tool_calls", `Tool-call budget exceeded (${input.maxToolCalls}).`);
+            }
+            enforceOperationLimit(tool.name, input);
+            try {
+              validateToolInput(tool.name, args, input.root, input.policy, input.registeredReadPaths);
+            } catch (error) {
+              if (error instanceof RuntimeEvalPolicyRejection) throw error;
+              rejectPolicy("tool_input", error instanceof Error ? error.message : String(error));
+            }
+            const result = await tool.execute(args, context);
+            trace.output = normalizeEvidence(result, input.root, input.outputRoot);
+            if (result.metadata?.error === true) {
+              trace.outcome = "runtime_error";
+              trace.error = normalizeEvidence(result.output, input.root, input.outputRoot) as string;
+            }
+            if (capability === "write" || capability === "execute") await input.afterMutation?.();
+            input.onTraceComplete?.(trace);
+            return result;
           } catch (error) {
-            if (error instanceof RuntimeEvalPolicyRejection) throw error;
-            rejectPolicy("tool_input", error instanceof Error ? error.message : String(error));
-          }
-          const result = await tool.execute(args, context);
-          trace.output = normalizeEvidence(result, input.root, input.outputRoot);
-          if (result.metadata?.error === true) {
+            trace.error = normalizeEvidence(
+              error instanceof Error ? error.message : String(error),
+              input.root,
+              input.outputRoot,
+            ) as string;
+            if (error instanceof RuntimeEvalPolicyRejection) {
+              trace.outcome = "policy_rejection";
+              const result = {
+                output: `Error: ${trace.error}`,
+                metadata: { error: true, runtimeEvalRejected: true },
+              };
+              trace.output = normalizeEvidence(result, input.root, input.outputRoot);
+              input.onTraceComplete?.(trace);
+              return result;
+            }
             trace.outcome = "runtime_error";
-            trace.error = normalizeEvidence(result.output, input.root, input.outputRoot) as string;
-          }
-          if (capability === "write" || capability === "execute") await input.afterMutation?.();
-          input.onTraceComplete?.(trace);
-          return result;
-        } catch (error) {
-          trace.error = normalizeEvidence(
-            error instanceof Error ? error.message : String(error),
-            input.root,
-            input.outputRoot,
-          ) as string;
-          if (error instanceof RuntimeEvalPolicyRejection) {
-            trace.outcome = "policy_rejection";
-            const result = {
-              output: `Error: ${trace.error}`,
-              metadata: { error: true, runtimeEvalRejected: true },
-            };
+            const result = { output: `Error: ${trace.error}`, metadata: { error: true } };
             trace.output = normalizeEvidence(result, input.root, input.outputRoot);
             input.onTraceComplete?.(trace);
             return result;
           }
-          trace.outcome = "runtime_error";
-          const result = { output: `Error: ${trace.error}`, metadata: { error: true } };
-          trace.output = normalizeEvidence(result, input.root, input.outputRoot);
-          input.onTraceComplete?.(trace);
-          return result;
-        }
-      },
-    }));
+        },
+      };
+    });
 }
 
 function describeEvalCommandContract(description: string, allowedCommands: readonly string[]): string {
-  const contract =
-    allowedCommands.length === 0
-      ? "no command strings are permitted."
-      : `only these exact command strings are permitted: ${allowedCommands.map((command) => JSON.stringify(command)).join(", ")}.`;
+  let contract: string;
+  if (allowedCommands.length === 0) {
+    contract = "no command strings are permitted.";
+  } else {
+    contract = `only these exact command strings are permitted: ${allowedCommands.map((command) => JSON.stringify(command)).join(", ")}.`;
+  }
   return `${description}\n\nRuntime eval command contract: ${contract}`;
 }
 
@@ -152,10 +159,6 @@ function enforceOperationLimit(
     input.onBudgetExceeded("child_agent_limit");
     rejectPolicy("child_agents", `Child-agent limit exceeded (${input.maxChildAgents}).`);
   }
-}
-
-export function capabilityForTool(name: string): RuntimeToolCapability {
-  return CAPABILITIES[name] ?? "execute";
 }
 
 function validateToolInput(
@@ -190,7 +193,12 @@ function validateToolInput(
     }
   }
   if (name === "apply_patch" && isRecord(args)) {
-    const patch = typeof args.patch === "string" ? args.patch : typeof args.input === "string" ? args.input : "";
+    let patch: string;
+    if (typeof args.patch === "string") {
+      patch = args.patch;
+    } else {
+      patch = typeof args.input === "string" ? args.input : "";
+    }
     for (const match of patch.matchAll(/^\*{3} (?:Add|Update|Delete) File: (.+)$/gm))
       resolveWorkspacePath(root, match[1]!);
     for (const match of patch.matchAll(/^\*{3} Move to: (.+)$/gm)) resolveWorkspacePath(root, match[1]!);
@@ -207,7 +215,7 @@ function resolveEvalToolPath(
     return resolveWorkspacePath(root, candidate);
   } catch (error) {
     if (
-      capabilityForTool(toolName) === "read" &&
+      (CAPABILITIES[toolName] ?? "execute") === "read" &&
       isAbsolute(candidate) &&
       registeredReadPaths?.has(normalizePlatformAlias(resolve(candidate)))
     ) {
@@ -229,12 +237,15 @@ function normalizeEvidence(value: unknown, root: string, outputRoot?: string): u
   if (Array.isArray(value)) return value.map((item) => normalizeEvidence(item, root, outputRoot));
   if (!isRecord(value)) return value;
   return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [
-      key,
-      key === "data" && isRecord(value) && value.type === "base64"
-        ? "[base64 omitted]"
-        : normalizeEvidence(item, root, outputRoot),
-    ]),
+    Object.entries(value).map(([key, item]) => {
+      let normalizedItem: unknown;
+      if (key === "data" && isRecord(value) && value.type === "base64") {
+        normalizedItem = "[base64 omitted]";
+      } else {
+        normalizedItem = normalizeEvidence(item, root, outputRoot);
+      }
+      return [key, normalizedItem];
+    }),
   );
 }
 

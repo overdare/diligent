@@ -92,10 +92,6 @@ export interface PluginConfig {
 
 type ConflictPolicy = "error" | "builtin_wins" | "plugin_wins";
 
-function compareEntries(a: ToolMapEntry, b: ToolMapEntry): number {
-  return a.order - b.order || a.tool.name.localeCompare(b.tool.name);
-}
-
 // ---------------------------------------------------------------------------
 // Phase 1: loadBuiltins
 // ---------------------------------------------------------------------------
@@ -120,6 +116,12 @@ export function loadBuiltins(
     const enabled = immutable ? true : !disabledByUser;
 
     toolMap.set(tool.name, { tool, source: "builtin", order: order++ });
+    let reason: "enabled" | "immutable_forced_on" | "disabled_by_user";
+    if (immutable && disabledByUser) {
+      reason = "immutable_forced_on";
+    } else {
+      reason = enabled ? "enabled" : "disabled_by_user";
+    }
     state.set(tool.name, {
       name: tool.name,
       source: "builtin",
@@ -127,7 +129,7 @@ export function loadBuiltins(
       immutable,
       configurable: !immutable,
       available: true,
-      reason: immutable && disabledByUser ? "immutable_forced_on" : enabled ? "enabled" : "disabled_by_user",
+      reason,
     });
   }
 
@@ -400,10 +402,10 @@ export function resolveConflicts(
           continue;
         }
 
-        const error =
-          conflictPolicy === "error"
-            ? `${batch.label} tool '${tool.name}' conflicts with built-in tool. Using built-in (conflictPolicy: "error").`
-            : undefined;
+        let error: string | undefined;
+        if (conflictPolicy === "error") {
+          error = `${batch.label} tool '${tool.name}' conflicts with built-in tool. Using built-in (conflictPolicy: "error").`;
+        }
 
         state.set(`conflict:${batch.id}:${tool.name}`, {
           name: tool.name,
@@ -473,7 +475,9 @@ export function freeze(
   plugins: PluginStateEntry[],
   pluginErrors: PluginLoadError[],
 ): ToolCatalogResult {
-  const finalEntries = [...toolMap.values()].sort(compareEntries);
+  const finalEntries = [...toolMap.values()].sort(
+    (a, b) => a.order - b.order || a.tool.name.localeCompare(b.tool.name),
+  );
   const tools: Tool[] = [];
 
   for (const entry of finalEntries) {

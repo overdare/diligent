@@ -240,16 +240,22 @@ function mergeWebSearchTools(tools: ProviderBuiltinToolDefinition[]): OpenAIWebS
     .filter((value): value is "low" | "medium" | "high" => value !== undefined);
   const userLocation = tools.map((tool) => tool.options?.userLocation).find((value) => value !== undefined);
 
+  let contextSizeField:
+    | { search_context_size: "high" }
+    | { search_context_size: "medium" }
+    | { search_context_size: "low" }
+    | Record<string, never>;
+  if (contextSizes.includes("high")) {
+    contextSizeField = { search_context_size: "high" as const };
+  } else if (contextSizes.includes("medium")) {
+    contextSizeField = { search_context_size: "medium" as const };
+  } else {
+    contextSizeField = contextSizes.includes("low") ? { search_context_size: "low" as const } : {};
+  }
   return {
     type: "web_search",
     ...(allowedDomains.length > 0 ? { filters: { allowed_domains: allowedDomains } } : {}),
-    ...(contextSizes.includes("high")
-      ? { search_context_size: "high" as const }
-      : contextSizes.includes("medium")
-        ? { search_context_size: "medium" as const }
-        : contextSizes.includes("low")
-          ? { search_context_size: "low" as const }
-          : {}),
+    ...contextSizeField,
     ...(userLocation ? { user_location: userLocation } : {}),
   };
 }

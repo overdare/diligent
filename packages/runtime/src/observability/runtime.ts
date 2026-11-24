@@ -24,6 +24,7 @@ interface ObservationRuntimeOptions {
 
 export function createObservationRuntime(options: ObservationRuntimeOptions) {
   const marker = createContextKey("diligent.context.check");
+  // biome-ignore lint/plugin/no-tiny-function: the same probe runs before and after installing the context manager
   const supportsContext = () =>
     otelContext.with(ROOT_CONTEXT.setValue(marker, true), () => otelContext.active().getValue(marker) === true);
   if (!supportsContext()) {
@@ -72,14 +73,17 @@ export function createObservationRuntime(options: ObservationRuntimeOptions) {
   function contentMask() {
     const active = contexts.getStore();
     const current = options.getPolicy();
-    return active?.granted &&
+    if (
+      active?.granted &&
       current.granted &&
       active.contentMode === "full" &&
       current.contentMode === "full" &&
       active.userId === current.userId &&
       active.generation === current.generation
-      ? options.maskText
-      : undefined;
+    ) {
+      return options.maskText;
+    }
+    return undefined;
   }
   function captureReason(span: object, reason: unknown) {
     try {
