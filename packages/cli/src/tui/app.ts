@@ -500,37 +500,41 @@ export class App {
     }
   }
 
-  private handleAgentEvent(event: AgentEvent): void {
-    if (
-      event.type === "tool_start" &&
-      event.toolName === "bash" &&
-      !event.parentToolCallId &&
-      !event.childThreadId &&
-      typeof event.input === "object" &&
-      event.input !== null &&
-      "interactive" in event.input &&
-      event.input.interactive === true &&
-      this.runtime.currentThreadId &&
-      this.rpcClient
-    ) {
-      const rpc = this.rpcClient;
-      const terminal = new PrivateTerminal(
-        event.toolCallId,
-        this.runtime.currentThreadId,
-        (params) => rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_TERMINAL, params),
-        () => this.renderer.requestRender(),
-      );
-      this.privateTerminals.set(event.toolCallId, terminal);
-      this.root.insertBefore(terminal, this.bottomPane);
-    } else if (event.type === "tool_end") {
+  private updatePrivateTerminal(event: AgentEvent): void {
+    if (event.type === "tool_end") {
       const terminal = this.privateTerminals.get(event.toolCallId);
-      if (terminal) {
-        terminal.stop();
-        this.privateTerminals.delete(event.toolCallId);
-        this.root.removeChild(terminal);
-        this.renderer.requestRender();
-      }
+      if (!terminal) return;
+      terminal.stop();
+      this.privateTerminals.delete(event.toolCallId);
+      this.root.removeChild(terminal);
+      this.renderer.requestRender();
+      return;
     }
+
+    if (event.type !== "tool_start" || event.toolName !== "bash") return;
+    if (event.parentToolCallId || event.childThreadId) return;
+
+    const { input, toolCallId } = event;
+    if (typeof input !== "object" || input === null) return;
+    if (!("interactive" in input) || input.interactive !== true) return;
+
+    const rpc = this.rpcClient;
+    const threadId = this.runtime.currentThreadId;
+    if (!rpc || !threadId) return;
+
+    const terminal = new PrivateTerminal(
+      toolCallId,
+      threadId,
+      (params) => rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_TERMINAL, params),
+      () => this.renderer.requestRender(),
+    );
+    this.privateTerminals.set(toolCallId, terminal);
+    this.root.insertBefore(terminal, this.bottomPane);
+  }
+
+  private handleAgentEvent(event: AgentEvent): void {
+    this.updatePrivateTerminal(event);
+
     if (event.type === "compaction_start") {
       this.beginCompactionIndicator(event.estimatedTokens);
       return;
