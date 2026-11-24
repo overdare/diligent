@@ -76,7 +76,7 @@ for (const boundary of [
       resolveThreadRuntime: async () => runtime,
       ensureGoal: async () => goal,
       getGoalsConfig: () => undefined,
-      getSkillNames: () => [],
+      getSkillNames: async () => [],
       getPluginHooks: async () => ({ onUserPromptSubmit: [] }),
       getUserId: () => "user",
       emit: async () => {},

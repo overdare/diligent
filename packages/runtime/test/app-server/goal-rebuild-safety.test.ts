@@ -88,7 +88,7 @@ test("a per-turn model change does not replace the agent while a goal-owned chil
         },
         getUserId: () => undefined,
         getPluginHooks: async () => ({ onUserPromptSubmit: [] }),
-        getSkillNames: () => [],
+        getSkillNames: async () => [],
       } as never,
       {
         threadId: "thread",

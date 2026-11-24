@@ -2,6 +2,7 @@
 
 import { toSerializableError } from "@diligent/core/agent";
 import { resolveModel, sameModelRef } from "@diligent/core/model-registry";
+import { createLogger } from "@diligent/logging";
 import type { GoalController, GoalWorkScope } from "../goals/controller";
 import type { GoalToolHost } from "../goals/tools";
 import { runCombinedHooks } from "../hooks/runner";
@@ -36,6 +37,8 @@ const BUILTIN_COMMAND_NAMES = new Set([
   "reload",
   "skills",
 ]);
+
+const logger = createLogger({ scope: "runtime.app-server.turn" });
 
 interface GoalTurnOptions {
   goal: GoalController;
@@ -115,6 +118,20 @@ async function initializeTurnRuntime(
   }
 }
 
+/** Active skill names for slash disambiguation; a failed lookup sends the message as typed. */
+async function loadSlashSkillNames(ctx: ThreadHandlersContext, cwd: string): Promise<Set<string>> {
+  try {
+    return new Set(await ctx.getSkillNames(cwd));
+  } catch (error) {
+    logger.warn("skill_names.failed", {
+      message: "Skill names could not be loaded; slash message sent unchanged",
+      fields: { cwd },
+      error,
+    });
+    return new Set();
+  }
+}
+
 /**
  * Resolve the slash-skill invocation (if any), normalize attachments, and assemble the
  * user message object that will be passed to the session manager.
@@ -127,7 +144,7 @@ async function prepareTurnMessage(
   const timestamp = Date.now();
   let slashSkill: ReturnType<typeof parseSlashSkillInvocation> = null;
   if (params.message.trimStart().startsWith("/")) {
-    slashSkill = parseSlashSkillInvocation(params.message, new Set(await ctx.getSkillNames(runtime.cwd)));
+    slashSkill = parseSlashSkillInvocation(params.message, await loadSlashSkillNames(ctx, runtime.cwd));
   }
   let messageForTurn: string;
   if (slashSkill) {
@@ -327,6 +344,7 @@ export async function handleTurnStart(
       preparedTurn = await prepareTurnMessage(ctx, params, runtime);
     }
     const { userMessage, content } = preparedTurn;
+    if (!isCurrent()) return { accepted: true };
     const userItemId = generateEntryId();
     let hookOutcome: HookOutcome = { blocked: false, userMessage };
     if (!internal) {
