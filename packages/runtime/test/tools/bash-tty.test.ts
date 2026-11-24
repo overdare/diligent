@@ -247,8 +247,9 @@ describe("host-provided Bash terminal", () => {
       output: "native prompt",
     });
     const background = restrictBash(bash, "background-or-private");
-    const started = await background.execute(
-      background.parseArgs!({ command: "unused", tty: true, yield_time_ms: 0 }),
+    const started = await executeTool(
+      new Map([[background.name, background]]),
+      { type: "tool_call", id: "tc", name: "bash", input: { command: "unused", tty: true, yield_time_ms: 0 } },
       makeCtx(),
     );
     expect(await readUntil(bashWait, processId(started.output), /native prompt/, started.output)).toContain(
