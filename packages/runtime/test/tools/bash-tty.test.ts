@@ -8,8 +8,7 @@ import {
   type ToolRegistry,
   toToolInputSchema,
 } from "@diligent/core/tool-contract";
-import type * as BashModule from "../../src/tools/bash";
-import { createBashTools } from "../../src/tools/bash";
+import { createBashTools, restrictBash } from "../../src/tools/bash";
 import { ShellProcessRegistry } from "../../src/tools/shell-processes";
 import { waitUntilDead } from "../helpers/process";
 
@@ -202,23 +201,10 @@ describe.if(posix)("bash tty", () => {
   });
 });
 
-describe("bash tty on Windows", () => {
-  test("is not advertised, and an explicit request fails instead of falling back to pipes", async () => {
-    const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
-    Object.defineProperty(process, "platform", { ...platform, value: "win32" });
-    let windows: typeof BashModule;
-    try {
-      // A fresh module instance, keyed by the query, evaluates its platform checks while the platform reads as Windows.
-      const specifier = "../../src/tools/bash.ts?platform=win32";
-      windows = await import(specifier);
-    } finally {
-      Object.defineProperty(process, "platform", platform);
-    }
-    expect(windows.createBashTools).not.toBe(createBashTools);
-    const registry = new ShellProcessRegistry();
-    registries.push(registry);
-    const [bash] = windows.createBashTools(process.cwd(), undefined, registry);
-    const background = windows.restrictBash(bash, "background");
+describe("host-provided Bash terminal", () => {
+  test.if(!posix)("without a backend, explicit requests fail instead of falling back to pipes", async () => {
+    const { bash } = setup();
+    const background = restrictBash(bash, "background");
 
     for (const tool of [bash, background]) {
       expect(Object.keys(toToolInputSchema(tool).properties as object)).not.toContain("tty");
@@ -232,5 +218,51 @@ describe("bash tty on Windows", () => {
     }
     expect(bash.parseArgs?.({ command: "echo hi" })).toEqual({ command: "echo hi" });
     expect(() => bash.parseArgs?.({ command: "" })).toThrow("command");
+  });
+
+  test("uses the installed backend for foreground, background, and private terminals", async () => {
+    const registry = new ShellProcessRegistry((argv, options) => {
+      const exited = Promise.withResolvers<number>();
+      const output = (value: string) => options.onData(new TextEncoder().encode(value));
+      options.signal?.addEventListener("abort", () => exited.resolve(1), { once: true });
+      queueMicrotask(() => {
+        output("native prompt");
+        const command = argv.at(-1)!;
+        const script = posix ? command : Buffer.from(command, "base64").toString("utf16le");
+        if (!script.startsWith("private-command")) exited.resolve(0);
+      });
+      return {
+        exited: exited.promise,
+        write(input) {
+          output(input);
+          exited.resolve(0);
+          return true;
+        },
+      };
+    });
+    registries.push(registry);
+    registry.interactiveConnection = () => "owner";
+    const [bash, bashWait] = createBashTools(process.cwd(), undefined, registry);
+    expect(await bash.execute(bash.parseArgs!({ command: "unused", tty: true }), makeCtx())).toMatchObject({
+      output: "native prompt",
+    });
+    const background = restrictBash(bash, "background");
+    const started = await background.execute(
+      background.parseArgs!({ command: "unused", tty: true, yield_time_ms: 0 }),
+      makeCtx(),
+    );
+    expect(await readUntil(bashWait, processId(started.output), /native prompt/, started.output)).toContain(
+      "native prompt",
+    );
+
+    const finished = bash.execute(bash.parseArgs!({ command: "private-command", interactive: true }), makeCtx());
+    const params = { threadId: "thread", toolCallId: "tc", cursor: 0 };
+    for (let tries = 0; registry.exchangeTerminal("owner", params).state === "waiting"; tries++) {
+      if (tries === 20) throw new Error("The private terminal did not start");
+      await Bun.sleep(5);
+    }
+    registry.exchangeTerminal("owner", { ...params, input: "private input" });
+    expect(registry.exchangeTerminal("owner", params).output).toContain("private input");
+    expect(await finished).toMatchObject({ output: "[Private terminal output is not shared with the agent.]" });
   });
 });

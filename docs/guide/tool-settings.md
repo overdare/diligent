@@ -88,12 +88,12 @@ new pseudo-terminal of 120 columns by 40 rows:
   Values already set in your environment win. Sensitive variables are filtered as for every `bash` command.
 - `bash_wait` `input` is typed into the terminal, which echoes it back like an interactive session. Control characters
   work as keystrokes; for example `\u0003` sends Ctrl-C to the command.
-- Timeouts, cancellation, `terminate`, thread deletion, child-agent completion, and app-server shutdown stop the whole
-  process group with the same `SIGTERM` grace period and `SIGKILL` as for pipe commands.
+- Timeouts, cancellation, `terminate`, and session shutdown stop the process tree. The built-in POSIX backend
+  sends `SIGTERM` to the process group and escalates to `SIGKILL` after a grace period.
 
-Windows has no pseudo-terminal support yet. `bash` does not offer `tty` there, and a call that sets it anyway fails
-with an error instead of running the command on pipes. Code mode `exec` cells reject `tty` for nested `tools.bash`
-calls, as they reject `yield_time_ms`; use a direct `bash` call instead.
+Windows hosts can supply a `terminalSpawner` to the app server. Windows PTY commands run in PowerShell.
+Standalone Windows Diligent has no backend configured. An explicit `tty` request there fails instead of running
+on pipes. Code mode `exec` cells still reject `tty` for nested `tools.bash` calls. Use a direct `bash` call instead.
 
 #### Private terminal input
 
@@ -104,8 +104,8 @@ status only. Inspect the command before entering credentials: the CLI itself can
 
 The console belongs to the client connection that started the turn. Stopping the command, interrupting the
 turn, or disconnecting that client closes the PTY. This mode requires a supporting client and is unavailable
-on Windows, in `tools.codeMode: "only"`, and for nested or background calls. `tty: true` without
-`interactive: true` is not private; never send a credential via `bash_wait` or a chat question.
+without a PTY backend, in `tools.codeMode: "only"`, and for nested or background calls. `tty: true` without
+`interactive: true` is not private. Never send a credential via `bash_wait` or a chat question.
 
 ## Bundled product tools
 

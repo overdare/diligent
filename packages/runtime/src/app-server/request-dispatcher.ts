@@ -99,6 +99,7 @@ export interface ClientRequestDispatchContext {
 
   // Connection access
   getConnection(id: string): ConnectedPeer | undefined;
+  terminalAvailable: boolean;
   setConnectionCurrentThreadId(connectionId: string, threadId: string | null): void;
 
   // Thread operations
@@ -227,7 +228,7 @@ export async function dispatchClientRequest(
       }
       const extra = (await ctx.getInitializeResult?.()) ?? {};
       const conn = ctx.getConnection(connectionId);
-      if (conn) conn.interactiveTerminal = request.params.interactiveTerminal === true && process.platform !== "win32";
+      if (conn) conn.interactiveTerminal = request.params.interactiveTerminal === true && ctx.terminalAvailable;
       return {
         serverName: ctx.serverName,
         serverVersion: ctx.serverVersion,

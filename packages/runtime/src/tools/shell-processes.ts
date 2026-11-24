@@ -1,7 +1,13 @@
 // @summary Session-owned subprocesses backing yielded bash commands
 
 import type { ThreadTerminalParams, ThreadTerminalResponse } from "@diligent/protocol";
-import { type SpawnOptions, spawnProcess, spawnTerminal } from "../util/process";
+import {
+  defaultTerminalSpawner,
+  type SpawnOptions,
+  spawnProcess,
+  TERMINAL_UNSUPPORTED_MESSAGE,
+  type TerminalSpawner,
+} from "../util/process";
 import { TerminalTextDecoder } from "../util/terminal-output";
 import { InteractiveTerminal } from "./interactive-terminal";
 
@@ -31,6 +37,8 @@ export class ShellProcessRegistry {
   private readonly terminals = new Map<string, InteractiveTerminal>();
   interactiveConnection?: (sessionId: string) => string | undefined;
 
+  constructor(readonly terminalSpawner = defaultTerminalSpawner) {}
+
   openTerminal(
     connectionId: string,
     sessionId: string,
@@ -40,7 +48,8 @@ export class ShellProcessRegistry {
   ): Promise<number> {
     if (this.closed) throw new Error("Shell process registry is shutting down");
     if (this.terminals.has(toolCallId)) throw new Error("Terminal already exists");
-    const entry = new InteractiveTerminal(connectionId, sessionId, argv, options);
+    if (!this.terminalSpawner) throw new Error(TERMINAL_UNSUPPORTED_MESSAGE);
+    const entry = new InteractiveTerminal(connectionId, sessionId, argv, options, this.terminalSpawner);
     this.terminals.set(toolCallId, entry);
     return entry.exited.finally(() => {
       // Let the attached client pull the last output, without storing it in session history.
@@ -71,13 +80,15 @@ export class ShellProcessRegistry {
 
   start(owner: string, command: string, argv: string[], options: ShellProcessOptions): ShellProcess {
     if (this.closed) throw new Error("Shell process registry is shutting down");
+    const spawnTerminal = options.tty ? this.terminalSpawner : undefined;
+    if (options.tty && !spawnTerminal) throw new Error(TERMINAL_UNSUPPORTED_MESSAGE);
     const entries = this.sessions.get(owner) ?? new Map<string, ShellProcess>();
     if (entries.size === PROCESS_LIMIT) {
       const finished = [...entries.values()].find((entry) => entry.completion && !entry.busy);
       if (!finished) throw new Error(`At most ${PROCESS_LIMIT} background shell processes are allowed per session`);
       this.forget(owner, finished);
     }
-    const entry = new ShellProcess(command, argv, options, () => this.forget(owner, entry));
+    const entry = new ShellProcess(command, argv, options, () => this.forget(owner, entry), spawnTerminal);
     this.sessions.set(owner, entries);
     entries.set(entry.id, entry);
     return entry;
@@ -134,10 +145,15 @@ export class ShellProcess {
   private droppedChars = 0;
   private lastStderr = false;
 
-  constructor(command: string, argv: string[], options: ShellProcessOptions, expire: () => void) {
+  constructor(
+    command: string,
+    argv: string[],
+    options: Pick<SpawnOptions, "cwd" | "env">,
+    expire: () => void,
+    spawnTerminal?: TerminalSpawner,
+  ) {
     this.command = command;
-    const { tty, ...spawnOptions } = options;
-    const io = tty ? this.spawnTerminal(argv, spawnOptions) : this.spawnPipes(argv, spawnOptions);
+    const io = spawnTerminal ? this.spawnTerminal(argv, options, spawnTerminal) : this.spawnPipes(argv, options);
     this.io = io;
     const lifetime = setTimeout(() => this.stop("expired"), LIFETIME_MS).unref();
     this.done = (async () => {
@@ -200,7 +216,11 @@ export class ShellProcess {
   }
 
   /** Terminal output is one stream, so it never gets a `[stderr]` section. */
-  private spawnTerminal(argv: string[], options: Pick<SpawnOptions, "cwd" | "env">): ShellIo {
+  private spawnTerminal(
+    argv: string[],
+    options: Pick<SpawnOptions, "cwd" | "env">,
+    spawnTerminal: TerminalSpawner,
+  ): ShellIo {
     const output = new TerminalTextDecoder();
     const child = spawnTerminal(argv, {
       ...options,

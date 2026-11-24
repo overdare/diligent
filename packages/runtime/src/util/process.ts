@@ -1,4 +1,4 @@
-// @summary Cross-platform child process spawn (pipes or a POSIX pseudo-terminal) with abort, timeout, and process-group kill
+// @summary Cross-platform child process management and the default POSIX pseudo-terminal backend
 
 import { type ChildProcess, spawn as nodeSpawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
@@ -130,7 +130,7 @@ export function spawnProcess(cmd: string[], opts: SpawnOptions = {}): Child {
 }
 
 export const TERMINAL_UNSUPPORTED_MESSAGE =
-  "tty is not supported on Windows yet. Run the command without tty; it will use pipes instead of a terminal.";
+  "tty is not supported on Windows without a host terminal backend. Run the command without tty to use pipes.";
 const TERMINAL_COLUMNS = 120;
 const TERMINAL_ROWS = 40;
 const TERMINAL_DRAIN_MS = 250;
@@ -143,15 +143,18 @@ export interface TerminalSpawnOptions extends Pick<SpawnOptions, "cwd" | "env" |
 }
 
 export interface TerminalChild {
+  /** ConPTY backends emulate device queries on the host; clients must not answer them again. */
+  readonly backend?: "conpty";
   /** Resolves after the command exited, its group was cleaned up, output drained, and the terminal closed. */
   readonly exited: Promise<number>;
   /** Writes input as if typed at the terminal. Returns false once the terminal is closed. */
   write(data: string): boolean;
 }
 
-/** Spawn a command attached to a new pseudo-terminal. POSIX only. */
-export function spawnTerminal(cmd: string[], opts: TerminalSpawnOptions): TerminalChild {
-  if (process.platform === "win32") throw new Error(TERMINAL_UNSUPPORTED_MESSAGE);
+/** A host-owned PTY. Cancellation and process-tree cleanup are the backend's responsibility. */
+export type TerminalSpawner = (cmd: string[], opts: TerminalSpawnOptions) => TerminalChild;
+
+function spawnPosixTerminal(cmd: string[], opts: TerminalSpawnOptions): TerminalChild {
   if (cmd.length === 0) throw new Error("Command is required");
   opts.signal?.throwIfAborted();
 
@@ -190,6 +193,9 @@ export function spawnTerminal(cmd: string[], opts: TerminalSpawnOptions): Termin
     },
   };
 }
+
+export const defaultTerminalSpawner: TerminalSpawner | undefined =
+  process.platform === "win32" ? undefined : spawnPosixTerminal;
 
 /** Spawn and collect full stdout/stderr. Returns [stdout, stderr, exitCode]. */
 export function spawnCollect(

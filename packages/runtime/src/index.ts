@@ -231,3 +231,4 @@ export {
   requestToolApproval,
   requestToolUserInput,
 } from "./tools";
+export type { TerminalChild, TerminalSpawner, TerminalSpawnOptions } from "./util/process";

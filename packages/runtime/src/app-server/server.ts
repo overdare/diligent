@@ -62,6 +62,7 @@ import type { ApprovalHandler, RuntimeRequestOptions } from "../tools/capabiliti
 import { collectPluginHooks, type PluginDiscoveryMode } from "../tools/plugin-loader";
 import { ShellProcessRegistry } from "../tools/shell-processes";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
+import { defaultTerminalSpawner, type TerminalSpawner } from "../util/process";
 import type { ConfigReloadResult } from "./config-handlers";
 import type { ExperimentConfigManager } from "./experiment-handlers";
 import { resolveFilePreviewCwd } from "./file-handlers";
@@ -128,6 +129,8 @@ export interface DiligentAppServerConfig {
   cwd?: string;
   /** Assembly-owned plugin discovery behavior (default `global`). */
   pluginDiscovery?: PluginDiscoveryMode;
+  /** Optional host-owned PTY backend. Defaults to the built-in POSIX backend, when available. */
+  terminalSpawner?: TerminalSpawner;
   getInitializeResult?: () => Record<string, unknown> | Promise<Record<string, unknown>>;
   resolvePaths: (cwd: string) => Promise<DiligentPaths>;
   createAgent: (args: CreateAgentArgs) => RuntimeAgent | Promise<RuntimeAgent>;
@@ -835,7 +838,7 @@ export class DiligentAppServer {
       abortController: null,
       currentTurnId: null,
       isRunning: false,
-      shellProcesses: new ShellProcessRegistry(),
+      shellProcesses: new ShellProcessRegistry(this.config.terminalSpawner),
     };
     if (runtime.shellProcesses) {
       runtime.shellProcesses.interactiveConnection = (sessionId) => {
@@ -1120,6 +1123,7 @@ export class DiligentAppServer {
       serverVersion: this.serverVersion,
       getInitializeResult: this.config.getInitializeResult,
       getConnection: (id) => this.connections.get(id),
+      terminalAvailable: !!(this.config.terminalSpawner ?? defaultTerminalSpawner),
       setConnectionCurrentThreadId: (connectionId, threadId) => {
         const conn = this.connections.get(connectionId);
         if (conn) conn.currentThreadId = threadId;

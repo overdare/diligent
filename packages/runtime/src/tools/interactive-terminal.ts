@@ -1,13 +1,13 @@
 // @summary Ephemeral, client-only I/O for a Bash PTY; bytes never enter a tool result
 import type { ThreadTerminalParams, ThreadTerminalResponse } from "@diligent/protocol";
-import { type SpawnOptions, spawnTerminal } from "../util/process";
+import type { SpawnOptions, TerminalChild, TerminalSpawner } from "../util/process";
 
 const OUTPUT_LIMIT = 128 * 1024;
 
 export class InteractiveTerminal {
   readonly exited: Promise<number>;
   private readonly controller = new AbortController();
-  private readonly child: ReturnType<typeof spawnTerminal>;
+  private readonly child: TerminalChild;
   private closed = false;
   private cursor = 0;
   private output = "";
@@ -17,6 +17,7 @@ export class InteractiveTerminal {
     readonly sessionId: string,
     argv: string[],
     options: Pick<SpawnOptions, "cwd" | "env" | "signal"> & { onExit?: () => void },
+    spawnTerminal: TerminalSpawner,
   ) {
     const decoder = new TextDecoder();
     const append = (value: string) => {
@@ -54,6 +55,7 @@ export class InteractiveTerminal {
       cursor: this.cursor,
       output: reset ? this.output : this.output.slice(cursor - first),
       reset,
+      ...(this.child.backend ? { backend: this.child.backend } : {}),
     };
   }
 }

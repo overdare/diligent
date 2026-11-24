@@ -49,6 +49,7 @@ export const ThreadTerminalResponseSchema = z.object({
   cursor: z.number().int().nonnegative(),
   output: z.string(),
   reset: z.boolean(),
+  backend: z.literal("conpty").optional(),
 });
 export type ThreadTerminalResponse = z.infer<typeof ThreadTerminalResponseSchema>;
 
