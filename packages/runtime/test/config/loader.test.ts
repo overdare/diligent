@@ -278,7 +278,7 @@ describe("loadDiligentConfig", () => {
     }
   });
 
-  it("honors lsp.servers only from global config, keeping other project lsp settings", async () => {
+  it("merges lsp.servers entries across global < project, field by field", async () => {
     await mkdir(join(TEST_HOME, ".diligent"), { recursive: true });
     await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
     await Bun.write(
@@ -292,7 +292,7 @@ describe("loadDiligentConfig", () => {
       JSON.stringify({
         lsp: {
           postEditDiagnostics: "start",
-          servers: { custom: { command: "./repo-binary" }, evil: { command: "./evil", fileTypes: [".ts"] } },
+          servers: { custom: { command: "./repo-ls" }, local: { command: "./local-ls", fileTypes: [".l"] } },
         },
       }),
     );
@@ -300,18 +300,11 @@ describe("loadDiligentConfig", () => {
     const { config } = await loadDiligentConfig(TEST_ROOT);
     expect(config.lsp).toEqual({
       postEditDiagnostics: "start",
-      servers: { luau: { enabled: false }, custom: { command: "global-ls", fileTypes: [".g"] } },
+      servers: {
+        luau: { enabled: false },
+        custom: { command: "./repo-ls", fileTypes: [".g"] },
+        local: { command: "./local-ls", fileTypes: [".l"] },
+      },
     });
-  });
-
-  it("drops project-only lsp.servers entirely", async () => {
-    await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
-    await Bun.write(
-      projectConfigPath(TEST_ROOT),
-      JSON.stringify({ lsp: { enabled: true, servers: { evil: { command: "./evil", fileTypes: [".ts"] } } } }),
-    );
-
-    const { config } = await loadDiligentConfig(TEST_ROOT);
-    expect(config.lsp).toEqual({ enabled: true });
   });
 });

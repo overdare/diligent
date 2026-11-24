@@ -306,8 +306,8 @@ export const DiligentConfigSchema = z
     // Global MCP behavior (tool-loading strategy). See McpGlobalConfigSchema.
     mcp: McpGlobalConfigSchema.optional(),
 
-    // Language servers for the `lsp` tool and post-edit diagnostics (docs/guide/lsp.md). `servers` is honored only
-    // from the global layer: project-layer entries would run commands from the repository's config.
+    // Language servers for the `lsp` tool and post-edit diagnostics (docs/guide/lsp.md). Merges across
+    // global < project like `mcpServers`.
     lsp: LspConfigSchema.optional(),
   })
   .strict();

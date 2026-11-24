@@ -69,26 +69,31 @@ LSP (typescript): src/b.ts: 1 error in edited lines
 - `servers` entries take `enabled`, `command`, `args`, `fileTypes` (extensions with the dot), `rootMarkers`,
   `initOptions` (sent as `initializationOptions`), and `settings` (answered to `workspace/configuration` and sent with
   `workspace/didChangeConfiguration`).
+- `servers` merges across global (`~/.diligent/config.jsonc`) < project (`.diligent/config.jsonc`) like `mcpServers`:
+  a project entry overrides only the fields it sets.
 - An entry named like a built-in default overrides only the fields it sets. `{ "enabled": false }` turns that default
-  off, even when its command is on PATH. A new entry needs `command` and `fileTypes`.
+  off, even when its command resolves. A new entry needs `command` and `fileTypes`.
 
-Built-in defaults, each used only when its command resolves on PATH (on Windows through `PATHEXT`, so npm `.cmd` shims
-work):
+A bare command name resolves in the working directory's `node_modules/.bin`, `.venv/bin`, `.venv/Scripts`, `venv/bin`,
+and `venv/Scripts` first, then on PATH (on Windows through `PATHEXT`, so npm `.cmd` shims work). A server whose
+command does not resolve is listed under `Unavailable` by `status`.
+
+Built-in defaults:
 
 | Name | Command | File types |
 |---|---|---|
 | `typescript` | `typescript-language-server --stdio` | `.ts .tsx .mts .cts .js .jsx .mjs .cjs` |
+| `typescript-native` | `tsc --lsp --stdio` | same as `typescript` |
 | `pyright` | `pyright-langserver --stdio` | `.py .pyi` |
 | `rust-analyzer` | `rust-analyzer` | `.rs` |
 | `gopls` | `gopls` | `.go` |
 | `clangd` | `clangd` | C, C++ and Objective-C sources and headers |
 | `luau` | `luau-lsp lsp` | `.luau .lua` |
 
-### Trust
-
-Server entries run commands. Until project configuration can be trusted, `lsp.servers` is read from the global config
-only (`~/.diligent/config.jsonc`). A project `.diligent/config.jsonc` may set `enabled` and `postEditDiagnostics`; its
-`lsp.servers` is ignored with a logged warning.
+Only one TypeScript server is used. When the resolved `tsc` belongs to an npm `typescript` package without
+`lib/tsserver.js` (TypeScript 7+, whose native `tsc` is itself a language server), `typescript-native` is used;
+otherwise `typescript`, which needs the project's `tsserver.js`. A TypeScript 7 project with `typescript` installed
+locally therefore gets a language server without installing anything else.
 
 ## Lifecycle
 

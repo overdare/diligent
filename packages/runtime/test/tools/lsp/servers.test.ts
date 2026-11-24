@@ -1,10 +1,16 @@
-// @summary Tests for language server catalog resolution, PATH/PATHEXT lookup, and root discovery
+// @summary Tests for language server catalog resolution, project bin/PATH/PATHEXT lookup, TypeScript server selection, and root discovery
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LspManager } from "../../../src/tools/lsp/manager";
-import { DEFAULT_LSP_SERVERS, findServerRoot, resolveCommand, resolveLspServers } from "../../../src/tools/lsp/servers";
+import {
+  DEFAULT_LSP_SERVERS,
+  findServerRoot,
+  projectCommandLookup,
+  resolveCommand,
+  resolveLspServers,
+} from "../../../src/tools/lsp/servers";
 import { createLspTool } from "../../../src/tools/lsp/tool";
 import { LspWorkspace } from "../../../src/tools/lsp/workspace";
 import { makeToolContext } from "../../helpers/lsp";
@@ -44,6 +50,59 @@ describe("resolveCommand", () => {
     expect(resolveCommand("tool-ls", { PATH: dir, PATHEXT: ".exe;.cmd" }, "win32")).toBe(join(dir, "tool-ls.cmd"));
     expect(resolveCommand("tool-ls", { PATH: dir, PATHEXT: ".EXE" }, "win32")).toBeUndefined();
   });
+});
+
+describe("projectCommandLookup", () => {
+  test.skipIf(process.platform === "win32")("prefers the project's node_modules/.bin over PATH", async () => {
+    const project = join(dir, "project");
+    const globalBin = join(dir, "global-bin");
+    await mkdir(join(project, "node_modules", ".bin"), { recursive: true });
+    await mkdir(globalBin);
+    const local = await executable(join(project, "node_modules", ".bin", "tool-ls"));
+    await executable(join(globalBin, "tool-ls"));
+    const globalOnly = await executable(join(globalBin, "other-ls"));
+
+    const lookup = projectCommandLookup(project, { PATH: globalBin }, "linux");
+    expect(lookup("tool-ls")).toBe(local);
+    expect(lookup("other-ls")).toBe(globalOnly);
+  });
+});
+
+describe("TypeScript server selection", () => {
+  /** A project whose node_modules/.bin/tsc links into an npm `typescript` package, as npm installs it. */
+  async function typescriptProject(withTsserver: boolean): Promise<string> {
+    const project = join(dir, withTsserver ? "ts5" : "ts7");
+    const pkg = join(project, "node_modules", "typescript");
+    await mkdir(join(pkg, "bin"), { recursive: true });
+    await mkdir(join(pkg, "lib"), { recursive: true });
+    await mkdir(join(project, "node_modules", ".bin"), { recursive: true });
+    await writeFile(join(pkg, "package.json"), "{}");
+    if (withTsserver) await writeFile(join(pkg, "lib", "tsserver.js"), "");
+    await executable(join(pkg, "bin", "tsc"));
+    await symlink("../typescript/bin/tsc", join(project, "node_modules", ".bin", "tsc"));
+    return project;
+  }
+
+  test.skipIf(process.platform === "win32")(
+    "uses the project's native tsc for TypeScript 7+ and typescript-language-server otherwise",
+    async () => {
+      const globalBin = join(dir, "global-bin");
+      await mkdir(globalBin);
+      const tsls = await executable(join(globalBin, "typescript-language-server"));
+      const typescriptServers = (project: string) =>
+        resolveLspServers(undefined, projectCommandLookup(project, { PATH: globalBin }, "linux"))
+          .servers.filter((server) => server.fileTypes.includes(".ts"))
+          .map((server) => ({ name: server.name, command: server.command, args: server.args }));
+
+      const ts7 = await typescriptProject(false);
+      expect(typescriptServers(ts7)).toEqual([
+        { name: "typescript-native", command: join(ts7, "node_modules", ".bin", "tsc"), args: ["--lsp", "--stdio"] },
+      ]);
+
+      const ts5 = await typescriptProject(true);
+      expect(typescriptServers(ts5)).toEqual([{ name: "typescript", command: tsls, args: ["--stdio"] }]);
+    },
+  );
 });
 
 describe("resolveLspServers", () => {

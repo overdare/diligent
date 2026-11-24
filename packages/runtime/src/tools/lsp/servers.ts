@@ -1,6 +1,15 @@
-// @summary Language server catalog: built-in defaults merged with global config, PATH/PATHEXT command resolution, root lookup
-import { accessSync, constants, existsSync, statSync } from "node:fs";
-import { dirname, extname, isAbsolute, join, delimiter as posixDelimiter, relative, resolve } from "node:path";
+// @summary Language server catalog: built-in defaults merged with config, project-local bin and PATH command resolution, TypeScript server selection, root lookup
+import { accessSync, constants, existsSync, realpathSync, statSync } from "node:fs";
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  delimiter as posixDelimiter,
+  relative,
+  resolve,
+} from "node:path";
 import type { LspConfig, LspServerConfig } from "../../config/schema";
 
 export type PostEditDiagnosticsMode = NonNullable<LspConfig["postEditDiagnostics"]>;
@@ -29,13 +38,24 @@ export interface LspServerCatalog {
 
 type ServerDefinition = Omit<LspServerSpec, "name">;
 
-/** Used only when the command resolves on PATH. No server is ever installed. */
+const TYPESCRIPT_FILE_TYPES = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
+const TYPESCRIPT_ROOT_MARKERS = ["tsconfig.json", "jsconfig.json", "package.json"];
+
+/** Used only when the command resolves in a project bin directory or on PATH. No server is ever installed. */
 export const DEFAULT_LSP_SERVERS: Readonly<Record<string, ServerDefinition>> = {
+  // TypeScript up to 6: needs the project's `lib/tsserver.js`.
   typescript: {
     command: "typescript-language-server",
     args: ["--stdio"],
-    fileTypes: [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"],
-    rootMarkers: ["tsconfig.json", "jsconfig.json", "package.json"],
+    fileTypes: TYPESCRIPT_FILE_TYPES,
+    rootMarkers: TYPESCRIPT_ROOT_MARKERS,
+  },
+  // TypeScript 7+: the native `tsc` is itself a language server and ships no `lib/tsserver.js`.
+  "typescript-native": {
+    command: "tsc",
+    args: ["--lsp", "--stdio"],
+    fileTypes: TYPESCRIPT_FILE_TYPES,
+    rootMarkers: TYPESCRIPT_ROOT_MARKERS,
   },
   pyright: {
     command: "pyright-langserver",
@@ -70,6 +90,36 @@ export const DEFAULT_LSP_SERVERS: Readonly<Record<string, ServerDefinition>> = {
 };
 
 export type CommandLookupEnv = Record<string, string | undefined>;
+
+/** Project-local executable directories searched before PATH: npm bins and Python virtual environments. */
+const PROJECT_BIN_DIRS = ["node_modules/.bin", ".venv/bin", ".venv/Scripts", "venv/bin", "venv/Scripts"];
+
+/** Command lookup for a project: its existing bin directories under `cwd` first, then PATH. */
+export function projectCommandLookup(
+  cwd: string,
+  env: CommandLookupEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): (command: string) => string | undefined {
+  const local = PROJECT_BIN_DIRS.map((dir) => join(cwd, dir)).filter((dir) => existsSync(dir));
+  const path = [...local, env.PATH ?? ""].filter(Boolean).join(platform === "win32" ? ";" : posixDelimiter);
+  return (command) => resolveCommand(command, { ...env, PATH: path }, platform);
+}
+
+/**
+ * Whether `tscPath` belongs to a TypeScript 7+ install: an npm `typescript` package without `lib/tsserver.js`.
+ * Unknown layouts count as older, so `typescript-language-server` stays the choice.
+ */
+export function isNativeTsc(tscPath: string): boolean {
+  const candidates = [join(dirname(tscPath), "..", "typescript")]; // node_modules/.bin/tsc and Windows shims
+  try {
+    const real = realpathSync(tscPath);
+    if (basename(dirname(real)) === "bin") candidates.unshift(dirname(dirname(real))); // <pkg>/bin/tsc
+  } catch {
+    return false;
+  }
+  const pkg = candidates.find((dir) => existsSync(join(dir, "package.json")));
+  return pkg !== undefined && !existsSync(join(pkg, "lib", "tsserver.js"));
+}
 
 /**
  * Resolve `command` to an executable: a path is checked as given, a bare name is searched on PATH. On Windows a name
@@ -109,11 +159,13 @@ function isExecutable(path: string, windows: boolean): boolean {
 
 /**
  * Built-in defaults overlaid with configured servers: an entry named like a default overrides only the fields it
- * sets. Disabled entries are dropped; entries whose command does not resolve are reported as unavailable.
+ * sets. Disabled entries are dropped; entries whose command does not resolve are reported as unavailable. Of the two
+ * TypeScript servers only one is kept: `typescript-native` when its `tsc` is TypeScript 7+, else `typescript`.
  */
 export function resolveLspServers(
   configured: Record<string, LspServerConfig> | undefined,
   lookup: (command: string) => string | undefined = (command) => resolveCommand(command),
+  nativeTsc: (tscPath: string) => boolean = isNativeTsc,
 ): LspServerCatalog {
   const servers: LspServerSpec[] = [];
   const unavailable: UnavailableLspServer[] = [];
@@ -130,7 +182,7 @@ export function resolveLspServers(
     }
     const resolved = lookup(command);
     if (!resolved) {
-      unavailable.push({ name, reason: `\`${command}\` not found on PATH` });
+      unavailable.push({ name, reason: `\`${command}\` not found in project bin directories or on PATH` });
       continue;
     }
     const initOptions = override?.initOptions ?? base?.initOptions;
@@ -145,7 +197,20 @@ export function resolveLspServers(
       ...(settings ? { settings } : {}),
     });
   }
-  return { servers, unavailable };
+  return selectTypescriptServer({ servers, unavailable }, nativeTsc);
+}
+
+function selectTypescriptServer(catalog: LspServerCatalog, nativeTsc: (tscPath: string) => boolean): LspServerCatalog {
+  const native = catalog.servers.find((server) => server.name === "typescript-native");
+  if (!native) return catalog;
+  const useNative = nativeTsc(native.command);
+  const dropped = useNative ? "typescript" : "typescript-native";
+  const reason = useNative
+    ? "TypeScript 7+ project: typescript-native is used instead"
+    : "`tsc` is not TypeScript 7+; typescript-language-server is needed";
+  const keep = catalog.servers.filter((server) => server.name !== dropped);
+  const unavailable = catalog.unavailable.filter((server) => server.name !== dropped);
+  return { servers: keep, unavailable: [...unavailable, { name: dropped, reason }] };
 }
 
 export function serverForFile(servers: readonly LspServerSpec[], filePath: string): LspServerSpec | undefined {

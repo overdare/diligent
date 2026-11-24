@@ -9,12 +9,13 @@ import {
   type LspServerCatalog,
   type LspServerSpec,
   type PostEditDiagnosticsMode,
+  projectCommandLookup,
   resolveLspServers,
   serverForFile,
 } from "./servers";
 
 export interface LspWorkspaceOptions {
-  /** Test seam for PATH lookups; defaults to the process PATH. */
+  /** Test seam for command lookups; defaults to the project's bin directories, then the process PATH. */
   resolveCommand?: (command: string) => string | undefined;
 }
 
@@ -25,7 +26,7 @@ export interface AcquiredServer {
 
 /**
  * Binds the process-wide manager to one working directory and the effective `lsp` config. The server catalog
- * (PATH lookups) is resolved on first use.
+ * (command lookups) is resolved on first use.
  */
 export class LspWorkspace {
   private catalogCache: LspServerCatalog | undefined;
@@ -41,7 +42,10 @@ export class LspWorkspace {
   }
 
   get catalog(): LspServerCatalog {
-    this.catalogCache ??= resolveLspServers(this.config?.servers, this.options.resolveCommand);
+    this.catalogCache ??= resolveLspServers(
+      this.config?.servers,
+      this.options.resolveCommand ?? projectCommandLookup(this.cwd),
+    );
     return this.catalogCache;
   }
 
