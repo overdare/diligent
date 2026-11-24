@@ -2,13 +2,12 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createLogger } from "@diligent/logging";
-import { applyEdits, findNodeAtLocation, modify, parse as parseJsonc, parseTree } from "jsonc-parser";
+import { parse as parseJsonc } from "jsonc-parser";
 import { resolveProjectDirName } from "../infrastructure/diligent-dir";
 import { normalizeLegacyModelRef } from "../model/legacy-model-ref";
 import { DEFAULT_CONFIG, type DiligentConfig, DiligentConfigSchema } from "./schema";
 
 const logger = createLogger({ scope: "runtime.config" });
-const LEGACY_MEMORY_KEY = "knowledge";
 
 /** Load and merge config from all sources (D033: global < project < env) */
 export interface DiligentConfigLayers {
@@ -60,24 +59,8 @@ async function loadConfigFile(path: string): Promise<DiligentConfig | null> {
   try {
     const file = Bun.file(path);
     if (!(await file.exists())) return null;
-    let text = await file.text();
-    const migrated = migrateLegacyMemoryKey(text);
-    if (migrated !== undefined) {
-      text = migrated;
-      await Bun.write(path, migrated).catch((error) => {
-        logger.warn("legacy_memory_config_write_failed", {
-          message: `Config warning: could not rename "${LEGACY_MEMORY_KEY}" to "memory" in ${path}`,
-          error,
-          fields: { path },
-        });
-      });
-    }
-    const parsed = parseJsonc(text);
-    const substituted = substituteTemplates(parsed);
-    if (typeof substituted === "object" && substituted !== null && "model" in substituted) {
-      const record = substituted as Record<string, unknown>;
-      if (record.model !== undefined) record.model = normalizeLegacyModelRef(record.model);
-    }
+    const substituted = substituteTemplates(parseJsonc(await file.text()));
+    if (isPlainObject(substituted)) normalizeLegacyConfig(substituted);
     const result = DiligentConfigSchema.safeParse(substituted);
     if (!result.success) {
       logger.warn("invalid_config", {
@@ -93,16 +76,14 @@ async function loadConfigFile(path: string): Promise<DiligentConfig | null> {
   }
 }
 
-/**
- * Rename the pre-rename `knowledge` key to `memory` by editing only the key token, so comments and formatting
- * survive. When `memory` is already set it wins and the legacy key is removed. Returns undefined when unchanged.
- */
-function migrateLegacyMemoryKey(text: string): string | undefined {
-  const root = parseTree(text);
-  const legacyKey = root && findNodeAtLocation(root, [LEGACY_MEMORY_KEY])?.parent?.children?.[0];
-  if (!root || !legacyKey) return undefined;
-  if (findNodeAtLocation(root, ["memory"])) return applyEdits(text, modify(text, [LEGACY_MEMORY_KEY], undefined, {}));
-  return `${text.slice(0, legacyKey.offset)}"memory"${text.slice(legacyKey.offset + legacyKey.length)}`;
+/** Map values written by earlier versions onto the current schema in memory; the file is left as written. */
+function normalizeLegacyConfig(record: Record<string, unknown>): void {
+  if (record.model !== undefined) record.model = normalizeLegacyModelRef(record.model);
+  // `memory` was named `knowledge` before the rename; a `memory` value in the same file wins.
+  if ("knowledge" in record) {
+    record.memory ??= record.knowledge;
+    delete record.knowledge;
+  }
 }
 
 /** Deep merge with array concatenation for 'instructions' (D034) */

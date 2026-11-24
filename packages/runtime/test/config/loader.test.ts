@@ -261,33 +261,28 @@ describe("loadDiligentConfig", () => {
     expect(config.systemPrompt).toBe("prefix--suffix");
   });
 
-  it("migrates the legacy knowledge key to memory on disk without dropping comments", async () => {
+  it("reads the legacy knowledge key as memory without rewriting the file", async () => {
     await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
-    await Bun.write(
-      projectConfigPath(TEST_ROOT),
-      `{\n  // keep me\n  "model": "${TEST_ANTHROPIC_MODEL_ID}",\n  "knowledge": { "nudgeInterval": 3 /* inner */ }\n}\n`,
-    );
+    const text = `{\n  // keep me\n  "model": "${TEST_ANTHROPIC_MODEL_ID}",\n  "knowledge": { "nudgeInterval": 3 }\n}\n`;
+    await Bun.write(projectConfigPath(TEST_ROOT), text);
 
     const { config, sources } = await loadDiligentConfig(TEST_ROOT);
 
     expect(sources).toEqual([projectConfigPath(TEST_ROOT)]);
     expect(config.memory?.nudgeInterval).toBe(3);
-    expect(await Bun.file(projectConfigPath(TEST_ROOT)).text()).toBe(
-      `{\n  // keep me\n  "model": "${TEST_ANTHROPIC_MODEL_ID}",\n  "memory": { "nudgeInterval": 3 /* inner */ }\n}\n`,
-    );
+    expect(await Bun.file(projectConfigPath(TEST_ROOT)).text()).toBe(text);
   });
 
-  it("drops the legacy knowledge key when memory is already configured", async () => {
+  it("ignores the legacy knowledge key when memory is configured in the same file", async () => {
     await mkdir(join(TEST_HOME, ".diligent"), { recursive: true });
-    const globalPath = join(TEST_HOME, ".diligent", "config.jsonc");
-    await Bun.write(globalPath, `{ "memory": { "nudgeInterval": 5 }, "knowledge": { "nudgeInterval": 3 } }`);
+    await Bun.write(
+      join(TEST_HOME, ".diligent", "config.jsonc"),
+      `{ "memory": { "nudgeInterval": 5 }, "knowledge": { "nudgeInterval": 3 } }`,
+    );
 
     const { config } = await loadDiligentConfig(TEST_ROOT);
 
     expect(config.memory?.nudgeInterval).toBe(5);
-    const migrated = await Bun.file(globalPath).text();
-    expect(migrated).not.toContain("knowledge");
-    expect(migrated).toContain(`"memory": { "nudgeInterval": 5 }`);
   });
 
   it("invalid config file warns and is skipped", async () => {
