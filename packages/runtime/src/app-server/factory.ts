@@ -42,33 +42,28 @@ import type { CreateAgentArgs, DiligentAppServerConfig } from "./server";
 
 const logger = createLogger({ scope: "runtime.app-server.config" });
 
-const SKILL_SECTION_SUCCESSORS: Record<string, true> = { agents: true, instructions: true, additional: true };
+const SKILL_SECTION_SUCCESSORS = new Set(["agents", "instructions", "additional"]);
+
+const SKILL_USAGE_GUARDRAIL: SystemSection = {
+  label: "skill_usage_guardrail",
+  content: [
+    "Skills must be loaded through the skill tool.",
+    "Do not use read to open SKILL.md directly.",
+    "When the user names an available skill or the task matches its cataloged workflow, call skill first. Related keywords alone are not a match.",
+  ].join("\n"),
+};
 
 /** Replace any earlier skill catalog in the prompt with the skills discovered for this agent. */
 function withSkills(systemPrompt: SystemSection[], skills: SkillMetadata[]): SystemSection[] {
-  const sections = systemPrompt.filter(
-    (section) => section.label !== "skills" && section.label !== "skill_usage_guardrail",
-  );
+  const withoutGuardrail = systemPrompt.filter((section) => section.label !== SKILL_USAGE_GUARDRAIL.label);
+  const previousIndex = withoutGuardrail.findIndex((section) => section.label === "skills");
+  const sections = withoutGuardrail.filter((section) => section.label !== "skills");
   const content = renderSkillsSection(skills);
-  if (!content) {
-    if (skills.length === 0) return sections;
-    return [
-      ...sections,
-      {
-        label: "skill_usage_guardrail",
-        content: [
-          "Skills must be loaded through the skill tool.",
-          "Do not use read to open SKILL.md directly.",
-          "When the user names an available skill or the task matches its cataloged workflow, call skill first. Related keywords alone are not a match.",
-        ].join("\n"),
-      },
-    ];
-  }
+  if (!content) return skills.length === 0 ? sections : [...sections, SKILL_USAGE_GUARDRAIL];
 
-  const previousIndex = systemPrompt.findIndex((section) => section.label === "skills");
-  const successorIndex = sections.findIndex((section) => SKILL_SECTION_SUCCESSORS[section.label] === true);
-  const insertAt = previousIndex >= 0 ? previousIndex : successorIndex >= 0 ? successorIndex : sections.length;
-  return [...sections.slice(0, insertAt), { label: "skills", content }, ...sections.slice(insertAt)];
+  const successorIndex = sections.findIndex((section) => SKILL_SECTION_SUCCESSORS.has(section.label));
+  const insertAt = [previousIndex, successorIndex].find((index) => index >= 0) ?? sections.length;
+  return sections.toSpliced(insertAt, 0, { label: "skills", content });
 }
 
 function applyModeToPrompt(mode: Mode, systemPrompt: RuntimeConfig["systemPrompt"]) {

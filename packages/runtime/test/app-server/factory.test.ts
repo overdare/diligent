@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LocalImageLoader } from "@diligent/core/image-contract";
 import { getDefaultModelRef } from "@diligent/core/model-registry";
-import type { ImageGenerationFn, Model } from "@diligent/core/provider-contract";
+import type { ImageGenerationFn, Model, SystemSection } from "@diligent/core/provider-contract";
 import { ProviderManager } from "@diligent/core/provider-contract";
 import type { Tool, ToolOutputFileStore } from "@diligent/core/tool-contract";
 import { z } from "zod";
@@ -273,6 +273,57 @@ describe("createAppServerConfig", () => {
       expect(loaded?.output).toContain("# Steps");
       expect(await config.getSkillNames?.(threadCwd)).toEqual(["functional-asset"]);
       expect(await config.getSkillNames?.(startupCwd)).toEqual([]);
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+    }
+  });
+
+  it("keeps the skill catalog in place of the earlier catalog, or before the agent and instruction sections", async () => {
+    const originalHome = process.env.HOME;
+    const fakeHome = await mkdtemp(join(tmpdir(), "diligent-factory-home-"));
+    const cwd = await mkdtemp(join(tmpdir(), "diligent-factory-cwd-"));
+    tempHomes.push(fakeHome, cwd);
+    process.env.HOME = fakeHome;
+
+    try {
+      const skillDir = join(cwd, ".diligent", "skills", "tidy-plan");
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(
+        join(skillDir, "SKILL.md"),
+        ["---", "name: tidy-plan", "description: Tidy a plan", "---", "", "# Steps"].join("\n"),
+      );
+      const promptLabels = new Set(["base", "skill_usage_guardrail", "skills", "agents", "instructions"]);
+      const labelsFor = async (systemPrompt: SystemSection[]) => {
+        const runtimeConfig = makeRuntimeConfig({ systemPrompt, diligent: { tools: { codeMode: "off" } } });
+        const agent = await createAppServerConfig({ cwd, runtimeConfig }).createAgent({
+          cwd,
+          mode: "default",
+          effort: "medium",
+          model: runtimeConfig.model,
+          approve: async () => ({ decision: "once" }),
+          ask: async () => null,
+        });
+        return agent.systemPrompt.map((section) => section.label).filter((label) => promptLabels.has(label));
+      };
+
+      expect(
+        await labelsFor([
+          { label: "base", content: "base" },
+          { label: "skill_usage_guardrail", content: "stale guardrail" },
+          { label: "skills", content: "stale catalog" },
+          { label: "agents", content: "agents" },
+        ]),
+      ).toEqual(["base", "skills", "agents"]);
+      expect(
+        await labelsFor([
+          { label: "base", content: "base" },
+          { label: "instructions", content: "instructions" },
+        ]),
+      ).toEqual(["base", "skills", "instructions"]);
     } finally {
       if (originalHome === undefined) {
         delete process.env.HOME;
