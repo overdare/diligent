@@ -198,14 +198,14 @@ export type SessionRunOutcome =
 export interface SessionManagerConfig {
   cwd: string;
   paths: DiligentPaths;
-  // D087: Factory allows per-run config (e.g. collaboration mode, mid-session knowledge refresh)
+  // D087: Factory allows per-run config (e.g. collaboration mode, mid-session memory refresh)
   agent: Agent | (() => Agent | Promise<Agent>);
   compaction?: {
     enabled: boolean;
     reservePercent: number;
     timeoutMs?: number;
   };
-  knowledgePath?: string;
+  memoryPath?: string;
   sessionId?: string;
   parentSession?: string;
   /** When spawned as a sub-agent, identity info persisted in session header */

@@ -1,11 +1,11 @@
-// @summary Ranks active knowledge by confidence, then recency
-import type { KnowledgeEntry } from "./types";
+// @summary Ranks active memory by confidence, then recency
+import type { MemoryEntry } from "./types";
 
 /**
- * Rank knowledge entries by confidence, preferring recent entries on ties.
+ * Rank memory entries by confidence, preferring recent entries on ties.
  * Filters out superseded entries.
  */
-export function rankKnowledge(entries: KnowledgeEntry[]): KnowledgeEntry[] {
+export function rankMemory(entries: MemoryEntry[]): MemoryEntry[] {
   const supersededIds = new Set(entries.filter((e) => e.supersedes).map((e) => e.supersedes as string));
   const active = entries.filter((e) => !supersededIds.has(e.id));
 

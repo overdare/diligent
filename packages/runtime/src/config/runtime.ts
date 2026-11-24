@@ -33,13 +33,13 @@ import { ProviderAuthPresenter } from "../auth/provider-auth-presenter";
 import type { ExperimentDefinition, ResolvedExperiment } from "../experiments";
 import { resolveExperimentGates, resolveExperimentStates } from "../experiments";
 import type { DiligentPaths } from "../infrastructure/index";
-import { loadKnowledgeSection } from "../knowledge/index";
+import { loadMemorySection } from "../memory/index";
 import { buildBaseSystemPrompt } from "../prompt/index";
 import type { SkillMetadata } from "../skills/index";
 import { discoverSkills, filterAvailableSkills, renderSkillsSection, resolveSkillStates } from "../skills/index";
 import type { BundledToolProvider } from "../tools/bundled-provider";
 import { buildDefaultTools } from "../tools/defaults";
-import { buildSystemPromptWithKnowledge, discoverInstructions } from "./instructions";
+import { buildSystemPromptWithMemory, discoverInstructions } from "./instructions";
 import type { DiligentConfigLayers } from "./loader";
 import { loadDiligentConfig } from "./loader";
 import { DEFAULT_PLAN_REMINDER_INTERVAL_TURNS, type DiligentConfig } from "./schema";
@@ -71,7 +71,7 @@ export interface RuntimeConfig {
   /** Built-in reminder cadences in agent turns; 0 disables the respective reminder. */
   reminders: {
     planIntervalTurns: number;
-    knowledgeIntervalTurns: number;
+    memoryIntervalTurns: number;
   };
   systemPrompt: SystemSection[];
   streamFunction: StreamFunction;
@@ -163,7 +163,7 @@ export async function loadRuntimeConfig(
   const configured = providerManager.getConfiguredProviders();
   const model = resolveRuntimeModel(config.model, configured);
 
-  const knowledgeSection = await loadKnowledgeSection(paths.knowledge, config.knowledge);
+  const memorySection = await loadMemorySection(paths.memory, config.memory);
 
   // Load skills
   let discoveredSkills: SkillMetadata[] = [];
@@ -234,7 +234,7 @@ export async function loadRuntimeConfig(
   );
   agentsSection = renderAgentsSection(agents.filter((agent) => availableCustomAgentNames.has(agent.name)));
 
-  // Build system prompt with knowledge AND skills
+  // Build system prompt with memory AND skills
   let basePrompt: string;
   if (config.systemPrompt) {
     basePrompt = config.systemPrompt;
@@ -263,10 +263,10 @@ export async function loadRuntimeConfig(
       platform: process.platform,
     });
   }
-  const systemPrompt = buildSystemPromptWithKnowledge(
+  const systemPrompt = buildSystemPromptWithMemory(
     basePrompt,
     instructions,
-    knowledgeSection,
+    memorySection,
     config.instructions,
     skillsSection,
     agentsSection,
@@ -278,7 +278,7 @@ export async function loadRuntimeConfig(
     effort: (config.effort ?? "medium") as ThinkingEffort,
     reminders: {
       planIntervalTurns: config.planReminderIntervalTurns ?? DEFAULT_PLAN_REMINDER_INTERVAL_TURNS,
-      knowledgeIntervalTurns: config.knowledge?.enabled === false ? 0 : (config.knowledge?.nudgeInterval ?? 0),
+      memoryIntervalTurns: config.memory?.enabled === false ? 0 : (config.memory?.nudgeInterval ?? 0),
     },
     systemPrompt,
     streamFunction,

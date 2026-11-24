@@ -20,11 +20,11 @@ export const CUSTOM_RENDER_TOOLS = new Set([
   "plan",
   "skill",
   "read",
-  "search_knowledge",
+  "search_memory",
   "bash",
   "write",
   "apply_patch",
-  "update_knowledge",
+  "update_memory",
   "exec",
   "exec_wait",
 ]);

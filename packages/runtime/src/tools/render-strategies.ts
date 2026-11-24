@@ -2,9 +2,9 @@
 
 import type { ToolRenderPayload } from "@diligent/protocol";
 import {
-  buildKnowledgeInputSummary,
+  buildMemoryInputSummary,
   buildPatchInputSummary,
-  buildSearchKnowledgeInputSummary,
+  buildSearchMemoryInputSummary,
   clipInlineText,
   createCommandRenderPayload,
   createPatchDiffRenderPayload,
@@ -86,21 +86,21 @@ const RENDER_STRATEGIES: Map<string, RenderStrategy> = new Map([
     },
   ],
   [
-    "update_knowledge",
+    "update_memory",
     {
       startInputSummary: (parsedInput) => {
         const contentPreview =
           typeof parsedInput?.content === "string"
             ? clipInlineText(parsedInput.content.replace(/\s+/g, " ").trim(), 140)
             : "";
-        return buildKnowledgeInputSummary(parsedInput ?? {}, contentPreview);
+        return buildMemoryInputSummary(parsedInput ?? {}, contentPreview);
       },
     },
   ],
   [
-    "search_knowledge",
+    "search_memory",
     {
-      startInputSummary: (parsedInput) => buildSearchKnowledgeInputSummary(parsedInput ?? {}),
+      startInputSummary: (parsedInput) => buildSearchMemoryInputSummary(parsedInput ?? {}),
     },
   ],
   [

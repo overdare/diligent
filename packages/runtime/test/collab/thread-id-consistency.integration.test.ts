@@ -15,7 +15,7 @@ async function setupDir(): Promise<{ cwd: string; paths: ReturnType<typeof resol
   const cwd = join(TEST_ROOT, `run-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
   const paths = resolvePaths(cwd);
   await mkdir(paths.sessions, { recursive: true });
-  await mkdir(paths.knowledge, { recursive: true });
+  await mkdir(paths.memory, { recursive: true });
   await mkdir(paths.skills, { recursive: true });
   return { cwd, paths };
 }

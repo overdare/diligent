@@ -82,7 +82,7 @@ async function setupDir(): Promise<string> {
   const dir = join(TEST_ROOT, `run-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
   const paths = resolvePaths(dir);
   await mkdir(paths.sessions, { recursive: true });
-  await mkdir(paths.knowledge, { recursive: true });
+  await mkdir(paths.memory, { recursive: true });
   await mkdir(paths.skills, { recursive: true });
   return dir;
 }

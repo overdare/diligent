@@ -1,4 +1,4 @@
-// @summary Discovers and builds system prompts with AGENTS.md instructions and knowledge sections
+// @summary Discovers and builds system prompts with AGENTS.md instructions and memory sections
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SystemSection } from "@diligent/core/provider-contract";
@@ -88,18 +88,18 @@ export function buildSystemPrompt(
 /**
  * Build system prompt sections. Tool-specific instructions are added after tool filtering.
  */
-export function buildSystemPromptWithKnowledge(
+export function buildSystemPromptWithMemory(
   basePrompt: string,
   instructions: DiscoveredInstruction[],
-  knowledgeSection: string,
+  memorySection: string,
   additionalInstructions?: string[],
   skillsSection?: string,
   agentsSection?: string,
 ): SystemSection[] {
   const sections: SystemSection[] = [{ label: "base", content: basePrompt }];
 
-  if (knowledgeSection) {
-    sections.push({ tag: "knowledge", label: "knowledge", content: knowledgeSection, cacheControl: "ephemeral" });
+  if (memorySection) {
+    sections.push({ tag: "memory", label: "memory", content: memorySection, cacheControl: "ephemeral" });
   }
 
   if (skillsSection) {

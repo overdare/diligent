@@ -165,16 +165,16 @@ export const ServerRequestResolvedNotificationSchema = z.object({
 });
 export type ServerRequestResolvedNotification = z.infer<typeof ServerRequestResolvedNotificationSchema>;
 
-export const KnowledgeSavedNotificationSchema = z.object({
-  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.KNOWLEDGE_SAVED),
+export const MemorySavedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.MEMORY_SAVED),
   params: z.object({
     threadId: z.string(),
-    knowledgeId: z.string(),
+    memoryId: z.string(),
     content: z.string(),
     ...ThreadStatusSnapshotFields,
   }),
 });
-export type KnowledgeSavedNotification = z.infer<typeof KnowledgeSavedNotificationSchema>;
+export type MemorySavedNotification = z.infer<typeof MemorySavedNotificationSchema>;
 
 export const ErrorNotificationSchema = z.object({
   method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR),
@@ -363,7 +363,7 @@ export const DiligentServerNotificationSchema = z.union([
   TurnCompletedNotificationSchema,
   TurnInterruptedNotificationSchema,
   ServerRequestResolvedNotificationSchema,
-  KnowledgeSavedNotificationSchema,
+  MemorySavedNotificationSchema,
   ErrorNotificationSchema,
   UsageUpdatedNotificationSchema,
   AccountLoginCompletedNotificationSchema,

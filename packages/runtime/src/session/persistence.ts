@@ -5,7 +5,7 @@ import {
   findMostRecentSession,
   findSessionPath,
   firstUserPreview,
-  normalizePersistedModelRefs,
+  normalizePersistedEntries,
   parseSessionHeader,
 } from "./history";
 import { externalizeEntryImages, materializeEntryImages } from "./image-sidecar";
@@ -72,7 +72,7 @@ export async function readSessionFile(
 
   const header = parseSessionHeader(lines[0], path);
 
-  const rawEntries = normalizePersistedModelRefs(lines.slice(1).map((line) => JSON.parse(line) as SessionEntry));
+  const rawEntries = normalizePersistedEntries(lines.slice(1).map((line) => JSON.parse(line) as SessionEntry));
   if (options?.materializeImages === false) {
     return { header, entries: rawEntries };
   }

@@ -15,7 +15,7 @@ import { createYoloPermissionEngine } from "../../src/approval";
 import type { RuntimeConfig } from "../../src/config/runtime";
 import { toolOutputStore } from "../../src/infrastructure";
 
-import { writeKnowledge } from "../../src/knowledge/store";
+import { writeMemory } from "../../src/memory/store";
 import type { BundledToolProvider, BundledToolProviderContext } from "../../src/tools/bundled-provider";
 import { makeAssistant, makeStreamFn } from "../helpers/collab";
 
@@ -54,7 +54,7 @@ function makeRuntimeConfig(overrides?: Partial<RuntimeConfig>): RuntimeConfig {
     model,
     mode: "default",
     effort: "medium",
-    reminders: { planIntervalTurns: 0, knowledgeIntervalTurns: 0 },
+    reminders: { planIntervalTurns: 0, memoryIntervalTurns: 0 },
     systemPrompt: [{ label: "base", content: "test" }],
     streamFunction: () => {
       throw new Error("not implemented");
@@ -85,7 +85,7 @@ afterEach(async () => {
 });
 
 describe("createAppServerConfig", () => {
-  it("refreshes knowledge guidance from the mode-filtered catalog and propagates shared instructions to children", async () => {
+  it("refreshes memory guidance from the mode-filtered catalog and propagates shared instructions to children", async () => {
     const root = await mkdtemp(join(tmpdir(), "prompt-assembly-"));
     tempHomes.push(root);
     const observed: string[] = [];
@@ -96,7 +96,7 @@ describe("createAppServerConfig", () => {
       systemPrompt: [
         { label: "base", content: "Shared baseline" },
         shared,
-        { label: "knowledge_instruction", content: "Stale write instruction" },
+        { label: "memory_instruction", content: "Stale write instruction" },
       ],
       streamFunction: (model, context, options) => {
         observed.push(context.systemPrompt.map((section) => section.content).join("\n"));
@@ -112,9 +112,9 @@ describe("createAppServerConfig", () => {
       approve: async () => ({ decision: "once" }),
       ask: async () => null,
     });
-    const instruction = agent.systemPrompt.find((section) => section.label === "knowledge_instruction")?.content ?? "";
-    expect(instruction).toContain("search_knowledge");
-    expect(instruction).not.toContain("update_knowledge");
+    const instruction = agent.systemPrompt.find((section) => section.label === "memory_instruction")?.content ?? "";
+    expect(instruction).toContain("search_memory");
+    expect(instruction).not.toContain("update_memory");
     expect(instruction).not.toContain("Stale write instruction");
     const child = agent.registry!.spawn({
       prompt: "Inspect the requested files",
@@ -125,7 +125,7 @@ describe("createAppServerConfig", () => {
     expect(observed).toHaveLength(1);
     expect(observed[0]).toContain(shared.content);
     expect(observed[0]).toContain("Plan Mode");
-    expect(observed[0]).not.toContain("update_knowledge");
+    expect(observed[0]).not.toContain("update_memory");
   });
 
   it("produces a valid config from a minimal RuntimeConfig", () => {
@@ -573,7 +573,7 @@ describe("createAppServerConfig", () => {
     const hookCalls: string[] = [];
     let factoryCalls = 0;
     const runtimeConfig = makeRuntimeConfig({
-      reminders: { planIntervalTurns: 2, knowledgeIntervalTurns: 0 },
+      reminders: { planIntervalTurns: 2, memoryIntervalTurns: 0 },
       streamFunction: makeStreamFn([makeAssistant("one"), makeAssistant("two")]),
     });
     const bundledToolProviders: BundledToolProvider[] = [
@@ -605,11 +605,11 @@ describe("createAppServerConfig", () => {
     expect(hookCalls).toEqual(["product", "product"]);
   });
 
-  it("shows the model a knowledge reminder after the configured turns without update_knowledge", async () => {
+  it("shows the model a memory reminder after the configured turns without update_memory", async () => {
     const seenByModel: string[] = [];
     const stream = makeStreamFn([makeAssistant("one"), makeAssistant("two")]);
     const runtimeConfig = makeRuntimeConfig({
-      reminders: { planIntervalTurns: 0, knowledgeIntervalTurns: 1 },
+      reminders: { planIntervalTurns: 0, memoryIntervalTurns: 1 },
       streamFunction: (model, context, options) => {
         seenByModel.push(JSON.stringify(context.messages));
         return stream(model, context, options);
@@ -628,8 +628,8 @@ describe("createAppServerConfig", () => {
     await agent.prompt({ role: "user", content: "second", timestamp: Date.now() });
 
     expect(seenByModel).toHaveLength(2);
-    expect(seenByModel[0]).not.toContain("record it with update_knowledge");
-    expect(seenByModel[1]).toContain("record it with update_knowledge");
+    expect(seenByModel[0]).not.toContain("record it with update_memory");
+    expect(seenByModel[1]).toContain("record it with update_memory");
   });
 
   it("refreshes provider tools through the same mode, plugin and product filters", async () => {
@@ -658,7 +658,7 @@ describe("createAppServerConfig", () => {
       transformTools: (tools, { provider }) => {
         transformedProviders.push(provider);
         return tools.filter(
-          (tool) => tool.name !== "read" && !(provider === "chatgpt" && tool.name === "search_knowledge"),
+          (tool) => tool.name !== "read" && !(provider === "chatgpt" && tool.name === "search_memory"),
         );
       },
     });
@@ -673,7 +673,7 @@ describe("createAppServerConfig", () => {
     const agent = await config.createAgent(request);
     const previousTools = agent.tools;
     const prompt = agent.systemPrompt;
-    expect(prompt.find((section) => section.label === "knowledge_instruction")?.content).toContain("search_knowledge");
+    expect(prompt.find((section) => section.label === "memory_instruction")?.content).toContain("search_memory");
     const registry = agent.registry!;
     registry.restoreAgent("existing-child", "Child");
     const children = registry.getKnownAgents();
@@ -688,26 +688,26 @@ describe("createAppServerConfig", () => {
     expect(agent.tools.find((tool) => tool.name === "provider_tool")?.description).toBe("Tool for chatgpt");
     expect(previousTools.find((tool) => tool.name === "provider_tool")?.description).toBe("Tool for anthropic");
     expect(transformedProviders).toEqual(["anthropic", "chatgpt"]);
-    expect(agent.systemPrompt.filter((section) => section.label !== "knowledge_instruction")).toEqual(
-      prompt.filter((section) => section.label !== "knowledge_instruction"),
+    expect(agent.systemPrompt.filter((section) => section.label !== "memory_instruction")).toEqual(
+      prompt.filter((section) => section.label !== "memory_instruction"),
     );
-    expect(agent.systemPrompt.some((section) => section.label === "knowledge_instruction")).toBe(false);
+    expect(agent.systemPrompt.some((section) => section.label === "memory_instruction")).toBe(false);
     expect(agent.registry).toBe(registry);
     expect(registry.getKnownAgents()).toEqual(children);
   });
 
-  it("reads the latest persisted knowledge whenever it creates an agent", async () => {
-    const projectRoot = await mkdtemp(join(tmpdir(), "diligent-factory-knowledge-"));
+  it("reads the latest persisted memory whenever it creates an agent", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "diligent-factory-memory-"));
     tempHomes.push(projectRoot);
     const runtimeConfig = makeRuntimeConfig({
       systemPrompt: [
         { label: "base", content: "test" },
-        { label: "knowledge", content: "stale knowledge from startup" },
+        { label: "memory", content: "stale memory from startup" },
       ],
     });
     const config = createAppServerConfig({ cwd: projectRoot, runtimeConfig });
     const paths = await config.resolvePaths(projectRoot);
-    await writeKnowledge(paths.knowledge, [
+    await writeMemory(paths.memory, [
       {
         id: "project.preference",
         timestamp: "2026-07-12T00:00:00.000Z",
@@ -726,7 +726,7 @@ describe("createAppServerConfig", () => {
       ask: async () => null,
     });
 
-    await writeKnowledge(paths.knowledge, [
+    await writeMemory(paths.memory, [
       {
         id: "project.preference",
         timestamp: "2026-07-12T00:01:00.000Z",
@@ -744,17 +744,17 @@ describe("createAppServerConfig", () => {
       ask: async () => null,
     });
 
-    const firstKnowledge = firstAgent.systemPrompt.filter((section) => section.label === "knowledge");
-    const nextKnowledge = nextSessionAgent.systemPrompt.filter((section) => section.label === "knowledge");
-    expect(firstKnowledge).toHaveLength(1);
-    expect(firstKnowledge[0]?.content).toContain("Use npm for package scripts.");
-    expect(nextKnowledge).toHaveLength(1);
-    expect(nextKnowledge[0]?.content).toContain("Use Bun for package scripts.");
-    expect(nextKnowledge[0]?.content).not.toContain("stale knowledge from startup");
+    const firstMemory = firstAgent.systemPrompt.filter((section) => section.label === "memory");
+    const nextMemory = nextSessionAgent.systemPrompt.filter((section) => section.label === "memory");
+    expect(firstMemory).toHaveLength(1);
+    expect(firstMemory[0]?.content).toContain("Use npm for package scripts.");
+    expect(nextMemory).toHaveLength(1);
+    expect(nextMemory[0]?.content).toContain("Use Bun for package scripts.");
+    expect(nextMemory[0]?.content).not.toContain("stale memory from startup");
   });
 
-  it("creates agents with readable knowledge when the store contains a corrupt line", async () => {
-    const projectRoot = await mkdtemp(join(tmpdir(), "diligent-factory-knowledge-"));
+  it("creates agents with readable memory when the store contains a corrupt line", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "diligent-factory-memory-"));
     tempHomes.push(projectRoot);
     const config = createAppServerConfig({
       cwd: projectRoot,
@@ -768,7 +768,7 @@ describe("createAppServerConfig", () => {
       content: "Use Bun for package scripts.",
       confidence: 0.8,
     };
-    await writeFile(join(paths.knowledge, "knowledge.jsonl"), `${JSON.stringify(valid)}\n{"id":"trunc\n`);
+    await writeFile(join(paths.memory, "memory.jsonl"), `${JSON.stringify(valid)}\n{"id":"trunc\n`);
 
     const agent = await config.createAgent({
       cwd: projectRoot,
@@ -779,8 +779,8 @@ describe("createAppServerConfig", () => {
       ask: async () => null,
     });
 
-    const knowledge = agent.systemPrompt.find((section) => section.label === "knowledge");
-    expect(knowledge?.content).toContain("Use Bun for package scripts.");
+    const memory = agent.systemPrompt.find((section) => section.label === "memory");
+    expect(memory?.content).toContain("Use Bun for package scripts.");
   });
 
   it("keeps collab registry parent tools aligned with execute mode filtering", async () => {
@@ -946,7 +946,7 @@ describe("filterToolsByMode", () => {
       tool("mcp_run_tool"),
       tool("bash"),
       tool("write"),
-      tool("update_knowledge"),
+      tool("update_memory"),
     ]).map((entry) => entry.name);
 
     expect(filtered).toEqual(["read", "web_action", "catalog_search", "mcp_run_tool"]);

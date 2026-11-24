@@ -6,7 +6,7 @@ import {
   createGrepRenderPayload,
   createPatchDiffRenderPayload,
   createPlanRenderPayload,
-  createUpdateKnowledgeRenderPayload,
+  createUpdateMemoryRenderPayload,
 } from "../../src/tools/render-payload";
 import { createToolEndRenderPayloadFromInput, createToolStartRenderPayload } from "../../src/tools/render-strategies";
 
@@ -76,9 +76,9 @@ describe("search render payload builders", () => {
   });
 });
 
-describe("update knowledge render payload builder", () => {
+describe("update memory render payload builder", () => {
   test("renders key value + tags badges + output summary", () => {
-    const payload = createUpdateKnowledgeRenderPayload(
+    const payload = createUpdateMemoryRenderPayload(
       {
         action: "upsert",
         id: "k1",
@@ -86,13 +86,13 @@ describe("update knowledge render payload builder", () => {
         content: "Prefer batched tool calls for independent reads",
         tags: ["workflow", "perf"],
       },
-      "Knowledge saved: [pattern] Prefer batched tool calls",
+      "Memory saved: [pattern] Prefer batched tool calls",
       false,
     );
 
     expect(payload).toBeDefined();
     expect(payload?.inputSummary).toBe("pattern: Prefer batched tool calls for independent reads");
-    expect(payload?.outputSummary).toBe("1 knowledge entry updated");
+    expect(payload?.outputSummary).toBe("1 memory entry updated");
     expect(payload?.blocks[0]).toEqual({
       type: "key_value",
       items: [
@@ -286,8 +286,8 @@ describe("tool start render payload builder", () => {
     expect(payload?.inputSummary).toBe("src/a.ts");
   });
 
-  test("uses typed summary for update_knowledge request", () => {
-    const payload = createToolStartRenderPayload("update_knowledge", {
+  test("uses typed summary for update_memory request", () => {
+    const payload = createToolStartRenderPayload("update_memory", {
       action: "upsert",
       type: "pattern",
       content: "Prefer concise answers",

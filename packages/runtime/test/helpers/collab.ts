@@ -27,7 +27,7 @@ export const TEST_MODEL: Model = {
 export const TEST_PATHS: DiligentPaths = {
   root: "/tmp/collab-test",
   sessions: "/tmp/collab-test/.diligent/sessions",
-  knowledge: "/tmp/collab-test/.diligent/knowledge",
+  memory: "/tmp/collab-test/.diligent/memory",
   skills: "/tmp/collab-test/.diligent/skills",
   images: "/tmp/collab-test/.diligent/images",
 };

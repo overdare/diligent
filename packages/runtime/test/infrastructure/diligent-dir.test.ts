@@ -1,6 +1,6 @@
 // @summary Tests for .diligent directory initialization and structure
 import { afterEach, describe, expect, it } from "bun:test";
-import { rm } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -25,7 +25,7 @@ describe("resolvePaths", () => {
     const paths = resolvePaths("/project");
     expect(paths.root).toBe(base);
     expect(paths.sessions).toBe(join(base, "sessions"));
-    expect(paths.knowledge).toBe(join(base, "knowledge"));
+    expect(paths.memory).toBe(join(base, "memory"));
     expect(paths.skills).toBe(join(base, "skills"));
     expect(paths.images).toBe(join(base, "images"));
   });
@@ -56,9 +56,9 @@ describe("ensureDiligentDir", () => {
     for await (const f of sessionsGlob.scan(paths.sessions)) sessionEntries.push(f);
     expect(sessionEntries).toEqual([]); // empty dir, but scannable
 
-    const knowledgeEntries = [];
-    for await (const f of sessionsGlob.scan(paths.knowledge)) knowledgeEntries.push(f);
-    expect(knowledgeEntries).toEqual([]);
+    const memoryEntries = [];
+    for await (const f of sessionsGlob.scan(paths.memory)) memoryEntries.push(f);
+    expect(memoryEntries).toEqual([]);
 
     const imageEntries = [];
     for await (const f of sessionsGlob.scan(paths.images)) imageEntries.push(f);
@@ -71,7 +71,7 @@ describe("ensureDiligentDir", () => {
     const gitignorePath = join(paths.root, ".gitignore");
     const content = await Bun.file(gitignorePath).text();
     expect(content).toContain("sessions/");
-    expect(content).toContain("knowledge/");
+    expect(content).toContain("memory/");
     expect(content).toContain("images/");
     expect(content).not.toContain("skills/");
   });
@@ -95,5 +95,44 @@ describe("ensureDiligentDir", () => {
 
     const content = await Bun.file(gitignorePath).text();
     expect(content).toBe("custom content\n");
+  });
+});
+
+describe("ensureDiligentDir legacy knowledge migration", () => {
+  const legacyStore =
+    '{"id":"a","timestamp":"2026-07-01T00:00:00.000Z","type":"preference","content":"Answer in Korean."}\n';
+
+  it("moves the legacy knowledge store into the memory directory", async () => {
+    const { root } = resolvePaths(TEST_ROOT);
+    await mkdir(join(root, "knowledge"), { recursive: true });
+    await Bun.write(join(root, "knowledge", "knowledge.jsonl"), legacyStore);
+
+    const paths = await ensureDiligentDir(TEST_ROOT);
+
+    expect(await Bun.file(join(paths.memory, "memory.jsonl")).text()).toBe(legacyStore);
+    expect(await stat(join(root, "knowledge")).catch(() => null)).toBeNull();
+  });
+
+  it("never overwrites a memory store that already exists", async () => {
+    const { root, memory } = resolvePaths(TEST_ROOT);
+    await mkdir(join(root, "knowledge"), { recursive: true });
+    await mkdir(memory, { recursive: true });
+    await Bun.write(join(root, "knowledge", "knowledge.jsonl"), legacyStore);
+    await Bun.write(join(memory, "memory.jsonl"), "current\n");
+
+    await ensureDiligentDir(TEST_ROOT);
+
+    expect(await Bun.file(join(memory, "memory.jsonl")).text()).toBe("current\n");
+    expect(await Bun.file(join(root, "knowledge", "knowledge.jsonl")).text()).toBe(legacyStore);
+  });
+
+  it("rewrites the legacy knowledge ignore rule and preserves custom lines", async () => {
+    const { root } = resolvePaths(TEST_ROOT);
+    await mkdir(root, { recursive: true });
+    await Bun.write(join(root, ".gitignore"), "sessions/\nknowledge/\ncustom/\n");
+
+    await ensureDiligentDir(TEST_ROOT);
+
+    expect(await Bun.file(join(root, ".gitignore")).text()).toBe("sessions/\nmemory/\ncustom/\n");
   });
 });

@@ -166,11 +166,11 @@ export const DiligentConfigSchema = z
       })
       .optional(),
 
-    // Knowledge settings
-    knowledge: z
+    // Memory settings
+    memory: z
       .object({
         enabled: z.boolean().optional(),
-        // Agent turns without update_knowledge before the model is reminded to record durable knowledge. Unset: off.
+        // Agent turns without update_memory before the model is reminded to record durable memory. Unset: off.
         nudgeInterval: z.number().int().positive().optional(),
         injectionBudget: z.number().int().positive().optional(),
         maxItems: z.number().int().positive().optional(),

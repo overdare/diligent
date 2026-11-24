@@ -2,12 +2,13 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createLogger } from "@diligent/logging";
-import { parse as parseJsonc } from "jsonc-parser";
+import { applyEdits, findNodeAtLocation, modify, parse as parseJsonc, parseTree } from "jsonc-parser";
 import { resolveProjectDirName } from "../infrastructure/diligent-dir";
 import { normalizeLegacyModelRef } from "../model/legacy-model-ref";
 import { DEFAULT_CONFIG, type DiligentConfig, DiligentConfigSchema } from "./schema";
 
 const logger = createLogger({ scope: "runtime.config" });
+const LEGACY_MEMORY_KEY = "knowledge";
 
 /** Load and merge config from all sources (D033: global < project < env) */
 export interface DiligentConfigLayers {
@@ -27,7 +28,7 @@ export async function loadDiligentConfig(
   const globalConfig = await loadConfigFile(globalPath);
   if (globalConfig) sources.push(globalPath);
 
-  // Layer 2: Project config (inside .diligent/ alongside sessions, knowledge, skills)
+  // Layer 2: Project config (inside .diligent/ alongside sessions, memory, skills)
   const projectPath = join(cwd, projectDirName, "config.jsonc");
   const projectConfig = await loadConfigFile(projectPath);
   if (projectConfig) sources.push(projectPath);
@@ -59,7 +60,18 @@ async function loadConfigFile(path: string): Promise<DiligentConfig | null> {
   try {
     const file = Bun.file(path);
     if (!(await file.exists())) return null;
-    const text = await file.text();
+    let text = await file.text();
+    const migrated = migrateLegacyMemoryKey(text);
+    if (migrated !== undefined) {
+      text = migrated;
+      await Bun.write(path, migrated).catch((error) => {
+        logger.warn("legacy_memory_config_write_failed", {
+          message: `Config warning: could not rename "${LEGACY_MEMORY_KEY}" to "memory" in ${path}`,
+          error,
+          fields: { path },
+        });
+      });
+    }
     const parsed = parseJsonc(text);
     const substituted = substituteTemplates(parsed);
     if (typeof substituted === "object" && substituted !== null && "model" in substituted) {
@@ -79,6 +91,18 @@ async function loadConfigFile(path: string): Promise<DiligentConfig | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Rename the pre-rename `knowledge` key to `memory` by editing only the key token, so comments and formatting
+ * survive. When `memory` is already set it wins and the legacy key is removed. Returns undefined when unchanged.
+ */
+function migrateLegacyMemoryKey(text: string): string | undefined {
+  const root = parseTree(text);
+  const legacyKey = root && findNodeAtLocation(root, [LEGACY_MEMORY_KEY])?.parent?.children?.[0];
+  if (!root || !legacyKey) return undefined;
+  if (findNodeAtLocation(root, ["memory"])) return applyEdits(text, modify(text, [LEGACY_MEMORY_KEY], undefined, {}));
+  return `${text.slice(0, legacyKey.offset)}"memory"${text.slice(legacyKey.offset + legacyKey.length)}`;
 }
 
 /** Deep merge with array concatenation for 'instructions' (D034) */

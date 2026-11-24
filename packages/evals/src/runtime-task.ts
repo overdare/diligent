@@ -59,7 +59,7 @@ export type RuntimeEvalStep =
   | { kind: "compact" }
   | { kind: "restart_and_resume" };
 
-export type RuntimeToolCapability = "read" | "write" | "execute" | "skill" | "knowledge" | "user_input" | "collab";
+export type RuntimeToolCapability = "read" | "write" | "execute" | "skill" | "memory" | "user_input" | "collab";
 
 export interface RuntimeEvalToolPolicy {
   allowedTools?: readonly string[];
@@ -94,7 +94,7 @@ export interface RuntimeWorldSnapshot {
   entries: RuntimeWorkspaceEntry[];
 }
 
-export type RuntimeStateCategory = "infrastructure" | "sessions" | "image_sidecars" | "knowledge" | "skills" | "other";
+export type RuntimeStateCategory = "infrastructure" | "sessions" | "image_sidecars" | "memory" | "skills" | "other";
 
 export interface RuntimeStatePolicy {
   allowedMutations: readonly RuntimeStateCategory[];

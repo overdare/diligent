@@ -34,8 +34,8 @@ task/profile executions. The complete manifest is:
 
 - Project, prompt, and modes: `project-fix`, `plan-readonly`, `plan-to-execute`, `instruction-hierarchy`,
   `plan-converge`, `cross-file-contract-fix`, `plan-progress`, and `hook-context-follow`.
-- Skills and knowledge: `knowledge-recall`, `skill-auto-select`, `skill-abstain`, `knowledge-intent-split`, and
-  `knowledge-forget`.
+- Skills and memory: `memory-recall`, `skill-auto-select`, `skill-abstain`, `memory-intent-split`, and
+  `memory-forget`.
 - Interaction, context, and continuity: `session-resume`, `manual-compaction-resume`, `clarify-then-execute`,
   `read-image-pair`, `file-roundtrip`, `steer-during-fix`, `auto-compaction-resume`, `image-resume-recall`,
   `fresh-prompt-after-compaction`, `input-cancel-resume`, `loop-context-adaptation`, and `large-output-recovery`.
@@ -137,7 +137,7 @@ passes.
 Runtime task evaluators grade what the model achieved, not the path it took. They use `RuntimeGrade` and the trace
 helpers in `packages/evals/src/tasks/runtime/grading.ts`. A task fails only for:
 
-- `semantic_goal`: a wrong end state, such as a failed verifier, wrong file or knowledge-store contents, or a required
+- `semantic_goal`: a wrong end state, such as a failed verifier, wrong file or memory-store contents, or a required
   fact missing from the deliverable.
 - `runtime_policy`: a crossed boundary that the task exists to test, such as a successful read of a withheld or decoy
   source, a mutation in plan mode or before a required answer, or a change to a protected file.
@@ -175,7 +175,7 @@ the fixture, permits only explicitly registered read-only output paths outside i
 commands, records bounded traces, and stops over-budget calls before the underlying tool executes. Runtime-state
 changes are checked against each task's declared mutation categories. The runner constructs fixture-owned
 `RuntimeConfig` values and does not load host config, credentials as runtime configuration, global plugins, skills,
-agents, knowledge, or sessions. Fixture resources are cleaned on success, failure, and timeout. Evidence normalization
+agents, memory, or sessions. Fixture resources are cleaned on success, failure, and timeout. Evidence normalization
 maps every spelling of the fixture root (including the macOS `/private` alias and the Windows `C:/...` form) to
 `$WORKSPACE`.
 

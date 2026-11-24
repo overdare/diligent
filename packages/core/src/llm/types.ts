@@ -15,9 +15,9 @@ import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from 
 import type { StreamTurnScope } from "./turn-scope";
 
 export interface SystemSection {
-  tag?: string; // XML wrapper: "knowledge", "user_instructions", "collaboration_mode"
+  tag?: string; // XML wrapper: "memory", "user_instructions", "collaboration_mode"
   tagAttributes?: Record<string, string>; // e.g. { path: "/p/AGENTS.md" }
-  label: string; // debug label: "base", "knowledge", "mode"
+  label: string; // debug label: "base", "memory", "mode"
   content: string; // raw text content
   cacheControl?: "ephemeral"; // hint for Anthropic cache breakpoints
 }

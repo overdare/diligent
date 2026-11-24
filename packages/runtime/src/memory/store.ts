@@ -1,36 +1,36 @@
-// @summary Persistent JSONL knowledge store with tolerant reads and serialized atomic writes
+// @summary Persistent JSONL memory store with tolerant reads and serialized atomic writes
 import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { KnowledgeEntrySchema } from "../protocol/index";
-import type { KnowledgeEntry } from "./types";
+import { MemoryEntrySchema } from "../protocol/index";
+import type { MemoryEntry } from "./types";
 
-const KNOWLEDGE_FILENAME = "knowledge.jsonl";
+export const MEMORY_FILENAME = "memory.jsonl";
 
-export interface KnowledgeFile {
-  entries: KnowledgeEntry[];
+export interface MemoryFile {
+  entries: MemoryEntry[];
   /** Raw lines that are not valid entries. They are kept on disk so a bad line never costs other entries. */
   invalidLines: string[];
 }
 
-export interface KnowledgeMutation<T> {
+export interface MemoryMutation<T> {
   /** Next full entry list; omit to leave the store untouched. */
-  entries?: KnowledgeEntry[];
+  entries?: MemoryEntry[];
   result: T;
 }
 
 const writeQueues = new Map<string, Promise<unknown>>();
 
-function knowledgeFilePath(knowledgePath: string): string {
-  return join(knowledgePath, KNOWLEDGE_FILENAME);
+function memoryFilePath(memoryPath: string): string {
+  return join(memoryPath, MEMORY_FILENAME);
 }
 
 /** Read the store, separating valid entries from unreadable lines instead of failing the whole read. */
-export async function readKnowledgeFile(knowledgePath: string): Promise<KnowledgeFile> {
-  const file = Bun.file(knowledgeFilePath(knowledgePath));
+export async function readMemoryFile(memoryPath: string): Promise<MemoryFile> {
+  const file = Bun.file(memoryFilePath(memoryPath));
   if (!(await file.exists())) return { entries: [], invalidLines: [] };
 
-  const entries: KnowledgeEntry[] = [];
+  const entries: MemoryEntry[] = [];
   const invalidLines: string[] = [];
   for (const line of (await file.text()).split("\n")) {
     if (!line.trim()) continue;
@@ -41,22 +41,22 @@ export async function readKnowledgeFile(knowledgePath: string): Promise<Knowledg
   return { entries, invalidLines };
 }
 
-/** Read all valid knowledge entries from the store. */
-export async function readKnowledge(knowledgePath: string): Promise<KnowledgeEntry[]> {
-  return (await readKnowledgeFile(knowledgePath)).entries;
+/** Read all valid memory entries from the store. */
+export async function readMemory(memoryPath: string): Promise<MemoryEntry[]> {
+  return (await readMemoryFile(memoryPath)).entries;
 }
 
 /**
  * Read-modify-write the store. Mutations on the same store run one at a time within this process,
  * and the file is replaced atomically so readers never observe a partial write.
  */
-export function mutateKnowledge<T>(
-  knowledgePath: string,
-  mutate: (entries: KnowledgeEntry[]) => KnowledgeMutation<T> | Promise<KnowledgeMutation<T>>,
+export function mutateMemory<T>(
+  memoryPath: string,
+  mutate: (entries: MemoryEntry[]) => MemoryMutation<T> | Promise<MemoryMutation<T>>,
 ): Promise<T> {
-  const filePath = knowledgeFilePath(knowledgePath);
+  const filePath = memoryFilePath(memoryPath);
   const run = async (): Promise<T> => {
-    const current = await readKnowledgeFile(knowledgePath);
+    const current = await readMemoryFile(memoryPath);
     const mutation = await mutate(current.entries);
     if (mutation.entries) await replaceFile(filePath, mutation.entries, current.invalidLines);
     return mutation.result;
@@ -72,17 +72,17 @@ export function mutateKnowledge<T>(
   return next;
 }
 
-/** Append a knowledge entry to the store. */
-export async function appendKnowledge(knowledgePath: string, entry: KnowledgeEntry): Promise<void> {
-  await mutateKnowledge(knowledgePath, (entries) => ({ entries: [...entries, entry], result: undefined }));
+/** Append a memory entry to the store. */
+export async function appendMemory(memoryPath: string, entry: MemoryEntry): Promise<void> {
+  await mutateMemory(memoryPath, (entries) => ({ entries: [...entries, entry], result: undefined }));
 }
 
 /** Replace all valid entries in the store. Unreadable lines already on disk are preserved. */
-export async function writeKnowledge(knowledgePath: string, entries: KnowledgeEntry[]): Promise<void> {
-  await mutateKnowledge(knowledgePath, () => ({ entries, result: undefined }));
+export async function writeMemory(memoryPath: string, entries: MemoryEntry[]): Promise<void> {
+  await mutateMemory(memoryPath, () => ({ entries, result: undefined }));
 }
 
-function parseEntry(line: string): KnowledgeEntry | null {
+function parseEntry(line: string): MemoryEntry | null {
   let value: unknown;
   try {
     value = JSON.parse(line);
@@ -90,10 +90,10 @@ function parseEntry(line: string): KnowledgeEntry | null {
     return null;
   }
   // Validate only; keep the original object so fields written by newer versions survive a rewrite.
-  return KnowledgeEntrySchema.safeParse(value).success ? (value as KnowledgeEntry) : null;
+  return MemoryEntrySchema.safeParse(value).success ? (value as MemoryEntry) : null;
 }
 
-async function replaceFile(filePath: string, entries: KnowledgeEntry[], invalidLines: string[]): Promise<void> {
+async function replaceFile(filePath: string, entries: MemoryEntry[], invalidLines: string[]): Promise<void> {
   const lines = [...entries.map((entry) => JSON.stringify(entry)), ...invalidLines];
   const text = lines.length > 0 ? `${lines.join("\n")}\n` : "";
   const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;

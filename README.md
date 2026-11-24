@@ -10,7 +10,7 @@ Diligent provides the agent engine, runtime, and shared protocol for building ag
 
 A game project makes that need concrete. One session explores a mechanic, another edits a scene, and another investigates a playtest failure. People and agents may work on different computers. Each session needs access to relevant decisions, discoveries, and unfinished work from the same project.
 
-Diligent's goal is to let that context accumulate around the project and become useful in subsequent work, including work in remote sessions. Today, its foundation is a shared runtime with local project persistence, knowledge storage, extensible tools, and inspectable execution. Cross-machine context sharing and coordination are the next design focus.
+Diligent's goal is to let that context accumulate around the project and become useful in subsequent work, including work in remote sessions. Today, its foundation is a shared runtime with local project persistence, memory storage, extensible tools, and inspectable execution. Cross-machine context sharing and coordination are the next design focus.
 
 ## Principles
 
@@ -18,7 +18,7 @@ Diligent's goal is to let that context accumulate around the project and become 
 
 A conversation captures one part of the work. The project connects those parts: what is being built, why a decision was made, what changed, and what remains unresolved.
 
-Diligent currently stores sessions and knowledge under the project's `.diligent/` directory. Sessions preserve execution history; a separate knowledge store supports reuse across sessions through search and prompt injection. Instructions, skills, and project configuration shape how the agent works in that environment.
+Diligent currently stores sessions and memory under the project's `.diligent/` directory. Sessions preserve execution history; a separate memory store supports reuse across sessions through search and prompt injection. Instructions, skills, and project configuration shape how the agent works in that environment.
 
 ### Continuity should be inspectable
 
@@ -39,7 +39,7 @@ The framework separates reusable execution from runtime assembly and presentatio
 | Layer | Responsibility |
 | --- | --- |
 | Core engine | Agent loop, model/provider interfaces, streaming, and tool contracts |
-| Runtime | Sessions, context assembly, knowledge, skills, tools, approvals, and sub-agent orchestration |
+| Runtime | Sessions, context assembly, memory, skills, tools, approvals, and sub-agent orchestration |
 | Shared protocol | Typed JSON-RPC requests, notifications, and client-facing models |
 | Host application | Domain tools, project integration, transport wiring, and user experience |
 
@@ -62,12 +62,12 @@ This raises several design questions:
 
 - How do local and remote sessions identify the same project and contribute context to it?
 - How does a session retrieve relevant context while preserving its source and relationship to current project state?
-- How are conflicting decisions, superseded knowledge, and overlapping work represented?
+- How are conflicting decisions, superseded memory, and overlapping work represented?
 - How does context sharing recover after disconnection or interrupted work?
 
 The aim is to make relevant project context available to each session with enough provenance to assess and update it. Raw histories can remain separate while decisions, findings, and work references become discoverable across them.
 
-The current implementation persists sessions and knowledge locally. Its sub-agent collaboration operates within the runtime. Remote context synchronization and coordination between independent runtimes remain future work; the shared client/server protocol provides an integration boundary, but does not itself synchronize project context across machines.
+The current implementation persists sessions and memory locally. Its sub-agent collaboration operates within the runtime. Remote context synchronization and coordination between independent runtimes remain future work; the shared client/server protocol provides an integration boundary, but does not itself synchronize project context across machines.
 
 ## Try the local agent
 
@@ -99,7 +99,7 @@ This repository uses Bun and strict TypeScript.
 | Path | Contents |
 | --- | --- |
 | `packages/core` | Reusable agent engine primitives |
-| `packages/runtime` | App server, sessions, context, tools, knowledge, and collaboration |
+| `packages/runtime` | App server, sessions, context, tools, memory, and collaboration |
 | `packages/protocol` | Shared frontend/backend protocol schemas and models |
 | `packages/plugin-sdk` | Public contracts for external tool plugins |
 | `packages/logging` | Structured diagnostic record and sink contracts |

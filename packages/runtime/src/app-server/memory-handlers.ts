@@ -1,47 +1,47 @@
-// @summary Knowledge CRUD request handlers extracted from thread-handlers.ts
+// @summary Memory CRUD request handlers extracted from thread-handlers.ts
 
-import { deleteKnowledge, upsertKnowledge } from "../knowledge/repository";
-import { readKnowledge } from "../knowledge/store";
-import type { KnowledgeEntry, KnowledgeType } from "../protocol/index";
+import { deleteMemory, upsertMemory } from "../memory/repository";
+import { readMemory } from "../memory/store";
+import type { MemoryEntry, MemoryType } from "../protocol/index";
 import type { ThreadHandlersContext } from "./thread-handlers";
 
-export async function handleKnowledgeList(
+export async function handleMemoryList(
   ctx: ThreadHandlersContext,
   threadId: string | undefined,
   limit?: number,
 ): Promise<{ data: unknown[] }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
   const paths = await ctx.resolvePaths(runtime.cwd);
-  const entries = await readKnowledge(paths.knowledge);
+  const entries = await readMemory(paths.memory);
   return { data: entries.slice(0, limit ?? entries.length) };
 }
 
-export async function handleKnowledgeUpdate(
+export async function handleMemoryUpdate(
   ctx: ThreadHandlersContext,
   threadId: string | undefined,
   params: {
     action: "upsert" | "delete";
     id?: string;
-    type?: KnowledgeType;
+    type?: MemoryType;
     content?: string;
     tags?: string[];
   },
-): Promise<{ entry?: KnowledgeEntry; deleted?: boolean }> {
+): Promise<{ entry?: MemoryEntry; deleted?: boolean }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
   const paths = await ctx.resolvePaths(runtime.cwd);
 
   if (params.action === "delete") {
     if (!params.id) {
-      throw Object.assign(new Error("Knowledge id is required for delete action"), { code: -32602 });
+      throw Object.assign(new Error("Memory id is required for delete action"), { code: -32602 });
     }
-    return { deleted: await deleteKnowledge(paths.knowledge, params.id) };
+    return { deleted: await deleteMemory(paths.memory, params.id) };
   }
 
   if (!params.type || !params.content || params.content.trim().length === 0) {
-    throw Object.assign(new Error("Knowledge type and content are required for upsert action"), { code: -32602 });
+    throw Object.assign(new Error("Memory type and content are required for upsert action"), { code: -32602 });
   }
 
-  const { entry } = await upsertKnowledge(paths.knowledge, {
+  const { entry } = await upsertMemory(paths.memory, {
     id: params.id,
     type: params.type,
     content: params.content,

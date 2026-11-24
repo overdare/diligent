@@ -1,5 +1,5 @@
 export type { DiscoveredInstruction } from "./instructions";
-export { buildSystemPrompt, buildSystemPromptWithKnowledge, discoverInstructions } from "./instructions";
+export { buildSystemPrompt, buildSystemPromptWithMemory, discoverInstructions } from "./instructions";
 export type { DiligentConfigLayers } from "./loader";
 export { loadDiligentConfig, mergeConfig } from "./loader";
 export type { RuntimeConfig } from "./runtime";

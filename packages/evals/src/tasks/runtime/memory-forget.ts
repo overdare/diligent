@@ -1,7 +1,7 @@
 // @summary Runtime eval for deleting one durable preference while completing an independent workspace task
 
 import { join } from "node:path";
-import { type KnowledgeEntry, readKnowledge } from "@diligent/runtime";
+import { type MemoryEntry, readMemory } from "@diligent/runtime";
 import type { RuntimeEvalTask, RuntimeVerifierResult } from "../../runtime-task";
 import type { EvalProfile } from "../../task";
 import { RuntimeGrade } from "./grading";
@@ -17,35 +17,35 @@ import {
 
 const OUTPUT_PATH = "FORGET.txt";
 
-export interface KnowledgeForgetWorld extends RuntimeFixtureWorld {
-  knowledgeId: string;
+export interface MemoryForgetWorld extends RuntimeFixtureWorld {
+  memoryId: string;
   forgottenValue: string;
   targetContent: string;
   taskValue: string;
-  controlEntry: KnowledgeEntry;
+  controlEntry: MemoryEntry;
   expectedHash: string;
 }
 
-export const knowledgeForgetTask: RuntimeEvalTask<KnowledgeForgetWorld> = {
-  id: "knowledge-forget",
+export const memoryForgetTask: RuntimeEvalTask<MemoryForgetWorld> = {
+  id: "memory-forget",
   description: "Delete one durable preference while completing an unrelated exact workspace task.",
-  fixtureVersion: "knowledge-forget-v6",
+  fixtureVersion: "memory-forget-v6",
   limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 5, maxToolCalls: 5, timeoutMs: 180_000 },
   statePolicy: {
-    allowedMutations: ["infrastructure", "sessions", "knowledge"],
-    requiredMutations: ["knowledge"],
+    allowedMutations: ["infrastructure", "sessions", "memory"],
+    requiredMutations: ["memory"],
   },
   toolPolicy: {
-    allowedTools: ["search_knowledge", "update_knowledge", "apply_patch", "edit"],
-    allowedCapabilities: ["knowledge", "write"],
+    allowedTools: ["search_memory", "update_memory", "apply_patch", "edit"],
+    allowedCapabilities: ["memory", "write"],
     allowedCommands: [],
   },
   async setup(seed, root) {
-    const knowledgeId = "preference.deploy-window";
+    const memoryId = "preference.deploy-window";
     const forgottenValue = seededToken(seed, "WINDOW");
     const targetContent = `Preferred deployment window is ${forgottenValue}.`;
     const taskValue = seededToken(seed, "FORGET_TASK");
-    const controlEntry: KnowledgeEntry = {
+    const controlEntry: MemoryEntry = {
       id: "preference.control-format",
       timestamp: "2026-07-18T00:01:00.000Z",
       type: "preference",
@@ -53,8 +53,8 @@ export const knowledgeForgetTask: RuntimeEvalTask<KnowledgeForgetWorld> = {
       confidence: 0.9,
       tags: ["control", "format"],
     };
-    const targetEntry: KnowledgeEntry = {
-      id: knowledgeId,
+    const targetEntry: MemoryEntry = {
+      id: memoryId,
       timestamp: "2026-07-18T00:00:00.000Z",
       type: "preference",
       content: targetContent,
@@ -63,12 +63,12 @@ export const knowledgeForgetTask: RuntimeEvalTask<KnowledgeForgetWorld> = {
     };
     const expected = `${taskValue}\n`;
     await writeFixture(root, {
-      ".diligent/knowledge/knowledge.jsonl": `${JSON.stringify(targetEntry)}\n${JSON.stringify(controlEntry)}\n`,
+      ".diligent/memory/memory.jsonl": `${JSON.stringify(targetEntry)}\n${JSON.stringify(controlEntry)}\n`,
     });
     return {
       root,
       seed,
-      knowledgeId,
+      memoryId,
       forgottenValue,
       targetContent,
       taskValue,
@@ -79,20 +79,20 @@ export const knowledgeForgetTask: RuntimeEvalTask<KnowledgeForgetWorld> = {
       allowedChanges: [OUTPUT_PATH],
     };
   },
-  createRuntimeConfig: createKnowledgeRuntimeConfig,
+  createRuntimeConfig: createMemoryRuntimeConfig,
   createSteps: (world) => [
     {
       kind: "turn",
-      message: `Please forget my saved deployment-window preference at stable key ${world.knowledgeId}. Separately, create ${OUTPUT_PATH} containing exactly ${world.taskValue} and one trailing newline for this task.`,
+      message: `Please forget my saved deployment-window preference at stable key ${world.memoryId}. Separately, create ${OUTPUT_PATH} containing exactly ${world.taskValue} and one trailing newline for this task.`,
     },
   ],
-  verify: verifyForgottenKnowledge,
+  verify: verifyForgottenMemory,
   snapshotWorld: async (world) => ({
-    entries: await readKnowledge(join(world.root, ".diligent/knowledge")),
+    entries: await readMemory(join(world.root, ".diligent/memory")),
     output: await exactFile(world.root, OUTPUT_PATH),
   }),
   evaluate(input) {
-    const grade = new RuntimeGrade("knowledge_forget");
+    const grade = new RuntimeGrade("memory_forget");
     if (input.verifier?.timedOut)
       return grade.fail("verifier_timeout", "Independent verification timed out.", "harness_terminal");
     const output = input.workspace.final.entries.find((entry) => entry.path === OUTPUT_PATH);
@@ -100,47 +100,44 @@ export const knowledgeForgetTask: RuntimeEvalTask<KnowledgeForgetWorld> = {
       return grade.fail("output", `${OUTPUT_PATH} does not contain exactly the task value.`, "semantic_goal");
     if (input.verifier?.exitCode !== 0)
       return grade.fail(
-        "knowledge_store",
+        "memory_store",
         "The store does not hold exactly the untouched control preference after forgetting the target.",
         "semantic_goal",
       );
-    if (input.toolCalls.some((call) => call.name === "search_knowledge"))
-      grade.note("knowledge_search", "Knowledge was searched around the deletion.", { impact: "info" });
+    if (input.toolCalls.some((call) => call.name === "search_memory"))
+      grade.note("memory_search", "Memory was searched around the deletion.", { impact: "info" });
     if (input.toolCalls.some((call) => call.outcome !== "success"))
       grade.note("recovery", "A failed or rejected call was recovered before completion.");
     return grade.pass();
   },
 };
 
-async function createKnowledgeRuntimeConfig(world: KnowledgeForgetWorld, profile: EvalProfile) {
+async function createMemoryRuntimeConfig(world: MemoryForgetWorld, profile: EvalProfile) {
   const config = await createFixtureRuntimeConfig(world, profile);
   return {
     ...config,
-    diligent: { ...config.diligent, knowledge: { enabled: true, injectionBudget: 1024, maxItems: 5 } },
+    diligent: { ...config.diligent, memory: { enabled: true, injectionBudget: 1024, maxItems: 5 } },
   };
 }
 
-async function verifyForgottenKnowledge(
-  world: KnowledgeForgetWorld,
-  signal: AbortSignal,
-): Promise<RuntimeVerifierResult> {
+async function verifyForgottenMemory(world: MemoryForgetWorld, signal: AbortSignal): Promise<RuntimeVerifierResult> {
   const started = performance.now();
-  const entries = await readKnowledge(join(world.root, ".diligent/knowledge"));
+  const entries = await readMemory(join(world.root, ".diligent/memory"));
   const output = await exactFile(world.root, OUTPUT_PATH);
   const storeText = JSON.stringify(entries);
   const validStore =
     entries.length === 1 &&
     JSON.stringify(entries[0]) === JSON.stringify(world.controlEntry) &&
-    !entries.some((entry) => entry.id === world.knowledgeId) &&
+    !entries.some((entry) => entry.id === world.memoryId) &&
     !storeText.includes(world.targetContent) &&
     !storeText.includes(world.forgottenValue);
   const valid = !signal.aborted && validStore && output === world.expected;
   return {
-    argv: ["knowledge-forget-verifier"],
+    argv: ["memory-forget-verifier"],
     exitCode: valid ? 0 : 1,
     elapsedMs: Math.round(performance.now() - started),
     stdout: valid ? JSON.stringify({ entries, outputHash: world.expectedHash }) : "",
-    stderr: valid ? "" : "Forgotten knowledge or independent project output did not match the exact final state.",
+    stderr: valid ? "" : "Forgotten memory or independent project output did not match the exact final state.",
     timedOut: signal.aborted,
   };
 }

@@ -26,7 +26,7 @@ function makePaths(base: string): DiligentPaths {
   return {
     root: join(base, ".diligent"),
     sessions: join(base, ".diligent", "sessions"),
-    knowledge: join(base, ".diligent", "knowledge"),
+    memory: join(base, ".diligent", "memory"),
     skills: join(base, ".diligent", "skills"),
     images: join(base, ".diligent", "images"),
   };
@@ -63,25 +63,25 @@ describe("loadRuntimeConfig", () => {
       await writeFile(configPath, JSON.stringify({ provider }));
       expect((await loadRuntimeConfig(tmpRoot, paths)).reminders).toEqual({
         planIntervalTurns: 6,
-        knowledgeIntervalTurns: 0,
+        memoryIntervalTurns: 0,
       });
 
       await writeFile(
         configPath,
-        JSON.stringify({ provider, planReminderIntervalTurns: 0, knowledge: { nudgeInterval: 3 } }),
+        JSON.stringify({ provider, planReminderIntervalTurns: 0, memory: { nudgeInterval: 3 } }),
       );
       expect((await loadRuntimeConfig(tmpRoot, paths)).reminders).toEqual({
         planIntervalTurns: 0,
-        knowledgeIntervalTurns: 3,
+        memoryIntervalTurns: 3,
       });
 
       await writeFile(
         configPath,
-        JSON.stringify({ provider, planReminderIntervalTurns: 2, knowledge: { enabled: false, nudgeInterval: 3 } }),
+        JSON.stringify({ provider, planReminderIntervalTurns: 2, memory: { enabled: false, nudgeInterval: 3 } }),
       );
       expect((await loadRuntimeConfig(tmpRoot, paths)).reminders).toEqual({
         planIntervalTurns: 2,
-        knowledgeIntervalTurns: 0,
+        memoryIntervalTurns: 0,
       });
     } finally {
       restoreHomeEnv(originalHome, originalUserProfile);
@@ -139,7 +139,7 @@ describe("loadRuntimeConfig", () => {
     const paths = makePaths(tmpRoot);
     const isolatedHome = join(tmpRoot, ".isolated-home");
     await mkdir(paths.sessions, { recursive: true });
-    await mkdir(paths.knowledge, { recursive: true });
+    await mkdir(paths.memory, { recursive: true });
     await mkdir(paths.skills, { recursive: true });
     await mkdir(paths.images, { recursive: true });
     await mkdir(join(isolatedHome, ".diligent"), { recursive: true });
@@ -186,7 +186,7 @@ describe("loadRuntimeConfig", () => {
     const paths = makePaths(tmpRoot);
     const isolatedHome = join(tmpRoot, ".isolated-home");
     await mkdir(paths.sessions, { recursive: true });
-    await mkdir(paths.knowledge, { recursive: true });
+    await mkdir(paths.memory, { recursive: true });
     await mkdir(paths.skills, { recursive: true });
     await mkdir(paths.images, { recursive: true });
     await mkdir(join(isolatedHome, ".diligent"), { recursive: true });
@@ -222,7 +222,7 @@ describe("loadRuntimeConfig", () => {
     const paths = makePaths(tmpRoot);
     const isolatedHome = join(tmpRoot, ".isolated-home");
     await mkdir(paths.sessions, { recursive: true });
-    await mkdir(paths.knowledge, { recursive: true });
+    await mkdir(paths.memory, { recursive: true });
     await mkdir(paths.skills, { recursive: true });
     await mkdir(paths.images, { recursive: true });
     await mkdir(join(isolatedHome, ".diligent"), { recursive: true });
@@ -250,7 +250,7 @@ describe("loadRuntimeConfig", () => {
     const paths = makePaths(tmpRoot);
     const isolatedHome = join(tmpRoot, ".isolated-home");
     await mkdir(paths.sessions, { recursive: true });
-    await mkdir(paths.knowledge, { recursive: true });
+    await mkdir(paths.memory, { recursive: true });
     await mkdir(paths.skills, { recursive: true });
     await mkdir(paths.images, { recursive: true });
     await mkdir(join(isolatedHome, ".diligent"), { recursive: true });
@@ -278,13 +278,13 @@ describe("loadRuntimeConfig", () => {
     const brandedPaths: DiligentPaths = {
       root: join(tmpRoot, ".sample-host"),
       sessions: join(tmpRoot, ".sample-host", "sessions"),
-      knowledge: join(tmpRoot, ".sample-host", "knowledge"),
+      memory: join(tmpRoot, ".sample-host", "memory"),
       skills: join(tmpRoot, ".sample-host", "skills"),
       images: join(tmpRoot, ".sample-host", "images"),
     };
     const isolatedHome = join(tmpRoot, ".isolated-home");
     await mkdir(brandedPaths.sessions, { recursive: true });
-    await mkdir(brandedPaths.knowledge, { recursive: true });
+    await mkdir(brandedPaths.memory, { recursive: true });
     await mkdir(brandedPaths.skills, { recursive: true });
     await mkdir(brandedPaths.images, { recursive: true });
     await mkdir(join(isolatedHome, ".sample-host"), { recursive: true });
@@ -308,7 +308,7 @@ describe("loadRuntimeConfig", () => {
     const paths = makePaths(tmpRoot);
     const isolatedHome = join(tmpRoot, ".isolated-home");
     await mkdir(paths.sessions, { recursive: true });
-    await mkdir(paths.knowledge, { recursive: true });
+    await mkdir(paths.memory, { recursive: true });
     await mkdir(paths.skills, { recursive: true });
     await mkdir(paths.images, { recursive: true });
     await mkdir(join(isolatedHome, ".diligent"), { recursive: true });
@@ -347,7 +347,7 @@ describe("loadRuntimeConfig", () => {
     const paths = makePaths(tmpRoot);
     const isolatedHome = join(tmpRoot, ".isolated-home");
     await mkdir(paths.sessions, { recursive: true });
-    await mkdir(paths.knowledge, { recursive: true });
+    await mkdir(paths.memory, { recursive: true });
     await mkdir(paths.skills, { recursive: true });
     await mkdir(paths.images, { recursive: true });
     await mkdir(join(isolatedHome, ".diligent"), { recursive: true });
@@ -372,7 +372,7 @@ describe("loadRuntimeConfig", () => {
     const paths = makePaths(tmpRoot);
     const isolatedHome = join(tmpRoot, ".isolated-home");
     await mkdir(paths.sessions, { recursive: true });
-    await mkdir(paths.knowledge, { recursive: true });
+    await mkdir(paths.memory, { recursive: true });
     await mkdir(paths.skills, { recursive: true });
     await mkdir(paths.images, { recursive: true });
     await mkdir(join(isolatedHome, ".diligent"), { recursive: true });
@@ -405,7 +405,7 @@ describe("loadRuntimeConfig", () => {
     const paths = makePaths(tmpRoot);
     const isolatedHome = join(tmpRoot, ".isolated-home");
     await mkdir(paths.sessions, { recursive: true });
-    await mkdir(paths.knowledge, { recursive: true });
+    await mkdir(paths.memory, { recursive: true });
     await mkdir(paths.skills, { recursive: true });
     await mkdir(paths.images, { recursive: true });
     await mkdir(join(isolatedHome, ".diligent"), { recursive: true });
@@ -431,7 +431,7 @@ describe("loadRuntimeConfig", () => {
     const paths = makePaths(tmpRoot);
     const isolatedHome = join(tmpRoot, ".isolated-home");
     await mkdir(paths.sessions, { recursive: true });
-    await mkdir(paths.knowledge, { recursive: true });
+    await mkdir(paths.memory, { recursive: true });
     await mkdir(paths.skills, { recursive: true });
     await mkdir(paths.images, { recursive: true });
     await mkdir(join(isolatedHome, ".diligent"), { recursive: true });
@@ -488,7 +488,7 @@ describe("loadRuntimeConfig", () => {
     const paths = makePaths(tmpRoot);
     const isolatedHome = join(tmpRoot, ".isolated-home");
     await mkdir(paths.sessions, { recursive: true });
-    await mkdir(paths.knowledge, { recursive: true });
+    await mkdir(paths.memory, { recursive: true });
     await mkdir(paths.skills, { recursive: true });
     await mkdir(paths.images, { recursive: true });
     await mkdir(join(isolatedHome, ".diligent"), { recursive: true });
@@ -520,7 +520,7 @@ describe("loadRuntimeConfig", () => {
     const paths = makePaths(tmpRoot);
     const isolatedHome = join(tmpRoot, ".isolated-home");
     await mkdir(paths.sessions, { recursive: true });
-    await mkdir(paths.knowledge, { recursive: true });
+    await mkdir(paths.memory, { recursive: true });
     await mkdir(paths.skills, { recursive: true });
     await mkdir(paths.images, { recursive: true });
     await mkdir(join(isolatedHome, ".diligent"), { recursive: true });

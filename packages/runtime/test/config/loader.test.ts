@@ -13,7 +13,7 @@ const TEST_HOME = join(TEST_ROOT, "home");
 let origHome: string | undefined;
 let origStorageNamespace: string | undefined;
 
-/** Project config lives inside .diligent/ alongside sessions, knowledge, skills */
+/** Project config lives inside .diligent/ alongside sessions, memory, skills */
 const projectConfigPath = (root: string, dirName = ".diligent") => join(root, dirName, "config.jsonc");
 
 beforeEach(() => {
@@ -259,6 +259,35 @@ describe("loadDiligentConfig", () => {
 
     const { config } = await loadDiligentConfig(TEST_ROOT);
     expect(config.systemPrompt).toBe("prefix--suffix");
+  });
+
+  it("migrates the legacy knowledge key to memory on disk without dropping comments", async () => {
+    await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
+    await Bun.write(
+      projectConfigPath(TEST_ROOT),
+      `{\n  // keep me\n  "model": "${TEST_ANTHROPIC_MODEL_ID}",\n  "knowledge": { "nudgeInterval": 3 /* inner */ }\n}\n`,
+    );
+
+    const { config, sources } = await loadDiligentConfig(TEST_ROOT);
+
+    expect(sources).toEqual([projectConfigPath(TEST_ROOT)]);
+    expect(config.memory?.nudgeInterval).toBe(3);
+    expect(await Bun.file(projectConfigPath(TEST_ROOT)).text()).toBe(
+      `{\n  // keep me\n  "model": "${TEST_ANTHROPIC_MODEL_ID}",\n  "memory": { "nudgeInterval": 3 /* inner */ }\n}\n`,
+    );
+  });
+
+  it("drops the legacy knowledge key when memory is already configured", async () => {
+    await mkdir(join(TEST_HOME, ".diligent"), { recursive: true });
+    const globalPath = join(TEST_HOME, ".diligent", "config.jsonc");
+    await Bun.write(globalPath, `{ "memory": { "nudgeInterval": 5 }, "knowledge": { "nudgeInterval": 3 } }`);
+
+    const { config } = await loadDiligentConfig(TEST_ROOT);
+
+    expect(config.memory?.nudgeInterval).toBe(5);
+    const migrated = await Bun.file(globalPath).text();
+    expect(migrated).not.toContain("knowledge");
+    expect(migrated).toContain(`"memory": { "nudgeInterval": 5 }`);
   });
 
   it("invalid config file warns and is skipped", async () => {

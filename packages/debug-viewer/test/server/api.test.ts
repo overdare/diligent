@@ -82,9 +82,9 @@ describe("GET /api/sessions/:id/tree", () => {
   });
 });
 
-describe("GET /api/knowledge", () => {
-  test("returns knowledge entries", async () => {
-    const res = await handleRequest(makeReq("/api/knowledge"));
+describe("GET /api/memory", () => {
+  test("returns memory entries", async () => {
+    const res = await handleRequest(makeReq("/api/memory"));
     expect(res).not.toBeNull();
     expect(res!.status).toBe(200);
 

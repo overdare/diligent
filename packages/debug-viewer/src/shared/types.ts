@@ -1,6 +1,6 @@
 // Debug-viewer local DTOs (D095/DV-01):
 // - Core-level concepts may be mirrored by convention.
-// - Runtime session/knowledge types are intentionally NOT imported.
+// - Runtime session/memory types are intentionally NOT imported.
 // - Duplicate only fields required by debug-viewer UX/parsing.
 
 // Content blocks (mirrors core/src/types.ts)
@@ -189,8 +189,8 @@ export type SessionEntry =
   | SteeringEntry
   | ErrorEntry;
 
-// Knowledge (D081)
-export interface KnowledgeEntry {
+// Memory (D081)
+export interface MemoryEntry {
   id: string;
   timestamp: number;
   sessionId: string;

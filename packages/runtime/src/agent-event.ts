@@ -42,7 +42,7 @@ export type RuntimeAgentEvent =
   | ChildAgentEvent
   | { type: "status_change"; status: "idle" | "busy" }
   | { type: "usage"; usage: Usage; cost: number }
-  | { type: "knowledge_saved"; knowledgeId: string; content: string }
+  | { type: "memory_saved"; memoryId: string; content: string }
   | {
       type: "context_notice";
       source: string;

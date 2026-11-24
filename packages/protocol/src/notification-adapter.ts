@@ -57,11 +57,11 @@ export class ProtocolNotificationAdapter {
         return this.handleItemDelta(notification);
       case DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED:
         return this.handleItemCompleted(notification);
-      case DILIGENT_SERVER_NOTIFICATION_METHODS.KNOWLEDGE_SAVED:
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.MEMORY_SAVED:
         return [
           {
-            type: "knowledge_saved",
-            knowledgeId: notification.params.knowledgeId,
+            type: "memory_saved",
+            memoryId: notification.params.memoryId,
             content: notification.params.content,
           },
         ];

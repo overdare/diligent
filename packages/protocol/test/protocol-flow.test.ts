@@ -434,10 +434,10 @@ describe("protocol/flow", () => {
     ).toBe(true);
   });
 
-  it("accepts knowledge update (upsert/delete) request and response payloads", () => {
+  it("accepts memory update (upsert/delete) request and response payloads", () => {
     expect(
       DiligentClientRequestSchema.safeParse({
-        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
+        method: DILIGENT_CLIENT_REQUEST_METHODS.MEMORY_UPDATE,
         params: {
           action: "upsert",
           threadId: "th-1",
@@ -450,7 +450,7 @@ describe("protocol/flow", () => {
 
     expect(
       DiligentClientRequestSchema.safeParse({
-        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
+        method: DILIGENT_CLIENT_REQUEST_METHODS.MEMORY_UPDATE,
         params: {
           action: "upsert",
           threadId: "th-1",
@@ -464,7 +464,7 @@ describe("protocol/flow", () => {
 
     expect(
       DiligentClientRequestSchema.safeParse({
-        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
+        method: DILIGENT_CLIENT_REQUEST_METHODS.MEMORY_UPDATE,
         params: {
           action: "delete",
           threadId: "th-1",
@@ -475,7 +475,7 @@ describe("protocol/flow", () => {
 
     expect(
       DiligentClientResponseSchema.safeParse({
-        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
+        method: DILIGENT_CLIENT_REQUEST_METHODS.MEMORY_UPDATE,
         result: {
           entry: {
             id: "k-1",
@@ -490,7 +490,7 @@ describe("protocol/flow", () => {
 
     expect(
       DiligentClientResponseSchema.safeParse({
-        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
+        method: DILIGENT_CLIENT_REQUEST_METHODS.MEMORY_UPDATE,
         result: { deleted: true },
       }).success,
     ).toBe(true);

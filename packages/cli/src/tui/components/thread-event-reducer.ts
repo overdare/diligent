@@ -44,7 +44,7 @@ interface ThreadEventReducerDeps<TItem> {
     collabState?: CollabToolState,
   ) => string;
   buildCompactionItem: (event: Extract<AgentEvent, { type: "compaction_end" }>) => TItem;
-  buildKnowledgeSavedItem: () => TItem;
+  buildMemorySavedItem: () => TItem;
   buildContextNoticeItem: (event: Extract<AgentEvent, { type: "context_notice" }>) => TItem;
   buildErrorItem: (error: ClientError, timestamp: number) => TItem;
   buildThinkingItem: (text: string, elapsedMs?: number) => TItem;
@@ -408,14 +408,14 @@ export function reduceThreadEvent<TItem>(
       };
     }
 
-    case "knowledge_saved":
+    case "memory_saved":
       return {
         handled: true,
         requestRender: true,
         effects: [],
         state: {
           ...base,
-          items: [...state.items, deps.buildKnowledgeSavedItem()],
+          items: [...state.items, deps.buildMemorySavedItem()],
         },
       };
 

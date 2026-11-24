@@ -27,10 +27,10 @@ import type { PluginDiscoveryMode } from "./plugin-loader";
 import { createReadTool } from "./read";
 import { createReadImageTool } from "./read-image";
 import { createRequestUserInputTool } from "./request-user-input";
-import { createSearchKnowledgeTool } from "./search-knowledge";
+import { createSearchMemoryTool } from "./search-memory";
 import { ShellProcessRegistry } from "./shell-processes";
 import { createSkillTool } from "./skill";
-import { createUpdateKnowledgeTool } from "./update-knowledge";
+import { createUpdateMemoryTool } from "./update-memory";
 import { createWebTool } from "./web";
 
 export interface BuildDefaultToolsResult {
@@ -173,8 +173,8 @@ export async function buildDefaultTools(options: BuildDefaultToolsOptions): Prom
         }
 
         if (paths) {
-          builtinTools.push(createSearchKnowledgeTool(paths.knowledge));
-          builtinTools.push(createUpdateKnowledgeTool(paths.knowledge));
+          builtinTools.push(createSearchMemoryTool(paths.memory));
+          builtinTools.push(createUpdateMemoryTool(paths.memory));
         }
 
         return buildToolCatalog(builtinTools, toolsConfig, cwd, host, {

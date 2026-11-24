@@ -236,10 +236,10 @@ user-context injections, but cannot run tools, mutate Agent history directly, or
 protocol. A throwing loop hook is logged and disabled for that Agent without failing the turn.
 The built-in main-Agent plan reminder is enabled by default with a six-turn cadence. Set
 `planReminderIntervalTurns` to `0` to disable it or to another non-negative integer to tune the
-cadence. The built-in main-Agent knowledge reminder uses the same mechanism and is off by default: set
-`knowledge.nudgeInterval` to a positive integer to remind the model to record durable project knowledge with
-`update_knowledge` after that many agent turns without a successful `update_knowledge` call. It never fires only
-because the context was compacted, and `knowledge.enabled: false` turns it off.
+cadence. The built-in main-Agent memory reminder uses the same mechanism and is off by default: set
+`memory.nudgeInterval` to a positive integer to remind the model to record durable project memory with
+`update_memory` after that many agent turns without a successful `update_memory` call. It never fires only
+because the context was compacted, and `memory.enabled: false` turns it off.
 
 Built-in reminders use the same runtime hook. The hook counts agent turns, resets the cadence,
 and wraps reminder text in `<system-reminder>`. Each reminder policy supplies its own text,

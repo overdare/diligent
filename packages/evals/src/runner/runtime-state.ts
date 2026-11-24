@@ -90,11 +90,11 @@ export function checkRuntimeStatePolicy(
 function classifyRelativeStatePath(path: string): RuntimeStateCategory {
   if (path === "" || path === ".gitignore") return "infrastructure";
   const [top, second] = path.split("/");
-  if (["sessions", "images", "knowledge", "skills"].includes(top!) && second === undefined) return "infrastructure";
+  if (["sessions", "images", "memory", "skills"].includes(top!) && second === undefined) return "infrastructure";
   if (top === "sessions" && second === "blobs") return "image_sidecars";
   if (top === "sessions") return "sessions";
   if (top === "images") return "image_sidecars";
-  if (top === "knowledge") return "knowledge";
+  if (top === "memory") return "memory";
   if (top === "skills") return "skills";
   return "other";
 }

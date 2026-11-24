@@ -130,6 +130,46 @@ describe("appendEntry + readSessionFile", () => {
     const { entries } = await readSessionFile(path);
     expect(entries[1]).toEqual(assistant);
   });
+
+  it("reads legacy knowledge tool calls under the memory tool names", async () => {
+    const dir = await setupDir();
+    const { path } = await createSessionFile(dir, "/project");
+    const user = makeUserEntry();
+    const assistant = makeAssistantEntry(user.id);
+    if (assistant.message.role !== "assistant") throw new Error("expected assistant");
+    assistant.message.content = [
+      { type: "tool_call", id: "call-1", name: "update_knowledge", input: { action: "upsert" } },
+      { type: "tool_call", id: "call-2", name: "read", input: { path: "a" } },
+    ];
+    const result: SessionMessageEntry = {
+      type: "message",
+      id: generateEntryId(),
+      parentId: assistant.id,
+      timestamp: new Date().toISOString(),
+      message: {
+        role: "tool_result",
+        toolCallId: "call-1",
+        toolName: "update_knowledge",
+        output: "saved",
+        isError: false,
+        timestamp: Date.now(),
+      },
+    };
+
+    await appendEntry(path, user);
+    await appendEntry(path, assistant);
+    await appendEntry(path, result);
+
+    const { entries } = await readSessionFile(path);
+    const [, readAssistant, readResult] = entries;
+    if (readAssistant.type !== "message" || readAssistant.message.role !== "assistant") throw new Error("assistant");
+    if (readResult.type !== "message" || readResult.message.role !== "tool_result") throw new Error("tool_result");
+    expect(readAssistant.message.content).toEqual([
+      { type: "tool_call", id: "call-1", name: "update_memory", input: { action: "upsert" } },
+      { type: "tool_call", id: "call-2", name: "read", input: { path: "a" } },
+    ]);
+    expect(readResult.message.toolName).toBe("update_memory");
+  });
 });
 
 describe("readSessionFile validation", () => {

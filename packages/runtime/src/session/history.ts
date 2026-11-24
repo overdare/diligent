@@ -113,9 +113,36 @@ class ReverseLines {
   }
 }
 
-export function normalizePersistedModelRefs(entries: SessionEntry[]): SessionEntry[] {
+// Sessions recorded before the knowledge → memory rename name the memory tools by their former names.
+const LEGACY_TOOL_NAMES = new Map([
+  ["search_knowledge", "search_memory"],
+  ["update_knowledge", "update_memory"],
+]);
+
+function normalizeLegacyToolNames(entry: SessionEntry): SessionEntry {
+  if (entry.type !== "message") return entry;
+  const { message } = entry;
+  if (message.role === "tool_result") {
+    const toolName = LEGACY_TOOL_NAMES.get(message.toolName);
+    return toolName ? { ...entry, message: { ...message, toolName } } : entry;
+  }
+  if (
+    message.role !== "assistant" ||
+    !message.content.some((block) => block.type === "tool_call" && LEGACY_TOOL_NAMES.has(block.name))
+  ) {
+    return entry;
+  }
+  const content = message.content.map((block) => {
+    if (block.type !== "tool_call") return block;
+    const name = LEGACY_TOOL_NAMES.get(block.name);
+    return name ? { ...block, name } : block;
+  });
+  return { ...entry, message: { ...message, content } };
+}
+
+export function normalizePersistedEntries(entries: SessionEntry[]): SessionEntry[] {
   const normalized = entries.map((entry) => {
-    if (entry.type !== "model_change") return entry;
+    if (entry.type !== "model_change") return normalizeLegacyToolNames(entry);
     const provider = ProviderNameSchema.safeParse(entry.provider);
     const ref = normalizeLegacyModelRef(entry.modelId, provider.success ? provider.data : undefined);
     return { ...entry, provider: ref.provider, modelId: ref.modelId };
@@ -320,7 +347,7 @@ export async function readSessionHistoryPage(
     }
     return {
       header,
-      entries: normalizePersistedModelRefs(entries.reverse()),
+      entries: normalizePersistedEntries(entries.reverse()),
       nextCursor:
         parentId !== null && reader.offset > dataOffset
           ? Buffer.from(

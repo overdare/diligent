@@ -28,10 +28,10 @@ const result: ToolItem = {
   durationMs: 10,
   isError: false,
 };
-const context = (id: string): Extract<ThreadItem, { type: "knowledge" }> => ({
-  type: "knowledge",
+const context = (id: string): Extract<ThreadItem, { type: "memory" }> => ({
+  type: "memory",
   itemId: id,
-  knowledgeId: id,
+  memoryId: id,
   content: id,
 });
 const summary = (id: string, modified: string, messageCount?: number): SessionSummary => ({

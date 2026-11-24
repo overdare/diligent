@@ -9,7 +9,7 @@ This document describes the architecture that exists in the repository today. It
 The architecture is organized around four product goals:
 
 - **Continuity without hidden state** — long-running work should survive compaction, resume, and multi-turn collaboration.
-- **Project-local transparency** — sessions, knowledge, config, and instructions live with the project in `.diligent/`.
+- **Project-local transparency** — sessions, memory, config, and instructions live with the project in `.diligent/`.
 - **One runtime, multiple clients** — the CLI/TUI in this repository and external product hosts share the same backend behavior.
 - **Debuggable layers** — provider calls, tool execution, session persistence, and protocol traffic should be inspectable and testable.
 
@@ -26,7 +26,7 @@ The architecture is organized around four product goals:
 | Path | Responsibility |
 |---|---|
 | `packages/core` | Reusable agent engine: providers, model registry, agent loop, tool interfaces, shared LLM-facing types |
-| `packages/runtime` | Diligent runtime assembly: app server, sessions, tools, approval, knowledge, skills, config, collaboration |
+| `packages/runtime` | Diligent runtime assembly: app server, sessions, tools, approval, memory, skills, config, collaboration |
 | `packages/protocol` | Shared JSON-RPC method constants and schema-only frontend/backend contract |
 | `packages/plugin-sdk` | Public SDK types and contracts for external JavaScript tool plugins |
 | `packages/cli` | Bun CLI entrypoint, stdio app-server transport, TUI client |
@@ -40,7 +40,7 @@ The architecture is organized around four product goals:
 At a high level, Diligent is split into four layers:
 
 1. **Core engine** — model/provider abstraction, agent loop, tool contract
-2. **Runtime assembly** — session orchestration, prompt building, built-in tools, approvals, knowledge, collaboration
+2. **Runtime assembly** — session orchestration, prompt building, built-in tools, approvals, memory, collaboration
 3. **Protocol contract** — typed JSON-RPC requests, notifications, and shared data models
 4. **Thin clients** — CLI/TUI here; external product hosts
 
@@ -164,7 +164,7 @@ hosts and thin-client rendering remain outside its boundary and belong in siblin
 - built-in tools and plugin loading
 - config loading and system prompt construction
 - approval engine and user-input bridging
-- knowledge store and prompt injection
+- memory store and prompt injection
 - skill discovery and rendering
 - collaboration/sub-agent orchestration
 - Agent-scoped hook policy assembly and internal-context persistence/visibility
@@ -222,7 +222,7 @@ That loader is responsible for:
 - reading merged config sources
 - discovering `AGENTS.md` instructions
 - building the system prompt
-- loading knowledge for prompt injection
+- loading memory for prompt injection
 - discovering skills
 - constructing the `ProviderManager`
 - loading provider auth state
@@ -336,7 +336,7 @@ The effective prompt is assembled from:
 - environment variables such as current date, cwd, and platform
 - discovered `AGENTS.md` instructions
 - optional config-level custom instructions
-- ranked knowledge injection
+- ranked memory injection
 - discovered skills section
 - mode-specific suffixes (`default`, `plan`, `execute`)
 
@@ -394,8 +394,8 @@ Runtime assembles the default tool set, including:
 - `plan`
 - `skill`
 - `request_user_input`
-- `search_knowledge`
-- `update_knowledge` (when knowledge storage is available)
+- `search_memory`
+- `update_memory` (when memory storage is available)
 - collaboration tools such as `spawn_agent`, `wait`, `send_input`, `close_agent`
 
 Tool availability is mode-sensitive and config-sensitive.
@@ -475,26 +475,26 @@ Built-in tools read `RuntimeToolHost.approveWithOutcome`. `RuntimeToolHost.appro
 
 `request_user_input` is a general clarification tool, not an approval substitute. It pauses execution and asks the connected frontend to collect structured answers from the user.
 
-## Knowledge and Skills
+## Memory and Skills
 
-### Knowledge
+### Memory
 
-Knowledge is persisted separately from sessions and injected back into the system prompt.
+Memory is persisted separately from sessions and injected back into the system prompt.
 
-- storage: project-local JSONL
-- API surface: `knowledge/list` and `knowledge/update`
-- runtime tools: `search_knowledge` and `update_knowledge`
+- storage: project-local JSONL at `.<namespace>/memory/memory.jsonl`; startup moves a pre-rename `knowledge/knowledge.jsonl` there unless a memory store already exists
+- API surface: `memory/list` and `memory/update`
+- runtime tools: `search_memory` and `update_memory`
 - write actions: `upsert` and `delete`
 
-Knowledge ranking and injection are runtime concerns, not frontend concerns.
+Memory ranking and injection are runtime concerns, not frontend concerns.
 
-`packages/runtime/src/knowledge/repository.ts` owns every mutation and lookup. The `update_knowledge` / `search_knowledge` tools and the `knowledge/update` RPC call it, so agent and client writes follow the same rules: an explicit id updates or creates that entry, and restating an active entry with the same type and content without an id refreshes it instead of adding a duplicate.
+`packages/runtime/src/memory/repository.ts` owns every mutation and lookup. The `update_memory` / `search_memory` tools and the `memory/update` RPC call it, so agent and client writes follow the same rules: an explicit id updates or creates that entry, and restating an active entry with the same type and content without an id refreshes it instead of adding a duplicate.
 
-The store (`knowledge/store.ts`) serializes read-modify-write mutations per file within the process and replaces the file atomically. Lines that are not valid entries are skipped on read and preserved on rewrite, so one corrupt line never blocks agent creation or discards other entries. Separate processes writing the same project store are not coordinated.
+The store (`memory/store.ts`) serializes read-modify-write mutations per file within the process and replaces the file atomically. Lines that are not valid entries are skipped on read and preserved on rewrite, so one corrupt line never blocks agent creation or discards other entries. Separate processes writing the same project store are not coordinated.
 
-Startup and per-agent injection share `loadKnowledgeSection`.
+Startup and per-agent injection share `loadMemorySection`.
 
-Both automatic injection and `search_knowledge` exclude superseded entries. Injection ranks by confidence, then newest timestamp, and skips entries that exceed the remaining estimated token budget. The item limit counts entries actually included; if none fit, no knowledge section is injected.
+Both automatic injection and `search_memory` exclude superseded entries. Injection ranks by confidence, then newest timestamp, and skips entries that exceed the remaining estimated token budget. The item limit counts entries actually included; if none fit, no memory section is injected.
 
 Search supports exact IDs, ID prefixes, and case-insensitive Unicode keyword matching, including Korean. A supplied query with no searchable characters returns no matches rather than listing all entries.
 
@@ -510,7 +510,7 @@ The shared protocol is JSON-RPC based and currently includes requests such as:
 - threads: `thread/start`, `thread/resume`, `thread/list`, `thread/read`, `thread/delete`, `thread/compact/start`
 - turns: `turn/start`, `turn/interrupt`, `turn/steer`
 - thread state: `mode/set`, `effort/set`
-- knowledge: `knowledge/list`, `knowledge/update`
+- memory: `memory/list`, `memory/update`
 - tools: `tools/list`, `tools/set`
 - auth/config: `config/set`, `auth/list`, `auth/set`, `auth/remove`, `auth/oauth/start`
 - subscriptions: `thread/subscribe`, `thread/unsubscribe`
@@ -524,7 +524,7 @@ Server-driven protocol messages include:
 - item start/delta/completion notifications
 - turn completion/interruption notifications
 - approval and user-input server requests
-- usage, error, knowledge, steering, and collaboration notifications
+- usage, error, memory, steering, and collaboration notifications
 
 The protocol layer is shared by the TUI and product hosts, even if each client renders the data differently.
 
@@ -539,7 +539,7 @@ The pattern for extending the protocol with a new request/response pair has four
 3. **Implement the handler** — add a `handleXxx(ctx, params)` function to the appropriate handler file in `packages/runtime/src/app-server/`:
    - `thread-handlers.ts` — thread lifecycle (start, resume, list, delete, read, compact)
    - `config-handlers.ts` — config, auth, and image upload
-   - `knowledge-handlers.ts` — knowledge list and update
+   - `memory-handlers.ts` — memory list and update
    - Create a new `*-handlers.ts` file when the new area is distinct enough to warrant its own module.
 
 4. **Register the handler** — add a `case` branch in `packages/runtime/src/app-server/request-dispatcher.ts` that calls the handler and returns its result.
@@ -555,7 +555,7 @@ Project-local data is a first-class architectural decision.
 `.diligent/` is used for runtime data such as:
 
 - sessions
-- knowledge
+- memory
 - project config
 - generated ignore rules
 - persisted images and related runtime artifacts
