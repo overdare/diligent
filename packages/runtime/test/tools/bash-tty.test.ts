@@ -204,7 +204,7 @@ describe.if(posix)("bash tty", () => {
 describe("host-provided Bash terminal", () => {
   test.if(!posix)("without a backend, explicit requests fail instead of falling back to pipes", async () => {
     const { bash } = setup();
-    const background = restrictBash(bash, "background");
+    const background = restrictBash(bash, "background-or-private");
 
     for (const tool of [bash, background]) {
       expect(Object.keys(toToolInputSchema(tool).properties as object)).not.toContain("tty");
@@ -246,7 +246,7 @@ describe("host-provided Bash terminal", () => {
     expect(await bash.execute(bash.parseArgs!({ command: "unused", tty: true }), makeCtx())).toMatchObject({
       output: "native prompt",
     });
-    const background = restrictBash(bash, "background");
+    const background = restrictBash(bash, "background-or-private");
     const started = await background.execute(
       background.parseArgs!({ command: "unused", tty: true, yield_time_ms: 0 }),
       makeCtx(),

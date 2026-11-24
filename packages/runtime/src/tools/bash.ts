@@ -50,10 +50,17 @@ const AllBashParams = ForegroundBashParams.extend({
 });
 const PipedBashParams = AllBashParams.omit({ tty: true, interactive: true }) as typeof AllBashParams;
 const ForegroundOnlyBashParams = ForegroundBashParams.strict();
-const BackgroundBashParams = AllBashParams.omit({ interactive: true, timeout: true }).extend({
+const PipedBackgroundBashParams = AllBashParams.omit({ tty: true, interactive: true, timeout: true }).extend({
   yield_time_ms: yieldTime.describe("Return after this many milliseconds while the process keeps running."),
 });
-const PipedBackgroundBashParams = BackgroundBashParams.omit({ tty: true });
+const PRIVATE_BASH_DESCRIPTION =
+  "Open a private terminal for direct user input such as credentials. Set interactive: true; do not use yield_time_ms. The model receives command status only.";
+const PrivateBashParams = ForegroundBashParams.extend({
+  interactive: z.literal(true).describe("Open a private terminal for user input. Requires an interactive client."),
+}).strict();
+const CodeModeBashParams = AllBashParams.extend({
+  yield_time_ms: yieldTime.optional().describe("Required for a background command. Omit when interactive is true."),
+});
 const BashWaitParams = z.object({
   process_id: z.string().min(1).describe("ID returned by a yielded bash call in this session."),
   yield_time_ms: yieldTime.optional().describe("Maximum wait in ms (default 10000); use 0 to poll without waiting."),
@@ -94,17 +101,44 @@ export function isYieldingBash(tool: Tool): boolean {
   return tool.name === "bash" && (tool.parameters === AllBashParams || tool.parameters === PipedBashParams);
 }
 
-export function restrictBash(tool: Tool, mode: "foreground" | "background"): Tool {
+export function supportsPrivateBash(tool: Tool): boolean {
+  return tool.name === "bash" && tool.parameters === AllBashParams;
+}
+
+export function restrictBash(tool: Tool, mode: "foreground" | "background-or-private" | "private"): Tool {
   if (mode === "foreground") {
     return { ...tool, description: BASH_DESCRIPTION, parameters: ForegroundOnlyBashParams, parseArgs: undefined };
   }
-  const tty = tool.parameters === AllBashParams;
-  const parameters = tty ? BackgroundBashParams : PipedBackgroundBashParams;
+  if (mode === "private") {
+    return { ...tool, description: PRIVATE_BASH_DESCRIPTION, parameters: PrivateBashParams, parseArgs: undefined };
+  }
+  const backgroundDescription =
+    "Run a shell command in the background with yield_time_ms. Use bash_wait to read output, send stdin, or terminate it.";
+  if (!supportsPrivateBash(tool)) {
+    return {
+      ...tool,
+      description: backgroundDescription,
+      parameters: PipedBackgroundBashParams,
+      parseArgs: guardBashParams(PipedBackgroundBashParams, false, false),
+    };
+  }
+  const parse = guardBashParams(CodeModeBashParams, true, true);
   return {
     ...tool,
-    description: "Run a shell command in the background. Use bash_wait to read output, send stdin, or terminate it.",
-    parameters,
-    parseArgs: guardBashParams(parameters, tty, false),
+    description: `${backgroundDescription} ${PRIVATE_BASH_DESCRIPTION}`,
+    parameters: CodeModeBashParams,
+    parseArgs(raw) {
+      const args = parse(raw);
+      if (!args.interactive && args.yield_time_ms === undefined) {
+        throw new Error(
+          "Use yield_time_ms for background Bash, interactive: true for a private terminal, or tools.bash for ordinary foreground commands",
+        );
+      }
+      if (args.interactive && args.yield_time_ms !== undefined) {
+        throw new Error("A private terminal cannot run in the background");
+      }
+      return args;
+    },
   };
 }
 

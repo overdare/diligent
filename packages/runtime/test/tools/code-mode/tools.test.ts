@@ -493,6 +493,7 @@ describe("background dispatch", () => {
 describe.if(process.platform !== "win32")("nested bash", () => {
   test.each([
     ["tty", { tty: true }],
+    ["interactive", { interactive: true }],
     ["yield_time_ms", { yield_time_ms: 0 }],
   ] as const)("rejects %s inside exec while direct bash keeps it", async (key, extra) => {
     const registry = new ShellProcessRegistry();
@@ -508,6 +509,40 @@ describe.if(process.platform !== "win32")("nested bash", () => {
       expect(result.output).not.toContain("nested-ran");
       const direct = exposed.find((tool) => tool.name === "bash")!;
       expect(toToolInputSchema(direct).properties).toHaveProperty(key);
+    } finally {
+      await registry.dispose();
+    }
+  });
+
+  test.each([true, false])("only permits a direct private terminal with bash_wait enabled: %s", async (canYield) => {
+    const registry = new ShellProcessRegistry();
+    try {
+      const tools = createBashTools(process.cwd(), undefined, registry);
+      const { exposed } = setup(canYield ? tools : tools.slice(0, 1));
+      const direct = exposed.find((tool) => tool.name === "bash")!;
+      const allowed = await executeTool(
+        new Map([[direct.name, direct]]),
+        {
+          type: "tool_call",
+          id: "standalone",
+          name: "bash",
+          input: { command: "echo not-run", interactive: true },
+        },
+        makeCtx("standalone"),
+      );
+      expect(allowed.output).toContain("no client that supports private terminal input");
+      for (const input of [
+        { command: "echo not-run" },
+        { command: "echo not-run", interactive: true, yield_time_ms: 0 },
+      ]) {
+        const result = await executeTool(
+          new Map([[direct.name, direct]]),
+          { type: "tool_call", id: "rejected", name: "bash", input },
+          makeCtx("rejected"),
+        );
+        expect(result.metadata?.error).toBe(true);
+        expect(result.output).not.toContain("no client");
+      }
     } finally {
       await registry.dispose();
     }

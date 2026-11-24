@@ -103,9 +103,9 @@ and output are not model messages and are not recorded in thread history. The ag
 status only. Inspect the command before entering credentials: the CLI itself can still read or store them.
 
 The console belongs to the client connection that started the turn. Stopping the command, interrupting the
-turn, or disconnecting that client closes the PTY. This mode requires a supporting client and is unavailable
-without a PTY backend, in `tools.codeMode: "only"`, and for nested or background calls. `tty: true` without
-`interactive: true` is not private. Never send a credential via `bash_wait` or a chat question.
+turn, or disconnecting that client closes the PTY. This mode requires a supporting client and a PTY backend.
+It works in `tools.codeMode: "only"` through a direct `bash` call, not through `exec` or a background call.
+`tty: true` without `interactive: true` is not private. Never send a credential via `bash_wait` or a chat question.
 
 ## Bundled product tools
 
