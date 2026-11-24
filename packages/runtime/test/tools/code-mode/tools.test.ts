@@ -520,6 +520,11 @@ describe.if(process.platform !== "win32")("nested bash", () => {
       const tools = createBashTools(process.cwd(), undefined, registry);
       const { exposed } = setup(canYield ? tools : tools.slice(0, 1));
       const direct = exposed.find((tool) => tool.name === "bash")!;
+      const schema = toToolInputSchema(direct);
+      const branches = canYield ? (schema.anyOf as (typeof schema)[]) : [schema];
+      const privateBranch = branches.find((branch) => Object.hasOwn(branch.properties as object, "interactive"));
+      expect(privateBranch?.properties).toHaveProperty("interactive");
+      expect(privateBranch?.properties).not.toHaveProperty("yield_time_ms");
       const allowed = await executeTool(
         new Map([[direct.name, direct]]),
         {
