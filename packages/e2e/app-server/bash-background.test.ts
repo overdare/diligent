@@ -263,3 +263,128 @@ test.if(process.platform !== "win32")("child completion stops the child's backgr
     await app.close();
   }
 });
+
+/** Polls because process death has no event to await; a Linux zombie counts as dead because it cannot run. */
+async function waitUntilDead(pid: number): Promise<boolean> {
+  for (const deadline = Date.now() + 1000; Date.now() < deadline; await Bun.sleep(25)) {
+    try {
+      process.kill(pid, 0);
+      if (process.platform === "linux" && (await readFile(`/proc/${pid}/stat`, "utf8")).match(/\) Z /)) return true;
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+
+test.if(process.platform !== "win32")(
+  "a tty background command takes terminal input and its whole group stops with the thread",
+  async () => {
+    const app = await setup("on", createPermissionEngine([]));
+    const approved: string[] = [];
+    app.client.onServerRequest(async (request) => {
+      if (request.method !== "approval/request") throw new Error(`Unexpected request ${request.method}`);
+      approved.push(request.params.request.toolName);
+      return { method: request.method, result: { decision: "once" } };
+    });
+    try {
+      const threadId = await app.client.initAndStartThread(app.cwd);
+      const { item: started } = await app.call(threadId, {
+        id: "start-tty",
+        name: "bash",
+        input: {
+          command: [
+            `sh -c 'trap "" TERM HUP; echo $$ > stubborn.pid; exec sleep 30' &`,
+            `[ -t 0 ] && printf 'name? '`,
+            `read name`,
+            String.raw`printf '\033[32mhello %s\033[0m\n' "$name"`,
+            `wait`,
+          ].join("\n"),
+          tty: true,
+          yield_time_ms: 350,
+        },
+      });
+      expect(started.output).toContain("name? ");
+
+      const { item: answered } = await app.call(threadId, {
+        id: "answer",
+        name: "bash_wait",
+        input: { process_id: processId(started.output), input: "world\n", yield_time_ms: 350 },
+      });
+      expect(answered.output).toContain("hello world\n");
+      expect(answered.output).not.toContain("\x1b");
+      expect(approved).toEqual(["bash", "bash_wait"]);
+
+      const pid = Number(await readFile(join(app.cwd, "stubborn.pid"), "utf8"));
+      expect(pid).toBeGreaterThan(0);
+      await app.client.request("thread/delete", { threadId });
+      expect(await waitUntilDead(pid)).toBe(true);
+    } finally {
+      await app.close();
+    }
+  },
+);
+
+test.if(process.platform !== "win32")("private Bash input is not recorded", async () => {
+  const app = await setup();
+  const observer = createProtocolClient(app.server);
+  const token = "test-only-secret-its-value-must-not-enter-the-turn";
+  const callId = "private-console";
+  try {
+    await observer.request("initialize", {
+      clientName: "terminal-observer",
+      clientVersion: "test",
+      protocolVersion: 1,
+      interactiveTerminal: true,
+    });
+    await app.client.request("initialize", {
+      clientName: "terminal-test",
+      clientVersion: "test",
+      protocolVersion: 1,
+      interactiveTerminal: true,
+    });
+    const { threadId } = (await app.client.request("thread/start", { cwd: app.cwd })) as { threadId: string };
+    app.streams.set(
+      callId,
+      createToolUseStream(
+        [
+          {
+            id: callId,
+            name: "bash",
+            input: {
+              command: `printf 'Token: '; IFS= read -r token; printf '%s' "$token" > received; printf 'received %s\\n' "$token"`,
+              interactive: true,
+            },
+          },
+        ],
+        "done",
+      ),
+    );
+    const turn = app.client.sendTurnAndWait(threadId, callId);
+    const params = { threadId, toolCallId: callId, cursor: 0 };
+    let prompt = "";
+    const deadline = Date.now() + 2000;
+    while (!prompt.includes("Token: ")) {
+      if (Date.now() >= deadline) throw new Error("The private console did not show the CLI prompt");
+      const result = (await app.client.request("thread/terminal", params)) as { output: string };
+      prompt = result.output;
+      if (!prompt.includes("Token: ")) await Bun.sleep(25);
+    }
+    await observer.request("thread/subscribe", { threadId });
+    await observer.request("thread/resume", { threadId });
+    await expect(observer.request("thread/terminal", params)).rejects.toThrow("another connection");
+    await expect(observer.request("thread/terminal", { ...params, input: "wrong-user\n" })).rejects.toThrow(
+      "another connection",
+    );
+    await app.client.request("thread/terminal", { ...params, input: `${token}\n` });
+    const notifications = await turn;
+    expect(await readFile(join(app.cwd, "received"), "utf8")).toBe(token);
+    expect(JSON.stringify(notifications)).not.toContain(token);
+    const thread = (await app.client.request("thread/read", { threadId })) as ThreadReadResponse;
+    expect(JSON.stringify(thread)).not.toContain(token);
+    expect(thread.items).toContainEqual(expect.objectContaining({ toolCallId: callId, isError: false }));
+  } finally {
+    observer.close();
+    await app.close();
+  }
+});

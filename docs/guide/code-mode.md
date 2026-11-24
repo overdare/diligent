@@ -26,8 +26,10 @@ Direct-only tools never become nested: tools flagged `codeModeDirect` in `packag
 
 The `exec` description lists the direct-only tools and tells the model to call them directly. In `on` mode, `ALL_TOOLS` identifies which tools are callable inside `exec`; a tool's presence in the direct tool list does not imply it is nested-callable.
 
-Use direct `bash` with `yield_time_ms` and direct `bash_wait` for shell processes that must outlive a turn. Both are
-available in `only` mode when enabled there. A nested `tools.bash` call cannot yield independently of its `exec` cell.
+Use direct `bash` with `yield_time_ms` and direct `bash_wait` for shell processes that must outlive a turn.
+For a private foreground terminal, call `bash` directly with `interactive: true` and omit `yield_time_ms`.
+This works in `only` mode with a PTY backend and a client that supports private input. Nested `tools.bash` remains
+for ordinary foreground commands. It rejects `tty`, `interactive`, and `yield_time_ms`.
 
 Sub-agents spawned by collab tools apply the same `codeMode` to their own tool list. Each child has its own `CodeModeSession` (cells and `store`), kept across that child's turns and not shared with the parent. Children inherit the parent's direct tool list and wrap it themselves, so `exec`/`exec_wait` are never passed down.
 

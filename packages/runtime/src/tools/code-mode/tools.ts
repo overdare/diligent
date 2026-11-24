@@ -3,7 +3,7 @@
 import type { ToolGate } from "@diligent/core/agent";
 import type { Tool, ToolOutputFileStore, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
-import { hasBuiltinBashWait, isYieldingBash, restrictBash } from "../bash";
+import { hasBuiltinBashWait, isYieldingBash, restrictBash, supportsPrivateBash } from "../bash";
 import { createToolEndRenderPayloadFromInput } from "../render-strategies";
 import { TOOL_CAPABILITIES } from "../tool-metadata";
 import {
@@ -96,12 +96,15 @@ export function applyCodeMode(tools: Tool[], options: CodeModeAssemblyOptions): 
       (tool) =>
         tool.name !== EXEC_TOOL_NAME &&
         tool.name !== EXEC_WAIT_TOOL_NAME &&
-        (options.codeMode === "on" || !isNested(tool) || (canYieldBash && isYieldingBash(tool))),
+        (options.codeMode === "on" ||
+          !isNested(tool) ||
+          supportsPrivateBash(tool) ||
+          (canYieldBash && isYieldingBash(tool))),
     )
     .map((tool) => {
       if (isYieldingBash(tool)) {
-        if (!canYieldBash) tool = restrictBash(tool, "foreground");
-        else if (options.codeMode === "only") tool = restrictBash(tool, "background");
+        if (options.codeMode === "only") tool = restrictBash(tool, canYieldBash ? "background-or-private" : "private");
+        else if (!canYieldBash) tool = restrictBash(tool, "foreground");
       }
       return isNested(tool) ? gateDirectTool(tool, options.session.gate) : tool;
     });

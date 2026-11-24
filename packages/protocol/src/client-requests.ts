@@ -28,8 +28,30 @@ export const InitializeParamsSchema = z.object({
   clientName: z.string(),
   clientVersion: z.string(),
   protocolVersion: ProtocolVersionSchema.default(1),
+  interactiveTerminal: z.boolean().optional(),
 });
 export type InitializeParams = z.infer<typeof InitializeParamsSchema>;
+
+export const ThreadTerminalParamsSchema = z.object({
+  threadId: z.string().min(1),
+  toolCallId: z.string().min(1),
+  cursor: z.number().int().nonnegative(),
+  input: z
+    .string()
+    .max(16 * 1024)
+    .optional(),
+  cancel: z.literal(true).optional(),
+});
+export type ThreadTerminalParams = z.infer<typeof ThreadTerminalParamsSchema>;
+
+export const ThreadTerminalResponseSchema = z.object({
+  state: z.enum(["waiting", "running", "closed"]),
+  cursor: z.number().int().nonnegative(),
+  output: z.string(),
+  reset: z.boolean(),
+  backend: z.literal("conpty").optional(),
+});
+export type ThreadTerminalResponse = z.infer<typeof ThreadTerminalResponseSchema>;
 
 export const ModelInfoSchema = z.object({
   modelId: z.string().min(1),
@@ -691,6 +713,7 @@ export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME), params: ThreadResumeParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST), params: ThreadListParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ), params: ThreadReadParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_TERMINAL), params: ThreadTerminalParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY), params: ThreadHistoryParamsSchema }),
   z.object({
     method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START),
@@ -761,6 +784,10 @@ export const DiligentClientResponseSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME), result: ThreadResumeResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST), result: ThreadListResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ), result: ThreadReadResponseSchema }),
+  z.object({
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_TERMINAL),
+    result: ThreadTerminalResponseSchema,
+  }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_HISTORY), result: ThreadHistoryResponseSchema }),
   z.object({
     method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START),

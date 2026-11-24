@@ -341,6 +341,7 @@ export interface CreateAppServerConfigOptions {
   transformTools?: (tools: Tool[], context: { cwd: string; mode: Mode; provider: ProviderName }) => Tool[];
   /** Optional assembly-owned store for full tool outputs; defaults to the production runtime store. */
   toolOutputStore?: ToolOutputFileStore;
+  terminalSpawner?: DiligentAppServerConfig["terminalSpawner"];
   overrides?: Partial<
     Pick<
       DiligentAppServerConfig,
@@ -406,6 +407,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
   const config: DiligentAppServerConfig = {
     cwd,
     pluginDiscovery,
+    terminalSpawner: opts.terminalSpawner,
     defaultEffort: initialEffort,
     getInitializeResult: async () => {
       return {

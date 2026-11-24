@@ -9,9 +9,12 @@ import {
   type ToolRegistry,
   type ToolResult,
   type ToolRunScope,
+  toToolInputSchema,
 } from "@diligent/core/tool-contract";
 import { applyCodeMode, type CodeModeResultMetadata, CodeModeSession } from "@diligent/runtime/tools";
 import { z } from "zod";
+import { createBashTools } from "../../../src/tools/bash";
+import { ShellProcessRegistry } from "../../../src/tools/shell-processes";
 
 const sessions: CodeModeSession[] = [];
 
@@ -484,5 +487,73 @@ describe("background dispatch", () => {
     release.resolve();
     expect((await next).output).toBe("edited:next");
     await run.close();
+  });
+});
+
+describe.if(process.platform !== "win32")("nested bash", () => {
+  test.each([
+    ["tty", { tty: true }],
+    ["interactive", { interactive: true }],
+    ["yield_time_ms", { yield_time_ms: 0 }],
+  ] as const)("rejects %s inside exec while direct bash keeps it", async (key, extra) => {
+    const registry = new ShellProcessRegistry();
+    try {
+      const { exposed, exec } = setup(createBashTools(process.cwd(), undefined, registry), "on");
+      const args = JSON.stringify({ command: "printf nested-ran", ...extra });
+      const result = await exec.execute(
+        { code: `try { text(await tools.bash(${args})); } catch (error) { text(error.message); }` },
+        makeCtx("call-1"),
+      );
+
+      expect(result.output).toContain(`Unrecognized key: "${key}"`);
+      expect(result.output).not.toContain("nested-ran");
+      const direct = exposed.find((tool) => tool.name === "bash")!;
+      const schema = toToolInputSchema(direct);
+      const branches = (schema.anyOf ?? [schema]) as (typeof schema)[];
+      const directBranch = branches.find((branch) => Object.hasOwn(branch.properties as object, key));
+      expect(directBranch?.properties).toHaveProperty(key);
+      if (key === "interactive") expect(directBranch?.properties).not.toHaveProperty("yield_time_ms");
+    } finally {
+      await registry.dispose();
+    }
+  });
+
+  test.each([true, false])("only permits a direct private terminal with bash_wait enabled: %s", async (canYield) => {
+    const registry = new ShellProcessRegistry();
+    try {
+      const tools = createBashTools(process.cwd(), undefined, registry);
+      const { exposed } = setup(canYield ? tools : tools.slice(0, 1));
+      const direct = exposed.find((tool) => tool.name === "bash")!;
+      const schema = toToolInputSchema(direct);
+      const branches = canYield ? (schema.anyOf as (typeof schema)[]) : [schema];
+      const privateBranch = branches.find((branch) => Object.hasOwn(branch.properties as object, "interactive"));
+      expect(privateBranch?.properties).toHaveProperty("interactive");
+      expect(privateBranch?.properties).not.toHaveProperty("yield_time_ms");
+      const allowed = await executeTool(
+        new Map([[direct.name, direct]]),
+        {
+          type: "tool_call",
+          id: "standalone",
+          name: "bash",
+          input: { command: "echo not-run", interactive: true },
+        },
+        makeCtx("standalone"),
+      );
+      expect(allowed.output).toContain("no client that supports private terminal input");
+      for (const input of [
+        { command: "echo not-run" },
+        { command: "echo not-run", interactive: true, yield_time_ms: 0 },
+      ]) {
+        const result = await executeTool(
+          new Map([[direct.name, direct]]),
+          { type: "tool_call", id: "rejected", name: "bash", input },
+          makeCtx("rejected"),
+        );
+        expect(result.metadata?.error).toBe(true);
+        expect(result.output).not.toContain("no client");
+      }
+    } finally {
+      await registry.dispose();
+    }
   });
 });

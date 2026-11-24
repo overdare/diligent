@@ -33,6 +33,7 @@ import { BottomPane } from "./components/bottom-pane";
 import { ChatView } from "./components/chat-view";
 import type { ConfirmDialogOptions } from "./components/confirm-dialog";
 import { InputEditor } from "./components/input-editor";
+import { PrivateTerminal } from "./components/private-terminal";
 import { StatusBar } from "./components/status-bar";
 import { type ConfigManager, createConfigManager } from "./config-manager";
 import { Container } from "./framework/container";
@@ -77,6 +78,7 @@ export class App {
 
   // State
   private rpcClient: SpawnedAppServer | null = null;
+  private readonly privateTerminals = new Map<string, PrivateTerminal>();
   private goalSync?: ReturnType<typeof startGoalSync>;
   private goalTimer?: ReturnType<typeof setInterval>;
   private runtime: AppRuntimeState;
@@ -457,6 +459,8 @@ export class App {
         this.renderer.requestRender();
         continue;
       }
+      const terminal = this.privateTerminals.values().next().value;
+      if (terminal?.sendKey(seq)) continue;
 
       // Shift+Tab: cycle collaboration mode
       if (matchesKey(seq, "shift+tab")) {
@@ -496,7 +500,41 @@ export class App {
     }
   }
 
+  private updatePrivateTerminal(event: AgentEvent): void {
+    if (event.type === "tool_end") {
+      const terminal = this.privateTerminals.get(event.toolCallId);
+      if (!terminal) return;
+      terminal.stop();
+      this.privateTerminals.delete(event.toolCallId);
+      this.root.removeChild(terminal);
+      this.renderer.requestRender();
+      return;
+    }
+
+    if (event.type !== "tool_start" || event.toolName !== "bash") return;
+    if (event.parentToolCallId || event.childThreadId) return;
+
+    const { input, toolCallId } = event;
+    if (typeof input !== "object" || input === null) return;
+    if (!("interactive" in input) || input.interactive !== true) return;
+
+    const rpc = this.rpcClient;
+    const threadId = this.runtime.currentThreadId;
+    if (!rpc || !threadId) return;
+
+    const terminal = new PrivateTerminal(
+      toolCallId,
+      threadId,
+      (params) => rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_TERMINAL, params),
+      () => this.renderer.requestRender(),
+    );
+    this.privateTerminals.set(toolCallId, terminal);
+    this.root.insertBefore(terminal, this.bottomPane);
+  }
+
   private handleAgentEvent(event: AgentEvent): void {
+    this.updatePrivateTerminal(event);
+
     if (event.type === "compaction_start") {
       this.beginCompactionIndicator(event.estimatedTokens);
       return;
