@@ -124,7 +124,7 @@ describe("memory", () => {
     ).rejects.toThrow("Invalid memory id");
   });
 
-  test("a running thread sees memory another agent changed before its next turn", async () => {
+  test("a running thread sees memory another agent changed before its next turn and is told once", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-memory-"));
     const paths = await ensureDiligentDir(tmpDir);
     await writeFile(
@@ -135,15 +135,20 @@ describe("memory", () => {
       join(paths.memory, "MEMORY.md"),
       "# Memory Index\n\n- [Combat damage](combat-damage.md) — HP bar first\n",
     );
-    const promptsSeen: string[] = [];
+    const seen: Array<{ system: string; messages: string }> = [];
     const reply = createSimpleStream("ok");
     const streamFunction: StreamFunction = (model, context, options) => {
-      promptsSeen.push(context.systemPrompt.map((section) => section.content).join("\n"));
+      seen.push({
+        system: context.systemPrompt.map((section) => section.content).join("\n"),
+        messages: JSON.stringify(context.messages),
+      });
       return reply(model, context, options);
     };
     const server = createTestServer({ cwd: tmpDir, streamFunction, runtimeToolsConfig: {} });
     client = createProtocolClient(server);
     const threadId = await client.initAndStartThread(tmpDir);
+    const notice = "Project memory changed since your previous turn";
+    const count = (text: string) => text.split(notice).length - 1;
 
     await client.sendTurnAndWait(threadId, "first");
     await writeFile(
@@ -151,10 +156,16 @@ describe("memory", () => {
       "# Memory Index\n\n- [Combat damage](combat-damage.md) — Floating damage numbers replace the HP bar\n",
     );
     await client.sendTurnAndWait(threadId, "second");
+    await client.sendTurnAndWait(threadId, "third");
 
-    expect(promptsSeen).toHaveLength(2);
-    expect(promptsSeen[0]).toContain("HP bar first");
-    expect(promptsSeen[1]).toContain("Floating damage numbers replace the HP bar");
-    expect(promptsSeen[1]).not.toContain("HP bar first");
+    expect(seen).toHaveLength(3);
+    expect(seen[0].system).toContain("HP bar first");
+    expect(seen[1].system).toContain("Floating damage numbers replace the HP bar");
+    expect(seen[1].system).not.toContain("HP bar first");
+    expect(count(seen[0].messages)).toBe(0);
+    expect(count(seen[1].messages)).toBe(1);
+    expect(seen[1].messages).toContain("Floating damage numbers replace the HP bar");
+    // An unchanged index adds no further notice; the earlier one stays in history.
+    expect(count(seen[2].messages)).toBe(1);
   });
 });
