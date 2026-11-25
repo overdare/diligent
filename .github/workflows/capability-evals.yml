@@ -1,0 +1,98 @@
+name: Model Capability Evals
+
+on:
+  # TEMPORARY: pre-merge live run on this branch only. Remove before merge.
+  push:
+    branches: [feat/model-capability-matrix]
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "Provider filter; all runs every OpenAI, Anthropic, and Gemini catalog model"
+        required: true
+        type: choice
+        options: [all, openai, anthropic, gemini]
+        default: all
+      capability:
+        description: "Optional capability: basic_response, web_search, image_read, image_generation, or compaction"
+        required: false
+        type: string
+      model:
+        description: "Optional single model ID within the selected provider"
+        required: false
+        type: string
+      seed:
+        description: "Optional recorded root seed"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      artifact_retention_days:
+        required: false
+        type: number
+        default: 90
+    secrets:
+      OPENAI_API_KEY:
+        required: true
+      ANTHROPIC_API_KEY:
+        required: true
+      GEMINI_API_KEY:
+        required: true
+
+concurrency:
+  group: ${{ github.repository }}-model-evals
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  capabilities:
+    name: Capability matrix (${{ matrix.provider }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: ${{ fromJSON((inputs.provider || 'all') == 'all' && '["openai","anthropic","gemini"]' || format('["{0}"]', inputs.provider)) }}
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      EVAL_CAPABILITY: ${{ inputs.capability || '' }}
+      EVAL_MODEL: ${{ inputs.model || '' }}
+      EVAL_SEED: ${{ inputs.seed || '' }}
+      REPORT_PATH: artifacts/evals/capabilities-${{ matrix.provider }}.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.5
+
+      - run: bun install --frozen-lockfile
+
+      - name: Run capability matrix
+        shell: bash
+        run: |
+          args=(capabilities --provider "${{ matrix.provider }}" --report "$REPORT_PATH")
+          if [ -n "$EVAL_CAPABILITY" ]; then
+            args+=(--capability "$EVAL_CAPABILITY")
+          fi
+          if [ -n "$EVAL_MODEL" ]; then
+            args+=(--model "$EVAL_MODEL")
+          fi
+          if [ -n "$EVAL_SEED" ]; then
+            args+=(--seed "$EVAL_SEED")
+          fi
+          bun run eval "${args[@]}"
+
+      - name: Upload capability report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capability-evals-${{ matrix.provider }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/evals/capabilities-${{ matrix.provider }}.*
+          if-no-files-found: warn
+          retention-days: ${{ inputs.artifact_retention_days || 30 }}

@@ -1,7 +1,8 @@
-// @summary Resolves default or filtered provider profiles and credentials
+// @summary Resolves default, filtered, or catalog-wide provider profiles and credentials
 
 import {
   getDefaultModelRef,
+  listModels,
   resolveModel,
   resolveModelSelector,
   supportsThinkingEffort,
@@ -16,10 +17,19 @@ import type { EvalProfile, EvalProvider } from "./task";
 
 const EVAL_EFFORT = "medium" as const;
 
+const API_KEY_ENV: Record<Exclude<EvalProvider, "chatgpt">, string> = {
+  openai: "OPENAI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  gemini: "GEMINI_API_KEY",
+};
+
 export const DEFAULT_PROFILES: readonly EvalProfile[] = [
   { provider: "openai", model: "gpt-6.1-terra", effort: EVAL_EFFORT },
   { provider: "anthropic", model: "claude-sonnet-5", effort: EVAL_EFFORT },
 ];
+
+/** API-key providers whose whole catalog the capability matrix covers unless a provider is selected. */
+export const CAPABILITY_DEFAULT_PROVIDERS: readonly EvalProvider[] = ["openai", "anthropic", "gemini"];
 
 export function resolveSelectedProfiles(options: EvalCliOptions): EvalProfile[] {
   if (options.model) {
@@ -46,16 +56,29 @@ export function resolveSelectedProfiles(options: EvalCliOptions): EvalProfile[] 
   });
 }
 
+/** Every catalog model of the selected providers, or the one selected model. */
+export function resolveCapabilityProfiles(options: EvalCliOptions): EvalProfile[] {
+  if (options.model) return resolveSelectedProfiles(options);
+  const providers = options.provider ? [options.provider] : CAPABILITY_DEFAULT_PROVIDERS;
+  return providers.flatMap((provider) =>
+    listModels(provider).map((model) => {
+      validateMediumEffort(model);
+      return { provider, model: model.modelId, effort: EVAL_EFFORT };
+    }),
+  );
+}
+
+/** Name of the unset API-key variable a provider needs; ChatGPT uses OAuth and never reads one. */
+export function missingApiKey(provider: EvalProvider, env: EvalCredentialEnv = process.env): string | undefined {
+  if (provider === "chatgpt") return undefined;
+  const name = API_KEY_ENV[provider];
+  return env[name]?.trim() ? undefined : name;
+}
+
 export function validateCredentials(profiles: readonly EvalProfile[], env: EvalCredentialEnv = process.env): void {
-  const required = new Set(profiles.map((profile) => profile.provider));
-  if (required.has("openai") && !env.OPENAI_API_KEY?.trim()) {
-    throw new Error("OPENAI_API_KEY is required for the selected eval profiles.");
-  }
-  if (required.has("anthropic") && !env.ANTHROPIC_API_KEY?.trim()) {
-    throw new Error("ANTHROPIC_API_KEY is required for the selected eval profiles.");
-  }
-  if (required.has("gemini") && !env.GEMINI_API_KEY?.trim()) {
-    throw new Error("GEMINI_API_KEY is required for the selected eval profiles.");
+  for (const provider of new Set(profiles.map((profile) => profile.provider))) {
+    const missing = missingApiKey(provider, env);
+    if (missing) throw new Error(`${missing} is required for the selected eval profiles.`);
   }
 }
 
@@ -71,12 +94,21 @@ export function createProfileStream(
   return chatgptAuth.streamFunction;
 }
 
+/**
+ * Binds ChatGPT OAuth, and with `apiKeyEnv` also registers the profile's API key so runtime paths that resolve
+ * credentials through ProviderManager (native compaction, image generation) behave as in the product.
+ */
 export function configureProfileProviderManager(
   profile: EvalProfile,
   manager: ProviderManager,
   chatgptAuth?: ChatGPTEvalAuth,
+  options: { apiKeyEnv?: EvalCredentialEnv } = {},
 ): void {
-  if (profile.provider !== "chatgpt") return;
+  if (profile.provider !== "chatgpt") {
+    const apiKey = options.apiKeyEnv?.[API_KEY_ENV[profile.provider]]?.trim();
+    if (apiKey) manager.setApiKey(profile.provider, apiKey);
+    return;
+  }
   if (!chatgptAuth) throw new Error("ChatGPT eval profiles require initialized local OAuth.");
   chatgptAuth.bindProviderManager(manager);
 }

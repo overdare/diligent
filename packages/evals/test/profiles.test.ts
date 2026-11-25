@@ -1,20 +1,23 @@
-// @summary Tests default profile selection and early credential validation
+// @summary Tests default and catalog-wide profile selection, credential validation, and provider binding
 
 import { describe, expect, test } from "bun:test";
-import { getDefaultModelRef } from "@diligent/core/model-registry";
+import { getDefaultModelRef, listModels } from "@diligent/core/model-registry";
 import { ProviderManager } from "@diligent/core/provider-contract";
 import type { EvalCliOptions } from "../src/cli-options";
 import {
+  CAPABILITY_DEFAULT_PROVIDERS,
   configureProfileProviderManager,
   createProfileStream,
   DEFAULT_PROFILES,
   isEvalProvider,
+  missingApiKey,
+  resolveCapabilityProfiles,
   resolveSelectedProfiles,
   validateCredentials,
 } from "../src/profiles";
 import type { ChatGPTEvalAuth } from "../src/providers/chatgpt-oauth";
 
-const BASE_OPTIONS: EvalCliOptions = { suite: "core", help: false };
+const BASE_OPTIONS: EvalCliOptions = { command: "core", help: false };
 
 describe("eval profiles", () => {
   test("default mode returns both profiles", () => {
@@ -101,5 +104,48 @@ describe("eval profiles", () => {
     const manager = new ProviderManager({});
     configureProfileProviderManager(profile, manager, auth);
     expect(manager.getApiKey("openai")).toBe("bound");
+  });
+
+  test("the capability matrix covers every catalog model of the API-key providers by default", () => {
+    const profiles = resolveCapabilityProfiles({ command: "capabilities", help: false });
+    const expected = CAPABILITY_DEFAULT_PROVIDERS.flatMap((provider) =>
+      listModels(provider).map((model) => `${provider}/${model.modelId}`),
+    );
+    expect(profiles.map((profile) => `${profile.provider}/${profile.model}`)).toEqual(expected);
+    expect(profiles.some((profile) => profile.provider === "chatgpt")).toBe(false);
+  });
+
+  test("a capability provider filter selects that provider's whole catalog", () => {
+    const profiles = resolveCapabilityProfiles({ command: "capabilities", provider: "chatgpt", help: false });
+    expect(profiles.map((profile) => profile.model)).toEqual(listModels("chatgpt").map((model) => model.modelId));
+  });
+
+  test("capability runs report missing API keys per provider and never need one for ChatGPT", () => {
+    expect(missingApiKey("anthropic", { OPENAI_API_KEY: "openai" })).toBe("ANTHROPIC_API_KEY");
+    expect(missingApiKey("openai", { OPENAI_API_KEY: "openai" })).toBeUndefined();
+    expect(missingApiKey("chatgpt", {})).toBeUndefined();
+  });
+
+  test("binds the profile API key into ProviderManager for product-equivalent runtime paths", () => {
+    const manager = new ProviderManager({});
+    configureProfileProviderManager(
+      { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
+      manager,
+      undefined,
+      {
+        apiKeyEnv: { ANTHROPIC_API_KEY: "anthropic-key", OPENAI_API_KEY: "openai-key" },
+      },
+    );
+    expect(manager.getConfiguredProviders()).toEqual(["anthropic"]);
+  });
+
+  test("a ChatGPT profile never falls back to an available OpenAI API key", () => {
+    const auth = { bindProviderManager: () => {} } as unknown as ChatGPTEvalAuth;
+    const manager = new ProviderManager({});
+    configureProfileProviderManager({ provider: "chatgpt", model: "gpt-6-astra", effort: "medium" }, manager, auth, {
+      apiKeyEnv: { OPENAI_API_KEY: "openai-key" },
+    });
+    expect(manager.getApiKey("openai")).toBeUndefined();
+    expect(manager.getApiKey("chatgpt")).toBeUndefined();
   });
 });

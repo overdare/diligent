@@ -455,6 +455,7 @@ export async function runRuntimeEvalExecution(input: {
         execution,
         task.limits,
         task.statePolicy ?? { allowedMutations: ["infrastructure", "sessions"] },
+        { normalizeStreamedText: (text) => normalizeWorkspaceEvidence(text, root, outputRoot) },
       ),
     );
     if (termination === "completed") {
