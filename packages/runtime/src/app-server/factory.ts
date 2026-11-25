@@ -5,7 +5,7 @@ import type { ProviderName, SystemSection } from "@diligent/core/provider-contra
 import { resolveMaxTokens } from "@diligent/core/provider-contract";
 import type { Tool, ToolOutputFileStore } from "@diligent/core/tool-contract";
 import { createLogger } from "@diligent/logging";
-import { createKnowledgeNudge } from "../agent/knowledge-nudge";
+import { createMemoryNudge } from "../agent/memory-nudge";
 import {
   EXECUTE_MODE_DISALLOWED_TOOLS,
   MODE_SYSTEM_PROMPT_SUFFIXES,
@@ -21,7 +21,7 @@ import { loadRuntimeConfig, type RuntimeConfig } from "../config/runtime";
 import { getGlobalConfigPath, saveGlobalModel } from "../config/writer";
 import { createGoalContextHook } from "../goals/tools";
 import { createLocalImageLoader, type DiligentPaths, ensureDiligentDir, toolOutputStore } from "../infrastructure";
-import { loadKnowledgeSection } from "../knowledge";
+import { loadMemorySection } from "../memory";
 import { withToolInstructions } from "../prompt/tool-instructions";
 import { discoverSkills } from "../skills";
 import {
@@ -68,27 +68,27 @@ function applyModeToPrompt(mode: Mode, systemPrompt: RuntimeConfig["systemPrompt
 }
 
 /**
- * Read the persistent knowledge store at agent creation time, so every newly started session
- * receives knowledge saved after the app server itself started.
+ * Read the persistent memory store at agent creation time, so every newly started session
+ * receives memory saved after the app server itself started.
  */
-async function withLatestKnowledge(
+async function withLatestMemory(
   systemPrompt: SystemSection[],
   paths: DiligentPaths,
-  knowledgeConfig: RuntimeConfig["diligent"]["knowledge"],
+  memoryConfig: RuntimeConfig["diligent"]["memory"],
 ): Promise<SystemSection[]> {
-  const withoutKnowledge = systemPrompt.filter((section) => section.label !== "knowledge");
-  const content = await loadKnowledgeSection(paths.knowledge, knowledgeConfig);
-  if (!content) return withoutKnowledge;
+  const withoutMemory = systemPrompt.filter((section) => section.label !== "memory");
+  const content = await loadMemorySection(paths.memory, memoryConfig);
+  if (!content) return withoutMemory;
 
-  const knowledgeSection: SystemSection = {
-    tag: "knowledge",
-    label: "knowledge",
+  const memorySection: SystemSection = {
+    tag: "memory",
+    label: "memory",
     content,
     cacheControl: "ephemeral",
   };
-  const baseIndex = withoutKnowledge.findIndex((section) => section.label === "base");
+  const baseIndex = withoutMemory.findIndex((section) => section.label === "base");
   const insertAt = baseIndex < 0 ? 0 : baseIndex + 1;
-  return [...withoutKnowledge.slice(0, insertAt), knowledgeSection, ...withoutKnowledge.slice(insertAt)];
+  return [...withoutMemory.slice(0, insertAt), memorySection, ...withoutMemory.slice(insertAt)];
 }
 
 export function filterToolsByMode(mode: Mode, tools: Awaited<ReturnType<typeof buildDefaultTools>>["tools"]) {
@@ -278,10 +278,10 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
   const { cwd, mode, effort, fastMode, model: modelRef } = request;
   const model = resolveModel(modelRef);
   const activeMode = (mode ?? "default") as Mode;
-  const systemPrompt = await withLatestKnowledge(
+  const systemPrompt = await withLatestMemory(
     withSkillGuardrail(runtimeConfig),
     await getPaths(),
-    runtimeConfig.diligent.knowledge,
+    runtimeConfig.diligent.memory,
   );
   const { tools, registry, codeModeSession, availableTools } = await buildRuntimeAgentTools(args, systemPrompt);
   // Tool assembly syncs MCP auth first; read that same cached status for the prompt note.
@@ -290,14 +290,14 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
     model.provider as ProviderName,
   );
   const loopHookLogger = logger.child({ scope: "runtime.agent.loop-hooks" });
-  const { planIntervalTurns, knowledgeIntervalTurns } = runtimeConfig.reminders;
+  const { planIntervalTurns, memoryIntervalTurns } = runtimeConfig.reminders;
   const loopHooks = [
     ...(request.goalHost ? [createGoalContextHook(request.goalHost)] : []),
     ...(planIntervalTurns > 0
       ? [createReminderHook({ intervalTurns: planIntervalTurns, policy: createPlanReminder(loopHookLogger) })]
       : []),
-    ...(knowledgeIntervalTurns > 0
-      ? [createReminderHook({ intervalTurns: knowledgeIntervalTurns, policy: createKnowledgeNudge(loopHookLogger) })]
+    ...(memoryIntervalTurns > 0
+      ? [createReminderHook({ intervalTurns: memoryIntervalTurns, policy: createMemoryNudge(loopHookLogger) })]
       : []),
     ...createBundledAgentLoopHooks(bundledToolProviders, {
       cwd,

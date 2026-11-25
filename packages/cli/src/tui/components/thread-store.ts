@@ -245,9 +245,9 @@ export class ThreadStore {
           ],
         };
       },
-      buildKnowledgeSavedItem: () => ({
+      buildMemorySavedItem: () => ({
         kind: "plain" as const,
-        lines: [`${t.success}⏺${t.reset} ${t.dim}knowledge saved${t.reset}`],
+        lines: [`${t.success}⏺${t.reset} ${t.dim}memory saved${t.reset}`],
       }),
       buildContextNoticeItem: (event: Extract<AgentEvent, { type: "context_notice" }>) => ({
         kind: "plain" as const,

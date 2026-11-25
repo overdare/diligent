@@ -1,11 +1,11 @@
-// @summary REST API endpoint handlers for sessions, search, and knowledge queries
+// @summary REST API endpoint handlers for sessions, search, and memory queries
 
 import { findModel } from "@diligent/core/model-registry";
 import { createLogger, type Logger } from "@diligent/logging";
 import { readdirSync } from "fs";
 import { join } from "path";
 import type {
-  KnowledgeResponse,
+  MemoryResponse,
   SearchResponse,
   SearchResult,
   SessionDataResponse,
@@ -13,7 +13,7 @@ import type {
   SessionTreeResponse,
   UsageSummaryResponse,
 } from "../shared/protocol.js";
-import type { AssistantMessageEntry, KnowledgeEntry, SessionEntry, UsageSummary } from "../shared/types.js";
+import type { AssistantMessageEntry, MemoryEntry, SessionEntry, UsageSummary } from "../shared/types.js";
 import { buildTree, extractSessionMeta, parseSessionFile } from "./parser.js";
 
 const apiLogger = createLogger({
@@ -53,7 +53,7 @@ function calculateUsageCost(
 
 export function createApiHandler(dataDir: string, logger: Logger = apiLogger) {
   const sessionsDir = join(dataDir, "sessions");
-  const knowledgeDir = join(dataDir, "knowledge");
+  const memoryDir = join(dataDir, "memory");
 
   async function listSessions(): Promise<SessionListResponse> {
     let files: string[];
@@ -104,20 +104,20 @@ export function createApiHandler(dataDir: string, logger: Logger = apiLogger) {
     }
   }
 
-  async function getKnowledge(): Promise<KnowledgeResponse> {
-    const filePath = join(knowledgeDir, "knowledge.jsonl");
+  async function getMemory(): Promise<MemoryResponse> {
+    const filePath = join(memoryDir, "memory.jsonl");
     try {
       const file = Bun.file(filePath);
       const text = await file.text();
-      const entries: KnowledgeEntry[] = [];
+      const entries: MemoryEntry[] = [];
       for (const line of text.split("\n")) {
         const trimmed = line.trim();
         if (!trimmed) continue;
         try {
           entries.push(JSON.parse(trimmed));
         } catch (error) {
-          logger.warn("knowledge_jsonl_line_parse_failed", {
-            message: "Failed to parse knowledge JSONL line.",
+          logger.warn("memory_jsonl_line_parse_failed", {
+            message: "Failed to parse memory JSONL line.",
             error,
             fields: { line: trimmed.slice(0, 80), filePath },
           });
@@ -360,8 +360,8 @@ export function createApiHandler(dataDir: string, logger: Logger = apiLogger) {
       return Response.json(data);
     }
 
-    if (path === "/api/knowledge" && req.method === "GET") {
-      const data = await getKnowledge();
+    if (path === "/api/memory" && req.method === "GET") {
+      const data = await getMemory();
       return Response.json(data);
     }
 

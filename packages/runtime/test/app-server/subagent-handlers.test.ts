@@ -24,7 +24,7 @@ function makeCtx(cwd: string, threads = new Map<string, ThreadRuntime>()): Threa
     knownCwds: new Set([cwd]),
     getUserId: () => "test-user",
     getPluginHooks: async () => ({ onUserPromptSubmit: [], onStop: [] }),
-    resolvePaths: async () => ({ root: cwd, sessions: cwd, knowledge: cwd, skills: cwd, images: cwd }),
+    resolvePaths: async () => ({ root: cwd, sessions: cwd, memory: cwd, skills: cwd, images: cwd }),
     createThreadRuntime: async () => ({}) as ThreadRuntime,
     resolveThreadRuntime: async () => ({ cwd }) as ThreadRuntime,
     getLatestEffortForCwd: async () => "medium",

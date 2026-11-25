@@ -307,7 +307,7 @@ export const AgentEventSchema = z.union([
     tokensAfter: z.number().int().nonnegative(),
     summary: z.string(),
   }),
-  z.object({ type: z.literal("knowledge_saved"), knowledgeId: z.string(), content: z.string() }),
+  z.object({ type: z.literal("memory_saved"), memoryId: z.string(), content: z.string() }),
   z.object({
     type: z.literal("steering_injected"),
     messageCount: z.number().int().nonnegative(),
@@ -437,9 +437,9 @@ export const ThreadItemSchema = z.union([
     timestamp: z.number().int().optional(),
   }),
   z.object({
-    type: z.literal("knowledge"),
+    type: z.literal("memory"),
     itemId: z.string(),
-    knowledgeId: z.string(),
+    memoryId: z.string(),
     content: z.string(),
   }),
   z.object({
@@ -549,20 +549,20 @@ export const UserInputResponseSchema = z.object({
 });
 export type UserInputResponse = z.infer<typeof UserInputResponseSchema>;
 
-export const KnowledgeTypeSchema = z.enum(["pattern", "discovery", "preference", "correction", "backlog"]);
-export type KnowledgeType = z.infer<typeof KnowledgeTypeSchema>;
+export const MemoryTypeSchema = z.enum(["pattern", "discovery", "preference", "correction", "backlog"]);
+export type MemoryType = z.infer<typeof MemoryTypeSchema>;
 
-export const KnowledgeEntrySchema = z.object({
+export const MemoryEntrySchema = z.object({
   id: z.string(),
   timestamp: z.string(),
   sessionId: z.string().optional(),
-  type: KnowledgeTypeSchema,
+  type: MemoryTypeSchema,
   content: z.string(),
   confidence: z.number().min(0).max(1),
   supersedes: z.string().optional(),
   tags: z.array(z.string()).optional(),
 });
-export type KnowledgeEntry = z.infer<typeof KnowledgeEntrySchema>;
+export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
 
 export const SessionSummarySchema = z.object({
   id: z.string(),

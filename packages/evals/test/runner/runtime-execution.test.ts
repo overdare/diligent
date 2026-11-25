@@ -18,12 +18,12 @@ import {
   hookContextFollowTask,
   inputCancelResumeTask,
   instructionHierarchyTask,
-  type KnowledgeForgetWorld,
-  type KnowledgeIntentSplitWorld,
-  knowledgeForgetTask,
-  knowledgeIntentSplitTask,
-  knowledgeRecallTask,
+  type MemoryForgetWorld,
+  type MemoryIntentSplitWorld,
   manualCompactionResumeTask,
+  memoryForgetTask,
+  memoryIntentSplitTask,
+  memoryRecallTask,
   planConvergeTask,
   planToExecuteTask,
   type ReadImagePairWorld,
@@ -786,11 +786,11 @@ describe("runRuntimeEvalExecution", () => {
     expect(result.execution.toolCalls.map((call) => call.name)).toEqual(["read", "apply_patch", "bash"]);
   });
 
-  test("executes the knowledge-recall task through the assembled runtime", async () => {
+  test("executes the memory-recall task through the assembled runtime", async () => {
     const seed = "shared-seed-123";
     const token = seededToken(seed, "CHANNEL");
     const result = await runRuntimeEvalExecution({
-      task: knowledgeRecallTask,
+      task: memoryRecallTask,
       seed,
       profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: sequenceStream([
@@ -815,14 +815,14 @@ describe("runRuntimeEvalExecution", () => {
     expect(result.execution.toolCalls.map((call) => call.name)).toEqual(["apply_patch"]);
   });
 
-  test("executes intent splitting with OpenAI-native creation and transient-free knowledge", async () => {
+  test("executes intent splitting with OpenAI-native creation and transient-free memory", async () => {
     const seed = "shared-seed-123";
-    const knowledgeId = "preference.review-audience";
+    const memoryId = "preference.review-audience";
     const durableValue = seededToken(seed, "AUDIENCE");
     const transientValue = seededToken(seed, "CURRENT");
     const content = `Preferred review audience is ${durableValue}.`;
     const result = await runRuntimeEvalExecution({
-      task: knowledgeIntentSplitTask,
+      task: memoryIntentSplitTask,
       seed,
       profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: sequenceStream([
@@ -831,13 +831,13 @@ describe("runRuntimeEvalExecution", () => {
             {
               type: "tool_call",
               id: "split-search-prefix",
-              name: "search_knowledge",
-              input: { id_prefix: knowledgeId },
+              name: "search_memory",
+              input: { id_prefix: memoryId },
             },
             {
               type: "tool_call",
               id: "split-search-query",
-              name: "search_knowledge",
+              name: "search_memory",
               input: { query: "review audience" },
             },
           ],
@@ -848,10 +848,10 @@ describe("runRuntimeEvalExecution", () => {
             {
               type: "tool_call",
               id: "split-update",
-              name: "update_knowledge",
+              name: "update_memory",
               input: {
                 action: "upsert",
-                id: knowledgeId,
+                id: memoryId,
                 type: "preference",
                 content,
                 tags: ["review", "audience"],
@@ -877,26 +877,24 @@ describe("runRuntimeEvalExecution", () => {
       ]),
     });
 
-    const execution = result.execution as RuntimeEvalExecution<KnowledgeIntentSplitWorld>;
+    const execution = result.execution as RuntimeEvalExecution<MemoryIntentSplitWorld>;
     const verification = JSON.parse(execution.verifier?.stdout ?? "{}") as {
       entry?: { id?: string; type?: string; content?: string; tags?: string[] };
       outputHash?: string;
     };
     expect(result.failures).toEqual([]);
     expect(result.status).toBe("pass");
-    expect(result.diagnostics?.map((diagnostic) => diagnostic.code)).toEqual([
-      "knowledge_intent_split.knowledge_search",
-    ]);
+    expect(result.diagnostics?.map((diagnostic) => diagnostic.code)).toEqual(["memory_intent_split.memory_search"]);
     expect(result.execution.toolCalls.map((call) => [call.name, call.outcome])).toEqual([
-      ["search_knowledge", "success"],
-      ["search_knowledge", "success"],
-      ["update_knowledge", "success"],
+      ["search_memory", "success"],
+      ["search_memory", "success"],
+      ["update_memory", "success"],
       ["apply_patch", "success"],
     ]);
     expect(result.execution.verifier?.exitCode).toBe(0);
-    expect(result.execution.runtimeState.diff.some((change) => change.category === "knowledge")).toBe(true);
+    expect(result.execution.runtimeState.diff.some((change) => change.category === "memory")).toBe(true);
     expect(verification.entry).toMatchObject({
-      id: knowledgeId,
+      id: memoryId,
       type: "preference",
       content,
       tags: ["review", "audience"],
@@ -909,20 +907,20 @@ describe("runRuntimeEvalExecution", () => {
     expect(execution.world.expected).not.toContain(durableValue);
   });
 
-  test("executes forgetting with Anthropic-native creation while preserving control knowledge", async () => {
+  test("executes forgetting with Anthropic-native creation while preserving control memory", async () => {
     const seed = "shared-seed-123";
-    const knowledgeId = "preference.deploy-window";
+    const memoryId = "preference.deploy-window";
     const taskValue = seededToken(seed, "FORGET_TASK");
     let scripted: StreamFunction | undefined;
     const result = await runRuntimeEvalExecution({
-      task: knowledgeForgetTask,
+      task: memoryForgetTask,
       seed,
       profile: { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
       streamFunction: (model, context, options) => {
         const cwd = cwdFromContext(context);
         scripted ??= sequenceStream([
           assistantMessage(
-            [{ type: "tool_call", id: "forget-search", name: "search_knowledge", input: { id: knowledgeId } }],
+            [{ type: "tool_call", id: "forget-search", name: "search_memory", input: { id: memoryId } }],
             "tool_use",
           ),
           assistantMessage(
@@ -930,8 +928,8 @@ describe("runRuntimeEvalExecution", () => {
               {
                 type: "tool_call",
                 id: "forget-delete",
-                name: "update_knowledge",
-                input: { action: "delete", id: knowledgeId },
+                name: "update_memory",
+                input: { action: "delete", id: memoryId },
               },
             ],
             "tool_use",
@@ -958,20 +956,20 @@ describe("runRuntimeEvalExecution", () => {
       },
     });
 
-    const execution = result.execution as RuntimeEvalExecution<KnowledgeForgetWorld>;
+    const execution = result.execution as RuntimeEvalExecution<MemoryForgetWorld>;
     const verification = JSON.parse(execution.verifier?.stdout ?? "{}") as {
       entries?: unknown[];
       outputHash?: string;
     };
     expect(result.failures).toEqual([]);
     expect(result.execution.toolCalls.map((call) => [call.name, call.outcome])).toEqual([
-      ["search_knowledge", "success"],
-      ["update_knowledge", "success"],
+      ["search_memory", "success"],
+      ["update_memory", "success"],
       ["edit", "success"],
     ]);
-    expect(result.execution.toolCalls[1]?.input).toEqual({ action: "delete", id: knowledgeId });
+    expect(result.execution.toolCalls[1]?.input).toEqual({ action: "delete", id: memoryId });
     expect(result.execution.verifier?.exitCode).toBe(0);
-    expect(result.execution.runtimeState.diff.some((change) => change.category === "knowledge")).toBe(true);
+    expect(result.execution.runtimeState.diff.some((change) => change.category === "memory")).toBe(true);
     expect(verification.entries).toEqual([execution.world.controlEntry]);
     expect(JSON.stringify(verification.entries)).not.toContain(execution.world.forgottenValue);
     expect(verification.outputHash).toBe(execution.world.expectedHash);

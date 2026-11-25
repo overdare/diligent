@@ -2,8 +2,8 @@
 import { z } from "zod";
 import {
   ContentBlockSchema,
-  KnowledgeEntrySchema,
   LocalImageBlockSchema,
+  MemoryEntrySchema,
   ModelRefSchema,
   ModeSchema,
   PendingSteerSchema,
@@ -288,25 +288,25 @@ export const FastModeSetResponseSchema = z.object({
 });
 export type FastModeSetResponse = z.infer<typeof FastModeSetResponseSchema>;
 
-export const KnowledgeListParamsSchema = z.object({
+export const MemoryListParamsSchema = z.object({
   threadId: z.string().optional(),
   limit: z.number().int().positive().max(500).optional(),
 });
-export type KnowledgeListParams = z.infer<typeof KnowledgeListParamsSchema>;
+export type MemoryListParams = z.infer<typeof MemoryListParamsSchema>;
 
-export const KnowledgeListResponseSchema = z.object({
-  data: z.array(KnowledgeEntrySchema),
+export const MemoryListResponseSchema = z.object({
+  data: z.array(MemoryEntrySchema),
 });
-export type KnowledgeListResponse = z.infer<typeof KnowledgeListResponseSchema>;
+export type MemoryListResponse = z.infer<typeof MemoryListResponseSchema>;
 
-const KnowledgeTypeParamSchema = z.enum(["pattern", "discovery", "preference", "correction", "backlog"]);
+const MemoryTypeParamSchema = z.enum(["pattern", "discovery", "preference", "correction", "backlog"]);
 
-export const KnowledgeUpdateParamsSchema = z
+export const MemoryUpdateParamsSchema = z
   .object({
     action: z.enum(["upsert", "delete"]),
     threadId: z.string().optional(),
     id: z.string().optional(),
-    type: KnowledgeTypeParamSchema.optional(),
+    type: MemoryTypeParamSchema.optional(),
     content: z.string().min(1).optional(),
     tags: z.array(z.string()).optional(),
   })
@@ -329,13 +329,13 @@ export const KnowledgeUpdateParamsSchema = z
       });
     }
   });
-export type KnowledgeUpdateParams = z.infer<typeof KnowledgeUpdateParamsSchema>;
+export type MemoryUpdateParams = z.infer<typeof MemoryUpdateParamsSchema>;
 
-export const KnowledgeUpdateResponseSchema = z.object({
-  entry: KnowledgeEntrySchema.optional(),
+export const MemoryUpdateResponseSchema = z.object({
+  entry: MemoryEntrySchema.optional(),
   deleted: z.boolean().optional(),
 });
-export type KnowledgeUpdateResponse = z.infer<typeof KnowledgeUpdateResponseSchema>;
+export type MemoryUpdateResponse = z.infer<typeof MemoryUpdateResponseSchema>;
 
 export const ThreadDeleteParamsSchema = z.object({
   threadId: z.string(),
@@ -733,10 +733,10 @@ export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET), params: ModeSetParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET), params: EffortSetParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.FAST_MODE_SET), params: FastModeSetParamsSchema }),
-  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST), params: KnowledgeListParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MEMORY_LIST), params: MemoryListParamsSchema }),
   z.object({
-    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE),
-    params: KnowledgeUpdateParamsSchema,
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MEMORY_UPDATE),
+    params: MemoryUpdateParamsSchema,
   }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE), params: ThreadDeleteParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST), params: ToolsListParamsSchema }),
@@ -807,10 +807,10 @@ export const DiligentClientResponseSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET), result: ModeSetResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET), result: EffortSetResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.FAST_MODE_SET), result: FastModeSetResponseSchema }),
-  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST), result: KnowledgeListResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MEMORY_LIST), result: MemoryListResponseSchema }),
   z.object({
-    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE),
-    result: KnowledgeUpdateResponseSchema,
+    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MEMORY_UPDATE),
+    result: MemoryUpdateResponseSchema,
   }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE), result: ThreadDeleteResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST), result: ToolsListResponseSchema }),

@@ -11,7 +11,7 @@ Read only what your task requires.
 | Project identity & principles | `README.md` |
 | Architecture, layers & patterns | `ARCHITECTURE.md` |
 | Source code — core engine (agent loop, providers, tool interfaces, auth primitives) | `packages/core/` |
-| Source code — runtime (built-in tools, app-server, sessions, config, knowledge, skills, collab) | `packages/runtime/` |
+| Source code — runtime (built-in tools, app-server, sessions, config, memory, skills, collab) | `packages/runtime/` |
 | Source code — shared protocol contract | `packages/protocol/` |
 | Source code — plugin SDK for external tool packages | `packages/plugin-sdk/` |
 | Source code — cli (TUI) | `packages/cli/` |

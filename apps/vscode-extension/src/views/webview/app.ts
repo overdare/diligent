@@ -6,8 +6,8 @@ import {
   applyAgentEvent,
   applyPanelMeta,
   applyThreadRead,
-  initialConversationViewState,
   type ConversationViewState,
+  initialConversationViewState,
 } from "./state";
 
 interface VsCodeApi {
@@ -94,7 +94,9 @@ function renderWebFetchResult(block: Extract<ContentBlock, { type: "web_fetch_re
 }
 
 function renderRequestUserInputToolCall(item: Extract<ThreadItem, { type: "toolCall" }>): string {
-  const req = item.input as { questions?: Array<{ id: string; header: string; question: string; is_secret?: boolean }> } | null;
+  const req = item.input as {
+    questions?: Array<{ id: string; header: string; question: string; is_secret?: boolean }>;
+  } | null;
   const questions = req?.questions;
   if (!questions?.length) {
     return renderExpandableRow(getToolSummary(item), item.output ?? JSON.stringify(item.input, null, 2), false);
@@ -238,8 +240,8 @@ function renderThreadItem(item: ThreadItem): string {
           : renderExpandableRow(getToolSummary(item), item.output ?? JSON.stringify(item.input, null, 2), false),
         "message-tool",
       );
-    case "knowledge":
-      return `<section class="message message-meta"><div class="message-label">Knowledge</div><div class="message-body markdown-body">${renderMarkdown(
+    case "memory":
+      return `<section class="message message-meta"><div class="message-label">Memory</div><div class="message-body markdown-body">${renderMarkdown(
         item.content,
       )}</div></section>`;
     case "compaction":

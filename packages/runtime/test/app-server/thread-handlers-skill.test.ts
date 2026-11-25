@@ -40,7 +40,7 @@ describe("handleTurnStart slash skill rewriting", () => {
           ({
             root: "/tmp/project/.diligent",
             sessions: "/tmp/project/.diligent/sessions",
-            knowledge: "/tmp/project/.diligent/knowledge",
+            memory: "/tmp/project/.diligent/memory",
             skills: "/tmp/project/.diligent/skills",
             images: "/tmp/project/.diligent/images",
           }) as DiligentPaths,
@@ -107,7 +107,7 @@ describe("handleTurnStart slash skill rewriting", () => {
           ({
             root: "/tmp/project/.diligent",
             sessions: "/tmp/project/.diligent/sessions",
-            knowledge: "/tmp/project/.diligent/knowledge",
+            memory: "/tmp/project/.diligent/memory",
             skills: "/tmp/project/.diligent/skills",
             images: "/tmp/project/.diligent/images",
           }) as DiligentPaths,

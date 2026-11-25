@@ -49,7 +49,7 @@ export const TOOL_CAPABILITIES: Record<string, ToolCapabilities> = {
   glob: {},
   grep: {},
   ls: {},
-  search_knowledge: { hasCustomRender: true },
+  search_memory: { hasCustomRender: true },
   web_action: {},
 
   // Write tools (excluded from plan mode)
@@ -59,7 +59,7 @@ export const TOOL_CAPABILITIES: Record<string, ToolCapabilities> = {
   apply_patch: { planModeDisallowed: true, hasCustomRender: true },
   edit: { planModeDisallowed: true, hasCustomRender: true },
   multi_edit: { planModeDisallowed: true, hasCustomRender: true },
-  update_knowledge: { planModeDisallowed: true, hasCustomRender: true },
+  update_memory: { planModeDisallowed: true, hasCustomRender: true },
 
   // Collab tools (excluded from child agents to prevent nesting)
   spawn_agent: { collabExcluded: true, codeModeDirect: true },

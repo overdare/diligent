@@ -99,7 +99,7 @@ export type {
 export {
   applyToolConfigPatch,
   buildSystemPrompt,
-  buildSystemPromptWithKnowledge,
+  buildSystemPromptWithMemory,
   DEFAULT_CONFIG,
   DiligentConfigSchema,
   discoverInstructions,
@@ -121,8 +121,8 @@ export { resolveExperimentGates, resolveExperimentStates } from "./experiments";
 export type { HookInput, HookResult, PluginHookFn } from "./hooks/runner";
 export type { DiligentPaths } from "./infrastructure";
 export { ensureDiligentDir, resolvePaths } from "./infrastructure";
-export type { KnowledgeConfig, KnowledgeEntry, KnowledgeType } from "./knowledge";
-export { appendKnowledge, buildKnowledgeSection, rankKnowledge, readKnowledge, writeKnowledge } from "./knowledge";
+export type { MemoryConfig, MemoryEntry, MemoryType } from "./memory";
+export { appendMemory, buildMemorySection, rankMemory, readMemory, writeMemory } from "./memory";
 export { ProtocolNotificationAdapter } from "./notification-adapter";
 export type { SystemPromptVars } from "./prompt";
 export { buildBaseSystemPrompt } from "./prompt";
@@ -215,9 +215,9 @@ export {
   createReadImageTool,
   createReadTool,
   createRequestUserInputTool,
-  createSearchKnowledgeTool,
+  createSearchMemoryTool,
   createSkillTool,
-  createUpdateKnowledgeTool,
+  createUpdateMemoryTool,
   createWriteAbsoluteTool,
   createWriteTool,
   FORK_TOOL_FOR_CHILD,

@@ -325,7 +325,7 @@ export class AgentRegistry {
       : "Nested sub-agent delegation is disabled for this run. Do not call spawn_agent, wait, send_input, or close_agent, and do not attempt to coordinate additional sub-agents.";
     const childSystemPrompt = [
       ...(this.deps.parentSystemPrompt ?? []).filter((section) =>
-        ["base", "instructions", "additional", "knowledge", "skills", "skill_usage_guardrail"].includes(section.label),
+        ["base", "instructions", "additional", "memory", "skills", "skill_usage_guardrail"].includes(section.label),
       ),
       ...(agentDefinition.systemPromptPrefix
         ? [{ label: "agent_role", content: agentDefinition.systemPromptPrefix }]

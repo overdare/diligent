@@ -195,8 +195,8 @@ export class NonInteractiveRunner {
         return hasText;
       }
 
-      case "knowledge_saved":
-        this.writeStderr(`[knowledge] ${event.content}`, isTTY);
+      case "memory_saved":
+        this.writeStderr(`[memory] ${event.content}`, isTTY);
         return hasText;
 
       case "context_notice":

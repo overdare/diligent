@@ -1,4 +1,4 @@
-// @summary Runtime eval for exact project-knowledge prompt recall
+// @summary Runtime eval for exact project-memory prompt recall
 
 import type { RuntimeEvalTask } from "../../runtime-task";
 import type { EvalProfile } from "../../task";
@@ -13,15 +13,15 @@ import {
   writeFixture,
 } from "./helpers";
 
-export interface KnowledgeRecallWorld extends RuntimeFixtureWorld {
+export interface MemoryRecallWorld extends RuntimeFixtureWorld {
   token: string;
   expectedHash: string;
 }
 
-export const knowledgeRecallTask: RuntimeEvalTask<KnowledgeRecallWorld> = {
-  id: "knowledge-recall",
-  description: "Use project knowledge injected into the runtime prompt to create an exact file.",
-  fixtureVersion: "knowledge-recall-v0",
+export const memoryRecallTask: RuntimeEvalTask<MemoryRecallWorld> = {
+  id: "memory-recall",
+  description: "Use project memory injected into the runtime prompt to create an exact file.",
+  fixtureVersion: "memory-recall-v0",
   limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 8, maxToolCalls: 6, timeoutMs: 180_000 },
   statePolicy: { allowedMutations: ["infrastructure", "sessions"] },
   toolPolicy: {
@@ -33,7 +33,7 @@ export const knowledgeRecallTask: RuntimeEvalTask<KnowledgeRecallWorld> = {
     const token = seededToken(seed, "CHANNEL");
     const expected = `${token}\n`;
     await writeFixture(root, {
-      ".diligent/knowledge/knowledge.jsonl": `${JSON.stringify({
+      ".diligent/memory/memory.jsonl": `${JSON.stringify({
         id: "preference.release-channel",
         timestamp: "2026-07-18T00:00:00.000Z",
         type: "preference",
@@ -52,17 +52,17 @@ export const knowledgeRecallTask: RuntimeEvalTask<KnowledgeRecallWorld> = {
       allowedChanges: ["RELEASE.txt"],
     };
   },
-  createRuntimeConfig: createKnowledgeRuntimeConfig,
+  createRuntimeConfig: createMemoryRuntimeConfig,
   createSteps: () => [
     {
       kind: "turn",
       message:
-        "Create RELEASE.txt containing only the release channel from the stored project knowledge and one trailing newline. Do not repeat the channel in your response.",
+        "Create RELEASE.txt containing only the release channel from the stored project memory and one trailing newline. Do not repeat the channel in your response.",
     },
   ],
   snapshotWorld: async (world) => ({ token: world.token, result: await exactFile(world.root, "RELEASE.txt") }),
   evaluate(input) {
-    const grade = new RuntimeGrade("knowledge_recall");
+    const grade = new RuntimeGrade("memory_recall");
     const result = input.workspace.final.entries.find((entry) => entry.path === "RELEASE.txt");
     if (result?.sha256 === sha256Text(input.world.token))
       return grade.fail(
@@ -88,10 +88,10 @@ export const knowledgeRecallTask: RuntimeEvalTask<KnowledgeRecallWorld> = {
   },
 };
 
-async function createKnowledgeRuntimeConfig(world: KnowledgeRecallWorld, profile: EvalProfile) {
+async function createMemoryRuntimeConfig(world: MemoryRecallWorld, profile: EvalProfile) {
   const config = await createFixtureRuntimeConfig(world, profile);
   return {
     ...config,
-    diligent: { ...config.diligent, knowledge: { enabled: true, injectionBudget: 1024, maxItems: 5 } },
+    diligent: { ...config.diligent, memory: { enabled: true, injectionBudget: 1024, maxItems: 5 } },
   };
 }

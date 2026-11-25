@@ -5,10 +5,10 @@ import { withToolInstructions } from "../../src/prompt/tool-instructions";
 describe("withToolInstructions", () => {
   const base = [
     { label: "base", content: "Shared rules" },
-    { label: "knowledge_instruction", content: "stale" },
+    { label: "memory_instruction", content: "stale" },
   ];
 
-  test("removes stale knowledge instructions when no knowledge tools are available", () => {
+  test("removes stale memory instructions when no memory tools are available", () => {
     expect(withToolInstructions(base, [])).toEqual([base[0]]);
   });
 
@@ -22,19 +22,19 @@ describe("withToolInstructions", () => {
     expect(withToolInstructions(prompt, [{ name: "skill" }])).toEqual(prompt);
   });
 
-  test("read-only knowledge access never instructs the model to persist preferences", () => {
-    const prompt = withToolInstructions(base, [{ name: "search_knowledge" }]);
-    const instruction = prompt.find((section) => section.label === "knowledge_instruction")?.content ?? "";
-    expect(instruction).toContain("search_knowledge");
-    expect(instruction).not.toContain("update_knowledge");
+  test("read-only memory access never instructs the model to persist preferences", () => {
+    const prompt = withToolInstructions(base, [{ name: "search_memory" }]);
+    const instruction = prompt.find((section) => section.label === "memory_instruction")?.content ?? "";
+    expect(instruction).toContain("search_memory");
+    expect(instruction).not.toContain("update_memory");
     expect(instruction).not.toContain("stale");
   });
 
-  test("write-only knowledge access does not invent a search capability", () => {
-    const prompt = withToolInstructions(base, [{ name: "update_knowledge" }]);
-    const instruction = prompt.find((section) => section.label === "knowledge_instruction")?.content ?? "";
-    expect(instruction).toContain("update_knowledge");
+  test("write-only memory access does not invent a search capability", () => {
+    const prompt = withToolInstructions(base, [{ name: "update_memory" }]);
+    const instruction = prompt.find((section) => section.label === "memory_instruction")?.content ?? "";
+    expect(instruction).toContain("update_memory");
     expect(instruction).toContain("durable user preferences");
-    expect(instruction).not.toContain("search_knowledge");
+    expect(instruction).not.toContain("search_memory");
   });
 });

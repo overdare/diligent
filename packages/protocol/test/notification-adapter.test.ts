@@ -301,18 +301,18 @@ test("error notification", () => {
   }
 });
 
-test("knowledge saved", () => {
+test("memory saved", () => {
   const adapter = makeAdapter();
   const notification: DiligentServerNotification = {
-    method: "knowledge/saved",
-    params: { threadId: "t1", knowledgeId: "k1", content: "learned something" },
+    method: "memory/saved",
+    params: { threadId: "t1", memoryId: "k1", content: "learned something" },
   };
 
   const events = adapter.toAgentEvents(notification);
   expect(events).toHaveLength(1);
-  expect(events[0].type).toBe("knowledge_saved");
-  if (events[0].type === "knowledge_saved") {
-    expect(events[0].knowledgeId).toBe("k1");
+  expect(events[0].type).toBe("memory_saved");
+  if (events[0].type === "memory_saved") {
+    expect(events[0].memoryId).toBe("k1");
   }
 });
 

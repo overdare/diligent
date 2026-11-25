@@ -14,7 +14,7 @@ export interface SearchRenderInput {
   path?: string;
 }
 
-export interface UpdateKnowledgeRenderInput {
+export interface UpdateMemoryRenderInput {
   action?: string;
   id?: string;
   type?: string;
@@ -22,7 +22,7 @@ export interface UpdateKnowledgeRenderInput {
   tags?: string[];
 }
 
-export interface SearchKnowledgeRenderInput {
+export interface SearchMemoryRenderInput {
   id?: string;
   query?: string;
 }
@@ -281,8 +281,8 @@ export function createListRenderPayload(outputText: string, input?: { path?: str
   };
 }
 
-export function createUpdateKnowledgeRenderPayload(
-  input: UpdateKnowledgeRenderInput,
+export function createUpdateMemoryRenderPayload(
+  input: UpdateMemoryRenderInput,
   outputText: string,
   isError: boolean,
 ): ToolRenderPayload | undefined {
@@ -320,14 +320,14 @@ export function createUpdateKnowledgeRenderPayload(
   if (blocks.length === 0) return undefined;
 
   return {
-    inputSummary: buildKnowledgeInputSummary(input, contentPreview),
-    outputSummary: buildKnowledgeSummary(input, outputSummary),
+    inputSummary: buildMemoryInputSummary(input, contentPreview),
+    outputSummary: buildMemorySummary(input, outputSummary),
     blocks,
   };
 }
 
-export function createSearchKnowledgeRenderPayload(
-  input: SearchKnowledgeRenderInput,
+export function createSearchMemoryRenderPayload(
+  input: SearchMemoryRenderInput,
   matches: Array<{
     id: string;
     type: string;
@@ -350,7 +350,7 @@ export function createSearchKnowledgeRenderPayload(
   if (matches.length > 0) {
     blocks.push({
       type: "list",
-      title: `${matches.length} knowledge ${matches.length === 1 ? "entry" : "entries"}`,
+      title: `${matches.length} memory ${matches.length === 1 ? "entry" : "entries"}`,
       items: matches.map((match) => {
         const summary = `[${match.type}] ${clipInlineText(match.content.replace(/\s+/g, " ").trim(), 120)}`;
         return `${match.id} — ${summary}`;
@@ -365,8 +365,8 @@ export function createSearchKnowledgeRenderPayload(
   if (blocks.length === 0) return undefined;
 
   return {
-    inputSummary: buildSearchKnowledgeInputSummary(input),
-    outputSummary: firstLine ?? (matches.length === 0 ? "No knowledge entries found" : undefined),
+    inputSummary: buildSearchMemoryInputSummary(input),
+    outputSummary: firstLine ?? (matches.length === 0 ? "No memory entries found" : undefined),
     blocks,
   };
 }
@@ -385,10 +385,7 @@ function buildPatchFileLabel(file: DiffFile): string {
   return file.filePath;
 }
 
-export function buildKnowledgeInputSummary(
-  input: UpdateKnowledgeRenderInput,
-  contentPreview: string,
-): string | undefined {
+export function buildMemoryInputSummary(input: UpdateMemoryRenderInput, contentPreview: string): string | undefined {
   const actionValue = typeof input.action === "string" ? input.action : "upsert";
   const id = typeof input.id === "string" ? input.id.trim() : "";
   if (actionValue === "delete") {
@@ -405,14 +402,14 @@ export function buildKnowledgeInputSummary(
   return "upsert";
 }
 
-export function buildSearchKnowledgeInputSummary(input: SearchKnowledgeRenderInput): string | undefined {
+export function buildSearchMemoryInputSummary(input: SearchMemoryRenderInput): string | undefined {
   const id = typeof input.id === "string" ? input.id.trim() : "";
   const query = typeof input.query === "string" ? input.query.trim() : "";
   const queryPreview = query ? clipInlineText(query.replace(/\s+/g, " "), 120) : "";
   if (id && queryPreview) return summarizeRenderText(`id:${id} query:${queryPreview}`, 120);
   if (id) return summarizeRenderText(`id:${id}`, 120);
   if (queryPreview) return summarizeRenderText(`query:${queryPreview}`, 120);
-  return "search knowledge";
+  return "search memory";
 }
 
 export function parsePatchForRender(patch: string): DiffFile[] {
@@ -587,16 +584,13 @@ function summarizeCommandOutput(outputText: string, isError: boolean): string | 
   return isError ? "Command failed" : "Command completed";
 }
 
-function buildKnowledgeSummary(
-  input: UpdateKnowledgeRenderInput,
-  fallbackSummary: string | undefined,
-): string | undefined {
+function buildMemorySummary(input: UpdateMemoryRenderInput, fallbackSummary: string | undefined): string | undefined {
   const actionValue = typeof input.action === "string" ? input.action : "upsert";
   if (actionValue === "delete") {
-    return fallbackSummary?.startsWith("Knowledge not found") ? "Knowledge not found" : "1 knowledge entry deleted";
+    return fallbackSummary?.startsWith("Memory not found") ? "Memory not found" : "1 memory entry deleted";
   }
-  if (typeof input.id === "string" && input.id.trim()) return "1 knowledge entry updated";
-  return "1 knowledge entry saved";
+  if (typeof input.id === "string" && input.id.trim()) return "1 memory entry updated";
+  return "1 memory entry saved";
 }
 
 function pluralizeNoun(singularNoun: string, count: number): string {

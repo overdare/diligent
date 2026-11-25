@@ -15,9 +15,6 @@ import { hookContextFollowTask } from "./hook-context-follow";
 import { imageResumeRecallTask } from "./image-resume-recall";
 import { inputCancelResumeTask } from "./input-cancel-resume";
 import { instructionHierarchyTask } from "./instruction-hierarchy";
-import { knowledgeForgetTask } from "./knowledge-forget";
-import { knowledgeIntentSplitTask } from "./knowledge-intent-split";
-import { knowledgeRecallTask } from "./knowledge-recall";
 import { largeOutputRecoveryTask } from "./large-output-recovery";
 import { loopContextAdaptationTask } from "./loop-context-adaptation";
 import { manualCompactionResumeTask } from "./manual-compaction-resume";
@@ -25,6 +22,9 @@ import { mcpLazyToolTask } from "./mcp-lazy-tool";
 import { mcpNeedsAuthAbstainTask } from "./mcp-needs-auth-abstain";
 import { mcpPromptGroundingTask } from "./mcp-prompt-grounding";
 import { mcpResourceGroundingTask } from "./mcp-resource-grounding";
+import { memoryForgetTask } from "./memory-forget";
+import { memoryIntentSplitTask } from "./memory-intent-split";
+import { memoryRecallTask } from "./memory-recall";
 import { planConvergeTask } from "./plan-converge";
 import { planProgressTask } from "./plan-progress";
 import { planReadonlyTask } from "./plan-readonly";
@@ -64,12 +64,6 @@ export type { InputCancelResumeWorld } from "./input-cancel-resume";
 export { inputCancelResumeTask } from "./input-cancel-resume";
 export type { InstructionHierarchyWorld } from "./instruction-hierarchy";
 export { instructionHierarchyTask } from "./instruction-hierarchy";
-export type { KnowledgeForgetWorld } from "./knowledge-forget";
-export { knowledgeForgetTask } from "./knowledge-forget";
-export type { KnowledgeIntentSplitWorld } from "./knowledge-intent-split";
-export { knowledgeIntentSplitTask } from "./knowledge-intent-split";
-export type { KnowledgeRecallWorld } from "./knowledge-recall";
-export { knowledgeRecallTask } from "./knowledge-recall";
 export type { LargeOutputRecoveryWorld } from "./large-output-recovery";
 export { largeOutputRecoveryTask } from "./large-output-recovery";
 export type { LoopContextAdaptationWorld } from "./loop-context-adaptation";
@@ -84,6 +78,12 @@ export type { McpPromptGroundingWorld } from "./mcp-prompt-grounding";
 export { mcpPromptGroundingTask } from "./mcp-prompt-grounding";
 export type { McpResourceGroundingWorld } from "./mcp-resource-grounding";
 export { mcpResourceGroundingTask } from "./mcp-resource-grounding";
+export type { MemoryForgetWorld } from "./memory-forget";
+export { memoryForgetTask } from "./memory-forget";
+export type { MemoryIntentSplitWorld } from "./memory-intent-split";
+export { memoryIntentSplitTask } from "./memory-intent-split";
+export type { MemoryRecallWorld } from "./memory-recall";
+export { memoryRecallTask } from "./memory-recall";
 export type { PlanConvergeWorld } from "./plan-converge";
 export { planConvergeTask } from "./plan-converge";
 export type { PlanProgressWorld } from "./plan-progress";
@@ -104,7 +104,7 @@ export const RUNTIME_EVAL_TASKS: readonly AnyRuntimeEvalTask[] = [
   planReadonlyTask,
   sessionResumeTask,
   planToExecuteTask,
-  knowledgeRecallTask,
+  memoryRecallTask,
   manualCompactionResumeTask,
   clarifyThenExecuteTask,
   readImagePairTask,
@@ -116,8 +116,8 @@ export const RUNTIME_EVAL_TASKS: readonly AnyRuntimeEvalTask[] = [
   hookContextFollowTask,
   skillAutoSelectTask,
   skillAbstainTask,
-  knowledgeIntentSplitTask,
-  knowledgeForgetTask,
+  memoryIntentSplitTask,
+  memoryForgetTask,
   steerDuringFixTask,
   autoCompactionResumeTask,
   autonomousExploreDelegationTask,

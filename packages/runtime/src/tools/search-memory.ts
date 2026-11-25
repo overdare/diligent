@@ -1,29 +1,27 @@
-// @summary Search persistent knowledge entries by stable id and/or content for LM-friendly lookup before update/delete
+// @summary Search persistent memory entries by stable id and/or content for LM-friendly lookup before update/delete
 
 import type { Tool, ToolContext, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
-import { searchKnowledge } from "../knowledge/repository";
-import { readKnowledge } from "../knowledge/store";
-import { createSearchKnowledgeRenderPayload } from "./render-payload";
+import { searchMemory } from "../memory/repository";
+import { readMemory } from "../memory/store";
+import { createSearchMemoryRenderPayload } from "./render-payload";
 
-const searchKnowledgeSchema = z
+const searchMemorySchema = z
   .object({
     id: z
       .string()
       .optional()
       .describe(
-        "Optional exact knowledge entry id. Ids may be caller-defined stable keys or generated UUIDs returned by search_knowledge.",
+        "Optional exact memory entry id. Ids may be caller-defined stable keys or generated UUIDs returned by search_memory.",
       ),
     id_prefix: z
       .string()
       .optional()
-      .describe("Optional knowledge entry id prefix for finding a group of stable ids, such as 'project.decision.'."),
+      .describe("Optional memory entry id prefix for finding a group of stable ids, such as 'project.decision.'."),
     query: z
       .string()
       .optional()
-      .describe(
-        "Optional short keyword query to search against knowledge content using case-insensitive token matching.",
-      ),
+      .describe("Optional short keyword query to search against memory content using case-insensitive token matching."),
   })
   .superRefine((value, ctx) => {
     const hasId = typeof value.id === "string" && value.id.trim().length > 0;
@@ -38,18 +36,18 @@ const searchKnowledgeSchema = z
     }
   });
 
-export function createSearchKnowledgeTool(knowledgePath: string): Tool<typeof searchKnowledgeSchema> {
+export function createSearchMemoryTool(memoryPath: string): Tool<typeof searchMemorySchema> {
   return {
-    name: "search_knowledge",
+    name: "search_memory",
     description:
-      "Search persistent knowledge entries by exact id, id prefix, and/or query so you can find the right knowledge item before updating or deleting it. " +
-      "Ids may be caller-defined stable keys like 'project.current_plan' or generated UUIDs returned by search_knowledge. " +
+      "Search persistent memory entries by exact id, id prefix, and/or query so you can find the right memory item before updating or deleting it. " +
+      "Ids may be caller-defined stable keys like 'project.current_plan' or generated UUIDs returned by search_memory. " +
       "Use id_prefix for groups of stable ids, such as 'project.decision.' or 'project.preference.'. " +
       "Use short keyword queries like 'thread fork', 'draft state', or 'PROJECT_IMPLEMENTATION_MAP' for case-insensitive token matching when you do not know the id. " +
-      "If multiple matches appear, narrow the query or use the returned id with update_knowledge.",
-    parameters: searchKnowledgeSchema,
+      "If multiple matches appear, narrow the query or use the returned id with update_memory.",
+    parameters: searchMemorySchema,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
-      const matches = searchKnowledge(await readKnowledge(knowledgePath), {
+      const matches = searchMemory(await readMemory(memoryPath), {
         id: args.id?.trim(),
         idPrefix: args.id_prefix?.trim(),
         query: args.query,
@@ -57,7 +55,7 @@ export function createSearchKnowledgeTool(knowledgePath: string): Tool<typeof se
 
       const output =
         matches.length === 0
-          ? "No knowledge entries found"
+          ? "No memory entries found"
           : matches
               .map((entry) => {
                 const tags = entry.tags && entry.tags.length > 0 ? ` tags=${entry.tags.join(",")}` : "";
@@ -67,7 +65,7 @@ export function createSearchKnowledgeTool(knowledgePath: string): Tool<typeof se
 
       return {
         output,
-        render: createSearchKnowledgeRenderPayload(args, matches, output, false),
+        render: createSearchMemoryRenderPayload(args, matches, output, false),
         metadata: { matchCount: matches.length, ids: matches.map((entry) => entry.id) },
       };
     },

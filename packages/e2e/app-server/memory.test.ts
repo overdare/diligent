@@ -1,11 +1,11 @@
-// @summary App-server e2e tests for knowledge CRUD and filesystem persistence
+// @summary App-server e2e tests for memory CRUD and filesystem persistence
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ensureDiligentDir } from "@diligent/runtime";
-import { readKnowledge } from "@diligent/runtime/knowledge";
+import { readMemory } from "@diligent/runtime/memory";
 import { createProtocolClient, type ProtocolTestClient } from "./helpers/protocol-client";
 import { createTestServer } from "./helpers/server-factory";
 
@@ -18,14 +18,14 @@ afterEach(async () => {
   tmpDir = "";
 });
 
-describe("knowledge", () => {
-  test("knowledge entries can be added, updated, listed, deleted, and persisted through JSON-RPC", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-knowledge-"));
+describe("memory", () => {
+  test("memory entries can be added, updated, listed, deleted, and persisted through JSON-RPC", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-memory-"));
     const server = createTestServer({ cwd: tmpDir });
     client = createProtocolClient(server);
 
     const threadId = await client.initAndStartThread(tmpDir);
-    const added = (await client.request("knowledge/update", {
+    const added = (await client.request("memory/update", {
       action: "upsert",
       threadId,
       type: "pattern",
@@ -40,7 +40,7 @@ describe("knowledge", () => {
       confidence: 0.8,
     });
 
-    const updated = (await client.request("knowledge/update", {
+    const updated = (await client.request("memory/update", {
       action: "upsert",
       threadId,
       id: added.entry.id,
@@ -56,12 +56,12 @@ describe("knowledge", () => {
       content: "Run focused tests before the full suite",
     });
 
-    const listed = (await client.request("knowledge/list", { threadId, limit: 10 })) as {
+    const listed = (await client.request("memory/list", { threadId, limit: 10 })) as {
       data: Array<{ id: string; type: string }>;
     };
     expect(listed.data).toContainEqual(expect.objectContaining({ id: added.entry.id, type: "backlog" }));
 
-    const deleted = (await client.request("knowledge/update", {
+    const deleted = (await client.request("memory/update", {
       action: "delete",
       threadId,
       id: added.entry.id,
@@ -69,17 +69,17 @@ describe("knowledge", () => {
     expect(deleted.deleted).toBe(true);
 
     const paths = await ensureDiligentDir(tmpDir);
-    const persisted = await readKnowledge(paths.knowledge);
+    const persisted = await readMemory(paths.memory);
     expect(persisted.some((entry) => entry.id === added.entry.id)).toBe(false);
   });
 
-  test("knowledge/update honors a caller-defined id for new entries like the agent tool", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-knowledge-"));
+  test("memory/update honors a caller-defined id for new entries like the agent tool", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-memory-"));
     const server = createTestServer({ cwd: tmpDir });
     client = createProtocolClient(server);
     const threadId = await client.initAndStartThread(tmpDir);
 
-    const created = (await client.request("knowledge/update", {
+    const created = (await client.request("memory/update", {
       action: "upsert",
       threadId,
       id: "project.runtime",

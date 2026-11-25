@@ -1,26 +1,26 @@
-// @summary Single owner of knowledge mutations and lookup shared by agent tools and client RPC
-import { rankKnowledge } from "./ranker";
-import { mutateKnowledge } from "./store";
-import type { KnowledgeEntry, KnowledgeType } from "./types";
+// @summary Single owner of memory mutations and lookup shared by agent tools and client RPC
+import { rankMemory } from "./ranker";
+import { mutateMemory } from "./store";
+import type { MemoryEntry, MemoryType } from "./types";
 
 const DEFAULT_CONFIDENCE = 0.8;
 
-export interface KnowledgeUpsertInput {
+export interface MemoryUpsertInput {
   id?: string;
-  type: KnowledgeType;
+  type: MemoryType;
   content: string;
   tags?: string[];
   sessionId?: string;
 }
 
-export type KnowledgeUpsertStatus = "created" | "updated" | "duplicate";
+export type MemoryUpsertStatus = "created" | "updated" | "duplicate";
 
-export interface KnowledgeUpsertResult {
-  entry: KnowledgeEntry;
-  status: KnowledgeUpsertStatus;
+export interface MemoryUpsertResult {
+  entry: MemoryEntry;
+  status: MemoryUpsertStatus;
 }
 
-export interface KnowledgeQuery {
+export interface MemoryQuery {
   id?: string;
   idPrefix?: string;
   query?: string;
@@ -30,17 +30,17 @@ export interface KnowledgeQuery {
  * Create or revise an entry. An explicit id updates that entry or creates it under that id.
  * Without an id, restating an active entry with the same type and content refreshes it instead of adding a copy.
  */
-export function upsertKnowledge(knowledgePath: string, input: KnowledgeUpsertInput): Promise<KnowledgeUpsertResult> {
+export function upsertMemory(memoryPath: string, input: MemoryUpsertInput): Promise<MemoryUpsertResult> {
   const id = input.id?.trim();
   const content = input.content.trim();
   const now = new Date().toISOString();
 
-  return mutateKnowledge<KnowledgeUpsertResult>(knowledgePath, (entries) => {
+  return mutateMemory<MemoryUpsertResult>(memoryPath, (entries) => {
     const index = id ? entries.findIndex((entry) => entry.id === id) : findDuplicateIndex(entries, input.type, content);
 
     if (index >= 0) {
       const existing = entries[index];
-      const entry: KnowledgeEntry = {
+      const entry: MemoryEntry = {
         ...existing,
         type: input.type,
         content,
@@ -52,7 +52,7 @@ export function upsertKnowledge(knowledgePath: string, input: KnowledgeUpsertInp
       return { entries: next, result: { entry, status: id ? "updated" : "duplicate" } };
     }
 
-    const entry: KnowledgeEntry = {
+    const entry: MemoryEntry = {
       id: id || crypto.randomUUID(),
       timestamp: now,
       sessionId: input.sessionId,
@@ -66,8 +66,8 @@ export function upsertKnowledge(knowledgePath: string, input: KnowledgeUpsertInp
 }
 
 /** Delete an entry by id. Returns whether an entry was removed. */
-export function deleteKnowledge(knowledgePath: string, id: string): Promise<boolean> {
-  return mutateKnowledge(knowledgePath, (entries) => {
+export function deleteMemory(memoryPath: string, id: string): Promise<boolean> {
+  return mutateMemory(memoryPath, (entries) => {
     const next = entries.filter((entry) => entry.id !== id);
     if (next.length === entries.length) return { result: false };
     return { entries: next, result: true };
@@ -78,10 +78,10 @@ export function deleteKnowledge(knowledgePath: string, id: string): Promise<bool
  * Find active entries by exact id, id prefix, and/or query tokens.
  * Query matches are ordered by matched token count, then exact token matches, then recency.
  */
-export function searchKnowledge(entries: KnowledgeEntry[], { id, idPrefix, query }: KnowledgeQuery): KnowledgeEntry[] {
+export function searchMemory(entries: MemoryEntry[], { id, idPrefix, query }: MemoryQuery): MemoryEntry[] {
   const queryTokens = tokenize(query);
   const hasQuery = Boolean(query?.trim());
-  return rankKnowledge(entries)
+  return rankMemory(entries)
     .map((entry) => ({ entry, score: scoreEntry(entry.content, queryTokens) }))
     .filter(({ entry, score }) => {
       if (id && entry.id !== id) return false;
@@ -101,7 +101,7 @@ export function searchKnowledge(entries: KnowledgeEntry[], { id, idPrefix, query
     .map(({ entry }) => entry);
 }
 
-function findDuplicateIndex(entries: KnowledgeEntry[], type: KnowledgeType, content: string): number {
+function findDuplicateIndex(entries: MemoryEntry[], type: MemoryType, content: string): number {
   const supersededIds = new Set(entries.flatMap((entry) => (entry.supersedes ? [entry.supersedes] : [])));
   const normalized = normalizeContent(content);
   return entries.findIndex(

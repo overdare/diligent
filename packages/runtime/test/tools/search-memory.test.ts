@@ -1,12 +1,12 @@
-// @summary Tests for search_knowledge tool lookup by id and content
+// @summary Tests for search_memory tool lookup by id and content
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolContext } from "@diligent/core/tool-contract";
-import { writeKnowledge } from "@diligent/runtime/knowledge";
-import { createSearchKnowledgeTool, createUpdateKnowledgeTool } from "@diligent/runtime/tools";
-import { makeKnowledgeEntry } from "../helpers/knowledge";
+import { writeMemory } from "@diligent/runtime/memory";
+import { createSearchMemoryTool, createUpdateMemoryTool } from "@diligent/runtime/tools";
+import { makeMemoryEntry } from "../helpers/memory";
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -17,7 +17,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   };
 }
 
-describe("search_knowledge tool", () => {
+describe("search_memory tool", () => {
   let tmpDir: string;
 
   afterEach(async () => {
@@ -25,29 +25,29 @@ describe("search_knowledge tool", () => {
   });
 
   it("finds an entry by exact id", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
-    const updateTool = createUpdateKnowledgeTool(tmpDir);
-    const searchTool = createSearchKnowledgeTool(tmpDir);
+    tmpDir = await mkdtemp(join(tmpdir(), "memory-search-"));
+    const updateTool = createUpdateMemoryTool(tmpDir);
+    const searchTool = createSearchMemoryTool(tmpDir);
 
     const saveResult = await updateTool.execute(
       { action: "upsert", type: "preference", content: "Prefer concise responses" },
       makeCtx(),
     );
-    const knowledgeId = saveResult.metadata?.knowledgeId;
-    if (typeof knowledgeId !== "string") throw new Error("Expected knowledge id in metadata");
+    const memoryId = saveResult.metadata?.memoryId;
+    if (typeof memoryId !== "string") throw new Error("Expected memory id in metadata");
 
-    const result = await searchTool.execute({ id: knowledgeId }, makeCtx());
+    const result = await searchTool.execute({ id: memoryId }, makeCtx());
 
-    expect(result.output).toContain(knowledgeId);
+    expect(result.output).toContain(memoryId);
     expect(result.output).toContain("Prefer concise responses");
     expect(result.render).toBeDefined();
-    expect(result.render?.inputSummary).toContain(knowledgeId);
+    expect(result.render?.inputSummary).toContain(memoryId);
   });
 
   it("finds entries by keyword tokens case-insensitively", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
-    const updateTool = createUpdateKnowledgeTool(tmpDir);
-    const searchTool = createSearchKnowledgeTool(tmpDir);
+    tmpDir = await mkdtemp(join(tmpdir(), "memory-search-"));
+    const updateTool = createUpdateMemoryTool(tmpDir);
+    const searchTool = createSearchMemoryTool(tmpDir);
 
     await updateTool.execute(
       { action: "upsert", type: "backlog", content: "Implement thread fork feature" },
@@ -71,34 +71,34 @@ describe("search_knowledge tool", () => {
   });
 
   it("filters Korean queries instead of returning unrelated entries", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
-    await writeKnowledge(tmpDir, [
-      makeKnowledgeEntry({ id: "language", content: "Prefer \uD55C\uAD6D\uC5B4 responses" }),
-      makeKnowledgeEntry({ id: "unrelated", content: "Prefer concise responses" }),
+    tmpDir = await mkdtemp(join(tmpdir(), "memory-search-"));
+    await writeMemory(tmpDir, [
+      makeMemoryEntry({ id: "language", content: "Prefer \uD55C\uAD6D\uC5B4 responses" }),
+      makeMemoryEntry({ id: "unrelated", content: "Prefer concise responses" }),
     ]);
 
-    const result = await createSearchKnowledgeTool(tmpDir).execute({ query: "\uD55C\uAD6D\uC5B4" }, makeCtx());
+    const result = await createSearchMemoryTool(tmpDir).execute({ query: "\uD55C\uAD6D\uC5B4" }, makeCtx());
 
     expect(result.metadata?.ids).toEqual(["language"]);
     expect(result.output).not.toContain("unrelated");
   });
 
   it("does not treat a query without searchable characters as a wildcard", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
-    await writeKnowledge(tmpDir, [makeKnowledgeEntry({ id: "unrelated" })]);
+    tmpDir = await mkdtemp(join(tmpdir(), "memory-search-"));
+    await writeMemory(tmpDir, [makeMemoryEntry({ id: "unrelated" })]);
 
-    const result = await createSearchKnowledgeTool(tmpDir).execute({ query: "!!!" }, makeCtx());
+    const result = await createSearchMemoryTool(tmpDir).execute({ query: "!!!" }, makeCtx());
 
     expect(result.metadata?.ids).toEqual([]);
   });
 
   it("does not let single-character content tokens match longer queries", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
-    await writeKnowledge(tmpDir, [
-      makeKnowledgeEntry({ id: "short-word", content: "Use a cache" }),
-      makeKnowledgeEntry({ id: "korean", content: "\uD55C\uAD6D\uC5B4 \uAF2D \uC0AC\uC6A9" }),
+    tmpDir = await mkdtemp(join(tmpdir(), "memory-search-"));
+    await writeMemory(tmpDir, [
+      makeMemoryEntry({ id: "short-word", content: "Use a cache" }),
+      makeMemoryEntry({ id: "korean", content: "\uD55C\uAD6D\uC5B4 \uAF2D \uC0AC\uC6A9" }),
     ]);
-    const tool = createSearchKnowledgeTool(tmpDir);
+    const tool = createSearchMemoryTool(tmpDir);
 
     expect((await tool.execute({ query: "package" }, makeCtx())).metadata?.ids).toEqual([]);
     expect((await tool.execute({ query: "\uAF2D\uC740" }, makeCtx())).metadata?.ids).toEqual([]);
@@ -107,12 +107,12 @@ describe("search_knowledge tool", () => {
   });
 
   it("excludes superseded entries from keyword, exact-id, and prefix searches", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
-    await writeKnowledge(tmpDir, [
-      makeKnowledgeEntry({ id: "package.old", content: "Use npm" }),
-      makeKnowledgeEntry({ id: "package.new", content: "Use Bun", supersedes: "package.old" }),
+    tmpDir = await mkdtemp(join(tmpdir(), "memory-search-"));
+    await writeMemory(tmpDir, [
+      makeMemoryEntry({ id: "package.old", content: "Use npm" }),
+      makeMemoryEntry({ id: "package.new", content: "Use Bun", supersedes: "package.old" }),
     ]);
-    const tool = createSearchKnowledgeTool(tmpDir);
+    const tool = createSearchMemoryTool(tmpDir);
 
     expect((await tool.execute({ query: "npm" }, makeCtx())).metadata?.ids).toEqual([]);
     expect((await tool.execute({ id: "package.old" }, makeCtx())).metadata?.ids).toEqual([]);
@@ -120,9 +120,9 @@ describe("search_knowledge tool", () => {
   });
 
   it("finds entries by id prefix", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
-    const updateTool = createUpdateKnowledgeTool(tmpDir);
-    const searchTool = createSearchKnowledgeTool(tmpDir);
+    tmpDir = await mkdtemp(join(tmpdir(), "memory-search-"));
+    const updateTool = createUpdateMemoryTool(tmpDir);
+    const searchTool = createSearchMemoryTool(tmpDir);
 
     await updateTool.execute(
       {
@@ -161,9 +161,9 @@ describe("search_knowledge tool", () => {
   });
 
   it("ranks entries with more keyword matches first", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
-    const updateTool = createUpdateKnowledgeTool(tmpDir);
-    const searchTool = createSearchKnowledgeTool(tmpDir);
+    tmpDir = await mkdtemp(join(tmpdir(), "memory-search-"));
+    const updateTool = createUpdateMemoryTool(tmpDir);
+    const searchTool = createSearchMemoryTool(tmpDir);
 
     await updateTool.execute(
       { action: "upsert", type: "backlog", content: "Thread fork feature for web client" },
@@ -179,13 +179,13 @@ describe("search_knowledge tool", () => {
   });
 
   it("returns no matches cleanly", async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
-    const searchTool = createSearchKnowledgeTool(tmpDir);
+    tmpDir = await mkdtemp(join(tmpdir(), "memory-search-"));
+    const searchTool = createSearchMemoryTool(tmpDir);
 
     const result = await searchTool.execute({ query: "missing value" }, makeCtx());
 
-    expect(result.output).toBe("No knowledge entries found");
+    expect(result.output).toBe("No memory entries found");
     expect(result.metadata).toMatchObject({ matchCount: 0, ids: [] });
-    expect(result.render?.outputSummary).toBe("No knowledge entries found");
+    expect(result.render?.outputSummary).toBe("No memory entries found");
   });
 });

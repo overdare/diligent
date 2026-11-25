@@ -10,7 +10,7 @@ export type Mode = ProtocolMode;
 /**
  * Tool block-lists per mode. Source of truth: TOOL_CAPABILITIES in tools/tool-metadata.ts.
  * - PLAN_MODE_DISALLOWED_TOOLS: unavailable in plan/read-only mode. External tools are allowed by default.
- *   Bash, write, apply_patch, edit, multi_edit, update_knowledge are excluded.
+ *   Bash, write, apply_patch, edit, multi_edit, update_memory are excluded.
  * - EXECUTE_MODE_DISALLOWED_TOOLS: unavailable in execute mode. Execute mode should not pause to ask the user.
  */
 export { EXECUTE_MODE_DISALLOWED_TOOLS, PLAN_MODE_DISALLOWED_TOOLS };

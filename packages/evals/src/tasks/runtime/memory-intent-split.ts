@@ -1,7 +1,7 @@
 // @summary Runtime eval for separating a durable preference from transient current-task intent
 
 import { join } from "node:path";
-import { readKnowledge } from "@diligent/runtime";
+import { readMemory } from "@diligent/runtime";
 import type { RuntimeEvalTask, RuntimeVerifierResult } from "../../runtime-task";
 import type { EvalProfile } from "../../task";
 import { RuntimeGrade } from "./grading";
@@ -18,8 +18,8 @@ import {
 const OUTPUT_PATH = "CURRENT.txt";
 const SEEDED_TIMESTAMP = "2026-07-18T00:00:00.000Z";
 
-export interface KnowledgeIntentSplitWorld extends RuntimeFixtureWorld {
-  knowledgeId: string;
+export interface MemoryIntentSplitWorld extends RuntimeFixtureWorld {
+  memoryId: string;
   durableValue: string;
   transientValue: string;
   content: string;
@@ -27,30 +27,30 @@ export interface KnowledgeIntentSplitWorld extends RuntimeFixtureWorld {
   expectedHash: string;
 }
 
-export const knowledgeIntentSplitTask: RuntimeEvalTask<KnowledgeIntentSplitWorld> = {
-  id: "knowledge-intent-split",
-  description: "Persist one durable preference while keeping unrelated current-task intent out of knowledge.",
-  fixtureVersion: "knowledge-intent-split-v5",
+export const memoryIntentSplitTask: RuntimeEvalTask<MemoryIntentSplitWorld> = {
+  id: "memory-intent-split",
+  description: "Persist one durable preference while keeping unrelated current-task intent out of memory.",
+  fixtureVersion: "memory-intent-split-v5",
   limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 5, maxToolCalls: 5, timeoutMs: 180_000 },
   statePolicy: {
-    allowedMutations: ["infrastructure", "sessions", "knowledge"],
-    requiredMutations: ["knowledge"],
+    allowedMutations: ["infrastructure", "sessions", "memory"],
+    requiredMutations: ["memory"],
   },
   toolPolicy: {
-    allowedTools: ["search_knowledge", "update_knowledge", "apply_patch", "edit"],
-    allowedCapabilities: ["knowledge", "write"],
+    allowedTools: ["search_memory", "update_memory", "apply_patch", "edit"],
+    allowedCapabilities: ["memory", "write"],
     allowedCommands: [],
   },
   async setup(seed, root) {
-    const knowledgeId = "preference.review-audience";
+    const memoryId = "preference.review-audience";
     const durableValue = seededToken(seed, "AUDIENCE");
     const transientValue = seededToken(seed, "CURRENT");
     const content = `Preferred review audience is ${durableValue}.`;
     const tags = ["review", "audience"];
     const expected = `${transientValue}\n`;
     await writeFixture(root, {
-      ".diligent/knowledge/knowledge.jsonl": `${JSON.stringify({
-        id: knowledgeId,
+      ".diligent/memory/memory.jsonl": `${JSON.stringify({
+        id: memoryId,
         timestamp: SEEDED_TIMESTAMP,
         type: "preference",
         content: "Preferred review audience is OLD_AUDIENCE.",
@@ -61,7 +61,7 @@ export const knowledgeIntentSplitTask: RuntimeEvalTask<KnowledgeIntentSplitWorld
     return {
       root,
       seed,
-      knowledgeId,
+      memoryId,
       durableValue,
       transientValue,
       content,
@@ -72,20 +72,20 @@ export const knowledgeIntentSplitTask: RuntimeEvalTask<KnowledgeIntentSplitWorld
       allowedChanges: [OUTPUT_PATH],
     };
   },
-  createRuntimeConfig: createKnowledgeRuntimeConfig,
+  createRuntimeConfig: createMemoryRuntimeConfig,
   createSteps: (world) => [
     {
       kind: "turn",
-      message: `For future sessions, please remember that my preferred review audience is ${world.durableValue}, using the stable preference key ${world.knowledgeId}. Separately, for this task only, create ${OUTPUT_PATH} containing exactly ${world.transientValue} and one trailing newline.`,
+      message: `For future sessions, please remember that my preferred review audience is ${world.durableValue}, using the stable preference key ${world.memoryId}. Separately, for this task only, create ${OUTPUT_PATH} containing exactly ${world.transientValue} and one trailing newline.`,
     },
   ],
   verify: verifyIntentSplit,
   snapshotWorld: async (world) => ({
-    entries: await readKnowledge(join(world.root, ".diligent/knowledge")),
+    entries: await readMemory(join(world.root, ".diligent/memory")),
     output: await exactFile(world.root, OUTPUT_PATH),
   }),
   evaluate(input) {
-    const grade = new RuntimeGrade("knowledge_intent_split");
+    const grade = new RuntimeGrade("memory_intent_split");
     if (input.verifier?.timedOut)
       return grade.fail("verifier_timeout", "Independent verification timed out.", "harness_terminal");
     const output = input.workspace.final.entries.find((entry) => entry.path === OUTPUT_PATH);
@@ -93,32 +93,29 @@ export const knowledgeIntentSplitTask: RuntimeEvalTask<KnowledgeIntentSplitWorld
       return grade.fail("output", `${OUTPUT_PATH} does not contain exactly the current-task value.`, "semantic_goal");
     if (input.verifier?.exitCode !== 0)
       return grade.fail(
-        "knowledge_store",
+        "memory_store",
         "The store does not hold exactly the updated durable preference without the transient value.",
         "semantic_goal",
       );
-    if (input.toolCalls.some((call) => call.name === "search_knowledge"))
-      grade.note("knowledge_search", "Knowledge was searched before the update.", { impact: "info" });
+    if (input.toolCalls.some((call) => call.name === "search_memory"))
+      grade.note("memory_search", "Memory was searched before the update.", { impact: "info" });
     if (input.toolCalls.some((call) => call.outcome !== "success"))
       grade.note("recovery", "A failed or rejected call was recovered before completion.");
     return grade.pass();
   },
 };
 
-async function createKnowledgeRuntimeConfig(world: KnowledgeIntentSplitWorld, profile: EvalProfile) {
+async function createMemoryRuntimeConfig(world: MemoryIntentSplitWorld, profile: EvalProfile) {
   const config = await createFixtureRuntimeConfig(world, profile);
   return {
     ...config,
-    diligent: { ...config.diligent, knowledge: { enabled: true, injectionBudget: 1024, maxItems: 5 } },
+    diligent: { ...config.diligent, memory: { enabled: true, injectionBudget: 1024, maxItems: 5 } },
   };
 }
 
-async function verifyIntentSplit(
-  world: KnowledgeIntentSplitWorld,
-  signal: AbortSignal,
-): Promise<RuntimeVerifierResult> {
+async function verifyIntentSplit(world: MemoryIntentSplitWorld, signal: AbortSignal): Promise<RuntimeVerifierResult> {
   const started = performance.now();
-  const entries = await readKnowledge(join(world.root, ".diligent/knowledge"));
+  const entries = await readMemory(join(world.root, ".diligent/memory"));
   const output = await exactFile(world.root, OUTPUT_PATH);
   const entry = entries[0];
   const storeText = JSON.stringify(entries);
@@ -126,7 +123,7 @@ async function verifyIntentSplit(
     entries.length === 1 &&
     entry !== undefined &&
     sameKeys(entry, ["confidence", "content", "id", "tags", "timestamp", "type"]) &&
-    entry.id === world.knowledgeId &&
+    entry.id === world.memoryId &&
     entry.type === "preference" &&
     entry.content.includes(world.durableValue) &&
     !entry.content.includes("OLD_AUDIENCE") &&
@@ -141,7 +138,7 @@ async function verifyIntentSplit(
     valid,
     signal.aborted,
     valid ? JSON.stringify({ entry, outputHash: world.expectedHash }) : JSON.stringify({ entries, output }),
-    "Knowledge intent split did not match the exact final store and project output.",
+    "Memory intent split did not match the exact final store and project output.",
   );
 }
 
@@ -157,7 +154,7 @@ function verifierResult(
   error: string,
 ): RuntimeVerifierResult {
   return {
-    argv: ["knowledge-intent-split-verifier"],
+    argv: ["memory-intent-split-verifier"],
     exitCode: valid ? 0 : 1,
     elapsedMs: Math.round(performance.now() - started),
     stdout: valid ? stdout : "",

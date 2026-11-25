@@ -22,14 +22,14 @@ import {
   hookContextFollowTask,
   imageResumeRecallTask,
   instructionHierarchyTask,
-  knowledgeForgetTask,
-  knowledgeIntentSplitTask,
-  knowledgeRecallTask,
   loopContextAdaptationTask,
   manualCompactionResumeTask,
   mcpLazyToolTask,
   mcpPromptGroundingTask,
   mcpResourceGroundingTask,
+  memoryForgetTask,
+  memoryIntentSplitTask,
+  memoryRecallTask,
   planConvergeTask,
   planProgressTask,
   planToExecuteTask,
@@ -50,13 +50,13 @@ describe("runtime eval tasks", () => {
       expect(task.limits.maxOutputTokens).toBeGreaterThan(0);
     }
     expect(RUNTIME_EVAL_TASKS.every((task) => task.statePolicy !== undefined)).toBe(true);
-    expect(knowledgeIntentSplitTask.statePolicy).toEqual({
-      allowedMutations: ["infrastructure", "sessions", "knowledge"],
-      requiredMutations: ["knowledge"],
+    expect(memoryIntentSplitTask.statePolicy).toEqual({
+      allowedMutations: ["infrastructure", "sessions", "memory"],
+      requiredMutations: ["memory"],
     });
-    expect(knowledgeForgetTask.statePolicy).toEqual({
-      allowedMutations: ["infrastructure", "sessions", "knowledge"],
-      requiredMutations: ["knowledge"],
+    expect(memoryForgetTask.statePolicy).toEqual({
+      allowedMutations: ["infrastructure", "sessions", "memory"],
+      requiredMutations: ["memory"],
     });
     expect(readImagePairTask.statePolicy).toEqual({
       allowedMutations: ["infrastructure", "sessions", "image_sidecars"],
@@ -67,7 +67,7 @@ describe("runtime eval tasks", () => {
       requiredMutations: ["image_sidecars"],
     });
     expect(loopContextAdaptationTask.statePolicy).toEqual({ allowedMutations: ["infrastructure", "sessions"] });
-    expect(knowledgeRecallTask.statePolicy?.allowedMutations).not.toContain("knowledge");
+    expect(memoryRecallTask.statePolicy?.allowedMutations).not.toContain("memory");
   });
 
   test("defines custom agent routing as a fixture-local collaboration task", async () => {
@@ -572,65 +572,65 @@ describe("runtime eval tasks", () => {
     }
   });
 
-  test("isolates knowledge recall so the seeded value exists only in project knowledge", async () => {
-    const root = await mkdtemp(join(tmpdir(), "diligent-runtime-knowledge-recall-"));
+  test("isolates memory recall so the seeded value exists only in project memory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "diligent-runtime-memory-recall-"));
     try {
-      const world = await knowledgeRecallTask.setup("shared-seed-123", root);
-      const steps = knowledgeRecallTask.createSteps(world);
-      const knowledge = await readFile(join(root, ".diligent/knowledge/knowledge.jsonl"), "utf8");
-      expect(knowledge).toContain(world.token);
+      const world = await memoryRecallTask.setup("shared-seed-123", root);
+      const steps = memoryRecallTask.createSteps(world);
+      const memory = await readFile(join(root, ".diligent/memory/memory.jsonl"), "utf8");
+      expect(memory).toContain(world.token);
       expect(JSON.stringify(steps)).not.toContain(world.token);
-      expect(knowledgeRecallTask.toolPolicy.allowedCapabilities).toEqual(["write"]);
+      expect(memoryRecallTask.toolPolicy.allowedCapabilities).toEqual(["write"]);
       expect(world.allowedChanges).toEqual(["RELEASE.txt"]);
     } finally {
       await removeTemporaryRoot(root);
     }
   });
 
-  test("defines deterministic knowledge intent-split and forget fixtures", async () => {
-    const splitRoot = await mkdtemp(join(tmpdir(), "diligent-runtime-knowledge-intent-split-"));
-    const forgetRoot = await mkdtemp(join(tmpdir(), "diligent-runtime-knowledge-forget-"));
+  test("defines deterministic memory intent-split and forget fixtures", async () => {
+    const splitRoot = await mkdtemp(join(tmpdir(), "diligent-runtime-memory-intent-split-"));
+    const forgetRoot = await mkdtemp(join(tmpdir(), "diligent-runtime-memory-forget-"));
     try {
-      const split = await knowledgeIntentSplitTask.setup("shared-seed-123", splitRoot);
-      const forget = await knowledgeForgetTask.setup("shared-seed-123", forgetRoot);
-      const splitPrompt = JSON.stringify(knowledgeIntentSplitTask.createSteps(split));
-      const forgetPrompt = JSON.stringify(knowledgeForgetTask.createSteps(forget));
-      expect(knowledgeIntentSplitTask.toolPolicy).toEqual({
-        allowedTools: ["search_knowledge", "update_knowledge", "apply_patch", "edit"],
-        allowedCapabilities: ["knowledge", "write"],
+      const split = await memoryIntentSplitTask.setup("shared-seed-123", splitRoot);
+      const forget = await memoryForgetTask.setup("shared-seed-123", forgetRoot);
+      const splitPrompt = JSON.stringify(memoryIntentSplitTask.createSteps(split));
+      const forgetPrompt = JSON.stringify(memoryForgetTask.createSteps(forget));
+      expect(memoryIntentSplitTask.toolPolicy).toEqual({
+        allowedTools: ["search_memory", "update_memory", "apply_patch", "edit"],
+        allowedCapabilities: ["memory", "write"],
         allowedCommands: [],
       });
-      expect(knowledgeForgetTask.toolPolicy).toEqual(knowledgeIntentSplitTask.toolPolicy);
-      expect(splitPrompt).toContain(split.knowledgeId);
+      expect(memoryForgetTask.toolPolicy).toEqual(memoryIntentSplitTask.toolPolicy);
+      expect(splitPrompt).toContain(split.memoryId);
       expect(splitPrompt).toContain(split.durableValue);
       expect(splitPrompt).toContain(split.transientValue);
-      expect(splitPrompt).not.toContain("search_knowledge");
-      expect(splitPrompt).not.toContain("update_knowledge");
-      expect(forgetPrompt).toContain(forget.knowledgeId);
+      expect(splitPrompt).not.toContain("search_memory");
+      expect(splitPrompt).not.toContain("update_memory");
+      expect(forgetPrompt).toContain(forget.memoryId);
       expect(forgetPrompt).toContain(forget.taskValue);
-      expect(forgetPrompt).not.toContain("search_knowledge");
-      expect(forgetPrompt).not.toContain("update_knowledge");
+      expect(forgetPrompt).not.toContain("search_memory");
+      expect(forgetPrompt).not.toContain("update_memory");
       expect(split.allowedChanges).toEqual(["CURRENT.txt"]);
       expect(forget.allowedChanges).toEqual(["FORGET.txt"]);
       expect(split.protectedPaths).toEqual([]);
       expect(forget.protectedPaths).toEqual([]);
-      expect(knowledgeIntentSplitTask.limits.maxUserInputRequests).toBe(0);
-      expect(knowledgeIntentSplitTask.limits.maxChildAgents).toBe(0);
-      expect(knowledgeForgetTask.limits.maxUserInputRequests).toBe(0);
-      expect(knowledgeForgetTask.limits.maxChildAgents).toBe(0);
+      expect(memoryIntentSplitTask.limits.maxUserInputRequests).toBe(0);
+      expect(memoryIntentSplitTask.limits.maxChildAgents).toBe(0);
+      expect(memoryForgetTask.limits.maxUserInputRequests).toBe(0);
+      expect(memoryForgetTask.limits.maxChildAgents).toBe(0);
     } finally {
       await removeTemporaryRoot(splitRoot);
       await removeTemporaryRoot(forgetRoot);
     }
   });
 
-  test("independently rejects transient knowledge leakage and forgotten-value replacement", async () => {
-    const splitRoot = await mkdtemp(join(tmpdir(), "diligent-runtime-knowledge-split-verifier-"));
-    const forgetRoot = await mkdtemp(join(tmpdir(), "diligent-runtime-knowledge-forget-verifier-"));
+  test("independently rejects transient memory leakage and forgotten-value replacement", async () => {
+    const splitRoot = await mkdtemp(join(tmpdir(), "diligent-runtime-memory-split-verifier-"));
+    const forgetRoot = await mkdtemp(join(tmpdir(), "diligent-runtime-memory-forget-verifier-"));
     try {
-      const split = await knowledgeIntentSplitTask.setup("shared-seed-123", splitRoot);
+      const split = await memoryIntentSplitTask.setup("shared-seed-123", splitRoot);
       const updatedEntry = {
-        id: split.knowledgeId,
+        id: split.memoryId,
         timestamp: "2026-07-18T02:00:00.000Z",
         type: "preference",
         content: split.content,
@@ -638,38 +638,38 @@ describe("runtime eval tasks", () => {
         tags: split.tags,
       };
       await writeFixture(splitRoot, {
-        ".diligent/knowledge/knowledge.jsonl": `${JSON.stringify(updatedEntry)}\n`,
+        ".diligent/memory/memory.jsonl": `${JSON.stringify(updatedEntry)}\n`,
         "CURRENT.txt": split.expected,
       });
-      expect((await knowledgeIntentSplitTask.verify!(split, new AbortController().signal)).exitCode).toBe(0);
+      expect((await memoryIntentSplitTask.verify!(split, new AbortController().signal)).exitCode).toBe(0);
       updatedEntry.tags = ["review-audience"];
       await writeFixture(splitRoot, {
-        ".diligent/knowledge/knowledge.jsonl": `${JSON.stringify(updatedEntry)}\n`,
+        ".diligent/memory/memory.jsonl": `${JSON.stringify(updatedEntry)}\n`,
       });
-      expect((await knowledgeIntentSplitTask.verify!(split, new AbortController().signal)).exitCode).toBe(0);
+      expect((await memoryIntentSplitTask.verify!(split, new AbortController().signal)).exitCode).toBe(0);
       updatedEntry.tags = [split.transientValue];
       await writeFixture(splitRoot, {
-        ".diligent/knowledge/knowledge.jsonl": `${JSON.stringify(updatedEntry)}\n`,
+        ".diligent/memory/memory.jsonl": `${JSON.stringify(updatedEntry)}\n`,
       });
-      expect((await knowledgeIntentSplitTask.verify!(split, new AbortController().signal)).exitCode).toBe(1);
+      expect((await memoryIntentSplitTask.verify!(split, new AbortController().signal)).exitCode).toBe(1);
       updatedEntry.tags = ["review-audience"];
       await writeFixture(splitRoot, {
-        ".diligent/knowledge/knowledge.jsonl": `${JSON.stringify(updatedEntry)}\n${JSON.stringify({
+        ".diligent/memory/memory.jsonl": `${JSON.stringify(updatedEntry)}\n${JSON.stringify({
           ...updatedEntry,
           id: "preference.transient-duplicate",
           content: `Current-only value is ${split.transientValue}.`,
         })}\n`,
       });
-      expect((await knowledgeIntentSplitTask.verify!(split, new AbortController().signal)).exitCode).toBe(1);
+      expect((await memoryIntentSplitTask.verify!(split, new AbortController().signal)).exitCode).toBe(1);
 
-      const forget = await knowledgeForgetTask.setup("shared-seed-123", forgetRoot);
+      const forget = await memoryForgetTask.setup("shared-seed-123", forgetRoot);
       await writeFixture(forgetRoot, {
-        ".diligent/knowledge/knowledge.jsonl": `${JSON.stringify(forget.controlEntry)}\n`,
+        ".diligent/memory/memory.jsonl": `${JSON.stringify(forget.controlEntry)}\n`,
         "FORGET.txt": forget.expected,
       });
-      expect((await knowledgeForgetTask.verify!(forget, new AbortController().signal)).exitCode).toBe(0);
+      expect((await memoryForgetTask.verify!(forget, new AbortController().signal)).exitCode).toBe(0);
       await writeFixture(forgetRoot, {
-        ".diligent/knowledge/knowledge.jsonl": `${JSON.stringify(forget.controlEntry)}\n${JSON.stringify({
+        ".diligent/memory/memory.jsonl": `${JSON.stringify(forget.controlEntry)}\n${JSON.stringify({
           id: "preference.replacement",
           timestamp: "2026-07-18T02:00:00.000Z",
           type: "preference",
@@ -677,18 +677,18 @@ describe("runtime eval tasks", () => {
           confidence: 0.8,
         })}\n`,
       });
-      expect((await knowledgeForgetTask.verify!(forget, new AbortController().signal)).exitCode).toBe(1);
+      expect((await memoryForgetTask.verify!(forget, new AbortController().signal)).exitCode).toBe(1);
     } finally {
       await removeTemporaryRoot(splitRoot);
       await removeTemporaryRoot(forgetRoot);
     }
   });
 
-  test("grades knowledge intent split by the store and output, not the tool path", () => {
+  test("grades memory intent split by the store and output, not the tool path", () => {
     const world = {
       root: "$WORKSPACE",
       seed: "seed",
-      knowledgeId: "preference.review-audience",
+      memoryId: "preference.review-audience",
       durableValue: "AUDIENCE_future",
       transientValue: "CURRENT_once",
       content: "Preferred review audience is AUDIENCE_future.",
@@ -700,38 +700,38 @@ describe("runtime eval tasks", () => {
     };
     const execution = baseExecution(world, "Remember one value and write another.", "Done.");
     execution.toolCalls = [
-      trace(1, "update_knowledge", "knowledge", { action: "upsert", id: world.knowledgeId, content: "x" }),
+      trace(1, "update_memory", "memory", { action: "upsert", id: world.memoryId, content: "x" }),
       trace(2, "write", "write", { file_path: "CURRENT.txt", content: world.expected }),
     ];
     execution.workspace.final.entries = [{ path: "CURRENT.txt", kind: "file", size: 1, sha256: "split-hash" }];
-    expect(knowledgeIntentSplitTask.evaluate(execution)).toEqual({ passed: true });
+    expect(memoryIntentSplitTask.evaluate(execution)).toEqual({ passed: true });
 
     const searched = structuredClone(execution);
-    searched.toolCalls.unshift(trace(0, "search_knowledge", "knowledge", { query: world.transientValue }));
-    expect(knowledgeIntentSplitTask.evaluate(searched)).toMatchObject({
+    searched.toolCalls.unshift(trace(0, "search_memory", "memory", { query: world.transientValue }));
+    expect(memoryIntentSplitTask.evaluate(searched)).toMatchObject({
       passed: true,
-      diagnostics: [{ code: "knowledge_intent_split.knowledge_search", impact: "info" }],
+      diagnostics: [{ code: "memory_intent_split.memory_search", impact: "info" }],
     });
 
     const wrongStore = structuredClone(execution);
     wrongStore.verifier!.exitCode = 1;
-    expect(knowledgeIntentSplitTask.evaluate(wrongStore)).toMatchObject({
+    expect(memoryIntentSplitTask.evaluate(wrongStore)).toMatchObject({
       passed: false,
-      code: "knowledge_intent_split.knowledge_store",
+      code: "memory_intent_split.memory_store",
     });
     const wrongOutput = structuredClone(execution);
     wrongOutput.workspace.final.entries[0]!.sha256 = "wrong-hash";
-    expect(knowledgeIntentSplitTask.evaluate(wrongOutput)).toMatchObject({
+    expect(memoryIntentSplitTask.evaluate(wrongOutput)).toMatchObject({
       passed: false,
-      code: "knowledge_intent_split.output",
+      code: "memory_intent_split.output",
     });
   });
 
-  test("grades knowledge deletion by the store and output, not the tool path", () => {
+  test("grades memory deletion by the store and output, not the tool path", () => {
     const world = {
       root: "$WORKSPACE",
       seed: "seed",
-      knowledgeId: "preference.deploy-window",
+      memoryId: "preference.deploy-window",
       forgottenValue: "WINDOW_old",
       targetContent: "Preferred deployment window is WINDOW_old.",
       taskValue: "TASK_once",
@@ -756,26 +756,26 @@ describe("runtime eval tasks", () => {
       trace(2, "apply_patch", "write", {
         patch: "*** Begin Patch\n*** Add File: FORGET.txt\n+TASK_once\n*** End Patch",
       }),
-      trace(3, "update_knowledge", "knowledge", { action: "delete", id: world.knowledgeId }),
-      trace(4, "search_knowledge", "knowledge", { id_prefix: "preference." }),
+      trace(3, "update_memory", "memory", { action: "delete", id: world.memoryId }),
+      trace(4, "search_memory", "memory", { id_prefix: "preference." }),
     ];
     execution.workspace.final.entries = [{ path: "FORGET.txt", kind: "file", size: 1, sha256: "forget-hash" }];
-    const result = knowledgeForgetTask.evaluate(execution);
+    const result = memoryForgetTask.evaluate(execution);
     expect(result.passed).toBe(true);
     expect(result.diagnostics?.map((diagnostic) => diagnostic.code)).toEqual([
-      "knowledge_forget.knowledge_search",
-      "knowledge_forget.recovery",
+      "memory_forget.memory_search",
+      "memory_forget.recovery",
     ]);
 
     const wrongStore = structuredClone(execution);
     wrongStore.verifier!.exitCode = 1;
-    expect(knowledgeForgetTask.evaluate(wrongStore)).toMatchObject({
+    expect(memoryForgetTask.evaluate(wrongStore)).toMatchObject({
       passed: false,
-      code: "knowledge_forget.knowledge_store",
+      code: "memory_forget.memory_store",
     });
     const wrongOutput = structuredClone(execution);
     wrongOutput.workspace.final.entries[0]!.sha256 = "wrong-hash";
-    expect(knowledgeForgetTask.evaluate(wrongOutput)).toMatchObject({ passed: false, code: "knowledge_forget.output" });
+    expect(memoryForgetTask.evaluate(wrongOutput)).toMatchObject({ passed: false, code: "memory_forget.output" });
   });
 
   test("creates equivalent independent workspaces from the same task seed", async () => {

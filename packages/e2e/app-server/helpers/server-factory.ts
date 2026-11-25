@@ -59,7 +59,7 @@ export function createTestServer(opts: {
     },
     effort: "medium",
     mode: "default",
-    reminders: { planIntervalTurns: 0, knowledgeIntervalTurns: 0 },
+    reminders: { planIntervalTurns: 0, memoryIntervalTurns: 0 },
     systemPrompt: [],
     streamFunction: streamFn,
     diligent: { tools: opts.runtimeToolsConfig },

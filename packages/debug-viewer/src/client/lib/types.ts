@@ -1,7 +1,7 @@
 // Re-export shared types for client use
 
 export type {
-  KnowledgeResponse,
+  MemoryResponse,
   SearchResponse,
   SearchResult,
   SessionDataResponse,
@@ -18,7 +18,7 @@ export type {
   EffortChangeEntry,
   ErrorEntry,
   ImageBlock,
-  KnowledgeEntry,
+  MemoryEntry,
   ModeChangeEntry,
   ModelChangeEntry,
   ModelUsageSummary,

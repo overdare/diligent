@@ -27,7 +27,7 @@ export async function loadDiligentConfig(
   const globalConfig = await loadConfigFile(globalPath);
   if (globalConfig) sources.push(globalPath);
 
-  // Layer 2: Project config (inside .diligent/ alongside sessions, knowledge, skills)
+  // Layer 2: Project config (inside .diligent/ alongside sessions, memory, skills)
   const projectPath = join(cwd, projectDirName, "config.jsonc");
   const projectConfig = await loadConfigFile(projectPath);
   if (projectConfig) sources.push(projectPath);
@@ -59,13 +59,8 @@ async function loadConfigFile(path: string): Promise<DiligentConfig | null> {
   try {
     const file = Bun.file(path);
     if (!(await file.exists())) return null;
-    const text = await file.text();
-    const parsed = parseJsonc(text);
-    const substituted = substituteTemplates(parsed);
-    if (typeof substituted === "object" && substituted !== null && "model" in substituted) {
-      const record = substituted as Record<string, unknown>;
-      if (record.model !== undefined) record.model = normalizeLegacyModelRef(record.model);
-    }
+    const substituted = substituteTemplates(parseJsonc(await file.text()));
+    if (isPlainObject(substituted)) normalizeLegacyConfig(substituted);
     const result = DiligentConfigSchema.safeParse(substituted);
     if (!result.success) {
       logger.warn("invalid_config", {
@@ -78,6 +73,16 @@ async function loadConfigFile(path: string): Promise<DiligentConfig | null> {
     return result.data;
   } catch {
     return null;
+  }
+}
+
+/** Map values written by earlier versions onto the current schema in memory; the file is left as written. */
+function normalizeLegacyConfig(record: Record<string, unknown>): void {
+  if (record.model !== undefined) record.model = normalizeLegacyModelRef(record.model);
+  // `memory` was named `knowledge` before the rename; a `memory` value in the same file wins.
+  if ("knowledge" in record) {
+    record.memory ??= record.knowledge;
+    delete record.knowledge;
   }
 }
 

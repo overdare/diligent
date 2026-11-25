@@ -13,7 +13,7 @@ const TEST_HOME = join(TEST_ROOT, "home");
 let origHome: string | undefined;
 let origStorageNamespace: string | undefined;
 
-/** Project config lives inside .diligent/ alongside sessions, knowledge, skills */
+/** Project config lives inside .diligent/ alongside sessions, memory, skills */
 const projectConfigPath = (root: string, dirName = ".diligent") => join(root, dirName, "config.jsonc");
 
 beforeEach(() => {
@@ -259,6 +259,30 @@ describe("loadDiligentConfig", () => {
 
     const { config } = await loadDiligentConfig(TEST_ROOT);
     expect(config.systemPrompt).toBe("prefix--suffix");
+  });
+
+  it("reads the legacy knowledge key as memory without rewriting the file", async () => {
+    await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
+    const text = `{\n  // keep me\n  "model": "${TEST_ANTHROPIC_MODEL_ID}",\n  "knowledge": { "nudgeInterval": 3 }\n}\n`;
+    await Bun.write(projectConfigPath(TEST_ROOT), text);
+
+    const { config, sources } = await loadDiligentConfig(TEST_ROOT);
+
+    expect(sources).toEqual([projectConfigPath(TEST_ROOT)]);
+    expect(config.memory?.nudgeInterval).toBe(3);
+    expect(await Bun.file(projectConfigPath(TEST_ROOT)).text()).toBe(text);
+  });
+
+  it("ignores the legacy knowledge key when memory is configured in the same file", async () => {
+    await mkdir(join(TEST_HOME, ".diligent"), { recursive: true });
+    await Bun.write(
+      join(TEST_HOME, ".diligent", "config.jsonc"),
+      `{ "memory": { "nudgeInterval": 5 }, "knowledge": { "nudgeInterval": 3 } }`,
+    );
+
+    const { config } = await loadDiligentConfig(TEST_ROOT);
+
+    expect(config.memory?.nudgeInterval).toBe(5);
   });
 
   it("invalid config file warns and is skipped", async () => {

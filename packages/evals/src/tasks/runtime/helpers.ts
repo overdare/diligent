@@ -66,12 +66,12 @@ export async function createFixtureRuntimeConfigForCwd(
     model,
     effort: profile.effort,
     mode: "default",
-    reminders: { planIntervalTurns: 0, knowledgeIntervalTurns: 0 },
+    reminders: { planIntervalTurns: 0, memoryIntervalTurns: 0 },
     systemPrompt,
     streamFunction: () => {
       throw new Error("Runtime eval runner did not install the profile stream.");
     },
-    diligent: { knowledge: { enabled: false }, agents: { enabled: false } },
+    diligent: { memory: { enabled: false }, agents: { enabled: false } },
     sources: [],
     configLayers: {},
     discoveredSkills: skills,

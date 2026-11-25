@@ -912,7 +912,7 @@ export class DiligentAppServer {
         return agent;
       },
       compaction: this.config.compaction,
-      knowledgePath: paths.knowledge,
+      memoryPath: paths.memory,
       onStop: (context) =>
         this.runStopHooksFor({
           sessionId: runtime.manager.sessionId,

@@ -75,15 +75,15 @@ export {
   createListRenderPayload,
   createMultiEditDiffRenderPayload,
   createPatchDiffRenderPayload,
-  createSearchKnowledgeRenderPayload,
+  createSearchMemoryRenderPayload,
   createTextRenderPayload,
-  createUpdateKnowledgeRenderPayload,
+  createUpdateMemoryRenderPayload,
   summarizeRenderText,
 } from "./render-payload";
 export { createRequestUserInputTool } from "./request-user-input";
-export { createSearchKnowledgeTool } from "./search-knowledge";
+export { createSearchMemoryTool } from "./search-memory";
 export { createSkillTool, registerSkillTool } from "./skill";
-export { createUpdateKnowledgeTool } from "./update-knowledge";
+export { createUpdateMemoryTool } from "./update-memory";
 export type { UserInputQuestion, UserInputRequest, UserInputResponse, UserInputSource } from "./user-input-types";
 export { createWebTool } from "./web";
 export { createWriteAbsoluteTool, createWriteTool } from "./write";

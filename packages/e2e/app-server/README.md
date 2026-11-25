@@ -51,7 +51,7 @@ protocol-observable behavior, move the observable scenario here when that test i
 |---|---|
 | `custom-agents.test.ts` | Custom-agent spawning and per-spawn tool restrictions |
 | `image-upload.test.ts` | Image upload persistence and attachment response |
-| `knowledge.test.ts` | Knowledge CRUD and filesystem persistence |
+| `memory.test.ts` | Memory CRUD and filesystem persistence |
 | `mode-and-config.test.ts` | Mode, effort, current-thread defaults, and tool-availability changes |
 | `multi-connection.test.ts` | Subscription fanout, unsubscribe isolation, and disconnect cleanup over in-memory peers |
 | `plugin-hooks.test.ts` | Plugin hook blocking, context injection, errors, and stop-hook re-entry |

@@ -35,7 +35,7 @@ function createDeps(nowMs = 1, markdownText = "") {
     deriveToolStartState,
     deriveToolUpdateMessage,
     buildCompactionItem: () => ({ id: "compaction" }),
-    buildKnowledgeSavedItem: () => ({ id: "knowledge" }),
+    buildMemorySavedItem: () => ({ id: "memory" }),
     buildErrorItem: () => ({ id: "error" }),
     buildThinkingItem: (_text: string) => ({ id: "thinking" }),
     buildAssistantChunkItem: (_text: string, _continued: boolean) => ({ id: "assistant" }),

@@ -34,7 +34,7 @@ describe("runtime experiment gating", () => {
     const paths = {
       root: join(cwd, ".diligent"),
       sessions: join(cwd, ".diligent", "sessions"),
-      knowledge: join(cwd, ".diligent", "knowledge"),
+      memory: join(cwd, ".diligent", "memory"),
       skills: join(cwd, ".diligent", "skills"),
       images: join(cwd, ".diligent", "images"),
     };

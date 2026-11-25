@@ -33,8 +33,8 @@ import {
 } from "./config-handlers";
 import { type ExperimentConfigManager, handleExperimentsList, handleExperimentsSet } from "./experiment-handlers";
 import { readFilePreview, resolveFilePreviewCwd } from "./file-handlers";
-import { handleKnowledgeList, handleKnowledgeUpdate } from "./knowledge-handlers";
 import { handleMcpList, handleMcpLoginStart, handleMcpLogout } from "./mcp-handlers";
+import { handleMemoryList, handleMemoryUpdate } from "./memory-handlers";
 import { handleThreadDelete, handleThreadHistory, handleThreadList, handleThreadResume } from "./session-handlers";
 import { handleSkillsList, handleSkillsSet, type SkillConfigManager } from "./skill-handlers";
 import { handleSubagentsList, handleSubagentsSet, type SubagentConfigManager } from "./subagent-handlers";
@@ -179,8 +179,8 @@ export function applySessionDefaults(
     DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET,
     DILIGENT_CLIENT_REQUEST_METHODS.FAST_MODE_SET,
     DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ,
-    DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST,
-    DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
+    DILIGENT_CLIENT_REQUEST_METHODS.MEMORY_LIST,
+    DILIGENT_CLIENT_REQUEST_METHODS.MEMORY_UPDATE,
     DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST,
     DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET,
     DILIGENT_CLIENT_REQUEST_METHODS.SKILLS_LIST,
@@ -342,11 +342,11 @@ export async function dispatchClientRequest(
     case DILIGENT_CLIENT_REQUEST_METHODS.FAST_MODE_SET:
       return handleFastModeSet(ctx.threadHandlersCtx, request.params.threadId, request.params.fastMode);
 
-    case DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST:
-      return handleKnowledgeList(ctx.threadHandlersCtx, request.params.threadId, request.params.limit);
+    case DILIGENT_CLIENT_REQUEST_METHODS.MEMORY_LIST:
+      return handleMemoryList(ctx.threadHandlersCtx, request.params.threadId, request.params.limit);
 
-    case DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE:
-      return handleKnowledgeUpdate(ctx.threadHandlersCtx, request.params.threadId, request.params);
+    case DILIGENT_CLIENT_REQUEST_METHODS.MEMORY_UPDATE:
+      return handleMemoryUpdate(ctx.threadHandlersCtx, request.params.threadId, request.params);
 
     case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE: {
       const result = await handleThreadDelete(ctx.threadHandlersCtx, request.params.threadId);

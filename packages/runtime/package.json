@@ -12,7 +12,7 @@
     "./collab": "./src/collab/index.ts",
     "./config": "./src/config/index.ts",
     "./infrastructure": "./src/infrastructure/index.ts",
-    "./knowledge": "./src/knowledge/index.ts",
+    "./memory": "./src/memory/index.ts",
     "./observability": "./src/observability/runtime.ts",
     "./prompt": "./src/prompt/index.ts",
     "./rpc": "./src/rpc/index.ts",
