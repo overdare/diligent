@@ -136,6 +136,8 @@ export interface DiligentAppServerConfig {
   createAgent: (args: CreateAgentArgs) => RuntimeAgent | Promise<RuntimeAgent>;
   /** Refresh provider-dependent tools between turns without replacing the agent or its state. */
   refreshAgentTools?: (agent: RuntimeAgent, args: CreateAgentArgs) => void | Promise<void>;
+  /** Replace the memory section with the current project memory before a thread's next turn. */
+  refreshAgentMemory?: (agent: RuntimeAgent) => Promise<void>;
   streamFunction?: StreamFunction;
   createNativeCompaction?: (provider: ProviderName) => NativeCompactFn | undefined;
   compaction?: SessionManagerConfig["compaction"];
@@ -898,6 +900,8 @@ export class DiligentAppServer {
           if (!sameModelRef(lastResolvedModel, selectedModel) || agent.fastMode !== request.fastMode) {
             await this.config.refreshAgentTools?.(agent, request);
           }
+          // Another agent or harness may have changed project memory since the previous turn.
+          await this.config.refreshAgentMemory?.(agent);
           if (!sameModelRef(lastResolvedModel, selectedModel) && !sameModelRef(agent.model, selectedModel)) {
             agent.setModel(
               resolveModel(selectedModel),

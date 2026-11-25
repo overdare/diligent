@@ -4,8 +4,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ensureDiligentDir } from "@diligent/runtime";
+import { ensureDiligentDir, type StreamFunction } from "@diligent/runtime";
 import { readMemory } from "@diligent/runtime/memory";
+import { createSimpleStream } from "./helpers/fake-stream";
 import { createProtocolClient, type ProtocolTestClient } from "./helpers/protocol-client";
 import { createTestServer } from "./helpers/server-factory";
 
@@ -121,5 +122,50 @@ describe("memory", () => {
     await expect(
       client.request("memory/update", { action: "upsert", threadId, id: "../outside", type: "project", content: "x" }),
     ).rejects.toThrow("Invalid memory id");
+  });
+
+  test("a running thread sees memory another agent changed before its next turn and is told once", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-memory-"));
+    const paths = await ensureDiligentDir(tmpDir);
+    await writeFile(
+      join(paths.memory, "combat-damage.md"),
+      "---\nname: combat-damage\ndescription: HP bar first\nmetadata:\n  type: project\n---\n\nBuild the HP bar first.\n",
+    );
+    await writeFile(
+      join(paths.memory, "MEMORY.md"),
+      "# Memory Index\n\n- [Combat damage](combat-damage.md) — HP bar first\n",
+    );
+    const seen: Array<{ system: string; messages: string }> = [];
+    const reply = createSimpleStream("ok");
+    const streamFunction: StreamFunction = (model, context, options) => {
+      seen.push({
+        system: context.systemPrompt.map((section) => section.content).join("\n"),
+        messages: JSON.stringify(context.messages),
+      });
+      return reply(model, context, options);
+    };
+    const server = createTestServer({ cwd: tmpDir, streamFunction, runtimeToolsConfig: {} });
+    client = createProtocolClient(server);
+    const threadId = await client.initAndStartThread(tmpDir);
+    const notice = "Project memory changed since your previous turn";
+    const count = (text: string) => text.split(notice).length - 1;
+
+    await client.sendTurnAndWait(threadId, "first");
+    await writeFile(
+      join(paths.memory, "MEMORY.md"),
+      "# Memory Index\n\n- [Combat damage](combat-damage.md) — Floating damage numbers replace the HP bar\n",
+    );
+    await client.sendTurnAndWait(threadId, "second");
+    await client.sendTurnAndWait(threadId, "third");
+
+    expect(seen).toHaveLength(3);
+    expect(seen[0].system).toContain("HP bar first");
+    expect(seen[1].system).toContain("Floating damage numbers replace the HP bar");
+    expect(seen[1].system).not.toContain("HP bar first");
+    expect(count(seen[0].messages)).toBe(0);
+    expect(count(seen[1].messages)).toBe(1);
+    expect(seen[1].messages).toContain("Floating damage numbers replace the HP bar");
+    // An unchanged index adds no further notice; the earlier one stays in history.
+    expect(count(seen[2].messages)).toBe(1);
   });
 });

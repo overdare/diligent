@@ -5,6 +5,7 @@ import type { ProviderName, SystemSection } from "@diligent/core/provider-contra
 import { resolveMaxTokens } from "@diligent/core/provider-contract";
 import type { Tool, ToolOutputFileStore } from "@diligent/core/tool-contract";
 import { createLogger } from "@diligent/logging";
+import { createMemoryChangeNotice, type MemoryChangeNotice } from "../agent/memory-change-notice";
 import { createMemoryNudge } from "../agent/memory-nudge";
 import {
   EXECUTE_MODE_DISALLOWED_TOOLS,
@@ -291,7 +292,9 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
   );
   const loopHookLogger = logger.child({ scope: "runtime.agent.loop-hooks" });
   const { planIntervalTurns, memoryIntervalTurns } = runtimeConfig.reminders;
+  const memoryChangeNotice = createMemoryChangeNotice();
   const loopHooks = [
+    memoryChangeNotice,
     ...(request.goalHost ? [createGoalContextHook(request.goalHost)] : []),
     ...(planIntervalTurns > 0
       ? [createReminderHook({ intervalTurns: planIntervalTurns, policy: createPlanReminder(loopHookLogger) })]
@@ -308,7 +311,7 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
       logger: loopHookLogger,
     }),
   ];
-  return new RuntimeAgent(
+  const agent = new RuntimeAgent(
     model,
     applyModeToPrompt(activeMode, withToolInstructions(promptSections, availableTools)),
     tools,
@@ -330,6 +333,15 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
     registry,
     codeModeSession,
   );
+  memoryChangeNotices.set(agent, memoryChangeNotice);
+  return agent;
+}
+
+/** Notices for agents this factory built, so a between-turn memory refresh can tell the running thread. */
+const memoryChangeNotices = new WeakMap<RuntimeAgent, MemoryChangeNotice>();
+
+function memorySectionOf(systemPrompt: SystemSection[]): string | undefined {
+  return systemPrompt.find((section) => section.label === "memory")?.content;
 }
 
 export interface CreateAppServerConfigOptions {
@@ -432,6 +444,17 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
       );
       agent.tools = tools;
       agent.systemPrompt = withToolInstructions(agent.systemPrompt, availableTools);
+    },
+    refreshAgentMemory: async (agent) => {
+      const refreshed = await withLatestMemory(
+        agent.systemPrompt,
+        await assemblyOptions.getPaths(),
+        runtimeConfig.diligent.memory,
+      );
+      const section = memorySectionOf(refreshed);
+      if (section === memorySectionOf(agent.systemPrompt)) return;
+      agent.systemPrompt = refreshed;
+      memoryChangeNotices.get(agent)?.notify(section);
     },
     getGoalsConfig: () => runtimeConfig.diligent.goals,
     streamFunction: runtimeConfig.streamFunction,
