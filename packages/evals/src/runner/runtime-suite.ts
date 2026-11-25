@@ -37,21 +37,7 @@ export async function runRuntimeEvalSuite(input: {
         streamFunction: input.createStream(profile),
         configureProviderManager: input.configureProviderManager,
       });
-      const { compactions, childSessions, ...execution } = result.execution;
-      executions.push({
-        ...execution,
-        taskSeed,
-        fixtureVersion: task.fixtureVersion,
-        limits: task.limits,
-        passed: result.passed,
-        status: result.status,
-        ...(result.failure && { failure: result.failure }),
-        failures: result.failures,
-        ...(result.diagnostics?.length && { diagnostics: result.diagnostics }),
-        ...(compactions.length > 0 && { compactions }),
-        ...(childSessions.length > 0 && { childSessions }),
-        world: result.worldSnapshot,
-      });
+      executions.push(toRuntimeExecutionReport(task, taskSeed, result));
       input.onExecutionEnd?.(result);
     }
   }
@@ -75,6 +61,28 @@ export async function runRuntimeEvalSuite(input: {
     passed: executions.every((execution) => execution.passed),
     status: aggregateEvalStatuses(executions.map((execution) => execution.status)),
     executions,
+  };
+}
+
+export function toRuntimeExecutionReport(
+  task: AnyRuntimeEvalTask,
+  taskSeed: string,
+  result: RuntimeEvalExecutionResult,
+): RuntimeEvalExecutionReport {
+  const { compactions, childSessions, ...execution } = result.execution;
+  return {
+    ...execution,
+    taskSeed,
+    fixtureVersion: task.fixtureVersion,
+    limits: task.limits,
+    passed: result.passed,
+    status: result.status,
+    ...(result.failure && { failure: result.failure }),
+    failures: result.failures,
+    ...(result.diagnostics?.length && { diagnostics: result.diagnostics }),
+    ...(compactions.length > 0 && { compactions }),
+    ...(childSessions.length > 0 && { childSessions }),
+    world: result.worldSnapshot,
   };
 }
 

@@ -1,4 +1,4 @@
-// @summary Tests eval suite and optional investigation filters
+// @summary Tests eval commands and optional investigation, capability, and unattended-auth options
 
 import { describe, expect, test } from "bun:test";
 import { defaultReportPath, selectCoreTasks, selectRuntimeTasks } from "../src/cli";
@@ -8,11 +8,34 @@ import { RUNTIME_EVAL_TASKS } from "../src/tasks/runtime";
 
 describe("parseCliOptions", () => {
   test("selects the complete core suite by default", () => {
-    expect(parseCliOptions(["core"])).toEqual({ suite: "core", help: false });
+    expect(parseCliOptions(["core"])).toEqual({ command: "core", help: false });
   });
 
   test("accepts the runtime suite selector", () => {
-    expect(parseCliOptions(["runtime"])).toEqual({ suite: "runtime", help: false });
+    expect(parseCliOptions(["runtime"])).toEqual({ command: "runtime", help: false });
+  });
+
+  test("accepts a capability filter only for the capabilities suite", () => {
+    expect(parseCliOptions(["capabilities", "--provider", "gemini", "--capability", "web_search"])).toEqual({
+      command: "capabilities",
+      provider: "gemini",
+      capability: "web_search",
+      help: false,
+    });
+    expect(() => parseCliOptions(["capabilities", "--capability", "video"])).toThrow('Invalid capability "video"');
+    expect(() => parseCliOptions(["runtime", "--capability", "web_search"])).toThrow("only to the capabilities suite");
+    expect(() => parseCliOptions(["capabilities", "--task", "project-fix"])).toThrow("only to the core and runtime");
+  });
+
+  test("accepts unattended ChatGPT options and the login command", () => {
+    expect(
+      parseCliOptions(["capabilities", "--provider", "chatgpt", "--non-interactive", "--chatgpt-auth-file", "a.jsonc"]),
+    ).toMatchObject({ nonInteractive: true, chatgptAuthFile: "a.jsonc" });
+    expect(parseCliOptions(["chatgpt-login", "--chatgpt-auth-file", "a.jsonc"])).toEqual({
+      command: "chatgpt-login",
+      chatgptAuthFile: "a.jsonc",
+      help: false,
+    });
   });
 
   test("uses suite-specific default report paths", () => {
