@@ -8,6 +8,12 @@ deterministic unit and end-to-end tests and never run as part of the default `bu
 - `core` evaluates provider normalization and the generic agent loop in isolated in-memory worlds.
 - `runtime` evaluates prompt assembly, mode-specific tools, project instructions, skills, sessions, and workspace
   effects through an in-process `DiligentAppServer` and `RpcClientSession` connection.
+- `capabilities` checks basic capabilities of every supported catalog model through the same runtime path and records
+  a per-model matrix. See [Model capability matrix](#model-capability-matrix).
+
+The core and runtime suites are the agent scenarios. They run on representative profiles (`gpt-6.1-terra` and
+`claude-sonnet-5`, plus the ChatGPT default on the shared runner). Every catalog model is checked only for the basic
+capabilities in the matrix.
 
 Run every task in each suite against both providers with:
 
@@ -75,8 +81,14 @@ explicit Gemini selections. An unfiltered run requires the OpenAI and Anthropic 
 Local ChatGPT subscription evals are explicitly selected with `--provider chatgpt`. They use the same configured
 Diligent auth store, token refresh, browser opener, and localhost callback as the product runtime. Rotated refresh
 tokens are persisted before model use. Missing credentials or one clear authentication rejection may open the browser;
-schema, network, model, and eval assertion failures do not trigger login. This provider remains local-only: it is not
-part of default profiles, scheduled matrices, GitHub Actions inputs, or CI secrets.
+schema, network, model, and eval assertion failures do not trigger login. ChatGPT is not part of default profiles,
+GitHub-hosted matrices, or CI secrets. Scheduled ChatGPT runs use only the shared self-hosted runner described in
+[ChatGPT OAuth on the shared runner](#chatgpt-oauth-on-the-shared-runner).
+
+`--non-interactive` never opens a browser. Missing, expired, or rejected credentials then fail with a classified
+authentication error. `--chatgpt-auth-file <path>` reads and rotates tokens in that file-backed store instead of the
+developer's Diligent auth store. `bun run eval chatgpt-login [--chatgpt-auth-file <path>]` signs in through the browser
+and saves to the same store. The ChatGPT path never reads `OPENAI_API_KEY`, so an API key cannot stand in for OAuth.
 
 ```bash
 # One focused execution; only OPENAI_API_KEY is required
@@ -193,7 +205,9 @@ concurrency group. Its direct-job graph is:
 2. After the complete core matrix finishes, runtime runs even if core failed. Four jobs cover Ubuntu and Windows
    crossed with OpenAI and Anthropic. Each job passes exactly one provider and executes 34 tasks, for 136 executions:
    the same 68 task/profile pairs sampled once on each operating system.
-3. A final always-running aggregate job fails the workflow unless both complete matrix phases succeeded. Per-job
+3. The capability matrix runs in parallel with core as one Ubuntu job each for OpenAI, Anthropic, and Gemini. Each job
+   covers that provider's whole catalog.
+4. A final always-running aggregate job fails the workflow unless every complete matrix phase succeeded. Per-job
    report uploads also run after failures and use provider/OS-specific paths and artifact names.
 
 All jobs in one scheduled run derive the same root seed from the repository, GitHub run ID, and commit SHA. The two
@@ -201,7 +215,85 @@ runtime operating-system samples expose platform-specific harness or product beh
 of the same fixture/model contracts, not independent draws whose pass rates can be multiplied into a quality
 probability.
 
-The standalone core and runtime workflows remain available through `workflow_dispatch` and `workflow_call`, but have
-no schedule and therefore do not duplicate the daily graph. They may filter to one task or provider; leaving filters
-empty preserves their complete-suite behavior. Scheduled and standalone workflows remain shadow signals disconnected
-from Release.
+The standalone core, runtime, and capability workflows remain available through `workflow_dispatch` and
+`workflow_call`, but have no schedule and therefore do not duplicate the daily graph. They may filter to one task,
+capability, model, or provider; leaving filters empty preserves their complete-suite behavior. Scheduled and standalone
+workflows remain shadow signals disconnected from Release.
+
+## Model capability matrix
+
+`bun run eval capabilities` runs five capability probes through an in-process `DiligentAppServer` for every catalog
+model of the selected providers. Without `--provider` it covers OpenAI, Anthropic, and Gemini with API keys. ChatGPT
+OAuth is a separate auth path selected with `--provider chatgpt`. `--model <id>` narrows the run to one model and
+`--capability <id>` to one probe. Each probe grades the end result from captured evidence:
+
+| Capability | Probe | Passes when |
+|---|---|---|
+| `basic_response` | One tool-free turn | The reply is exactly the seeded token |
+| `web_search` | Provider-native `web_action` | A native search returns results, and the answer cites a URL whose host appears in them (a bare-domain result title also counts, for providers that return redirect URLs) |
+| `image_read` | `read_image` on a four-quadrant PNG with seeded colors | Every quadrant color is reported exactly |
+| `image_generation` | A probe tool that calls the runtime `generateImage` binding | The image validates, `thread/read` exposes it on the tool result, and the model names the color measured from its pixels. The model is never told the requested color. |
+| `compaction` | `thread/compact/start` on an eligible thread, then one more turn | Compaction reports `compacted`, and the next reply restates both seeded facts |
+
+API-key profiles register their key in `ProviderManager` as the product does. Native compaction for OpenAI and
+Anthropic therefore runs the provider endpoint; Gemini uses summarization.
+
+Every cell has one of four statuses. Only `PASS` counts as a pass:
+
+- `PASS`: the probe passed, possibly with degraded diagnostics.
+- `FAIL`: the probe ran and failed, including provider rejections other than authentication, such as an unknown model.
+- `NOT RUN`: the capability is supported, but an unset API key, an authentication rejection or expiry, or a
+  subscription usage limit prevented a valid live call.
+- `UNSUPPORTED`: Diligent does not offer the capability for that model, so nothing ran. Image generation is bound only to
+  ChatGPT OAuth, and image reading requires a vision-capable model card.
+
+The command exits 1 when any cell is `FAIL` or `NOT RUN`. It writes the full evidence report (`--report`, default
+`artifacts/evals/capabilities-<timestamp>.json`) and a Markdown matrix next to it with the same name and a `.md`
+extension. In GitHub Actions the matrix is also appended to the job summary. A failed or not-run cell lists its code and
+reason below the table. The JSON report keeps the per-execution evidence under `executions`.
+
+```bash
+# Whole API-key matrix; set OPENAI_API_KEY, ANTHROPIC_API_KEY, and GEMINI_API_KEY
+bun run eval capabilities
+
+# One provider, one capability, or one model
+bun run eval capabilities --provider gemini
+bun run eval capabilities --provider anthropic --capability web_search
+bun run eval capabilities --provider openai --model gpt-6.2-sol
+```
+
+Provider keys come only from the repository's GitHub Actions secrets (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+`GEMINI_API_KEY`) or the local environment. Never commit them or paste them into logs or chat. Reports redact the
+configured keys and OAuth tokens. A missing secret shows up as `NOT RUN` cells for that provider.
+
+Before a release, dispatch **Model Capability Evals** (all providers) and **ChatGPT OAuth Evals**, then confirm that
+both matrices contain no `FAIL` or `NOT RUN` cells. To rerun one failure, dispatch the same workflow with the provider,
+model, capability, and the root seed recorded in the report.
+
+## ChatGPT OAuth on the shared runner
+
+GitHub-hosted runners never hold ChatGPT credentials. **ChatGPT OAuth Evals** runs on one self-hosted runner labeled
+`diligent-chatgpt-oauth`, signed in with an approved test account. It runs the ChatGPT capability matrix and the core
+agent suite with `--non-interactive`. Personal OAuth sessions and tokens are never copied to CI or to this runner.
+
+One-time setup on the shared machine:
+
+1. Create a dedicated OS user for the runner. Register the runner with the `diligent-chatgpt-oauth` label in a runner
+   group restricted to this repository and to `.github/workflows/chatgpt-oauth-evals.yml` on the default branch. The
+   repository is public, so the workflow must never gain `pull_request` triggers, and outside contributors' workflow
+   runs must require approval.
+2. In the runner's `.env` file, set `DILIGENT_EVAL_CHATGPT_AUTH_FILE` to an absolute path in that user's home, for
+   example `/Users/diligent-evals/.diligent-evals/chatgpt-auth.jsonc`. The runner does not expand `~`. The auth store
+   writes the file with owner-only permissions.
+3. As that user, in a checkout of this repository, run
+   `bun run eval chatgpt-login --chatgpt-auth-file "$DILIGENT_EVAL_CHATGPT_AUTH_FILE"` and complete the browser
+   sign-in with the test account. The command prints the sign-in URL, and the callback listens on `localhost:1455`. On
+   a headless machine, forward that port over SSH and open the printed URL locally.
+4. Set the repository variable `CHATGPT_OAUTH_EVALS_ENABLED=true` to enable the daily 22:00 UTC schedule. Manual
+   dispatch works without it.
+
+Token refresh is automatic and rotated tokens are written back to the file. When the refresh token expires or is
+revoked, every ChatGPT cell becomes `NOT RUN` with code `provider_auth.credentials_rejected`, or
+`provider_auth.credentials_missing` if the file is absent. The job then fails without opening a browser. To renew, repeat
+step 3 on the shared machine and re-dispatch the workflow. Failures appear in the run's job summary and in the
+`chatgpt-oauth-evals-*` artifact (`chatgpt-capabilities.{json,md}` and `chatgpt-core.json`).
