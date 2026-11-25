@@ -1,18 +1,28 @@
-// @summary Tests local eval ChatGPT OAuth lifecycle, retry bounds, and production provider binding
+// @summary Tests eval ChatGPT OAuth lifecycle, retry bounds, unattended failures, and production provider binding
 import { describe, expect, test } from "bun:test";
 import type { OpenAIOAuthTokens } from "@diligent/core/auth";
 import { EventStream } from "@diligent/core/event-stream";
 import type { AssistantMessage } from "@diligent/core/message-contract";
 import {
+  type ImageGenerationFn,
   type Model,
   ProviderError,
+  ProviderErrorReason,
   ProviderErrorType,
   type ProviderEvent,
   ProviderManager,
   type ProviderResult,
   type StreamFunction,
 } from "@diligent/core/provider-contract";
-import { ChatGPTEvalAuth, isClearChatGPTAuthenticationFailure } from "../../src/providers/chatgpt-oauth";
+import {
+  ChatGPTEvalAuth,
+  ChatGPTEvalAuthUnavailableError,
+  isClearChatGPTAuthenticationFailure,
+} from "../../src/providers/chatgpt-oauth";
+
+const unusedImageGeneration = (): ImageGenerationFn => async () => {
+  throw new Error("image generation should not run");
+};
 
 const MODEL: Model = {
   provider: "chatgpt",
@@ -101,6 +111,7 @@ describe("ChatGPTEvalAuth", () => {
       shouldRefresh: () => false,
       createStream: () => () => doneStream("ok"),
       createNativeCompaction: () => async () => ({ status: "unsupported" }),
+      createImageGeneration: unusedImageGeneration,
     });
 
     await auth.initialize();
@@ -133,6 +144,7 @@ describe("ChatGPTEvalAuth", () => {
       shouldRefresh: (value) => value === stale,
       createStream: () => () => doneStream("ok"),
       createNativeCompaction: () => async () => ({ status: "unsupported" }),
+      createImageGeneration: unusedImageGeneration,
     });
 
     await auth.initialize();
@@ -170,6 +182,7 @@ describe("ChatGPTEvalAuth", () => {
           : doneStream("recovered");
       },
       createNativeCompaction: () => async () => ({ status: "unsupported" }),
+      createImageGeneration: unusedImageGeneration,
       onCredentials: (value) => registeredSecrets.push(value.access_token),
     });
     await auth.initialize();
@@ -199,6 +212,7 @@ describe("ChatGPTEvalAuth", () => {
       shouldRefresh: () => false,
       createStream: () => () => errorStream(failure),
       createNativeCompaction: () => async () => ({ status: "unsupported" }),
+      createImageGeneration: unusedImageGeneration,
     });
     await auth.initialize();
 
@@ -230,6 +244,7 @@ describe("ChatGPTEvalAuth", () => {
         return errorStream(rejected);
       },
       createNativeCompaction: () => async () => ({ status: "unsupported" }),
+      createImageGeneration: unusedImageGeneration,
     });
     await auth.initialize();
 
@@ -249,6 +264,7 @@ describe("ChatGPTEvalAuth", () => {
       shouldRefresh: () => false,
       createStream: () => () => unterminatedStream(),
       createNativeCompaction: () => async () => ({ status: "unsupported" }),
+      createImageGeneration: unusedImageGeneration,
     });
     await auth.initialize();
 
@@ -271,6 +287,7 @@ describe("ChatGPTEvalAuth", () => {
         compactToken = getTokens().access_token;
         return { status: "ok", compactionSummary: { type: "compaction_summary", encrypted_content: "opaque" } };
       },
+      createImageGeneration: unusedImageGeneration,
     });
     await auth.initialize();
     const manager = new ProviderManager({});
@@ -281,6 +298,102 @@ describe("ChatGPTEvalAuth", () => {
 
     expect(result.status).toBe("ok");
     expect(compactToken).toBe(initial.access_token);
+  });
+
+  test("binds authenticated image generation so ProviderManager can generate for ChatGPT", async () => {
+    const initial = tokens("initial");
+    const bytes = new Uint8Array([1, 2, 3]);
+    let imageToken = "";
+    const auth = new ChatGPTEvalAuth({
+      load: async () => initial,
+      save: async () => {},
+      refresh: async (value) => value,
+      shouldRefresh: () => false,
+      createStream: () => () => doneStream("ok"),
+      createNativeCompaction: () => async () => ({ status: "unsupported" }),
+      createImageGeneration: (getTokens) => async (input) => {
+        imageToken = getTokens().access_token;
+        return { bytes, mediaType: "image/png", requestedModel: input.model };
+      },
+    });
+    await auth.initialize();
+    const manager = new ProviderManager({});
+    auth.bindProviderManager(manager);
+
+    const result = await manager.generateImage("chatgpt", { prompt: "swatch", model: "image-model" });
+
+    expect(result).toEqual({ bytes, mediaType: "image/png", requestedModel: "image-model" });
+    expect(imageToken).toBe(initial.access_token);
+  });
+
+  test("unattended runs report missing credentials as an authentication error without a browser", async () => {
+    const auth = new ChatGPTEvalAuth({
+      load: async () => undefined,
+      save: async () => {
+        throw new Error("nothing should be saved");
+      },
+      refresh: async (value) => value,
+      shouldRefresh: () => false,
+      createStream: () => () => doneStream("ok"),
+      createNativeCompaction: () => async () => ({ status: "unsupported" }),
+      createImageGeneration: unusedImageGeneration,
+    });
+
+    const error = await auth.initialize().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ChatGPTEvalAuthUnavailableError);
+    expect(error).toMatchObject({
+      errorType: ProviderErrorType.Auth,
+      reason: ProviderErrorReason.CredentialsMissing,
+    });
+  });
+
+  test("unattended runs surface an expired refresh token instead of signing in again", async () => {
+    const refreshFailure = new Error('Token refresh failed (400): {"error":"invalid_grant"}');
+    const auth = new ChatGPTEvalAuth({
+      load: async () => tokens("stale", Date.now()),
+      save: async () => {},
+      refresh: async () => {
+        throw refreshFailure;
+      },
+      shouldRefresh: () => true,
+      createStream: () => () => doneStream("ok"),
+      createNativeCompaction: () => async () => ({ status: "unsupported" }),
+      createImageGeneration: unusedImageGeneration,
+    });
+
+    const error = await auth.initialize().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ChatGPTEvalAuthUnavailableError);
+    expect(error).toMatchObject({ reason: ProviderErrorReason.CredentialsRejected, cause: refreshFailure });
+  });
+
+  test("unattended runs fail a rejected stream once with a classified authentication error", async () => {
+    let attempts = 0;
+    const auth = new ChatGPTEvalAuth({
+      load: async () => tokens("initial"),
+      save: async () => {},
+      refresh: async (value) => value,
+      shouldRefresh: () => false,
+      createStream: () => () => {
+        attempts += 1;
+        return errorStream(
+          new ProviderError("rejected", { errorType: ProviderErrorType.Auth, isRetryable: false, statusCode: 401 }),
+        );
+      },
+      createNativeCompaction: () => async () => ({ status: "unsupported" }),
+      createImageGeneration: unusedImageGeneration,
+    });
+    await auth.initialize();
+
+    const error = await auth
+      .streamFunction(MODEL, { systemPrompt: [], messages: [], tools: [] }, {})
+      .result()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ChatGPTEvalAuthUnavailableError);
+    expect(error).toMatchObject({ errorType: ProviderErrorType.Auth, reason: ProviderErrorReason.CredentialsRejected });
+    expect(attempts).toBe(1);
   });
 });
 
