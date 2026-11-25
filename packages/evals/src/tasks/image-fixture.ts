@@ -36,7 +36,8 @@ export function seededQuadrantLayout(seed: string): EvalQuadrantLayout {
   return { TL: colors[0]!, TR: colors[1]!, BL: colors[2]!, BR: colors[3]! };
 }
 
-export function quadrantColorPng(layout: EvalQuadrantLayout, size = 128): Buffer {
+/** 512px keeps each quadrant several vision patches wide for small models. */
+export function quadrantColorPng(layout: EvalQuadrantLayout, size = 512): Buffer {
   const half = size / 2;
   return rgbPng(size, size, (x, y) => {
     const quadrant: EvalQuadrant = y < half ? (x < half ? "TL" : "TR") : x < half ? "BL" : "BR";
