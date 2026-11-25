@@ -4,8 +4,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ensureDiligentDir } from "@diligent/runtime";
+import { ensureDiligentDir, type StreamFunction } from "@diligent/runtime";
 import { readMemory } from "@diligent/runtime/memory";
+import { createSimpleStream } from "./helpers/fake-stream";
 import { createProtocolClient, type ProtocolTestClient } from "./helpers/protocol-client";
 import { createTestServer } from "./helpers/server-factory";
 
@@ -121,5 +122,39 @@ describe("memory", () => {
     await expect(
       client.request("memory/update", { action: "upsert", threadId, id: "../outside", type: "project", content: "x" }),
     ).rejects.toThrow("Invalid memory id");
+  });
+
+  test("a running thread sees memory another agent changed before its next turn", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-memory-"));
+    const paths = await ensureDiligentDir(tmpDir);
+    await writeFile(
+      join(paths.memory, "combat-damage.md"),
+      "---\nname: combat-damage\ndescription: HP bar first\nmetadata:\n  type: project\n---\n\nBuild the HP bar first.\n",
+    );
+    await writeFile(
+      join(paths.memory, "MEMORY.md"),
+      "# Memory Index\n\n- [Combat damage](combat-damage.md) — HP bar first\n",
+    );
+    const promptsSeen: string[] = [];
+    const reply = createSimpleStream("ok");
+    const streamFunction: StreamFunction = (model, context, options) => {
+      promptsSeen.push(context.systemPrompt.map((section) => section.content).join("\n"));
+      return reply(model, context, options);
+    };
+    const server = createTestServer({ cwd: tmpDir, streamFunction, runtimeToolsConfig: {} });
+    client = createProtocolClient(server);
+    const threadId = await client.initAndStartThread(tmpDir);
+
+    await client.sendTurnAndWait(threadId, "first");
+    await writeFile(
+      join(paths.memory, "MEMORY.md"),
+      "# Memory Index\n\n- [Combat damage](combat-damage.md) — Floating damage numbers replace the HP bar\n",
+    );
+    await client.sendTurnAndWait(threadId, "second");
+
+    expect(promptsSeen).toHaveLength(2);
+    expect(promptsSeen[0]).toContain("HP bar first");
+    expect(promptsSeen[1]).toContain("Floating damage numbers replace the HP bar");
+    expect(promptsSeen[1]).not.toContain("HP bar first");
   });
 });

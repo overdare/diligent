@@ -433,6 +433,13 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
       agent.tools = tools;
       agent.systemPrompt = withToolInstructions(agent.systemPrompt, availableTools);
     },
+    refreshAgentMemory: async (agent) => {
+      agent.systemPrompt = await withLatestMemory(
+        agent.systemPrompt,
+        await assemblyOptions.getPaths(),
+        runtimeConfig.diligent.memory,
+      );
+    },
     getGoalsConfig: () => runtimeConfig.diligent.goals,
     streamFunction: runtimeConfig.streamFunction,
     createNativeCompaction: (provider: ProviderName) =>
