@@ -9,10 +9,14 @@ import type { MemoryEntry } from "./types";
 
 /**
  * The directory layout matches Claude Code auto memory, so agents of either harness pointed at the
- * same directory share one memory: `MEMORY.md` lists `- [name](<id>.md) — description` lines and each
+ * same directory share one memory: `MEMORY.md` lists `- [title](<id>.md) — description` lines and each
  * `<id>.md` carries `name`, `description`, and `metadata.type` frontmatter above a Markdown body.
+ * Claude Code rewrites `name` into a lowercase ASCII slug, so the frontmatter `name` holds the id and an
+ * entry's title lives only in its index link text.
  */
 export const MEMORY_INDEX_FILENAME = "MEMORY.md";
+/** `- [title](<id>.md)` index lines; a title escapes "[", "]", and "\" with a backslash. */
+const INDEX_LINK_PATTERN = /^\s*[-*]\s*\[((?:\\.|[^\]\\])*)\]\((?:\.\/)?([^)\s]+)\.md\)/gm;
 
 const MEMORY_INDEX_HEADER = "# Memory Index";
 const MEMORY_FILE_EXTENSION = ".md";
@@ -59,10 +63,23 @@ export async function readMemoryFile(memoryPath: string, id: string): Promise<Me
 
 /** Read every valid memory entry, most recently modified first. Files without valid frontmatter are skipped. */
 export async function readMemory(memoryPath: string): Promise<MemoryEntry[]> {
-  const files = await Promise.all((await listMemoryFileIds(memoryPath)).map((id) => readMemoryFile(memoryPath, id)));
+  const [files, titles] = await Promise.all([
+    listMemoryFileIds(memoryPath).then((ids) => Promise.all(ids.map((id) => readMemoryFile(memoryPath, id)))),
+    readMemoryIndex(memoryPath).then(readIndexTitles),
+  ]);
   return files
-    .flatMap((file) => (file?.entry ? [file.entry] : []))
+    .flatMap((file) => (file?.entry ? [{ ...file.entry, name: titles.get(file.entry.id) ?? file.entry.name }] : []))
     .sort((left, right) => right.modified.localeCompare(left.modified) || left.id.localeCompare(right.id));
+}
+
+/** Entry titles by id, taken from the index link text; the first non-empty link to an id wins. */
+export function readIndexTitles(index: string): Map<string, string> {
+  const titles = new Map<string, string>();
+  for (const match of index.matchAll(INDEX_LINK_PATTERN)) {
+    const title = match[1].replace(/\\(.)/g, "$1").trim();
+    if (title && !titles.has(match[2])) titles.set(match[2], title);
+  }
+  return titles;
 }
 
 /** Read the MEMORY.md index text, or "" when it does not exist. */
@@ -86,7 +103,7 @@ export async function writeMemoryFile(
   delete rest.description;
   delete rest.metadata;
   const frontmatter = {
-    name: entry.name,
+    name: entry.id,
     description: entry.description,
     ...rest,
     metadata: {

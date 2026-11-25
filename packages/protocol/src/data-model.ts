@@ -556,6 +556,7 @@ export type MemoryType = z.infer<typeof MemoryTypeSchema>;
 /** One memory file (`<id>.md`) in a project memory directory indexed by `MEMORY.md`. */
 export const MemoryEntrySchema = z.object({
   id: z.string(),
+  /** Title from the entry's `MEMORY.md` link text; the frontmatter `name` holds the id. */
   name: z.string(),
   description: z.string(),
   type: MemoryTypeSchema,

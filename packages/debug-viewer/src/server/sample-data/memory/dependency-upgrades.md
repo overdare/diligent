@@ -1,5 +1,5 @@
 ---
-name: Dependency upgrades
+name: dependency-upgrades
 description: Check npm outdated before upgrading dependencies
 metadata:
   type: feedback

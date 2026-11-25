@@ -5,6 +5,7 @@ import {
   isMemoryId,
   listMemoryFileIds,
   type MemoryFile,
+  readIndexTitles,
   readMemory,
   readMemoryFile,
   readMemoryIndex,
@@ -83,10 +84,11 @@ export function upsertMemory(memoryPath: string, input: MemoryUpsertInput): Prom
     }
 
     const previous = existing?.entry;
+    const index = await readMemoryIndex(memoryPath);
     const sessionId = previous?.sessionId ?? input.sessionId;
     const entry: MemoryEntry = {
       id,
-      name: input.name?.trim() || previous?.name || id,
+      name: input.name?.trim() || readIndexTitles(index).get(id) || previous?.name || id,
       description:
         input.description?.trim() ||
         (previous && normalizeContent(previous.content) === normalizeContent(content)
@@ -98,7 +100,6 @@ export function upsertMemory(memoryPath: string, input: MemoryUpsertInput): Prom
       ...(sessionId ? { sessionId } : {}),
     };
     await writeMemoryFile(memoryPath, entry, existing?.frontmatter ?? {});
-    const index = await readMemoryIndex(memoryPath);
     await writeMemoryIndex(memoryPath, upsertIndexLine(index, id, formatIndexLine(entry)));
     return { entry, status };
   });

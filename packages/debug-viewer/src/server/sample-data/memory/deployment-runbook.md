@@ -1,5 +1,5 @@
 ---
-name: Deployment runbook
+name: deployment-runbook
 description: Release steps live in docs/runbooks/deploy.md
 metadata:
   type: reference

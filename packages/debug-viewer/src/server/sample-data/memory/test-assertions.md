@@ -1,5 +1,5 @@
 ---
-name: Test assertions
+name: test-assertions
 description: Assert actual behavior and run tests before modifying code
 metadata:
   type: feedback

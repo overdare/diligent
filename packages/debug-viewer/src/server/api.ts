@@ -52,6 +52,18 @@ function calculateUsageCost(
 }
 
 const MEMORY_TYPES = new Set<string>(["user", "feedback", "project", "reference"]);
+/** `- [title](<id>.md)` index lines; a title escapes "[", "]", and "\" with a backslash. */
+const INDEX_LINK_PATTERN = /^\s*[-*]\s*\[((?:\\.|[^\]\\])*)\]\((?:\.\/)?([^)\s]+)\.md\)/gm;
+
+/** Entry titles by id from MEMORY.md link text; other harnesses rewrite the frontmatter `name` into a slug. */
+function readIndexTitles(index: string): Map<string, string> {
+  const titles = new Map<string, string>();
+  for (const match of index.matchAll(INDEX_LINK_PATTERN)) {
+    const title = match[1].replace(/\\(.)/g, "$1").trim();
+    if (title && !titles.has(match[2])) titles.set(match[2], title);
+  }
+  return titles;
+}
 
 /** Parse one `<id>.md` memory file: YAML frontmatter with name, description, and metadata.type above a body. */
 function parseMemoryFile(id: string, text: string): MemoryEntry | undefined {
@@ -139,11 +151,13 @@ export function createApiHandler(dataDir: string, logger: Logger = apiLogger) {
     } catch {
       return { entries: [] };
     }
+    const indexFile = Bun.file(join(memoryDir, "MEMORY.md"));
+    const titles = readIndexTitles((await indexFile.exists()) ? await indexFile.text() : "");
     const entries: MemoryEntry[] = [];
     for (const name of files) {
       const filePath = join(memoryDir, name);
       const entry = parseMemoryFile(name.slice(0, -3), await Bun.file(filePath).text());
-      if (entry) entries.push(entry);
+      if (entry) entries.push({ ...entry, name: titles.get(entry.id) ?? entry.name });
       else
         logger.warn("memory_file_parse_failed", {
           message: "Skipped a memory file without valid frontmatter.",

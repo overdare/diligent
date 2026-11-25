@@ -32,7 +32,7 @@ describe("memory directory", () => {
     if (tmpDir) await rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("reads memory files written by Claude Code", async () => {
+  it("reads memory files written by Claude Code, titled by their MEMORY.md link text", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
     await writeFile(join(tmpDir, "MEMORY.md"), CLAUDE_WRITTEN_INDEX);
     await writeFile(join(tmpDir, "combat-damage-model.md"), CLAUDE_WRITTEN_FILE);
@@ -40,7 +40,7 @@ describe("memory directory", () => {
     expect(await readMemory(tmpDir)).toEqual([
       {
         id: "combat-damage-model",
-        name: "combat-damage-model",
+        name: "Combat damage model",
         description: "Server-authoritative hitscan; damage is applied only on the server",
         type: "project",
         content:
@@ -77,7 +77,7 @@ describe("memory directory", () => {
     const text = await readFile(join(tmpDir, "combat-damage-model.md"), "utf8");
     const [, frontmatter, body] = text.split(/^---$/m);
     expect(parseYaml(frontmatter)).toEqual({
-      name: "Combat damage model",
+      name: "combat-damage-model",
       description: "Floating damage numbers replace the HP bar",
       metadata: {
         node_type: "memory",
@@ -94,6 +94,34 @@ describe("memory directory", () => {
 - [Combat damage model](combat-damage-model.md) — Floating damage numbers replace the HP bar
 - [User profile](user-profile.md) — prefers Korean answers
 `);
+  });
+
+  it("keeps a non-ASCII title after Claude Code rewrites the frontmatter name to an empty slug", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
+    // Claude Code lowercases `name` to a slug and drops non-ASCII characters, so a Korean title becomes "".
+    await writeFile(
+      join(tmpDir, "combat-damage.md"),
+      '---\nname: ""\ndescription: 데미지 작업 전 ADR을 참조한다.\nmetadata:\n  node_type: memory\n  type: project\n---\n\nADR 0001을 참조한다.\n',
+    );
+    await writeFile(
+      join(tmpDir, "MEMORY.md"),
+      "# Memory Index\n\n- [전투 데미지 \\[결정\\] 기록](combat-damage.md) — 데미지 작업 전 ADR을 참조한다.\n",
+    );
+
+    expect((await readMemory(tmpDir)).map(({ name }) => name)).toEqual(["전투 데미지 [결정] 기록"]);
+
+    const { entry } = await upsertMemory(tmpDir, {
+      id: "combat-damage",
+      type: "project",
+      content: "ADR 0001과 데미지 숫자 작업 순서를 참조한다.",
+    });
+
+    expect(entry.name).toBe("전투 데미지 [결정] 기록");
+    expect(await readFile(join(tmpDir, "MEMORY.md"), "utf8")).toContain(
+      "- [전투 데미지 \\[결정\\] 기록](combat-damage.md) — ",
+    );
+    const [, frontmatter] = (await readFile(join(tmpDir, "combat-damage.md"), "utf8")).split(/^---$/m);
+    expect(parseYaml(frontmatter).name).toBe("combat-damage");
   });
 
   it("leaves only memory files and the index after concurrent writes", async () => {

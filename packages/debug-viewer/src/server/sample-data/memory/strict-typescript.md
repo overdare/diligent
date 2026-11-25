@@ -1,5 +1,5 @@
 ---
-name: Strict TypeScript
+name: strict-typescript
 description: TypeScript strict mode for all server-side code
 metadata:
   type: user

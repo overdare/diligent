@@ -1,5 +1,5 @@
 ---
-name: API layer
+name: api-layer
 description: Express 4.x API with /health and /ready endpoints
 metadata:
   type: project
