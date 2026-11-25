@@ -16,6 +16,16 @@ import { getDefaultModelRef, PROVIDER_MODEL_POLICIES } from "../../src/llm/provi
 
 describe("provider-scoped model catalog", () => {
   it.each([
+    "gpt-6.1-terra",
+    "gpt-6-luna",
+  ] as const)("exposes the documented API context for %s without changing ChatGPT OAuth", (modelId) => {
+    expect(resolveModel({ provider: "openai", modelId }).contextWindow).toBe(1_050_000);
+    expect(getModelInfoList().find((info) => sameModelRef(info, { provider: "openai", modelId }))?.contextWindow).toBe(
+      1_050_000,
+    );
+    expect(resolveModel({ provider: "chatgpt", modelId }).contextWindow).toBe(500_000);
+  });
+  it.each([
     ["openai", "gpt-6.2-astra", 1_050_000],
     ["openai", "gpt-6.2-sol", 1_050_000],
     ["chatgpt", "gpt-6.2-astra", 272_000],
