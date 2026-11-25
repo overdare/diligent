@@ -7,6 +7,7 @@ import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
   exactFile,
+  memoryFixtureFiles,
   type RuntimeFixtureWorld,
   seededToken,
   sha256Text,
@@ -20,28 +21,32 @@ export interface MemoryRecallWorld extends RuntimeFixtureWorld {
 
 export const memoryRecallTask: RuntimeEvalTask<MemoryRecallWorld> = {
   id: "memory-recall",
-  description: "Use project memory injected into the runtime prompt to create an exact file.",
-  fixtureVersion: "memory-recall-v0",
+  description:
+    "Follow the injected project memory index to the memory file that holds a value and create an exact file.",
+  fixtureVersion: "memory-recall-v1",
   limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 8, maxToolCalls: 6, timeoutMs: 180_000 },
   statePolicy: { allowedMutations: ["infrastructure", "sessions"] },
   toolPolicy: {
-    allowedTools: ["write", "edit", "multi_edit", "apply_patch"],
-    allowedCapabilities: ["write"],
+    allowedTools: ["read", "write", "edit", "multi_edit", "apply_patch"],
+    allowedCapabilities: ["read", "write"],
     allowedCommands: [],
   },
   async setup(seed, root) {
     const token = seededToken(seed, "CHANNEL");
     const expected = `${token}\n`;
-    await writeFixture(root, {
-      ".diligent/memory/memory.jsonl": `${JSON.stringify({
-        id: "preference.release-channel",
-        timestamp: "2026-07-18T00:00:00.000Z",
-        type: "preference",
-        content: `The preferred release channel is ${token}.`,
-        confidence: 1,
-        tags: ["release", "channel"],
-      })}\n`,
-    });
+    await writeFixture(
+      root,
+      memoryFixtureFiles([
+        {
+          id: "release-channel",
+          name: "Release channel",
+          description: "Which release channel this project ships to",
+          type: "project",
+          content: `Decision: the preferred release channel is ${token}.`,
+          modified: "2026-07-18T00:00:00.000Z",
+        },
+      ]),
+    );
     return {
       root,
       seed,

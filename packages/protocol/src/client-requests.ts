@@ -4,6 +4,7 @@ import {
   ContentBlockSchema,
   LocalImageBlockSchema,
   MemoryEntrySchema,
+  MemoryTypeSchema,
   ModelRefSchema,
   ModeSchema,
   PendingSteerSchema,
@@ -299,16 +300,15 @@ export const MemoryListResponseSchema = z.object({
 });
 export type MemoryListResponse = z.infer<typeof MemoryListResponseSchema>;
 
-const MemoryTypeParamSchema = z.enum(["pattern", "discovery", "preference", "correction", "backlog"]);
-
 export const MemoryUpdateParamsSchema = z
   .object({
     action: z.enum(["upsert", "delete"]),
     threadId: z.string().optional(),
     id: z.string().optional(),
-    type: MemoryTypeParamSchema.optional(),
+    type: MemoryTypeSchema.optional(),
+    name: z.string().min(1).optional(),
+    description: z.string().min(1).optional(),
     content: z.string().min(1).optional(),
-    tags: z.array(z.string()).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.action === "delete") {

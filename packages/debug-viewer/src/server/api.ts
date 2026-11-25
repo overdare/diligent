@@ -51,6 +51,44 @@ function calculateUsageCost(
   return inputCost + outputCost + cacheReadCost + cacheWriteCost;
 }
 
+const MEMORY_TYPES = new Set<string>(["user", "feedback", "project", "reference"]);
+/** `- [title](<id>.md)` index lines; a title escapes "[", "]", and "\" with a backslash. */
+const INDEX_LINK_PATTERN = /^\s*[-*]\s*\[((?:\\.|[^\]\\])*)\]\((?:\.\/)?([^)\s]+)\.md\)/gm;
+
+/** Entry titles by id from MEMORY.md link text; other harnesses rewrite the frontmatter `name` into a slug. */
+function readIndexTitles(index: string): Map<string, string> {
+  const titles = new Map<string, string>();
+  for (const match of index.matchAll(INDEX_LINK_PATTERN)) {
+    const title = match[1].replace(/\\(.)/g, "$1").trim();
+    if (title && !titles.has(match[2])) titles.set(match[2], title);
+  }
+  return titles;
+}
+
+/** Parse one `<id>.md` memory file: YAML frontmatter with name, description, and metadata.type above a body. */
+function parseMemoryFile(id: string, text: string): MemoryEntry | undefined {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text);
+  if (!match) return undefined;
+  let frontmatter: Record<string, unknown>;
+  try {
+    frontmatter = (Bun.YAML.parse(match[1]) ?? {}) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+  const metadata = (frontmatter.metadata ?? {}) as Record<string, unknown>;
+  const type = metadata.type ?? frontmatter.type;
+  if (typeof type !== "string" || !MEMORY_TYPES.has(type)) return undefined;
+  return {
+    id,
+    name: typeof frontmatter.name === "string" ? frontmatter.name : id,
+    description: typeof frontmatter.description === "string" ? frontmatter.description : "",
+    type: type as MemoryEntry["type"],
+    content: match[2].trim(),
+    modified: String(metadata.modified ?? frontmatter.modified ?? ""),
+    ...(typeof metadata.originSessionId === "string" ? { sessionId: metadata.originSessionId } : {}),
+  };
+}
+
 export function createApiHandler(dataDir: string, logger: Logger = apiLogger) {
   const sessionsDir = join(dataDir, "sessions");
   const memoryDir = join(dataDir, "memory");
@@ -105,28 +143,28 @@ export function createApiHandler(dataDir: string, logger: Logger = apiLogger) {
   }
 
   async function getMemory(): Promise<MemoryResponse> {
-    const filePath = join(memoryDir, "memory.jsonl");
+    let files: string[];
     try {
-      const file = Bun.file(filePath);
-      const text = await file.text();
-      const entries: MemoryEntry[] = [];
-      for (const line of text.split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          entries.push(JSON.parse(trimmed));
-        } catch (error) {
-          logger.warn("memory_jsonl_line_parse_failed", {
-            message: "Failed to parse memory JSONL line.",
-            error,
-            fields: { line: trimmed.slice(0, 80), filePath },
-          });
-        }
-      }
-      return { entries };
+      files = readdirSync(memoryDir).filter(
+        (name) => name.endsWith(".md") && !name.startsWith(".") && name.toLowerCase() !== "memory.md",
+      );
     } catch {
       return { entries: [] };
     }
+    const indexFile = Bun.file(join(memoryDir, "MEMORY.md"));
+    const titles = readIndexTitles((await indexFile.exists()) ? await indexFile.text() : "");
+    const entries: MemoryEntry[] = [];
+    for (const name of files) {
+      const filePath = join(memoryDir, name);
+      const entry = parseMemoryFile(name.slice(0, -3), await Bun.file(filePath).text());
+      if (entry) entries.push({ ...entry, name: titles.get(entry.id) ?? entry.name });
+      else
+        logger.warn("memory_file_parse_failed", {
+          message: "Skipped a memory file without valid frontmatter.",
+          fields: { filePath },
+        });
+    }
+    return { entries: entries.sort((left, right) => right.modified.localeCompare(left.modified)) };
   }
 
   async function getUsageSummary(): Promise<UsageSummaryResponse> {

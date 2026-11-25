@@ -441,9 +441,10 @@ describe("protocol/flow", () => {
         params: {
           action: "upsert",
           threadId: "th-1",
-          type: "backlog",
+          type: "project",
+          name: "Rollout flag",
+          description: "Feature flag X gates the rollout",
           content: "Use feature flag X for rollout",
-          tags: ["rollout", "flag"],
         },
       }).success,
     ).toBe(true);
@@ -455,9 +456,8 @@ describe("protocol/flow", () => {
           action: "upsert",
           threadId: "th-1",
           id: "k-1",
-          type: "correction",
+          type: "feedback",
           content: "Feature flag X defaults to false",
-          tags: ["correction"],
         },
       }).success,
     ).toBe(true);
@@ -479,10 +479,11 @@ describe("protocol/flow", () => {
         result: {
           entry: {
             id: "k-1",
-            timestamp: new Date().toISOString(),
-            type: "pattern",
+            name: "k-1",
+            description: "Always run focused tests first",
+            type: "feedback",
             content: "Always run focused tests first",
-            confidence: 0.8,
+            modified: new Date().toISOString(),
           },
         },
       }).success,

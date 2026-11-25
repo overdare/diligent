@@ -852,9 +852,8 @@ describe("runRuntimeEvalExecution", () => {
               input: {
                 action: "upsert",
                 id: memoryId,
-                type: "preference",
+                type: "user",
                 content,
-                tags: ["review", "audience"],
               },
             },
           ],
@@ -879,7 +878,7 @@ describe("runRuntimeEvalExecution", () => {
 
     const execution = result.execution as RuntimeEvalExecution<MemoryIntentSplitWorld>;
     const verification = JSON.parse(execution.verifier?.stdout ?? "{}") as {
-      entry?: { id?: string; type?: string; content?: string; tags?: string[] };
+      entry?: { id?: string; type?: string; content?: string };
       outputHash?: string;
     };
     expect(result.failures).toEqual([]);
@@ -893,12 +892,7 @@ describe("runRuntimeEvalExecution", () => {
     ]);
     expect(result.execution.verifier?.exitCode).toBe(0);
     expect(result.execution.runtimeState.diff.some((change) => change.category === "memory")).toBe(true);
-    expect(verification.entry).toMatchObject({
-      id: memoryId,
-      type: "preference",
-      content,
-      tags: ["review", "audience"],
-    });
+    expect(verification.entry).toMatchObject({ id: memoryId, type: "user", content });
     expect(JSON.stringify(verification.entry)).not.toContain(transientValue);
     expect(verification.outputHash).toBe(execution.world.expectedHash);
     expect(execution.workspace.final.entries).toContainEqual(

@@ -1,7 +1,7 @@
 // @summary Runtime eval for separating a durable preference from transient current-task intent
 
 import { join } from "node:path";
-import { readMemory } from "@diligent/runtime";
+import { readMemory, readMemoryIndex } from "@diligent/runtime";
 import type { RuntimeEvalTask, RuntimeVerifierResult } from "../../runtime-task";
 import type { EvalProfile } from "../../task";
 import { RuntimeGrade } from "./grading";
@@ -9,6 +9,7 @@ import {
   createFixtureRuntimeConfig,
   DEFAULT_RUNTIME_LIMITS,
   exactFile,
+  memoryFixtureFiles,
   type RuntimeFixtureWorld,
   seededToken,
   sha256Text,
@@ -23,14 +24,13 @@ export interface MemoryIntentSplitWorld extends RuntimeFixtureWorld {
   durableValue: string;
   transientValue: string;
   content: string;
-  tags: string[];
   expectedHash: string;
 }
 
 export const memoryIntentSplitTask: RuntimeEvalTask<MemoryIntentSplitWorld> = {
   id: "memory-intent-split",
   description: "Persist one durable preference while keeping unrelated current-task intent out of memory.",
-  fixtureVersion: "memory-intent-split-v5",
+  fixtureVersion: "memory-intent-split-v6",
   limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 5, maxToolCalls: 5, timeoutMs: 180_000 },
   statePolicy: {
     allowedMutations: ["infrastructure", "sessions", "memory"],
@@ -46,18 +46,20 @@ export const memoryIntentSplitTask: RuntimeEvalTask<MemoryIntentSplitWorld> = {
     const durableValue = seededToken(seed, "AUDIENCE");
     const transientValue = seededToken(seed, "CURRENT");
     const content = `Preferred review audience is ${durableValue}.`;
-    const tags = ["review", "audience"];
     const expected = `${transientValue}\n`;
-    await writeFixture(root, {
-      ".diligent/memory/memory.jsonl": `${JSON.stringify({
-        id: memoryId,
-        timestamp: SEEDED_TIMESTAMP,
-        type: "preference",
-        content: "Preferred review audience is OLD_AUDIENCE.",
-        confidence: 0.7,
-        tags,
-      })}\n`,
-    });
+    await writeFixture(
+      root,
+      memoryFixtureFiles([
+        {
+          id: memoryId,
+          name: "Review audience",
+          description: "Who reviews this user's work",
+          type: "user",
+          content: "Preferred review audience is OLD_AUDIENCE.",
+          modified: SEEDED_TIMESTAMP,
+        },
+      ]),
+    );
     return {
       root,
       seed,
@@ -65,7 +67,6 @@ export const memoryIntentSplitTask: RuntimeEvalTask<MemoryIntentSplitWorld> = {
       durableValue,
       transientValue,
       content,
-      tags,
       expected,
       expectedHash: sha256Text(expected),
       protectedPaths: [],
@@ -115,23 +116,23 @@ async function createMemoryRuntimeConfig(world: MemoryIntentSplitWorld, profile:
 
 async function verifyIntentSplit(world: MemoryIntentSplitWorld, signal: AbortSignal): Promise<RuntimeVerifierResult> {
   const started = performance.now();
-  const entries = await readMemory(join(world.root, ".diligent/memory"));
+  const memoryPath = join(world.root, ".diligent/memory");
+  const entries = await readMemory(memoryPath);
+  const index = await readMemoryIndex(memoryPath);
   const output = await exactFile(world.root, OUTPUT_PATH);
   const entry = entries[0];
-  const storeText = JSON.stringify(entries);
+  const storeText = JSON.stringify(entries) + index;
   const validEntry =
     entries.length === 1 &&
     entry !== undefined &&
-    sameKeys(entry, ["confidence", "content", "id", "tags", "timestamp", "type"]) &&
+    sameKeys(entry, ["content", "description", "id", "modified", "name", "type"]) &&
     entry.id === world.memoryId &&
-    entry.type === "preference" &&
+    (entry.type === "user" || entry.type === "feedback") &&
     entry.content.includes(world.durableValue) &&
     !entry.content.includes("OLD_AUDIENCE") &&
-    entry.confidence === 0.7 &&
-    Array.isArray(entry.tags) &&
-    entry.tags.every((tag) => typeof tag === "string") &&
-    entry.timestamp !== SEEDED_TIMESTAMP &&
-    Number.isFinite(Date.parse(entry.timestamp));
+    entry.modified !== SEEDED_TIMESTAMP &&
+    Number.isFinite(Date.parse(entry.modified)) &&
+    index.includes(`(${world.memoryId}.md)`);
   const valid = !signal.aborted && validEntry && !storeText.includes(world.transientValue) && output === world.expected;
   return verifierResult(
     started,

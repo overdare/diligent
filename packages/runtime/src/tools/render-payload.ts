@@ -18,8 +18,9 @@ export interface UpdateMemoryRenderInput {
   action?: string;
   id?: string;
   type?: string;
+  name?: string;
+  description?: string;
   content?: string;
-  tags?: string[];
 }
 
 export interface SearchMemoryRenderInput {
@@ -290,21 +291,18 @@ export function createUpdateMemoryRenderPayload(
   const action = actionValue === "delete" ? "delete" : "upsert";
   const id = typeof input.id === "string" ? input.id.trim() : "";
   const typeValue = typeof input.type === "string" ? input.type.trim() : "";
+  const name = typeof input.name === "string" ? input.name.trim() : "";
+  const description = typeof input.description === "string" ? input.description.trim() : "";
   const content = typeof input.content === "string" ? input.content : "";
-  const tags = Array.isArray(input.tags)
-    ? input.tags
-        .map((value) => String(value).trim())
-        .filter(Boolean)
-        .slice(0, 10)
-    : [];
 
   const contentPreview = content ? clipInlineText(content.replace(/\s+/g, " ").trim(), 140) : "";
   const items = [
     { key: "action", value: action },
     ...(id ? [{ key: "id", value: id }] : []),
     ...(typeValue ? [{ key: "type", value: typeValue }] : []),
+    ...(name ? [{ key: "name", value: clipInlineText(name, 140) }] : []),
+    ...(description ? [{ key: "description", value: clipInlineText(description, 140) }] : []),
     ...(contentPreview ? [{ key: "content", value: contentPreview }] : []),
-    ...(tags.length > 0 ? [{ key: "tags", value: tags.join(", ") }] : []),
   ];
 
   const outputSummary = outputText
@@ -313,9 +311,6 @@ export function createUpdateMemoryRenderPayload(
     .find(Boolean);
   const blocks: ToolRenderPayload["blocks"] = [];
   if (items.length > 0) blocks.push({ type: "key_value", items });
-  if (tags.length > 0) {
-    blocks.push({ type: "status_badges", title: "Tags", items: tags.map((tag) => ({ label: tag })) });
-  }
   if (outputSummary) blocks.push({ type: "summary", text: outputSummary, tone: isError ? "muted" : "success" });
   if (blocks.length === 0) return undefined;
 
@@ -331,9 +326,7 @@ export function createSearchMemoryRenderPayload(
   matches: Array<{
     id: string;
     type: string;
-    content: string;
-    timestamp: string;
-    tags?: string[];
+    description: string;
   }>,
   outputText: string,
   isError: boolean,
@@ -352,7 +345,7 @@ export function createSearchMemoryRenderPayload(
       type: "list",
       title: `${matches.length} memory ${matches.length === 1 ? "entry" : "entries"}`,
       items: matches.map((match) => {
-        const summary = `[${match.type}] ${clipInlineText(match.content.replace(/\s+/g, " ").trim(), 120)}`;
+        const summary = `[${match.type}] ${clipInlineText(match.description.replace(/\s+/g, " ").trim(), 120)}`;
         return `${match.id} — ${summary}`;
       }),
     });

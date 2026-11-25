@@ -549,18 +549,21 @@ export const UserInputResponseSchema = z.object({
 });
 export type UserInputResponse = z.infer<typeof UserInputResponseSchema>;
 
-export const MemoryTypeSchema = z.enum(["pattern", "discovery", "preference", "correction", "backlog"]);
+/** Memory categories shared with the Claude Code auto memory format. */
+export const MemoryTypeSchema = z.enum(["user", "feedback", "project", "reference"]);
 export type MemoryType = z.infer<typeof MemoryTypeSchema>;
 
+/** One memory file (`<id>.md`) in a project memory directory indexed by `MEMORY.md`. */
 export const MemoryEntrySchema = z.object({
   id: z.string(),
-  timestamp: z.string(),
-  sessionId: z.string().optional(),
+  /** Title from the entry's `MEMORY.md` link text; the frontmatter `name` holds the id. */
+  name: z.string(),
+  description: z.string(),
   type: MemoryTypeSchema,
   content: z.string(),
-  confidence: z.number().min(0).max(1),
-  supersedes: z.string().optional(),
-  tags: z.array(z.string()).optional(),
+  /** ISO 8601 time of the last change. */
+  modified: z.string(),
+  sessionId: z.string().optional(),
 });
 export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
 

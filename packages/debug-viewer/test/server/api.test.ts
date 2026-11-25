@@ -91,14 +91,18 @@ describe("GET /api/memory", () => {
     const data = await res!.json();
     expect(data.entries).toBeArray();
     expect(data.entries.length).toBe(5);
-
-    // Check types
-    const types = data.entries.map((e: { type: string }) => e.type);
-    expect(types).toContain("pattern");
-    expect(types).toContain("backlog");
-    expect(types).toContain("discovery");
-    expect(types).toContain("preference");
-    expect(types).toContain("correction");
+    expect(new Set(data.entries.map((e: { type: string }) => e.type))).toEqual(
+      new Set(["user", "feedback", "project", "reference"]),
+    );
+    expect(data.entries).toContainEqual({
+      id: "deployment-runbook",
+      name: "Deployment runbook",
+      description: "Release steps live in docs/runbooks/deploy.md",
+      type: "reference",
+      content: "The release checklist and rollback steps are maintained in docs/runbooks/deploy.md.",
+      modified: "2024-02-26T04:00:35.000Z",
+      sessionId: "sample-002",
+    });
   });
 });
 

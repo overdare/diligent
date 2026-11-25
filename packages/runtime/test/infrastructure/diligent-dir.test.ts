@@ -10,6 +10,7 @@ import {
   resolveProjectDirName,
   resolveStorageNamespace,
 } from "@diligent/runtime/infrastructure";
+import { readMemory } from "@diligent/runtime/memory";
 
 const TEST_ROOT = join(tmpdir(), `diligent-test-${Date.now()}`);
 
@@ -99,31 +100,112 @@ describe("ensureDiligentDir", () => {
 });
 
 describe("ensureDiligentDir legacy knowledge migration", () => {
-  const legacyStore =
-    '{"id":"a","timestamp":"2026-07-01T00:00:00.000Z","type":"preference","content":"Answer in Korean."}\n';
+  const legacyLines = [
+    {
+      id: "preference.language",
+      timestamp: "2026-07-01T00:00:00.000Z",
+      type: "preference",
+      content: "Answer in Korean.",
+      confidence: 0.8,
+    },
+    {
+      id: "0b6f2f3e-8c1a-4f53-9d3e-2a7b9c4d5e6f",
+      timestamp: "2026-07-02T00:00:00.000Z",
+      type: "backlog",
+      content: "Connect the HP bar to damage events.",
+      confidence: 0.8,
+      sessionId: "s1",
+    },
+    { id: "old-runtime", timestamp: "2026-07-03T00:00:00.000Z", type: "pattern", content: "Use npm.", confidence: 0.8 },
+    {
+      id: "new-runtime",
+      timestamp: "2026-07-04T00:00:00.000Z",
+      type: "correction",
+      content: "Use Bun.",
+      confidence: 0.9,
+      supersedes: "old-runtime",
+    },
+  ];
+  const legacyStore = `${legacyLines.map((line) => JSON.stringify(line)).join("\n")}\n{"id":"truncated\n`;
 
-  it("moves the legacy knowledge store into the memory directory", async () => {
+  it("converts the legacy knowledge store into memory files and keeps the original beside them", async () => {
     const { root } = resolvePaths(TEST_ROOT);
     await mkdir(join(root, "knowledge"), { recursive: true });
     await Bun.write(join(root, "knowledge", "knowledge.jsonl"), legacyStore);
 
     const paths = await ensureDiligentDir(TEST_ROOT);
 
-    expect(await Bun.file(join(paths.memory, "memory.jsonl")).text()).toBe(legacyStore);
+    expect(
+      (await readMemory(paths.memory)).map(({ id, type, content, sessionId }) => ({ id, type, content, sessionId })),
+    ).toEqual([
+      { id: "new-runtime", type: "feedback", content: "Use Bun.", sessionId: undefined },
+      {
+        id: "connect-the-hp-bar-to-damage-events",
+        type: "project",
+        content: "Connect the HP bar to damage events.",
+        sessionId: "s1",
+      },
+      { id: "preference.language", type: "feedback", content: "Answer in Korean.", sessionId: undefined },
+    ]);
+    expect(await Bun.file(join(paths.memory, "MEMORY.md")).text()).toBe(
+      [
+        "# Memory Index",
+        "",
+        "- [preference.language](preference.language.md) — Answer in Korean.",
+        "- [connect-the-hp-bar-to-damage-events](connect-the-hp-bar-to-damage-events.md) — Connect the HP bar to damage events.",
+        "- [new-runtime](new-runtime.md) — Use Bun.",
+        "",
+      ].join("\n"),
+    );
+    expect(await Bun.file(join(paths.memory, ".memory.jsonl.migrated")).text()).toBe(legacyStore);
     expect(await stat(join(root, "knowledge")).catch(() => null)).toBeNull();
   });
 
-  it("never overwrites a memory store that already exists", async () => {
+  it("converts a JSONL memory store written before the Markdown format", async () => {
+    const { memory } = resolvePaths(TEST_ROOT);
+    await mkdir(memory, { recursive: true });
+    await Bun.write(join(memory, "memory.jsonl"), legacyStore);
+
+    await ensureDiligentDir(TEST_ROOT);
+
+    expect((await readMemory(memory)).map(({ id }) => id)).toEqual([
+      "new-runtime",
+      "connect-the-hp-bar-to-damage-events",
+      "preference.language",
+    ]);
+    expect(await Bun.file(join(memory, ".memory.jsonl.migrated")).text()).toBe(legacyStore);
+    expect(await Bun.file(join(memory, "memory.jsonl")).exists()).toBe(false);
+  });
+
+  it("keeps an earlier converted store and leaves a later knowledge store for the user", async () => {
     const { root, memory } = resolvePaths(TEST_ROOT);
     await mkdir(join(root, "knowledge"), { recursive: true });
     await mkdir(memory, { recursive: true });
     await Bun.write(join(root, "knowledge", "knowledge.jsonl"), legacyStore);
-    await Bun.write(join(memory, "memory.jsonl"), "current\n");
+    await Bun.write(join(memory, ".memory.jsonl.migrated"), "earlier\n");
 
     await ensureDiligentDir(TEST_ROOT);
 
-    expect(await Bun.file(join(memory, "memory.jsonl")).text()).toBe("current\n");
+    expect(await Bun.file(join(memory, ".memory.jsonl.migrated")).text()).toBe("earlier\n");
     expect(await Bun.file(join(root, "knowledge", "knowledge.jsonl")).text()).toBe(legacyStore);
+  });
+
+  it("never overwrites memory that already exists", async () => {
+    const { root, memory } = resolvePaths(TEST_ROOT);
+    await mkdir(join(root, "knowledge"), { recursive: true });
+    await mkdir(memory, { recursive: true });
+    await Bun.write(join(root, "knowledge", "knowledge.jsonl"), legacyStore);
+    const current = "---\nname: language\ndescription: current\nmetadata:\n  type: user\n---\n\nCurrent text.\n";
+    await Bun.write(join(memory, "preference.language.md"), current);
+    await Bun.write(join(memory, "MEMORY.md"), "# Memory Index\n\n- [language](preference.language.md) — current\n");
+
+    await ensureDiligentDir(TEST_ROOT);
+
+    expect(await Bun.file(join(memory, "preference.language.md")).text()).toBe(current);
+    const index = await Bun.file(join(memory, "MEMORY.md")).text();
+    expect(index).toContain("- [language](preference.language.md) — current\n");
+    expect(index.match(/preference\.language\.md/g)).toHaveLength(1);
+    expect(index).toContain("(new-runtime.md)");
   });
 
   it("rewrites the legacy knowledge ignore rule and preserves custom lines", async () => {

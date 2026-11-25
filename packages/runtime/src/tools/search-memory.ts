@@ -1,27 +1,26 @@
-// @summary Search persistent memory entries by stable id and/or content for LM-friendly lookup before update/delete
+// @summary Search project memory files by id and/or content for LM-friendly lookup before update/delete
 
 import type { Tool, ToolContext, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { searchMemory } from "../memory/repository";
 import { readMemory } from "../memory/store";
-import { createSearchMemoryRenderPayload } from "./render-payload";
+import { clipInlineText, createSearchMemoryRenderPayload } from "./render-payload";
+
+const CONTENT_PREVIEW_LENGTH = 300;
 
 const searchMemorySchema = z
   .object({
-    id: z
-      .string()
-      .optional()
-      .describe(
-        "Optional exact memory entry id. Ids may be caller-defined stable keys or generated UUIDs returned by search_memory.",
-      ),
+    id: z.string().optional().describe("Optional exact memory id (the memory file name without '.md')."),
     id_prefix: z
       .string()
       .optional()
-      .describe("Optional memory entry id prefix for finding a group of stable ids, such as 'project.decision.'."),
+      .describe("Optional memory id prefix for finding a group of related ids, such as 'combat-'."),
     query: z
       .string()
       .optional()
-      .describe("Optional short keyword query to search against memory content using case-insensitive token matching."),
+      .describe(
+        "Optional short keyword query matched against memory names, descriptions, and content using case-insensitive token matching.",
+      ),
   })
   .superRefine((value, ctx) => {
     const hasId = typeof value.id === "string" && value.id.trim().length > 0;
@@ -40,10 +39,9 @@ export function createSearchMemoryTool(memoryPath: string): Tool<typeof searchMe
   return {
     name: "search_memory",
     description:
-      "Search persistent memory entries by exact id, id prefix, and/or query so you can find the right memory item before updating or deleting it. " +
-      "Ids may be caller-defined stable keys like 'project.current_plan' or generated UUIDs returned by search_memory. " +
-      "Use id_prefix for groups of stable ids, such as 'project.decision.' or 'project.preference.'. " +
-      "Use short keyword queries like 'thread fork', 'draft state', or 'PROJECT_IMPLEMENTATION_MAP' for case-insensitive token matching when you do not know the id. " +
+      "Search this project's memory files by exact id, id prefix, and/or keyword query, to recall project context or to find the memory to revise before updating or deleting it. " +
+      "Use short keyword queries like 'combat damage' or 'publish' when you do not know the id. " +
+      "Each match shows its id, type, description, and the start of its content; read the memory file for the full text. " +
       "If multiple matches appear, narrow the query or use the returned id with update_memory.",
     parameters: searchMemorySchema,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
@@ -58,8 +56,8 @@ export function createSearchMemoryTool(memoryPath: string): Tool<typeof searchMe
           ? "No memory entries found"
           : matches
               .map((entry) => {
-                const tags = entry.tags && entry.tags.length > 0 ? ` tags=${entry.tags.join(",")}` : "";
-                return `${entry.id}\t[${entry.type}] ${entry.content}${tags}`;
+                const preview = clipInlineText(entry.content.replace(/\s+/g, " ").trim(), CONTENT_PREVIEW_LENGTH);
+                return `${entry.id}\t[${entry.type}] ${entry.description}\n  ${preview}`;
               })
               .join("\n");
 

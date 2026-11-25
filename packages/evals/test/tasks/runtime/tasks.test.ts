@@ -1,7 +1,7 @@
 // @summary Deterministic checks for all runtime task fixtures and provider equivalence
 
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureWorkspace, removeTemporaryRoot } from "../../../src/runner/runtime-workspace";
@@ -38,7 +38,7 @@ import {
   skillAbstainTask,
   skillAutoSelectTask,
 } from "../../../src/tasks/runtime";
-import { type RuntimeFixtureWorld, writeFixture } from "../../../src/tasks/runtime/helpers";
+import { memoryFixtureFiles, type RuntimeFixtureWorld, writeFixture } from "../../../src/tasks/runtime/helpers";
 
 describe("runtime eval tasks", () => {
   test("registers unique runtime task identities with valid limits and state policies", () => {
@@ -577,10 +577,13 @@ describe("runtime eval tasks", () => {
     try {
       const world = await memoryRecallTask.setup("shared-seed-123", root);
       const steps = memoryRecallTask.createSteps(world);
-      const memory = await readFile(join(root, ".diligent/memory/memory.jsonl"), "utf8");
+      const memory = await readFile(join(root, ".diligent/memory/release-channel.md"), "utf8");
+      const index = await readFile(join(root, ".diligent/memory/MEMORY.md"), "utf8");
       expect(memory).toContain(world.token);
+      expect(index).toContain("(release-channel.md)");
+      expect(index).not.toContain(world.token);
       expect(JSON.stringify(steps)).not.toContain(world.token);
-      expect(memoryRecallTask.toolPolicy.allowedCapabilities).toEqual(["write"]);
+      expect(memoryRecallTask.toolPolicy.allowedCapabilities).toEqual(["read", "write"]);
       expect(world.allowedChanges).toEqual(["RELEASE.txt"]);
     } finally {
       await removeTemporaryRoot(root);
@@ -631,52 +634,36 @@ describe("runtime eval tasks", () => {
       const split = await memoryIntentSplitTask.setup("shared-seed-123", splitRoot);
       const updatedEntry = {
         id: split.memoryId,
-        timestamp: "2026-07-18T02:00:00.000Z",
-        type: "preference",
+        name: "Review audience",
+        description: "Who reviews this user's work",
+        type: "user" as const,
         content: split.content,
-        confidence: 0.7,
-        tags: split.tags,
+        modified: "2026-07-18T02:00:00.000Z",
       };
-      await writeFixture(splitRoot, {
-        ".diligent/memory/memory.jsonl": `${JSON.stringify(updatedEntry)}\n`,
-        "CURRENT.txt": split.expected,
-      });
+      await writeFixture(splitRoot, { ...memoryFixtureFiles([updatedEntry]), "CURRENT.txt": split.expected });
       expect((await memoryIntentSplitTask.verify!(split, new AbortController().signal)).exitCode).toBe(0);
-      updatedEntry.tags = ["review-audience"];
-      await writeFixture(splitRoot, {
-        ".diligent/memory/memory.jsonl": `${JSON.stringify(updatedEntry)}\n`,
-      });
-      expect((await memoryIntentSplitTask.verify!(split, new AbortController().signal)).exitCode).toBe(0);
-      updatedEntry.tags = [split.transientValue];
-      await writeFixture(splitRoot, {
-        ".diligent/memory/memory.jsonl": `${JSON.stringify(updatedEntry)}\n`,
-      });
+      await writeFixture(splitRoot, memoryFixtureFiles([{ ...updatedEntry, description: split.transientValue }]));
       expect((await memoryIntentSplitTask.verify!(split, new AbortController().signal)).exitCode).toBe(1);
-      updatedEntry.tags = ["review-audience"];
-      await writeFixture(splitRoot, {
-        ".diligent/memory/memory.jsonl": `${JSON.stringify(updatedEntry)}\n${JSON.stringify({
-          ...updatedEntry,
-          id: "preference.transient-duplicate",
-          content: `Current-only value is ${split.transientValue}.`,
-        })}\n`,
-      });
+      await writeFixture(
+        splitRoot,
+        memoryFixtureFiles([
+          updatedEntry,
+          { ...updatedEntry, id: "transient-duplicate", content: `Current-only value is ${split.transientValue}.` },
+        ]),
+      );
       expect((await memoryIntentSplitTask.verify!(split, new AbortController().signal)).exitCode).toBe(1);
 
       const forget = await memoryForgetTask.setup("shared-seed-123", forgetRoot);
-      await writeFixture(forgetRoot, {
-        ".diligent/memory/memory.jsonl": `${JSON.stringify(forget.controlEntry)}\n`,
-        "FORGET.txt": forget.expected,
-      });
+      await rm(join(forgetRoot, ".diligent/memory", `${forget.memoryId}.md`));
+      await writeFixture(forgetRoot, { ...memoryFixtureFiles([forget.controlEntry]), "FORGET.txt": forget.expected });
       expect((await memoryForgetTask.verify!(forget, new AbortController().signal)).exitCode).toBe(0);
-      await writeFixture(forgetRoot, {
-        ".diligent/memory/memory.jsonl": `${JSON.stringify(forget.controlEntry)}\n${JSON.stringify({
-          id: "preference.replacement",
-          timestamp: "2026-07-18T02:00:00.000Z",
-          type: "preference",
-          content: forget.targetContent,
-          confidence: 0.8,
-        })}\n`,
-      });
+      await writeFixture(
+        forgetRoot,
+        memoryFixtureFiles([
+          forget.controlEntry,
+          { ...forget.controlEntry, id: "replacement", content: forget.targetContent },
+        ]),
+      );
       expect((await memoryForgetTask.verify!(forget, new AbortController().signal)).exitCode).toBe(1);
     } finally {
       await removeTemporaryRoot(splitRoot);
@@ -692,7 +679,6 @@ describe("runtime eval tasks", () => {
       durableValue: "AUDIENCE_future",
       transientValue: "CURRENT_once",
       content: "Preferred review audience is AUDIENCE_future.",
-      tags: ["review", "audience"],
       expected: "CURRENT_once\n",
       expectedHash: "split-hash",
       protectedPaths: [],
@@ -737,11 +723,11 @@ describe("runtime eval tasks", () => {
       taskValue: "TASK_once",
       controlEntry: {
         id: "preference.control",
-        timestamp: "2026-07-18T00:00:00.000Z",
-        type: "preference" as const,
+        name: "Control",
+        description: "Control preference",
+        type: "feedback" as const,
         content: "Control preference remains CONTROL_keep.",
-        confidence: 0.9,
-        tags: ["control"],
+        modified: "2026-07-18T00:00:00.000Z",
       },
       expected: "TASK_once\n",
       expectedHash: "forget-hash",
