@@ -12,7 +12,8 @@ export interface EvalRedactionOptions {
   secrets?: readonly string[];
 }
 
-const CREDENTIAL_PATTERN = /\b(?:sk-ant-|sk-proj-|sk-)[A-Za-z0-9_-]{8,}\b/g;
+/** API keys, OpenAI project IDs echoed by access errors, and Google API keys not supplied as explicit secrets. */
+const CREDENTIAL_PATTERN = /\b(?:sk-ant-|sk-proj-|sk-|proj_|AIza)[A-Za-z0-9_-]{8,}\b/g;
 const BEARER_PATTERN = /Bearer\s+[^\s"',}]+/gi;
 const SENSITIVE_KEY_PATTERN = /^(?:authorization|api[_-]?key)$/i;
 

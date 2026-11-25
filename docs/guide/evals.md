@@ -233,10 +233,11 @@ OAuth is a separate auth path selected with `--provider chatgpt`. `--model <id>`
 | `web_search` | Provider-native `web_action` | A native search returns results, and the answer cites a URL whose host appears in them (a bare-domain result title also counts, for providers that return redirect URLs) |
 | `image_read` | `read_image` on a four-quadrant PNG with seeded colors | Every quadrant color is reported exactly |
 | `image_generation` | A probe tool that calls the runtime `generateImage` binding | The image validates, `thread/read` exposes it on the tool result, and the model names the color measured from its pixels. The model is never told the requested color. |
-| `compaction` | `thread/compact/start` on an eligible thread, then one more turn | Compaction reports `compacted`, and the next reply restates both seeded facts |
+| `compaction` | A tool returns two seeded facts inside a large result, then `thread/compact/start` runs and one more turn follows | Compaction reports `compacted`, and the next reply restates both seeded facts. The tool refuses a second load. |
 
 API-key profiles register their key in `ProviderManager` as the product does. Native compaction for OpenAI and
-Anthropic therefore runs the provider endpoint; Gemini uses summarization.
+Anthropic therefore runs the provider endpoint; Gemini uses summarization. The facts arrive in tool output because
+OpenAI native compaction keeps user messages verbatim, so facts in a user message would survive without compaction.
 
 Every cell has one of four statuses. Only `PASS` counts as a pass:
 

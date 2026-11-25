@@ -1,7 +1,7 @@
 // @summary Tests allowlisted JSON report serialization and credential redaction
 
 import { describe, expect, test } from "bun:test";
-import { serializeEvalReport } from "../../src/reporters/json";
+import { redactEvalText, serializeEvalReport } from "../../src/reporters/json";
 import type { EvalSuiteReport } from "../../src/task";
 
 describe("serializeEvalReport", () => {
@@ -85,5 +85,14 @@ describe("serializeEvalReport", () => {
     expect(json).toContain("[REDACTED]");
     expect(json).toContain("[base64 omitted]");
     expect(json).toContain('"status": "invalid"');
+  });
+
+  test("redacts provider project IDs and Google API keys echoed by provider errors", () => {
+    const text = redactEvalText(
+      "403 Project `proj_0123456789abcdefghij` does not have access; key AIzaSyA0123456789abcdefghij was rejected",
+    );
+    expect(text).not.toContain("proj_0123456789abcdefghij");
+    expect(text).not.toContain("AIzaSyA0123456789abcdefghij");
+    expect(text).toContain("does not have access");
   });
 });

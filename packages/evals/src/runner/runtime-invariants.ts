@@ -4,7 +4,7 @@ import { DiligentServerNotificationSchema } from "@diligent/protocol";
 import { EXECUTE_MODE_DISALLOWED_TOOLS, PLAN_MODE_DISALLOWED_TOOLS } from "@diligent/runtime";
 import type { RuntimeEvalExecution, RuntimeEvalLimits, RuntimeStatePolicy } from "../runtime-task";
 import type { EvalFailure } from "../task";
-import { checkStructuralInvariants } from "./invariants";
+import { checkStructuralInvariants, type StructuralInvariantOptions } from "./invariants";
 import { checkRuntimeStatePolicy, projectSnapshotWithoutRuntimeState } from "./runtime-state";
 import { workspaceDiff } from "./runtime-workspace";
 
@@ -12,6 +12,7 @@ export function checkRuntimeInvariants(
   execution: RuntimeEvalExecution<unknown>,
   limits: RuntimeEvalLimits,
   statePolicy: RuntimeStatePolicy = { allowedMutations: ["infrastructure", "sessions"] },
+  options: Pick<StructuralInvariantOptions, "normalizeStreamedText"> = {},
 ): EvalFailure[] {
   const failures: EvalFailure[] = [];
   failures.push(...checkAdvertisedToolSnapshots(execution));
@@ -40,6 +41,7 @@ export function checkRuntimeInvariants(
         {
           allowMultipleAgentLifecycles: true,
           allowMissingFinalAssistant: endsWithCancelledUserInput(turn.messages),
+          normalizeStreamedText: options.normalizeStreamedText,
         },
       ),
     );

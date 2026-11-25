@@ -7,6 +7,11 @@ import type { EvalExecution, EvalFailure } from "../task";
 export interface StructuralInvariantOptions {
   allowMultipleAgentLifecycles?: boolean;
   allowMissingFinalAssistant?: boolean;
+  /**
+   * Re-applies evidence normalization to joined text deltas. Per-delta normalization misses a fixture path that the
+   * provider split across deltas, while the final message normalizes it whole.
+   */
+  normalizeStreamedText?: (text: string) => string;
 }
 
 export function checkStructuralInvariants(
@@ -15,7 +20,7 @@ export function checkStructuralInvariants(
 ): EvalFailure[] {
   const failures: EvalFailure[] = [];
   validateMessages(execution.messages, failures);
-  validateMessageTextMirrors(execution, failures);
+  validateMessageTextMirrors(execution, failures, options);
   validateAgentLifecycle(execution, failures, options);
   validateTurnLifecycle(execution, failures);
   validateMessageLifecycle(execution, failures);
@@ -26,7 +31,11 @@ export function checkStructuralInvariants(
   return deduplicateFailures(failures);
 }
 
-function validateMessageTextMirrors(execution: EvalExecution<unknown>, failures: EvalFailure[]): void {
+function validateMessageTextMirrors(
+  execution: EvalExecution<unknown>,
+  failures: EvalFailure[],
+  options: StructuralInvariantOptions,
+): void {
   const deltas = new Map<string, string[]>();
   for (const { event } of execution.events) {
     if (event.type !== "message_delta" || event.delta.type !== "text_delta") continue;
@@ -41,7 +50,8 @@ function validateMessageTextMirrors(execution: EvalExecution<unknown>, failures:
       .map((block) => block.text)
       .join("");
     if (expected.length === 0) continue;
-    const streamed = (deltas.get(event.itemId) ?? []).join("");
+    const joined = (deltas.get(event.itemId) ?? []).join("");
+    const streamed = options.normalizeStreamedText ? options.normalizeStreamedText(joined) : joined;
     if (streamed !== expected)
       failures.push(
         contractFailure(

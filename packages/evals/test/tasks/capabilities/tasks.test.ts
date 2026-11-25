@@ -1,13 +1,24 @@
 // @summary Assembled-runtime and evaluator coverage for the model capability probe tasks
 
 import { describe, expect, test } from "bun:test";
+import { EventStream } from "@diligent/core/event-stream";
 import type { AssistantMessage, Message } from "@diligent/core/message-contract";
-import type { ProviderManager, StreamContext, StreamFunction } from "@diligent/core/provider-contract";
+import type {
+  ProviderEvent,
+  ProviderManager,
+  ProviderResult,
+  StreamContext,
+  StreamFunction,
+} from "@diligent/core/provider-contract";
 import { runRuntimeEvalExecution } from "../../../src/runner/runtime-execution";
 import type { AnyRuntimeEvalTask, RuntimeEvalExecution, RuntimeEvalExecutionResult } from "../../../src/runtime-task";
 import type { EvalProfile } from "../../../src/task";
 import { basicResponseCapabilityTask } from "../../../src/tasks/capabilities/basic-response";
-import { compactionCapabilityTask } from "../../../src/tasks/capabilities/compaction";
+import {
+  type CompactionCapabilityWorld,
+  compactionCapabilityTask,
+  NOTES_TOOL,
+} from "../../../src/tasks/capabilities/compaction";
 import {
   dominantColor,
   type ImageGenerationCapabilityWorld,
@@ -52,6 +63,41 @@ describe("capability-image-read", () => {
     expect(result.failures).toEqual([]);
     expect(received).toEqual([quadrantColorPng(layout).toString("base64")]);
     expect(JSON.stringify(result.execution)).not.toContain("iVBOR");
+  });
+
+  test("a fixture path split across streamed text deltas still mirrors the normalized final message", async () => {
+    const layout = seededQuadrantLayout(SEED);
+    const result = await runRuntimeEvalExecution({
+      task: imageReadCapabilityTask,
+      profile: OPENAI,
+      seed: SEED,
+      streamFunction: (() => {
+        let call = 0;
+        return (model, context, options) => {
+          call += 1;
+          if (call === 2)
+            return sequenceStream([text(EVAL_QUADRANTS.map((q) => `${q}=${layout[q]}`).join("; "))])(
+              model,
+              context,
+              options,
+            );
+          const path = lastUserText(context).match(/\S+\.png/)![0];
+          const narration = `I will read \`${path}\`.`;
+          const split = narration.indexOf("/", narration.indexOf("/") + 1);
+          return splitTextStream(
+            assistantMessage(
+              [
+                { type: "text", text: narration },
+                { type: "tool_call", id: "read", name: "read_image", input: { file_path: path } },
+              ],
+              "tool_use",
+            ),
+            [narration.slice(0, split), narration.slice(split)],
+          );
+        };
+      })(),
+    });
+    expect(result.failures).toEqual([]);
   });
 
   test("seeded layouts use four distinct colors", () => {
@@ -153,24 +199,45 @@ describe("capability-image-generation", () => {
 });
 
 describe("capability-compaction", () => {
-  test("compacts the padded thread and grades recall from the compacted context", async () => {
-    let summaryFacts = "";
+  const notesCall = () =>
+    assistantMessage([{ type: "tool_call", id: "notes", name: NOTES_TOOL, input: {} }], "tool_use");
+
+  test("compacts the tool-inflated thread and grades recall from the compacted context", async () => {
+    let facts = "";
     let postCompactionContext = "";
     const result = await run(compactionCapabilityTask, (call, context) => {
-      if (call === 1) {
-        summaryFacts = lastUserText(context)
-          .split("\n")[0]!
-          .replace("Remember these exact facts for later turns: ", "");
+      if (call === 1) return notesCall();
+      if (call === 2) {
+        facts = [...JSON.stringify(context.messages).matchAll(/(ALPHA|BETA)=([A-Za-z0-9_]+)/g)]
+          .slice(0, 2)
+          .map((match) => match[0])
+          .join("; ");
         return text("ACK");
       }
-      if (call === 2) return text(`## Critical Context\n${summaryFacts}`);
+      if (call === 3) return text(`## Critical Context\n${facts}`);
       postCompactionContext = JSON.stringify(context.messages);
-      const facts = summaryFacts.replace(/\.$/, "");
       return text(facts);
     });
+    const world = result.execution.world as CompactionCapabilityWorld;
     expect(result.failures).toEqual([]);
+    expect(facts).toBe(`ALPHA=${world.alpha}; BETA=${world.beta}`);
     expect(result.execution.compactions[0]?.response.compacted).toBe(true);
     expect(postCompactionContext).not.toContain("eligible-compaction-padding");
+  });
+
+  test("refuses a second notes load so recall cannot bypass compaction", async () => {
+    const result = await run(compactionCapabilityTask, (call) => {
+      if (call === 1 || call === 4) return notesCall();
+      if (call === 2) return text("ACK");
+      if (call === 3) return text("## Critical Context\nNothing retained.");
+      return text("ALPHA=unknown; BETA=unknown");
+    });
+    const loads = result.execution.toolCalls.filter((trace) => trace.name === NOTES_TOOL);
+    expect(loads.map((trace) => [trace.turnIndex, trace.outcome])).toEqual([
+      [0, "success"],
+      [1, "runtime_error"],
+    ]);
+    expect(result.failure).toMatchObject({ code: "task_semantic.capability_compaction.lost_facts" });
   });
 });
 
@@ -237,4 +304,26 @@ function lastUserText(context: StreamContext): string {
     .filter((block) => block.type === "text")
     .map((block) => block.text)
     .join("");
+}
+
+/** Streams one assistant message whose text arrives in the given chunks. */
+function splitTextStream(message: AssistantMessage, chunks: string[]): ReturnType<StreamFunction> {
+  const stream = new EventStream<ProviderEvent, ProviderResult>(
+    (event) => event.type === "done" || event.type === "error",
+    (event) => {
+      if (event.type === "done") return { message: event.message };
+      throw (event as { type: "error"; error: Error }).error;
+    },
+  );
+  queueMicrotask(() => {
+    stream.push({ type: "start" });
+    for (const chunk of chunks) stream.push({ type: "text_delta", delta: chunk });
+    for (const block of message.content) {
+      if (block.type !== "tool_call") continue;
+      stream.push({ type: "tool_call_start", id: block.id, name: block.name });
+      stream.push({ type: "tool_call_end", id: block.id, name: block.name, input: block.input });
+    }
+    stream.push({ type: "done", stopReason: message.stopReason, message });
+  });
+  return stream;
 }
