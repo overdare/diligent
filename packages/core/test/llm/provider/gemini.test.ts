@@ -32,8 +32,8 @@ describe("Gemini thinking", () => {
     });
   });
 
-  test("sends xhigh in the Hydrogen streaming request", async () => {
-    const hydrogen = resolveModel({ provider: "gemini", modelId: "gemini-4-hydrogen" });
+  test.each(["gemini-4-hydrogen", "gemini-4-neon"])("sends xhigh in the %s streaming request", async (modelId) => {
+    const hydrogen = resolveModel({ provider: "gemini", modelId });
     const originalFetch = globalThis.fetch;
     let request: { url: string; body: unknown } | undefined;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -50,11 +50,31 @@ describe("Gemini thinking", () => {
       const stream = createGeminiStream("test-key");
       const result = await stream(
         hydrogen,
-        { systemPrompt: [], messages: [{ role: "user", content: "Hello", timestamp: 0 }], tools: [] },
+        {
+          systemPrompt: [],
+          messages: [{ role: "user", content: "Hello", timestamp: 0 }],
+          tools: [
+            {
+              kind: "function",
+              name: "read_file",
+              description: "Read a file",
+              inputSchema: { type: "object", properties: {} },
+            },
+            { kind: "provider_builtin", capability: "web" },
+          ],
+        },
         { effort: "xhigh" },
       ).result();
-      expect(request?.url).toContain("/models/gemini-4-hydrogen:streamGenerateContent");
-      expect(request?.body).toMatchObject({ generationConfig: { thinkingConfig: { thinkingLevel: "xhigh" } } });
+      expect(request?.url).toContain(`/models/${modelId}:streamGenerateContent`);
+      expect(request?.body).toMatchObject({
+        generationConfig: { thinkingConfig: { thinkingLevel: "xhigh" } },
+        tools: expect.arrayContaining([
+          expect.objectContaining({ googleSearch: expect.anything() }),
+          expect.objectContaining({
+            functionDeclarations: expect.arrayContaining([expect.objectContaining({ name: "read_file" })]),
+          }),
+        ]),
+      });
       expect(result.message.content).toEqual([{ type: "text", text: "ok" }]);
     } finally {
       globalThis.fetch = originalFetch;
