@@ -48,13 +48,13 @@ describe("loadConfig", () => {
       join(dir, ".diligent", "config.jsonc"),
       `{
         // Project config
-        "model": { "provider": "anthropic", "modelId": "claude-haiku-4-5-20251001" },
+        "model": { "provider": "anthropic", "modelId": "claude-haiku-5-5" },
         "provider": { "anthropic": { "apiKey": "sk-test" } }
       }`,
     );
 
     const config = await loadConfig(dir);
-    expect(config.model.modelId).toBe("claude-haiku-4-5-20251001");
+    expect(config.model.modelId).toBe("claude-haiku-5-5");
     expect(config.sources.length).toBeGreaterThan(0);
   });
 

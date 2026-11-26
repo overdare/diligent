@@ -32,8 +32,6 @@ function calculateUsageCost(
     model = findModel({ provider: "anthropic", modelId: "claude-sonnet-5" });
   if (!model && modelId.startsWith("claude-opus-4-"))
     model = findModel({ provider: "anthropic", modelId: "claude-opus-4-8" });
-  if (!model && modelId.startsWith("claude-haiku-4-"))
-    model = findModel({ provider: "anthropic", modelId: "claude-haiku-4-5-20251001" });
   if (!model) return 0;
 
   const hasAnyPricing =

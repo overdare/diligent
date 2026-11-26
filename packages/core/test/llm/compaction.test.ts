@@ -278,24 +278,6 @@ describe("compact", () => {
     expect(nativeCalls).toBe(2);
   });
 
-  it("summarizes locally without calling the native adapter when the model lacks native compaction", async () => {
-    let nativeCalls = 0;
-    const result = await compact({
-      model: { ...TEST_MODEL, provider: "anthropic", supportsNativeCompaction: false },
-      messages: [userMsg("hello")],
-      systemPrompt: [],
-      config: { reservePercent: 16 },
-      llmCompactionFn: async () => {
-        nativeCalls += 1;
-        return { status: "ok", summary: "native summary" };
-      },
-      streamFn: makeStreamFn("local summary"),
-    });
-
-    expect(result).toEqual({ mode: "local", displaySummary: "local summary" });
-    expect(nativeCalls).toBe(0);
-  });
-
   it("falls back to local summarization when native compaction exceeds timeoutMs", async () => {
     jest.useFakeTimers();
     try {

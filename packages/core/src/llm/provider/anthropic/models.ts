@@ -5,7 +5,7 @@ import { defineProviderModelClasses } from "../../model-class";
 export const ANTHROPIC_MODEL_CLASSES = defineProviderModelClasses({
   pro: { defaultModelId: "claude-opus-5-5" },
   general: { defaultModelId: "claude-sonnet-5" },
-  lite: { defaultModelId: "claude-haiku-4-5-20251001" },
+  lite: { defaultModelId: "claude-haiku-5-5" },
 });
 
 export const ANTHROPIC_MODELS = defineProviderModels("anthropic", [
@@ -124,28 +124,11 @@ export const ANTHROPIC_MODELS = defineProviderModels("anthropic", [
     supportsVision: true,
     supportsAdaptiveThinking: true,
     supportsXhighEffort: true,
-    aliases: ["haiku-5-5"],
+    aliases: ["claude-haiku", "haiku", "haiku-5-5"],
     provenance: {
       source: "Anthropic Claude Haiku 5.5 model documentation",
       sourceUrl: "https://platform.claude.com/docs/en/models/haiku-5-5/overview",
       updatedAt: "2026-10-30",
     },
-  },
-  {
-    modelId: "claude-haiku-4-5-20251001",
-    display: "Claude Haiku 4.5",
-    contextWindow: 500_000,
-    maxOutputTokens: 64_000,
-    inputCostPer1M: 1,
-    outputCostPer1M: 5,
-    cacheReadCostPer1M: 0.1,
-    cacheWriteCostPer1M: 1.25,
-    supportsThinking: true,
-    supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
-    supportsVision: true,
-    thinkingBudgets: { low: 1_024, medium: 3_000, high: 8_000, max: 16_000 },
-    // The API rejects the compact_20260112 context management strategy for this model.
-    supportsNativeCompaction: false,
-    aliases: ["claude-haiku", "haiku", "claude-haiku-4-5"],
   },
 ]);

@@ -174,12 +174,12 @@ describe("modelCommand picker", () => {
       onModelChanged,
     });
 
-    await modelCommand.handler("claude-haiku-4-5", ctx);
+    await modelCommand.handler("haiku-5-5", ctx);
 
     expect(setModel).toHaveBeenCalledTimes(1);
     expect(setModel).toHaveBeenCalled();
     expect(onModelChanged).toHaveBeenCalled();
-    expect(config.model.modelId).toBe("claude-haiku-4-5-20251001");
+    expect(config.model.modelId).toBe("claude-haiku-5-5");
   });
 
   it("preserves xhigh when switching between OpenAI models", async () => {

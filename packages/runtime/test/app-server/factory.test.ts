@@ -293,16 +293,15 @@ describe("createAppServerConfig", () => {
       const runtimeConfig = makeRuntimeConfig();
       const config = createAppServerConfig({ cwd: "/tmp/test", runtimeConfig });
 
-      config.modelConfig?.onModelChange({ provider: "anthropic", modelId: "claude-haiku-4-5-20251001" });
-      expect(runtimeConfig.model?.modelId).toBe("claude-haiku-4-5-20251001");
+      config.modelConfig?.onModelChange({ provider: "anthropic", modelId: "claude-haiku-5-5" });
+      expect(runtimeConfig.model?.modelId).toBe("claude-haiku-5-5");
 
       const configPath = join(fakeHome, ".diligent", "config.jsonc");
       await waitFor(
         async () =>
-          (await Bun.file(configPath).exists()) &&
-          (await Bun.file(configPath).text()).includes("claude-haiku-4-5-20251001"),
+          (await Bun.file(configPath).exists()) && (await Bun.file(configPath).text()).includes("claude-haiku-5-5"),
       );
-      expect(await Bun.file(configPath).text()).toContain('"modelId": "claude-haiku-4-5-20251001"');
+      expect(await Bun.file(configPath).text()).toContain('"modelId": "claude-haiku-5-5"');
     } finally {
       if (originalHome === undefined) {
         delete process.env.HOME;
@@ -322,10 +321,7 @@ describe("createAppServerConfig", () => {
       const runtimeConfig = makeRuntimeConfig();
       const config = createAppServerConfig({ cwd: "/tmp/test", runtimeConfig });
 
-      config.modelConfig?.onModelChange(
-        { provider: "anthropic", modelId: "claude-haiku-4-5-20251001" },
-        "thread-child",
-      );
+      config.modelConfig?.onModelChange({ provider: "anthropic", modelId: "claude-haiku-5-5" }, "thread-child");
 
       expect(runtimeConfig.model?.modelId).toBe(TEST_ANTHROPIC_MODEL_ID);
       const configPath = join(fakeHome, ".diligent", "config.jsonc");
