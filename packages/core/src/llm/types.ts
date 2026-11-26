@@ -54,6 +54,7 @@ export interface Model extends ModelRef {
   supportsFastMode?: boolean;
   supportsAdaptiveThinking?: boolean; // opus/sonnet/fable: model decides budget
   supportsXhighEffort?: boolean; // adaptive Anthropic models that accept output_config.effort=xhigh
+  supportsNativeCompaction?: boolean; // false skips the provider's native compaction endpoint
   thinkingBudgets?: {
     // effort-level budgets for non-adaptive models
     low: number;

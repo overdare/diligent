@@ -296,7 +296,11 @@ export async function compact(input: LLMCompactInput): Promise<LLMCompactResult>
       ? "preserving existing native compaction state"
       : "falling back to local summarization";
 
-  if (nativeCompactFn && nativeUnsupportedModels.get(nativeCompactFn)?.has(modelKey) !== true) {
+  if (
+    nativeCompactFn &&
+    input.model.supportsNativeCompaction !== false &&
+    nativeUnsupportedModels.get(nativeCompactFn)?.has(modelKey) !== true
+  ) {
     const nativeTimeoutMs = input.config.timeoutMs ?? DEFAULT_NATIVE_COMPACTION_TIMEOUT_MS;
     let nativeResult: Awaited<ReturnType<NativeCompactFn>> | undefined;
     try {

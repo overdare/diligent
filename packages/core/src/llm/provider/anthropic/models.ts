@@ -144,6 +144,8 @@ export const ANTHROPIC_MODELS = defineProviderModels("anthropic", [
     supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
     supportsVision: true,
     thinkingBudgets: { low: 1_024, medium: 3_000, high: 8_000, max: 16_000 },
+    // The API rejects the compact_20260112 context management strategy for this model.
+    supportsNativeCompaction: false,
     aliases: ["claude-haiku", "haiku", "claude-haiku-4-5"],
   },
 ]);
