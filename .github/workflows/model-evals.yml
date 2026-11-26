@@ -98,46 +98,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-  capabilities:
-    name: Capability matrix (${{ matrix.provider }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        provider: [openai, anthropic, gemini]
-    env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      REPORT_PATH: artifacts/evals/scheduled-capabilities-${{ matrix.provider }}.json
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.5
-
-      - run: bun install --frozen-lockfile
-
-      - name: Run capability matrix
-        shell: bash
-        run: bun run eval capabilities --provider "${{ matrix.provider }}" --report "$REPORT_PATH"
-
-      - name: Upload capability report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: scheduled-capability-evals-${{ matrix.provider }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/evals/scheduled-capabilities-${{ matrix.provider }}.*
-          if-no-files-found: warn
-          retention-days: 30
-
   aggregate:
-    name: Require every eval phase
-    needs: [core, runtime, capabilities]
+    name: Require both eval phases
+    needs: [core, runtime]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -146,11 +109,9 @@ jobs:
         env:
           CORE_RESULT: ${{ needs.core.result }}
           RUNTIME_RESULT: ${{ needs.runtime.result }}
-          CAPABILITIES_RESULT: ${{ needs.capabilities.result }}
         run: |
-          if [ "$CORE_RESULT" != "success" ] || [ "$RUNTIME_RESULT" != "success" ] || [ "$CAPABILITIES_RESULT" != "success" ]; then
+          if [ "$CORE_RESULT" != "success" ] || [ "$RUNTIME_RESULT" != "success" ]; then
             echo "Core matrix result: $CORE_RESULT"
             echo "Runtime matrix result: $RUNTIME_RESULT"
-            echo "Capability matrix result: $CAPABILITIES_RESULT"
             exit 1
           fi

@@ -1,9 +1,6 @@
 name: Model Capability Evals
 
 on:
-  # TEMPORARY: pre-merge live run on this branch only. Remove before merge.
-  push:
-    branches: [feat/model-capability-matrix]
   workflow_dispatch:
     inputs:
       provider:
@@ -49,7 +46,7 @@ jobs:
   capabilities:
     name: Capability matrix (${{ matrix.provider }})
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:

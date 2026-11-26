@@ -205,9 +205,7 @@ concurrency group. Its direct-job graph is:
 2. After the complete core matrix finishes, runtime runs even if core failed. Four jobs cover Ubuntu and Windows
    crossed with OpenAI and Anthropic. Each job passes exactly one provider and executes 34 tasks, for 136 executions:
    the same 68 task/profile pairs sampled once on each operating system.
-3. The capability matrix runs in parallel with core as one Ubuntu job each for OpenAI, Anthropic, and Gemini. Each job
-   covers that provider's whole catalog.
-4. A final always-running aggregate job fails the workflow unless every complete matrix phase succeeded. Per-job
+3. A final always-running aggregate job fails the workflow unless both complete matrix phases succeeded. Per-job
    report uploads also run after failures and use provider/OS-specific paths and artifact names.
 
 All jobs in one scheduled run derive the same root seed from the repository, GitHub run ID, and commit SHA. The two
@@ -215,10 +213,13 @@ runtime operating-system samples expose platform-specific harness or product beh
 of the same fixture/model contracts, not independent draws whose pass rates can be multiplied into a quality
 probability.
 
-The standalone core, runtime, and capability workflows remain available through `workflow_dispatch` and
-`workflow_call`, but have no schedule and therefore do not duplicate the daily graph. They may filter to one task,
-capability, model, or provider; leaving filters empty preserves their complete-suite behavior. Scheduled and standalone
-workflows remain shadow signals disconnected from Release.
+The standalone core and runtime workflows remain available through `workflow_dispatch` and `workflow_call`, but have
+no schedule and therefore do not duplicate the daily graph. They may filter to one task or provider; leaving filters
+empty preserves their complete-suite behavior. Scheduled and standalone workflows remain shadow signals disconnected
+from Release.
+
+**Model Capability Evals** is manual only: it runs through `workflow_dispatch` or `workflow_call` and is not part of
+the daily graph. It may filter to one provider, capability, or model.
 
 ## Model capability matrix
 
