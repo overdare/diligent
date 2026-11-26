@@ -43,6 +43,7 @@ const model: Model = {
 describe("GLM-5.3 Coding Plan Chat Completions contract", () => {
   // Coding Plan routes GLM-5.1/5.2 to GLM-5.3, but GLM-4.7 to vision-capable Flash.
   for (const [selector, modelId] of [
+    ["glm-5.4", "glm-5.4"],
     ["glm-5.3", "glm-5.3"],
     ["glm-5.3-flash", "glm-5.3-flash"],
     ["glm-4.7", "glm-5.3-flash"],
@@ -61,7 +62,7 @@ describe("GLM-5.3 Coding Plan Chat Completions contract", () => {
       expect(info).toMatchObject({
         supportedEfforts: ["low", "high", "max"],
         supportsThinking: true,
-        supportsVision: modelId === "glm-5.3-flash",
+        supportsVision: modelId === "glm-5.3-flash" || modelId === "glm-5.4",
       });
 
       const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
