@@ -82,7 +82,7 @@ export {
 } from "./render-payload";
 export { createRequestUserInputTool } from "./request-user-input";
 export { createSearchMemoryTool } from "./search-memory";
-export { createSkillTool, registerSkillTool } from "./skill";
+export { createSkillTool, registerSkillTool, type SkillCatalog } from "./skill";
 export { createUpdateMemoryTool } from "./update-memory";
 export type { UserInputQuestion, UserInputRequest, UserInputResponse, UserInputSource } from "./user-input-types";
 export { createWebTool } from "./web";

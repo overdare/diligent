@@ -2,16 +2,36 @@
 
 import type { Tool, ToolRegistryBuilder, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
-import { extractBody, type SkillMetadata } from "../skills";
+import { extractBody, type SkillLoadError, type SkillMetadata } from "../skills";
 import { assertSkillNotRevoked } from "../skills/revocation";
+
+const MAX_CATALOG_DESCRIPTION_CHARS = 1024;
+const TRUNCATED_DESCRIPTION_SUFFIX = "...";
 
 const SkillParams = z.object({
   name: z.string().describe("Skill name from the available skills list"),
 });
 
-export function createSkillTool(skills: SkillMetadata[]): Tool<typeof SkillParams> {
-  const availableSkills = skills.filter((skill) => !skill.disableModelInvocation);
-  const byName = new Map(availableSkills.map((skill) => [skill.name, skill]));
+export interface SkillCatalog {
+  skills: SkillMetadata[];
+  errors?: SkillLoadError[];
+  /** Rediscovers skills from disk; called when a requested name is not in the current catalog. */
+  reload?: () => Promise<{ skills: SkillMetadata[]; errors: SkillLoadError[] }>;
+}
+
+function catalogDescription(description: string): string {
+  const chars = Array.from(description);
+  if (chars.length <= MAX_CATALOG_DESCRIPTION_CHARS) return description;
+  return (
+    chars.slice(0, MAX_CATALOG_DESCRIPTION_CHARS - TRUNCATED_DESCRIPTION_SUFFIX.length).join("") +
+    TRUNCATED_DESCRIPTION_SUFFIX
+  );
+}
+
+export function createSkillTool(catalog: SkillCatalog): Tool<typeof SkillParams> {
+  const { skills, errors = [], reload } = catalog;
+  let availableSkills = skills.filter((skill) => !skill.disableModelInvocation);
+  let loadErrors = errors;
 
   let description: string;
   if (availableSkills.length === 0) {
@@ -20,7 +40,7 @@ export function createSkillTool(skills: SkillMetadata[]): Tool<typeof SkillParam
     description = [
       "Load a specialized skill with domain-specific instructions and workflow.",
       "Use this tool when the user request matches one of these skills:",
-      ...availableSkills.map((skill) => `- ${skill.name}: ${skill.description}`),
+      ...availableSkills.map((skill) => `- ${skill.name}: ${catalogDescription(skill.description)}`),
     ].join("\n");
   }
 
@@ -30,13 +50,21 @@ export function createSkillTool(skills: SkillMetadata[]): Tool<typeof SkillParam
     parameters: SkillParams,
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
-      const selected = byName.get(args.name);
+      let selected = availableSkills.find((skill) => skill.name === args.name);
+      if (!selected && reload) {
+        const fresh = await reload();
+        availableSkills = fresh.skills.filter((skill) => !skill.disableModelInvocation);
+        loadErrors = fresh.errors;
+        selected = availableSkills.find((skill) => skill.name === args.name);
+      }
       if (!selected) {
         const list = availableSkills.map((skill) => skill.name).join(", ");
-        return {
-          output: `Skill "${args.name}" not found. Available skills: ${list || "none"}`,
-          metadata: { error: true },
-        };
+        const lines = [`Skill "${args.name}" not found. Available skills: ${list || "none"}`];
+        if (loadErrors.length > 0) {
+          lines.push("", "These skill files were found but could not be loaded:");
+          lines.push(...loadErrors.map((error) => `- ${error.message}`));
+        }
+        return { output: lines.join("\n"), metadata: { error: true } };
       }
 
       let content: string;
@@ -74,6 +102,6 @@ export function createSkillTool(skills: SkillMetadata[]): Tool<typeof SkillParam
   };
 }
 
-export function registerSkillTool(builder: ToolRegistryBuilder, skills: SkillMetadata[]): ToolRegistryBuilder {
-  return builder.register(createSkillTool(skills));
+export function registerSkillTool(builder: ToolRegistryBuilder, catalog: SkillCatalog): ToolRegistryBuilder {
+  return builder.register(createSkillTool(catalog));
 }

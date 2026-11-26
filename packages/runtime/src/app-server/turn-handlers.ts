@@ -2,6 +2,7 @@
 
 import { toSerializableError } from "@diligent/core/agent";
 import { resolveModel, sameModelRef } from "@diligent/core/model-registry";
+import { createLogger } from "@diligent/logging";
 import type { GoalController, GoalWorkScope } from "../goals/controller";
 import type { GoalToolHost } from "../goals/tools";
 import { runCombinedHooks } from "../hooks/runner";
@@ -36,6 +37,8 @@ const BUILTIN_COMMAND_NAMES = new Set([
   "reload",
   "skills",
 ]);
+
+const logger = createLogger({ scope: "runtime.app-server.turn" });
 
 interface GoalTurnOptions {
   goal: GoalController;
@@ -115,17 +118,34 @@ async function initializeTurnRuntime(
   }
 }
 
+/** Active skill names for slash disambiguation; a failed lookup sends the message as typed. */
+async function loadSlashSkillNames(ctx: ThreadHandlersContext, cwd: string): Promise<Set<string>> {
+  try {
+    return new Set(await ctx.getSkillNames(cwd));
+  } catch (error) {
+    logger.warn("skill_names.failed", {
+      message: "Skill names could not be loaded; slash message sent unchanged",
+      fields: { cwd },
+      error,
+    });
+    return new Set();
+  }
+}
+
 /**
  * Resolve the slash-skill invocation (if any), normalize attachments, and assemble the
  * user message object that will be passed to the session manager.
  */
-function prepareTurnMessage(
+async function prepareTurnMessage(
   ctx: ThreadHandlersContext,
   params: TurnStartParams,
   runtime: ThreadRuntime,
-): { userMessage: UserMessage; content: UserMessage["content"] } {
+): Promise<UserMessage> {
   const timestamp = Date.now();
-  const slashSkill = parseSlashSkillInvocation(params.message, new Set(ctx.getSkillNames()));
+  let slashSkill: ReturnType<typeof parseSlashSkillInvocation> = null;
+  if (params.message.trimStart().startsWith("/")) {
+    slashSkill = parseSlashSkillInvocation(params.message, await loadSlashSkillNames(ctx, runtime.cwd));
+  }
   let messageForTurn: string;
   if (slashSkill) {
     let followUpInstruction: string = "After loading the skill, continue with the user's request.";
@@ -154,34 +174,29 @@ function prepareTurnMessage(
     content = [...textBlocks, ...normalizedAttachments] as UserMessage["content"];
   }
 
-  return {
-    userMessage: { role: "user" as const, content, timestamp },
-    content,
-  };
+  return { role: "user", content, timestamp };
 }
-
-type HookOutcome = { blocked: true } | { blocked: false; userMessage: UserMessage };
 
 /**
  * Collect and run UserPromptSubmit hooks (shell + plugin). If a hook blocks the prompt,
- * emit error/turn-end notifications and return blocked. If a hook supplies additional
+ * emit error/turn-end notifications and return null. If a hook supplies additional
  * context, prepend it to the user message and return the augmented message.
  */
 async function applyUserPromptHooks(
   ctx: ThreadHandlersContext,
   params: TurnStartParams,
   runtime: ThreadRuntime,
-  content: UserMessage["content"],
   userMessage: UserMessage,
   turnId: string,
   userMessageId: string,
-): Promise<HookOutcome> {
+): Promise<UserMessage | null> {
+  const { content } = userMessage;
   const shellHandlers = ctx.hooks?.UserPromptSubmit ?? [];
   const { onUserPromptSubmit: pluginHandlers } = await ctx.getPluginHooks(runtime.cwd);
-  if (runtime.currentTurnId !== turnId) return { blocked: true };
+  if (runtime.currentTurnId !== turnId) return null;
 
   if (shellHandlers.length === 0 && pluginHandlers.length === 0) {
-    return { blocked: false, userMessage };
+    return userMessage;
   }
 
   const hookInput = {
@@ -196,7 +211,7 @@ async function applyUserPromptHooks(
   };
 
   const hookResult = await runCombinedHooks(shellHandlers, pluginHandlers, hookInput, runtime.cwd);
-  if (runtime.currentTurnId !== turnId) return { blocked: true };
+  if (runtime.currentTurnId !== turnId) return null;
 
   if (hookResult.blocked) {
     runtime.turnWork = undefined;
@@ -209,7 +224,7 @@ async function applyUserPromptHooks(
         fatal: false,
       },
     });
-    if (runtime.currentTurnId !== null) return { blocked: true };
+    if (runtime.currentTurnId !== null) return null;
     await ctx.emit({
       method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
       params: { threadId: runtime.id, turnId },
@@ -219,16 +234,16 @@ async function applyUserPromptHooks(
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
         params: { threadId: runtime.id, status: "idle" },
       });
-    return { blocked: true };
+    return null;
   }
 
   if (hookResult.additionalContext) {
     const originalText = typeof content === "string" ? content : params.message;
     const augmentedContent = `${hookResult.additionalContext}\n\n${originalText}`;
-    return { blocked: false, userMessage: { ...userMessage, content: augmentedContent as UserMessage["content"] } };
+    return { ...userMessage, content: augmentedContent as UserMessage["content"] };
   }
 
-  return { blocked: false, userMessage };
+  return userMessage;
 }
 
 export async function handleTurnStart(
@@ -314,22 +329,16 @@ export async function handleTurnStart(
     if (goal) await goal.waitForChildren(controller.signal);
     if (!isCurrent()) return { accepted: true };
 
-    let preparedTurn: { userMessage: UserMessage; content: UserMessage["content"] };
-    if (internal) {
-      preparedTurn = {
-        userMessage: { role: "user" as const, content: params.message, timestamp: Date.now() },
-        content: params.message,
-      };
-    } else {
-      preparedTurn = prepareTurnMessage(ctx, params, runtime);
-    }
-    const { userMessage, content } = preparedTurn;
     const userItemId = generateEntryId();
-    let hookOutcome: HookOutcome = { blocked: false, userMessage };
-    if (!internal) {
-      hookOutcome = await applyUserPromptHooks(ctx, params, runtime, content, userMessage, turnId, userItemId);
+    let userMessage: UserMessage | null;
+    if (internal) {
+      userMessage = { role: "user", content: params.message, timestamp: Date.now() };
+    } else {
+      userMessage = await prepareTurnMessage(ctx, params, runtime);
+      if (!isCurrent()) return { accepted: true };
+      userMessage = await applyUserPromptHooks(ctx, params, runtime, userMessage, turnId, userItemId);
     }
-    if (hookOutcome.blocked || !isCurrent()) return { accepted: true };
+    if (!userMessage || !isCurrent()) return { accepted: true };
     if (goal) {
       scope = (await goal.beginRun()) ?? undefined;
       if ((!scope && internal) || !isCurrent()) return { accepted: true };
@@ -371,20 +380,19 @@ export async function handleTurnStart(
     }
     if (!internal) runtime.goalCreation = creation;
 
-    const finalUserMessage = hookOutcome.userMessage;
     if (!internal)
       await ctx.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT,
         params: {
           threadId: runtime.id,
           turnId,
-          event: { type: "user_message", itemId: userItemId, message: finalUserMessage },
+          event: { type: "user_message", itemId: userItemId, message: userMessage },
           threadStatus: "busy",
         },
       });
     if (!isCurrent()) return { accepted: true, userMessageId: userItemId };
     const runPromise = runtime.manager
-      .runWithOutcome(finalUserMessage, {
+      .runWithOutcome(userMessage, {
         signal: controller.signal,
         userMessageId: userItemId,
         ...(internal ? { internal: { source: "goal" as const } } : { observationPrompt: params.message }),

@@ -10,6 +10,10 @@ Skills are discovered in this order, with the first skill name winning when mult
 2. Global: `~/.diligent/skills/`
 3. Configured paths: `skills.paths[]`
 
+The project directory is resolved against each thread's working directory, not the directory the host started in. Skills are rediscovered whenever a thread builds its agent, so a skill installed while the host is running is available to the next new thread without a restart. Inside an existing thread, the `skill` tool rescans once when asked for a name it does not know.
+
+A `SKILL.md` that cannot be loaded (missing `---` frontmatter, invalid YAML, a missing `name` or `description`, or a non-kebab-case name) is skipped and logged. The `skill` tool includes these load errors when a requested skill is not found. Long descriptions are accepted; the model-facing catalog truncates each description to 1024 characters.
+
 The Web settings list keeps the full discovered catalog visible, even when a skill is disabled, so it can be turned back on later.
 
 ## Config shape

@@ -188,6 +188,7 @@ export type {
   PluginManifest,
   PluginStateEntry,
   RuntimeToolHost,
+  SkillCatalog,
   TextGenerationFn,
   TextGenerationInput,
   TextGenerationOptions,

@@ -47,7 +47,7 @@ function makeCtx(cwd: string, threads = new Map<string, ThreadRuntime>()): Threa
     resolveSkillSettingsCwd: async () => cwd,
     getBundledToolProviders: () => [],
     getMcpServers: () => undefined,
-    getSkillNames: () => [],
+    getSkillNames: async () => [],
     setActiveThreadId: () => {},
   };
 }

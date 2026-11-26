@@ -4,7 +4,6 @@ import type { SkillFrontmatter } from "./types";
 
 const NAME_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 const MAX_NAME_LENGTH = 64;
-const MAX_DESCRIPTION_LENGTH = 1024;
 
 /**
  * Parse SKILL.md content into frontmatter + body.
@@ -39,11 +38,6 @@ export function parseFrontmatter(
     return {
       error: `${filePath}: skill name must be kebab-case (lowercase alphanumeric with hyphens): "${name}"`,
     };
-  }
-
-  // Validate description length
-  if (description.length > MAX_DESCRIPTION_LENGTH) {
-    return { error: `${filePath}: skill description exceeds ${MAX_DESCRIPTION_LENGTH} characters` };
   }
 
   // Parse boolean field
