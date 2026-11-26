@@ -171,10 +171,15 @@ export const mcpResourceGroundingTask: RuntimeEvalTask<McpResourceGroundingWorld
     const grade = new RuntimeGrade("mcp_resource");
     const { world } = input;
     const reads = input.toolCalls.filter((call) => call.name === "mcp_read_resource" && call.outcome === "success");
-    const uriOf = (call: (typeof reads)[number]) => (isRecord(call.input) ? call.input.uri : undefined);
-    if (reads.some((call) => world.resourceUris.slice(1).includes(String(uriOf(call)))))
+    if (
+      reads.some((call) =>
+        world.resourceUris.slice(1).includes(String(isRecord(call.input) ? call.input.uri : undefined)),
+      )
+    )
       return grade.fail("decoy_resource", "A decoy reference was read.", "behavior");
-    const intendedReads = reads.filter((call) => uriOf(call) === world.intendedUri);
+    const intendedReads = reads.filter(
+      (call) => (isRecord(call.input) ? call.input.uri : undefined) === world.intendedUri,
+    );
     if (intendedReads.length === 0)
       return grade.fail("resource_selection", "The current orbital authorization was never read.", "behavior");
     if (input.verifier?.timedOut)
@@ -261,6 +266,7 @@ function fixtureFor(seed: string, root: string) {
   };
 }
 
+// biome-ignore lint/plugin/no-tiny-function: three call sites must derive identical fixture URIs
 function uriFor(seed: string, prefix: string): string {
   return `fixture://reference/${seededToken(seed, prefix).toLowerCase()}`;
 }

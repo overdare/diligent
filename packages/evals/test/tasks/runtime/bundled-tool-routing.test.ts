@@ -171,22 +171,25 @@ async function assembledExecution(
     profile,
     streamFunction(model, context, options) {
       call += 1;
-      const response =
-        call === 1
-          ? assistantMessage(
-              [
-                ...(includeProgressText ? [{ type: "text" as const, text: "Arranging the field journey now." }] : []),
-                {
-                  type: "tool_call",
-                  id: "journey-call-1",
-                  name: "coordinate_field_journey",
-                  input: requestFor(seed),
-                },
-              ],
-              "tool_use",
-            )
-          : assistantMessage([{ type: "text", text: `${finalPrefix}${token(seed, "JOURNEY_RECEIPT")}` }]);
-      return sequenceStream([response])(model, context, options);
+      if (call === 1) {
+        return sequenceStream([
+          assistantMessage(
+            [
+              ...(includeProgressText ? [{ type: "text" as const, text: "Arranging the field journey now." }] : []),
+              {
+                type: "tool_call",
+                id: "journey-call-1",
+                name: "coordinate_field_journey",
+                input: requestFor(seed),
+              },
+            ],
+            "tool_use",
+          ),
+        ])(model, context, options);
+      }
+      return sequenceStream([
+        assistantMessage([{ type: "text", text: `${finalPrefix}${token(seed, "JOURNEY_RECEIPT")}` }]),
+      ])(model, context, options);
     },
   });
   expect(result.failures, JSON.stringify(result.failures)).toEqual([]);
@@ -215,9 +218,10 @@ function token(seed: string, prefix: string): string {
 
 function finalText(value: RuntimeEvalExecution<BundledToolRoutingWorld>): string {
   const final = value.turns[0]!.messages.at(-1);
-  return final?.role === "assistant" && Array.isArray(final.content)
-    ? final.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("")
-    : "";
+  if (final?.role === "assistant" && Array.isArray(final.content)) {
+    return final.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
+  }
+  return "";
 }
 
 function selectDecoy(value: RuntimeEvalExecution<BundledToolRoutingWorld>) {

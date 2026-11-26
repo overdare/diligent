@@ -17,6 +17,7 @@ import type {
   RuntimeSessionSnapshot,
   RuntimeThreadReadSnapshot,
   RuntimeTurnProtocolAction,
+  RuntimeTurnTermination,
   RuntimeVerifierResult,
   RuntimeWorldSnapshot,
 } from "../runtime-task";
@@ -109,12 +110,14 @@ export async function runRuntimeEvalExecution(input: {
     if (initial.entries.some((entry) => entry.kind === "symlink"))
       throw new Error("configuration.invalid_fixture: symlinks are forbidden.");
     try {
-      threadCwd = task.resolveThreadCwd
-        ? resolveWorkspacePath(
-            root,
-            await deadline.run("thread cwd resolution", () => Promise.resolve(task.resolveThreadCwd!(world, root))),
-          )
-        : root;
+      if (task.resolveThreadCwd) {
+        threadCwd = resolveWorkspacePath(
+          root,
+          await deadline.run("thread cwd resolution", () => Promise.resolve(task.resolveThreadCwd!(world, root))),
+        );
+      } else {
+        threadCwd = root;
+      }
     } catch (error) {
       throw new Error(`configuration.invalid_thread_cwd: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -194,9 +197,10 @@ export async function runRuntimeEvalExecution(input: {
                   budgetTerminated = true;
                   return;
                 }
-                const project = (snapshot: RuntimeWorldSnapshot) =>
-                  projectSnapshotWithoutRuntimeState(snapshot, stateRoots);
-                const diff = workspaceDiff(project(initial), project(current));
+                const diff = workspaceDiff(
+                  projectSnapshotWithoutRuntimeState(initial, stateRoots),
+                  projectSnapshotWithoutRuntimeState(current, stateRoots),
+                );
                 if (diff.changedFiles.length > task.limits.maxChangedFiles) {
                   budgetTerminated = true;
                   budgetReason = "changed_files";
@@ -212,15 +216,15 @@ export async function runRuntimeEvalExecution(input: {
         }),
       );
     };
-    const makeClient = (server: DiligentAppServer) =>
-      createRuntimeProtocolClient(server, {
-        respondToServerRequest: task.respondToServerRequest
-          ? (request) => task.respondToServerRequest!(world, request)
-          : undefined,
+    const makeClient = (server: DiligentAppServer) => {
+      return createRuntimeProtocolClient(server, {
+        respondToServerRequest:
+          task.respondToServerRequest && ((request) => task.respondToServerRequest!(world, request)),
         onNotification: (notification) => {
           for (const action of activeActions) handleProtocolActionNotification(action, notification);
         },
       });
+    };
     let server = makeServer();
     client = makeClient(server);
     await deadline.run("client initialization", () => client!.initialize());
@@ -326,17 +330,19 @@ export async function runRuntimeEvalExecution(input: {
           (item.event as { type?: string; fatal?: boolean }).type === "error" &&
           (item.event as { fatal?: boolean }).fatal,
       );
+      let turnTermination: RuntimeTurnTermination = "completed";
+      if (notifications.some((item) => item.method === "turn/interrupted")) {
+        turnTermination = "interrupted";
+      } else if (fatalProviderFailure) {
+        turnTermination = "failed";
+      }
       turns.push({
         index: turns.length,
         threadId,
         clientPrompt: step.message,
         startedAt: new Date(Date.now() - (performance.now() - turnStarted)).toISOString(),
         elapsedMs: Math.round(performance.now() - turnStarted),
-        termination: notifications.some((item) => item.method === "turn/interrupted")
-          ? "interrupted"
-          : fatalProviderFailure
-            ? "failed"
-            : "completed",
+        termination: turnTermination,
         coreEvents,
         runtimeEvents: notifications
           .filter((item) => item.method === "agent/event")
@@ -359,15 +365,16 @@ export async function runRuntimeEvalExecution(input: {
         break;
       }
       if (budgetTerminated) {
-        termination =
+        if (
           budgetReason === "turn_limit" ||
           budgetReason === "tool_call_limit" ||
           budgetReason === "user_input_limit" ||
           budgetReason === "child_agent_limit"
-            ? budgetReason
-            : budgetReason
-              ? "workspace_limit"
-              : "runtime_error";
+        ) {
+          termination = budgetReason;
+        } else {
+          termination = budgetReason ? "workspace_limit" : "runtime_error";
+        }
         break;
       }
     }
@@ -432,22 +439,25 @@ export async function runRuntimeEvalExecution(input: {
     );
     if (termination === "provider_error") failures.push(classifyRuntimeTerminalFailure(execution));
     if (budgetReason) {
+      let budgetMessage: string;
+      if (budgetReason === "turn_limit") {
+        budgetMessage = describeHardLimitExceeded("turns", hardLimits.maxTurns, task.limits.maxTurns);
+      } else if (budgetReason === "tool_call_limit") {
+        budgetMessage = describeHardLimitExceeded("toolCalls", hardLimits.maxToolCalls, task.limits.maxToolCalls);
+      } else if (budgetReason === "user_input_limit") {
+        budgetMessage = `User-input request count exceeded ${task.limits.maxUserInputRequests}.`;
+      } else if (budgetReason === "child_agent_limit") {
+        budgetMessage = `Child-agent count exceeded ${task.limits.maxChildAgents}.`;
+      } else if (budgetReason === "changed_files") {
+        budgetMessage = `Changed-file count exceeded ${task.limits.maxChangedFiles}.`;
+      } else {
+        budgetMessage = `Changed-byte count exceeded ${task.limits.maxChangedBytes}.`;
+      }
       failures.push({
         dimension: "harness_terminal",
         category: "budget_exceeded",
         code: `budget_exceeded.${budgetReason}`,
-        message:
-          budgetReason === "turn_limit"
-            ? describeHardLimitExceeded("turns", hardLimits.maxTurns, task.limits.maxTurns)
-            : budgetReason === "tool_call_limit"
-              ? describeHardLimitExceeded("toolCalls", hardLimits.maxToolCalls, task.limits.maxToolCalls)
-              : budgetReason === "user_input_limit"
-                ? `User-input request count exceeded ${task.limits.maxUserInputRequests}.`
-                : budgetReason === "child_agent_limit"
-                  ? `Child-agent count exceeded ${task.limits.maxChildAgents}.`
-                  : budgetReason === "changed_files"
-                    ? `Changed-file count exceeded ${task.limits.maxChangedFiles}.`
-                    : `Changed-byte count exceeded ${task.limits.maxChangedBytes}.`,
+        message: budgetMessage,
       });
     }
     failures.push(
@@ -469,25 +479,25 @@ export async function runRuntimeEvalExecution(input: {
         diagnostics.push(...(semantic.diagnostics ?? []));
         if (!semantic.passed) {
           const dimension = (semantic as { dimension?: unknown }).dimension;
-          failures.push(
-            typeof dimension === "string"
-              ? {
-                  dimension: semantic.dimension,
-                  category: "task_semantic",
-                  code: semantic.code.startsWith("task_semantic.") ? semantic.code : `task_semantic.${semantic.code}`,
-                  message: semantic.message,
-                }
-              : {
-                  dimension: "harness_terminal",
-                  category: "evaluator_error",
-                  code: "evaluator_error.missing_dimension",
-                  message: normalizeWorkspaceEvidence(
-                    `Evaluator failure ${semantic.code} omitted its required dimension.`,
-                    root,
-                    outputRoot,
-                  ),
-                },
-          );
+          if (typeof dimension === "string") {
+            failures.push({
+              dimension: semantic.dimension,
+              category: "task_semantic",
+              code: semantic.code.startsWith("task_semantic.") ? semantic.code : `task_semantic.${semantic.code}`,
+              message: semantic.message,
+            });
+          } else {
+            failures.push({
+              dimension: "harness_terminal",
+              category: "evaluator_error",
+              code: "evaluator_error.missing_dimension",
+              message: normalizeWorkspaceEvidence(
+                `Evaluator failure ${semantic.code} omitted its required dimension.`,
+                root,
+                outputRoot,
+              ),
+            });
+          }
         }
       } catch (error) {
         failures.push({
@@ -540,12 +550,14 @@ export async function runRuntimeEvalExecution(input: {
         });
       }
     }
-    final = root
-      ? await raceBounded(captureWorkspace(root), 250).catch((collectionError) => {
-          collectionErrors.push(collectionError);
-          return initial;
-        })
-      : initial;
+    if (root) {
+      final = await raceBounded(captureWorkspace(root), 250).catch((collectionError) => {
+        collectionErrors.push(collectionError);
+        return initial;
+      });
+    } else {
+      final = initial;
+    }
     let sessionLines: unknown[] = [];
     let childSessions: RuntimeSessionSnapshot[] = [];
     if (threadId && threadCwd) {
@@ -563,22 +575,28 @@ export async function runRuntimeEvalExecution(input: {
       outputRoot,
     );
     const rootTimeout = error instanceof RuntimeDeadlineError && error.kind === "root";
-    const failure: EvalFailure = rootTimeout
-      ? {
-          dimension: "harness_terminal",
-          category: "budget_exceeded",
-          code: "budget_exceeded.timeout",
-          message: `Runtime task exceeded ${task.limits.timeoutMs}ms.`,
-        }
-      : {
-          dimension: "harness_terminal",
-          category: message.includes("configuration.") ? "configuration" : "runner_error",
-          code:
-            error instanceof RuntimeDeadlineError && error.kind === "phase"
-              ? `runner_error.${error.phase.replaceAll(" ", "_")}_timeout`
-              : message.split(":")[0] || "runner_error.exception",
-          message,
-        };
+    let failure: EvalFailure;
+    if (rootTimeout) {
+      failure = {
+        dimension: "harness_terminal",
+        category: "budget_exceeded",
+        code: "budget_exceeded.timeout",
+        message: `Runtime task exceeded ${task.limits.timeoutMs}ms.`,
+      };
+    } else {
+      let code: string;
+      if (error instanceof RuntimeDeadlineError && error.kind === "phase") {
+        code = `runner_error.${error.phase.replaceAll(" ", "_")}_timeout`;
+      } else {
+        code = message.split(":")[0] || "runner_error.exception";
+      }
+      failure = {
+        dimension: "harness_terminal",
+        category: message.includes("configuration.") ? "configuration" : "runner_error",
+        code,
+        message,
+      };
+    }
     const allRequests = [...serverRequests, ...(client?.serverRequests ?? [])];
     const normalizedTurns = normalizeWorkspaceEvidence(turns, root, outputRoot);
     annotateToolTraceActors(traces, normalizedTurns, threadId);
@@ -822,14 +840,15 @@ function normalizeWorkspaceEvidence<T>(value: T, root: string, outputRoot?: stri
   if (Array.isArray(value)) return value.map((item) => normalizeWorkspaceEvidence(item, root, outputRoot)) as T;
   if (value === null || typeof value !== "object") return value;
   const normalized = Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [
-      key,
-      key === "data" && isRecord(value) && value.type === "base64"
-        ? isSafeImageSidecarBlobRef(item)
-          ? item
-          : "[base64 omitted]"
-        : normalizeWorkspaceEvidence(item, root, outputRoot),
-    ]),
+    Object.entries(value).map(([key, item]) => {
+      let normalizedItem: unknown;
+      if (key === "data" && isRecord(value) && value.type === "base64") {
+        normalizedItem = typeof item === "string" && SAFE_IMAGE_SIDECAR_BLOB_REF.test(item) ? item : "[base64 omitted]";
+      } else {
+        normalizedItem = normalizeWorkspaceEvidence(item, root, outputRoot);
+      }
+      return [key, normalizedItem];
+    }),
   );
   if (!Array.isArray(normalized.blocks)) return normalized as T;
   const registeredFileBlocks = normalized.blocks.filter(isRegisteredOutputFileBlock);
@@ -848,10 +867,6 @@ function isRegisteredOutputFileBlock(value: unknown): value is Record<string, un
     typeof value.filePath === "string" &&
     value.filePath.startsWith("$TOOL_OUTPUT/")
   );
-}
-
-function isSafeImageSidecarBlobRef(value: unknown): value is string {
-  return typeof value === "string" && SAFE_IMAGE_SIDECAR_BLOB_REF.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1051,15 +1066,17 @@ function clampOutputTokens(
 }
 function aggregateUsage(events: Array<{ type?: string; usage?: Usage }>): Usage {
   return events.reduce(
-    (total, event) =>
-      event.type === "usage" && event.usage
-        ? {
-            inputTokens: total.inputTokens + event.usage.inputTokens,
-            outputTokens: total.outputTokens + event.usage.outputTokens,
-            cacheReadTokens: total.cacheReadTokens + event.usage.cacheReadTokens,
-            cacheWriteTokens: total.cacheWriteTokens + event.usage.cacheWriteTokens,
-          }
-        : total,
+    (total, event) => {
+      if (event.type === "usage" && event.usage) {
+        return {
+          inputTokens: total.inputTokens + event.usage.inputTokens,
+          outputTokens: total.outputTokens + event.usage.outputTokens,
+          cacheReadTokens: total.cacheReadTokens + event.usage.cacheReadTokens,
+          cacheWriteTokens: total.cacheWriteTokens + event.usage.cacheWriteTokens,
+        };
+      }
+      return total;
+    },
     { ...ZERO_USAGE },
   );
 }

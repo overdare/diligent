@@ -174,4 +174,25 @@ describe("createMcpOAuthHandle", () => {
     await expect(handle.waitForCallback(10)).rejects.toThrow(/timed out/);
     handle.close();
   });
+
+  test("an occupied loopback port surfaces as a login error naming the port", async () => {
+    const occupier = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("busy") });
+    const port = occupier.port;
+    const opened: string[] = [];
+    const handle = createMcpOAuthHandle(
+      "srv",
+      { storeDir: "/tmp/none", openBrowser: (url) => opened.push(url), redirectPort: port },
+      undefined,
+    );
+    try {
+      await handle.provider.redirectToAuthorization(new URL("https://auth.example/authorize"));
+      expect(opened).toEqual(["https://auth.example/authorize"]);
+      await expect(handle.waitForCallback(2000)).rejects.toThrow(
+        `MCP OAuth callback server failed: loopback callback port ${port} is already in use (set a free one if needed)`,
+      );
+    } finally {
+      handle.close();
+      occupier.stop(true);
+    }
+  });
 });

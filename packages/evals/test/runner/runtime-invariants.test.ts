@@ -176,6 +176,32 @@ describe("runtime evidence invariants", () => {
     expect(checkRuntimeInvariants(execution(), limits)).toEqual([]);
   });
 
+  test.each([
+    { threadCwd: "$WORKSPACE/sub", nestedStateCounted: false },
+    { threadCwd: "$WORKSPACE", nestedStateCounted: true },
+    { threadCwd: "/outside-workspace", nestedStateCounted: true },
+  ])(
+    "excludes nested runtime state from project budgets only for thread cwd $threadCwd",
+    ({ threadCwd, nestedStateCounted }) => {
+      const input = execution();
+      input.threadCwd = threadCwd;
+      input.workspace.final = {
+        entries: [
+          { path: ".diligent/sessions/root.jsonl", kind: "file", size: 4, sha256: "a" },
+          { path: "sub/.diligent/sessions/thread.jsonl", kind: "file", size: 4, sha256: "b" },
+        ],
+      };
+      const failure = checkRuntimeInvariants(input, limits).find(
+        (item) => item.code === "budget_exceeded.changed_files",
+      );
+      if (nestedStateCounted) {
+        expect(failure?.message).toBe("Changed 1 project files.");
+      } else {
+        expect(failure).toBeUndefined();
+      }
+    },
+  );
+
   test("rejects a plan-mode advertised write tool before task allowlisting", () => {
     const input = execution();
     input.advertisedTools[0]!.tools.push("write");

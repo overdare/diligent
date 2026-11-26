@@ -257,6 +257,12 @@ export function reduceThreadEvent<TItem>(
         planCallCount: state.planCallCount,
         collabAgentNamesByThreadId: state.collabAgentNamesByThreadId,
       });
+      let nextCollabByToolCallId: Record<string, CollabToolState>;
+      if (collabState) {
+        nextCollabByToolCallId = { ...state.collabByToolCallId, [event.toolCallId]: collabState };
+      } else {
+        nextCollabByToolCallId = state.collabByToolCallId;
+      }
       return {
         handled: true,
         requestRender: true,
@@ -272,9 +278,7 @@ export function reduceThreadEvent<TItem>(
               startRender: event.render,
             },
           },
-          collabByToolCallId: collabState
-            ? { ...state.collabByToolCallId, [event.toolCallId]: collabState }
-            : state.collabByToolCallId,
+          collabByToolCallId: nextCollabByToolCallId,
         },
       };
     }
@@ -393,6 +397,10 @@ export function reduceThreadEvent<TItem>(
 
     case "compaction_end": {
       const restoredStatus = state.statusBeforeCompaction;
+      let nextOverlayStatus: ReducerOverlayStatus | null = null;
+      if (restoredStatus) {
+        nextOverlayStatus = setOverlayStatus(state.overlayStatus, restoredStatus, "default", deps.nowMs);
+      }
       return {
         handled: true,
         requestRender: true,
@@ -400,9 +408,7 @@ export function reduceThreadEvent<TItem>(
         state: {
           ...base,
           statusBeforeCompaction: null,
-          overlayStatus: restoredStatus
-            ? setOverlayStatus(state.overlayStatus, restoredStatus, "default", deps.nowMs)
-            : null,
+          overlayStatus: nextOverlayStatus,
           items: [...state.items, deps.buildCompactionItem(event)],
         },
       };

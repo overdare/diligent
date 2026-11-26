@@ -28,6 +28,7 @@ export function captureRuntimeProviderCall(input: {
     omittedNestedItems: 0,
     omittedObjectProperties: 0,
   };
+  // biome-ignore lint/plugin/no-tiny-function: one sanitizer shared by four evidence sources so the shared bounds accumulate
   const sanitize = (value: unknown) => input.normalize(boundEvidence(value, bounds, 0));
   const systemPrompt = boundedSource(input.context.systemPrompt, bounds, sanitize);
   const messages = boundedSource(input.context.messages, bounds, sanitize);
@@ -41,9 +42,9 @@ export function captureRuntimeProviderCall(input: {
     systemPrompt: systemPrompt as RuntimeProviderCallEvidence["systemPrompt"],
     messages,
     tools: tools as RuntimeProviderCallEvidence["tools"],
-    ...(input.context.compactionSummary !== undefined
-      ? { compactionSummary: sanitize(input.context.compactionSummary) }
-      : {}),
+    ...(input.context.compactionSummary !== undefined && {
+      compactionSummary: sanitize(input.context.compactionSummary),
+    }),
     streamOptions: {
       ...(input.options.maxTokens !== undefined ? { maxTokens: input.options.maxTokens } : {}),
       ...(input.options.temperature !== undefined ? { temperature: input.options.temperature } : {}),
@@ -84,10 +85,10 @@ function boundEvidence(value: unknown, bounds: RuntimeProviderEvidenceBounds, de
   const included = entries.slice(0, bounds.maxObjectProperties);
   bounds.omittedObjectProperties += entries.length - included.length;
   return Object.fromEntries(
-    included.map(([key, item]) => [
-      key,
-      key === "data" && isBase64Container(value) ? "[base64 omitted]" : boundEvidence(item, bounds, depth + 1),
-    ]),
+    included.map(([key, item]) => {
+      if (key === "data" && (value as { type?: unknown }).type === "base64") return [key, "[base64 omitted]"];
+      return [key, boundEvidence(item, bounds, depth + 1)];
+    }),
   );
 }
 
@@ -97,8 +98,4 @@ function boundedScalar(value: string | undefined, bounds: RuntimeProviderEvidenc
   if (value === undefined || value.length <= bounds.maxStringChars) return value;
   bounds.truncatedStrings += 1;
   return `${value.slice(0, bounds.maxStringChars)}[truncated ${value.length - bounds.maxStringChars} chars]`;
-}
-
-function isBase64Container(value: object): boolean {
-  return (value as { type?: unknown }).type === "base64";
 }

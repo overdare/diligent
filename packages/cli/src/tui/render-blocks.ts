@@ -85,6 +85,7 @@ function renderTable(block: TableBlock): string[] {
     return Math.max(column.length, maxRowLen);
   });
 
+  // biome-ignore lint/plugin/no-tiny-function: header and body rows must pad columns identically
   const formatRow = (cells: string[]) =>
     cells.map((cell, columnIndex) => cell.padEnd(colWidths[columnIndex] ?? 0)).join("  ");
 
@@ -156,14 +157,14 @@ function truncateLines(lines: string[], maxLines: number): { visibleLines: strin
 }
 
 function renderFile(block: FileBlock): string[] {
-  const rangeLabel =
-    block.offset && block.limit
-      ? `L${block.offset}-${block.offset + block.limit - 1}`
-      : block.offset
-        ? `from L${block.offset}`
-        : block.limit
-          ? `${block.limit} lines`
-          : "";
+  let rangeLabel: string;
+  if (block.offset && block.limit) {
+    rangeLabel = `L${block.offset}-${block.offset + block.limit - 1}`;
+  } else if (block.offset) {
+    rangeLabel = `from L${block.offset}`;
+  } else {
+    rangeLabel = block.limit ? `${block.limit} lines` : "";
+  }
 
   const headerParts = [`${t.accent}↗${t.reset}`, block.filePath];
   if (rangeLabel) headerParts.push(`${t.dim}${rangeLabel}${t.reset}`);
@@ -238,8 +239,14 @@ function renderDiffHunk(hunk: DiffHunk): string[] {
 
 function renderDiffFile(file: DiffFile): string[] {
   const action = file.action ?? "Update";
-  const actionColor =
-    action === "Add" ? t.success : action === "Delete" ? t.error : action === "Move" ? t.warn : t.accent;
+  let actionColor: "\u001B[38;5;116m" | "\u001B[38;5;75m" | "\u001B[38;5;215m" | "\u001B[38;5;210m";
+  if (action === "Add") {
+    actionColor = t.success;
+  } else if (action === "Delete") {
+    actionColor = t.error;
+  } else {
+    actionColor = action === "Move" ? t.warn : t.accent;
+  }
   const path = action === "Move" && file.movedTo ? `${file.filePath} -> ${file.movedTo}` : file.filePath;
 
   const lines: string[] = [`${t.accent}✎${t.reset} ${path} ${actionColor}[${action}]${t.reset}`];
@@ -265,14 +272,10 @@ function renderDiff(block: DiffBlock): string[] {
   return lines;
 }
 
-function safeStringValue(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
 function renderUnknownBlock(block: unknown): string[] {
   const value = block as { type?: unknown; title?: unknown };
-  const type = safeStringValue(value?.type) || "unknown";
-  const title = safeStringValue(value?.title);
+  const type = (typeof value?.type === "string" ? value?.type : "") || "unknown";
+  const title = typeof value?.title === "string" ? value?.title : "";
   const label = title ? `${type} — ${title}` : type;
   return [`${t.dim}[unsupported block] ${label}${t.reset}`];
 }

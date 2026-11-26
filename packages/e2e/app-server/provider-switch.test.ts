@@ -37,14 +37,20 @@ test.each([
         tool: context.tools.filter((tool) => "name" in tool).find((tool) => tool.name === "provider_probe")
           ?.description,
       });
+      let messageContent:
+        | { type: "tool_call"; id: string; name: string; input: Record<string, unknown> }[]
+        | { type: "text"; text: string }[];
+      if (toolUse) {
+        messageContent = [{ type: "tool_call", id: `probe-${iteration}`, name: "provider_probe", input: {} }];
+      } else {
+        messageContent = [{ type: "text", text }];
+      }
       stream.push({
         type: "done",
         stopReason: toolUse ? "tool_use" : "end_turn",
         message: {
           role: "assistant",
-          content: toolUse
-            ? [{ type: "tool_call", id: `probe-${iteration}`, name: "provider_probe", input: {} }]
-            : [{ type: "text", text }],
+          content: messageContent,
           model: { provider: model.provider, modelId: model.modelId },
           usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
           stopReason: toolUse ? "tool_use" : "end_turn",

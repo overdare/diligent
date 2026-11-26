@@ -42,13 +42,11 @@ export class ProtocolNotificationAdapter {
           {
             type: "turn_start",
             turnId: notification.params.turnId,
-            ...(notification.params.childThreadId
-              ? {
-                  childThreadId: notification.params.childThreadId,
-                  nickname: notification.params.nickname,
-                  turnNumber: notification.params.turnNumber,
-                }
-              : {}),
+            ...(notification.params.childThreadId && {
+              childThreadId: notification.params.childThreadId,
+              nickname: notification.params.nickname,
+              turnNumber: notification.params.turnNumber,
+            }),
           },
         ];
       case DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED:

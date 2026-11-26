@@ -136,6 +136,7 @@ class CodeModeCell {
     this.awaited = true;
     this.lastDrivenAt = Date.now();
     this.yieldRequested = false;
+    // biome-ignore lint/plugin/no-tiny-function: listener identity: added and removed by reference
     const onAbort = () => this.terminate();
     driver.ctx.signal.addEventListener("abort", onAbort, { once: true });
     if (driver.ctx.signal.aborted) this.terminate();
@@ -175,6 +176,7 @@ class CodeModeCell {
       const onClosing = () => {
         if (this.dispatcher === dispatcher) this.detach();
       };
+      // biome-ignore lint/plugin/no-tiny-function: listener identity: added and removed by reference
       const onRunAbort = () => this.terminate();
       runScope.closing.addEventListener("abort", onClosing, { once: true });
       runScope.signal.addEventListener("abort", onRunAbort, { once: true });
@@ -318,6 +320,8 @@ class CodeModeCell {
       );
       const isError = !!result.metadata?.error;
       const history = await capNestedOutputForHistory(result.output, result.metadata, dispatcher.outputStore);
+      let metadata = result.metadata;
+      if (history.fullOutputPath) metadata = { ...result.metadata, fullOutputPath: history.fullOutputPath };
       // Live clients get the same capped copy as history so a large script result never floods the UI.
       ctx.emitNestedToolEvent?.({
         type: "tool_end",
@@ -328,9 +332,7 @@ class CodeModeCell {
         outputImages: result.outputImages,
         isError,
         render: result.render,
-        metadata: history.fullOutputPath
-          ? { ...result.metadata, fullOutputPath: history.fullOutputPath }
-          : result.metadata,
+        metadata,
       });
       this.nestedCalls.push({
         toolCallId,
@@ -343,12 +345,16 @@ class CodeModeCell {
         startedAt,
         durationMs: Date.now() - startedAt,
       });
+      let message:
+        | { type: "tool_result"; id: number; ok: false; error: string }
+        | { type: "tool_result"; id: number; ok: true; value: string };
+      if (isError) {
+        message = { type: "tool_result", id: call.id, ok: false, error: `${call.name} failed: ${result.output}` };
+      } else {
+        message = { type: "tool_result", id: call.id, ok: true, value: result.output };
+      }
       // The script receives the complete output, not the history copy.
-      this.post(
-        isError
-          ? { type: "tool_result", id: call.id, ok: false, error: `${call.name} failed: ${result.output}` }
-          : { type: "tool_result", id: call.id, ok: true, value: result.output },
-      );
+      this.post(message);
     } finally {
       release();
     }
@@ -374,9 +380,10 @@ async function capNestedOutputForHistory(
     }
   }
   const head = output.slice(0, MAX_PERSISTED_NESTED_OUTPUT_CHARS);
-  return fullOutputPath
-    ? { output: `${head}\n…[truncated for history; full output at: ${fullOutputPath}]`, fullOutputPath }
-    : { output: `${head}\n…[truncated for history]` };
+  if (fullOutputPath) {
+    return { output: `${head}\n…[truncated for history; full output at: ${fullOutputPath}]`, fullOutputPath };
+  }
+  return { output: `${head}\n…[truncated for history]` };
 }
 
 function parseImageDataUrl(imageUrl: string): ImageBlock | undefined {

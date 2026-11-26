@@ -26,10 +26,6 @@ function stringifyErrorPayload(payload: Record<string, unknown>, fields: readonl
   return truncateErrorBody(JSON.stringify(payload));
 }
 
-export async function readOpenAIFamilyCompactErrorBody(response: Response, fields: readonly string[]): Promise<string> {
-  return (await readOpenAIFamilyCompactError(response, fields)).formatted;
-}
-
 export async function readOpenAIFamilyCompactError(
   response: Response,
   fields: readonly string[],

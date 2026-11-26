@@ -14,12 +14,14 @@ export function createSkillInvokeCommand(skillName: string, skill: SkillMetadata
     hidden: true,
     handler: async (args, ctx) => {
       ctx.displayLines([`  ${t.dim}Requesting skill tool: ${skill.name}${t.reset}`]);
+      let followUpInstruction: string = "After loading the skill, continue with the user's request.";
+      if (args) {
+        followUpInstruction = `After loading the skill, continue with this additional user instruction:\n${args}`;
+      }
       const message = [
         `The user invoked /${skill.name}.`,
         `Before any other action, call the "skill" tool with {"name":"${skill.name}"}.`,
-        args
-          ? `After loading the skill, continue with this additional user instruction:\n${args}`
-          : "After loading the skill, continue with the user's request.",
+        followUpInstruction,
       ].join("\n\n");
       await ctx.runAgent(message);
     },

@@ -13,7 +13,7 @@ export function normalizeGeminiToolSchema(schema: JsonSchema, maxSchemaBytes = D
   const dereferenced = dereferenceSchema(schema, schema, new Set()) as JsonSchema;
   const compatible = flattenRootCompositions(dereferenced);
   if (!Number.isFinite(maxSchemaBytes) || JSON.stringify(compatible).length <= maxSchemaBytes) return compatible;
-  const normalized = simplifySchema(compatible);
+  const normalized = mapJsonSchema(compatible, (schema) => collapseComposition(schema, "anyOf"));
   return trimToSchemaBudget(isRecord(normalized) ? normalized : compatible, maxSchemaBytes);
 }
 
@@ -94,16 +94,16 @@ function resolveJsonPointer(root: JsonSchema, ref: string): unknown {
   return current;
 }
 
-function simplifySchema(value: unknown): unknown {
-  return mapJsonSchema(value, (schema) => collapseComposition(schema, "anyOf"));
-}
-
 function collapseComposition(schema: JsonSchema, key: "anyOf" | "oneOf" | "allOf"): JsonSchema {
   const branches = schema[key];
   if (!Array.isArray(branches) || branches.length === 0) return schema;
-  const variants = deduplicateSchemas(
-    key === "allOf" ? branches : branches.filter((variant) => !isImpossibleSchema(variant)),
-  );
+  let candidates = branches;
+  if (key !== "allOf") {
+    candidates = branches.filter(
+      (variant) => !(isRecord(variant) && isRecord(variant.not) && Object.keys(variant.not).length === 0),
+    );
+  }
+  const variants = deduplicateSchemas(candidates);
   if (variants.length === 0 || !variants.every(isObjectSchema)) return { ...schema, [key]: variants };
 
   const { [key]: _composition, ...siblings } = schema;
@@ -142,9 +142,12 @@ function mergeObjectSchemas(schemas: JsonSchema[], intersect = false): JsonSchem
     [...variantsByProperty].map(([propertyName, variants]) => [propertyName, mergePropertyVariants(variants)]),
   );
   const requiredSets = schemas.map((schema) => new Set(Array.isArray(schema.required) ? schema.required : []));
-  const required = intersect
-    ? [...new Set(requiredSets.flatMap((set) => [...set]))]
-    : [...(requiredSets[0] ?? [])].filter((name) => requiredSets.every((set) => set.has(name)));
+  let required: unknown[];
+  if (intersect) {
+    required = [...new Set(requiredSets.flatMap((set) => [...set]))];
+  } else {
+    required = [...(requiredSets[0] ?? [])].filter((name) => requiredSets.every((set) => set.has(name)));
+  }
 
   return {
     type: "object",
@@ -169,14 +172,15 @@ function mergePropertyVariants(variants: SchemaVariant[]): JsonSchema {
   const entries = [...unique.values()];
   if (entries.length === 1) return entries[0]!.schema;
   return {
-    anyOf: entries.map(({ schema, context }) =>
-      context
-        ? {
-            ...schema,
-            description: `${context}${typeof schema.description === "string" ? ` ${schema.description}` : ""}`,
-          }
-        : schema,
-    ),
+    anyOf: entries.map(({ schema, context }) => {
+      if (context) {
+        return {
+          ...schema,
+          description: `${context}${typeof schema.description === "string" ? ` ${schema.description}` : ""}`,
+        };
+      }
+      return schema;
+    }),
     description: "The accepted value shape depends on the selected object variant.",
   };
 }
@@ -189,8 +193,4 @@ function deduplicateSchemas(values: unknown[]): unknown[] {
 
 function isObjectSchema(value: unknown): value is JsonSchema {
   return isRecord(value) && (value.type === "object" || value.type === undefined);
-}
-
-function isImpossibleSchema(value: unknown): boolean {
-  return isRecord(value) && isRecord(value.not) && Object.keys(value.not).length === 0;
 }

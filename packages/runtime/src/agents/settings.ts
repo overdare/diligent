@@ -44,11 +44,12 @@ export function resolveSubagentStates(
     }
     const globalEnabled = globalOverrides[entry.definition.name] ?? true;
     const effectiveEnabled = effectiveOverrides[entry.definition.name] ?? true;
-    const controlledBy: SubagentController = Object.hasOwn(projectOverrides, entry.definition.name)
-      ? "project"
-      : Object.hasOwn(globalOverrides, entry.definition.name)
-        ? "global"
-        : "default";
+    let controlledBy: SubagentController;
+    if (Object.hasOwn(projectOverrides, entry.definition.name)) {
+      controlledBy = "project";
+    } else {
+      controlledBy = Object.hasOwn(globalOverrides, entry.definition.name) ? "global" : "default";
+    }
     return {
       ...entry,
       globalEnabled,

@@ -797,16 +797,18 @@ describe("runtime eval tasks", () => {
           model: "claude-sonnet-5",
           effort: "medium",
         });
-        const opaqueValues =
-          task.id === "instruction-hierarchy"
-            ? [world.target, world.rootMarker, world.nestedMarker]
-            : task.id === "plan-converge"
-              ? [world.apiFact, world.uiFact, world.preference]
-              : task.id === "cross-file-contract-fix"
-                ? [world.marker]
-                : task.id === "plan-progress"
-                  ? [world.base, world.middle, world.final, ...world.planSteps]
-                  : [world.hookFact, world.injectedContext];
+        let opaqueValues: unknown[];
+        if (task.id === "instruction-hierarchy") {
+          opaqueValues = [world.target, world.rootMarker, world.nestedMarker];
+        } else if (task.id === "plan-converge") {
+          opaqueValues = [world.apiFact, world.uiFact, world.preference];
+        } else if (task.id === "cross-file-contract-fix") {
+          opaqueValues = [world.marker];
+        } else if (task.id === "plan-progress") {
+          opaqueValues = [world.base, world.middle, world.final, ...world.planSteps];
+        } else {
+          opaqueValues = [world.hookFact, world.injectedContext];
+        }
         expect(opaqueValues.every((value) => typeof value === "string" && !prompts.includes(value))).toBe(true);
         expect(task.statePolicy).toBeDefined();
         expect(config.skills.every((skill) => skill.path.startsWith(root))).toBe(true);
@@ -933,16 +935,17 @@ describe("runtime eval tasks", () => {
     ];
     execution.providerCalls = [providerCall([], ["read", "request_user_input"])];
     expect(planConvergeTask.evaluate(execution)).toEqual({ passed: true });
-    execution.turns[0]!.messages = execution.turns[0]!.messages.map((message) =>
-      message.role === "assistant"
-        ? {
-            ...message,
-            content: message.content.map((block) =>
-              block.type === "text" ? { ...block, text: block.text.replaceAll(world.uiFact, "") } : block,
-            ),
-          }
-        : message,
-    );
+    execution.turns[0]!.messages = execution.turns[0]!.messages.map((message) => {
+      if (message.role === "assistant") {
+        return {
+          ...message,
+          content: message.content.map((block) =>
+            block.type === "text" ? { ...block, text: block.text.replaceAll(world.uiFact, "") } : block,
+          ),
+        };
+      }
+      return message;
+    });
     expect(planConvergeTask.evaluate(execution).passed).toBe(false);
     execution.turns[0]!.messages = baseExecution(world, "plan", finalText).turns[0]!.messages;
     execution.toolCalls[2]!.sequence = 1;

@@ -32,9 +32,8 @@ export function createAnthropicNativeCompaction(apiKey: string, baseUrl?: string
   return async (input) => {
     const rawMessages = await convertMessages(input.messages, input.compactionSummary, input.localImageLoader);
     const normalizedMessages = ensureAnthropicCompactionConversationEndsWithUser(rawMessages);
-    const referenced = imageFiles
-      ? await imageFiles.reference(normalizedMessages)
-      : { messages: normalizedMessages, usesFiles: false };
+    let referenced = { messages: normalizedMessages, usesFiles: false };
+    if (imageFiles) referenced = await imageFiles.reference(normalizedMessages);
     const send = (messages: unknown[], usesFiles: boolean): Promise<Response> => {
       const body: Record<string, unknown> = {
         model: input.model.modelId,
@@ -80,11 +79,13 @@ export function createAnthropicNativeCompaction(apiKey: string, baseUrl?: string
           reason: errorDetails ? `status_${response.status} ${errorDetails}` : `status_${response.status}`,
         };
       }
-      throw new Error(
-        errorDetails
-          ? `Anthropic native compaction failed (${response.status}) ${errorDetails}`
-          : `Anthropic native compaction failed (${response.status})`,
-      );
+      let message: string;
+      if (errorDetails) {
+        message = `Anthropic native compaction failed (${response.status}) ${errorDetails}`;
+      } else {
+        message = `Anthropic native compaction failed (${response.status})`;
+      }
+      throw new Error(message);
     }
 
     const payload = (await response.json()) as Record<string, unknown>;

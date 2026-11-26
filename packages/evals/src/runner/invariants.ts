@@ -150,6 +150,7 @@ function validateSequentialAgentLifecycles(events: SequentialAgentLifecycleEvent
     failures.push(contractFailure("fatal_event", "A fatal core error event was emitted."));
 }
 
+// biome-ignore lint/plugin/no-tiny-function: the initial scope and each reset must create identically typed scopes
 function createLifecycleScope(): { turns: Set<string>; messages: Set<string>; tools: Set<string> } {
   return { turns: new Set(), messages: new Set(), tools: new Set() };
 }
@@ -295,6 +296,7 @@ function isToolResultMessage(message: Message): message is ToolResultMessage {
   return message.role === "tool_result";
 }
 
+// biome-ignore lint/plugin/no-tiny-function: 37 failure sites share this record shape
 function contractFailure(code: string, message: string): EvalFailure {
   return { dimension: "runtime_policy", category: "core_contract", code: `core_contract.${code}`, message };
 }

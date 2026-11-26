@@ -30,7 +30,12 @@ export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
     parameters: GrepParams,
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
-      const rawPath = args.path ? (isAbsolute(args.path) ? args.path : resolve(cwd, args.path)) : cwd;
+      let rawPath: string;
+      if (args.path) {
+        rawPath = isAbsolute(args.path) ? args.path : resolve(cwd, args.path);
+      } else {
+        rawPath = cwd;
+      }
       const searchPath = stripExtendedLengthPrefix(rawPath)
         .replace(/\\/g, "/")
         .replace(/\/{2,}/g, "/");

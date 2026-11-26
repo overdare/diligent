@@ -15,18 +15,25 @@ const logger = createLogger({
 // Parse CLI args
 const args = process.argv.slice(2);
 const portArg = args.find((a) => a.startsWith("--port="))?.split("=")[1];
-const port = portArg
-  ? Number.parseInt(portArg, 10)
-  : args.includes("--port")
-    ? Number.parseInt(args[args.indexOf("--port") + 1], 10)
-    : 7432;
+let port: number;
+if (portArg) {
+  port = Number.parseInt(portArg, 10);
+} else {
+  port = args.includes("--port") ? Number.parseInt(args[args.indexOf("--port") + 1], 10) : 7432;
+}
 const dev = args.includes("--dev");
-const dirArg =
-  args.find((a) => a.startsWith("--dir="))?.split("=")[1] ??
-  (args.includes("--dir")
-    ? args[args.indexOf("--dir") + 1]
-    : (args.find((a) => a.startsWith("--data-dir="))?.split("=")[1] ??
-      (args.includes("--data-dir") ? args[args.indexOf("--data-dir") + 1] : null)));
+const dirEquals = args.find((a) => a.startsWith("--dir="))?.split("=")[1];
+const dataDirEquals = args.find((a) => a.startsWith("--data-dir="))?.split("=")[1];
+let dirArg: string | null = null;
+if (dirEquals !== undefined) {
+  dirArg = dirEquals;
+} else if (args.includes("--dir")) {
+  dirArg = args[args.indexOf("--dir") + 1];
+} else if (dataDirEquals !== undefined) {
+  dirArg = dataDirEquals;
+} else if (args.includes("--data-dir")) {
+  dirArg = args[args.indexOf("--data-dir") + 1];
+}
 
 function resolveDefaultDiligentDir(): string | null {
   const discovered = findDiligentDir({ cwd: process.cwd() });
@@ -58,11 +65,16 @@ function resolveStaticClientDir(): string | null {
 }
 
 // Find data directory
-const dataDir = dirArg
-  ? isAbsolute(dirArg)
-    ? normalizeDataDirCandidate(dirArg)
-    : normalizeDataDirCandidate(resolve(process.cwd(), dirArg))
-  : resolveDefaultDiligentDir();
+let dataDir: string | null;
+if (dirArg) {
+  if (isAbsolute(dirArg)) {
+    dataDir = normalizeDataDirCandidate(dirArg);
+  } else {
+    dataDir = normalizeDataDirCandidate(resolve(process.cwd(), dirArg));
+  }
+} else {
+  dataDir = resolveDefaultDiligentDir();
+}
 if (!dataDir) {
   console.error("Could not find .diligent/ directory. Run from a diligent project, or pass --dir <path>.");
   process.exit(1);
@@ -147,11 +159,17 @@ const server = Bun.serve<WsData>({
   },
 });
 
+let modeLabel: "development (use Vite dev server at :5173)" | "production" | "API only";
+if (dev) {
+  modeLabel = "development (use Vite dev server at :5173)";
+} else {
+  modeLabel = hasDistDir ? "production" : "API only";
+}
 console.log(`
 Diligent Debug Viewer
   Server running at http://localhost:${server.port}
   Data: ${dataDir}
-  Mode: ${dev ? "development (use Vite dev server at :5173)" : hasDistDir ? "production" : "API only"}
+  Mode: ${modeLabel}
   WebSocket: ws://localhost:${server.port}/ws
 `);
 

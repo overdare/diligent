@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AssistantMessage } from "@diligent/core/message-contract";
 import type { StreamContext } from "@diligent/core/provider-contract";
 import { DEFAULT_PROFILES } from "../../../src/profiles";
 import { runRuntimeEvalExecution } from "../../../src/runner/runtime-execution";
@@ -96,7 +97,7 @@ describe("file-roundtrip", () => {
     verification.sequence = execution.toolCalls.length + 1;
     verification.input = { file_path: world.selectedPath };
     execution.toolCalls.push(verification);
-    execution.turns[0]!.messages.push(assistantMessageText(`\`${world.expected}\``));
+    execution.turns[0]!.messages.push(assistantMessage([{ type: "text", text: `\`${world.expected}\`` }]));
 
     const result = fileRoundtripTask.evaluate(execution);
     expect(result.passed).toBe(true);
@@ -157,7 +158,7 @@ describe("file-roundtrip", () => {
     });
 
     const wrongAnswer = structuredClone(baseline);
-    wrongAnswer.turns[0]!.messages.push(assistantMessageText(`UPDATED=${decoy.id}`));
+    wrongAnswer.turns[0]!.messages.push(assistantMessage([{ type: "text", text: `UPDATED=${decoy.id}` }]));
     expect(fileRoundtripTask.evaluate(wrongAnswer)).toMatchObject({
       passed: false,
       code: "file_roundtrip.answer",
@@ -165,7 +166,7 @@ describe("file-roundtrip", () => {
     });
 
     const chattyAnswer = structuredClone(baseline);
-    chattyAnswer.turns[0]!.messages.push(assistantMessageText(`Done: ${world.expected}`));
+    chattyAnswer.turns[0]!.messages.push(assistantMessage([{ type: "text", text: `Done: ${world.expected}` }]));
     expect(fileRoundtripTask.evaluate(chattyAnswer)).toMatchObject({
       passed: false,
       code: "file_roundtrip.answer",
@@ -201,38 +202,37 @@ async function assembledExecution(
         initialStatus = requiredMatch(evidence, /"status"\s*:\s*"([^"]+)"/);
       }
       const writeCall = recoveryOffset + 2 + Number(scenario.extraSafeRead === true);
-      const response =
-        call === 0 && scenario.relativeIndexRecovery
-          ? toolCall("file-index-relative", "read", { file_path: "records/index.json" })
-          : call === 0 && scenario.recordsDirectoryRecovery
-            ? toolCall("file-index", "read", { file_path: join(cwd, "records/index.json") })
-            : call === 1 && scenario.recordsDirectoryRecovery
-              ? toolCall("file-records-directory", "read", { file_path: join(cwd, "records") })
-              : call === recoveryOffset
-                ? toolCall("file-index", "read", { file_path: join(cwd, "records/index.json") })
-                : call === recoveryOffset + 1
-                  ? toolCall("file-target", "read", { file_path: join(cwd, `records/${activeId}.json`) })
-                  : scenario.extraSafeRead && call === recoveryOffset + 2
-                    ? toolCall("file-decoy", "read", {
-                        file_path: join(
-                          cwd,
-                          `records/${activeId === "record-amber" ? "record-cobalt" : "record-amber"}.json`,
-                        ),
-                      })
-                    : call === writeCall
-                      ? profile.provider === "anthropic"
-                        ? toolCall("file-write", "edit", {
-                            file_path: join(cwd, `records/${activeId}.json`),
-                            old_string: `  "status": "${initialStatus}"`,
-                            new_string: `  "status": "${pendingStatus}"`,
-                            replace_all: false,
-                          })
-                        : toolCall("file-write", "apply_patch", {
-                            patch:
-                              `*** Begin Patch\n*** Update File: records/${activeId}.json\n@@\n` +
-                              `-  "status": "${initialStatus}"\n+  "status": "${pendingStatus}"\n*** End Patch`,
-                          })
-                      : assistantMessage([{ type: "text", text: `UPDATED=${activeId}` }]);
+      let response: AssistantMessage;
+      if (call === 0 && scenario.relativeIndexRecovery) {
+        response = toolCall("file-index-relative", "read", { file_path: "records/index.json" });
+      } else if (call === 0 && scenario.recordsDirectoryRecovery) {
+        response = toolCall("file-index", "read", { file_path: join(cwd, "records/index.json") });
+      } else if (call === 1 && scenario.recordsDirectoryRecovery) {
+        response = toolCall("file-records-directory", "read", { file_path: join(cwd, "records") });
+      } else if (call === recoveryOffset) {
+        response = toolCall("file-index", "read", { file_path: join(cwd, "records/index.json") });
+      } else if (call === recoveryOffset + 1) {
+        response = toolCall("file-target", "read", { file_path: join(cwd, `records/${activeId}.json`) });
+      } else if (scenario.extraSafeRead && call === recoveryOffset + 2) {
+        response = toolCall("file-decoy", "read", {
+          file_path: join(cwd, `records/${activeId === "record-amber" ? "record-cobalt" : "record-amber"}.json`),
+        });
+      } else if (call === writeCall && profile.provider === "anthropic") {
+        response = toolCall("file-write", "edit", {
+          file_path: join(cwd, `records/${activeId}.json`),
+          old_string: `  "status": "${initialStatus}"`,
+          new_string: `  "status": "${pendingStatus}"`,
+          replace_all: false,
+        });
+      } else if (call === writeCall) {
+        response = toolCall("file-write", "apply_patch", {
+          patch:
+            `*** Begin Patch\n*** Update File: records/${activeId}.json\n@@\n` +
+            `-  "status": "${initialStatus}"\n+  "status": "${pendingStatus}"\n*** End Patch`,
+        });
+      } else {
+        response = assistantMessage([{ type: "text", text: `UPDATED=${activeId}` }]);
+      }
       return sequenceStream([response])(_model, context, options);
     },
   });
@@ -242,10 +242,6 @@ async function assembledExecution(
   ).toEqual([]);
   expect(result.passed).toBe(true);
   return result.execution as RuntimeEvalExecution<FileRoundtripWorld>;
-}
-
-function assistantMessageText(text: string) {
-  return assistantMessage([{ type: "text", text }]);
 }
 
 function diagnosticCodes(result: { diagnostics?: readonly { code: string }[] }): string[] {

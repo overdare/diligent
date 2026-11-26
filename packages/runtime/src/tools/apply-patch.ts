@@ -205,8 +205,8 @@ It is important to remember:
 }
 
 function summarizeChange(change: FileChange, cwd: string): string {
-  const source = normalizeRelPath(relativeCrossPlatform(cwd, change.sourcePath));
-  const target = normalizeRelPath(relativeCrossPlatform(cwd, change.targetPath));
+  const source = relativeCrossPlatform(cwd, change.sourcePath).replaceAll("\\", "/");
+  const target = relativeCrossPlatform(cwd, change.targetPath).replaceAll("\\", "/");
   if (change.type === "add") return `A ${target}`;
   if (change.type === "delete") return `D ${source}`;
   return `M ${target}`;
@@ -214,16 +214,13 @@ function summarizeChange(change: FileChange, cwd: string): string {
 
 function summarizeFailedChange(change: FileChange, cwd: string): string {
   const path = change.type === "delete" ? change.sourcePath : change.targetPath;
-  const kind = change.type === "add" ? "A" : change.type === "delete" ? "D" : "M";
+  let kind: "A" | "D" | "M";
+  if (change.type === "add") {
+    kind = "A";
+  } else {
+    kind = change.type === "delete" ? "D" : "M";
+  }
   return `${kind} ${JSON.stringify(relativeCrossPlatform(cwd, path))}`;
-}
-
-function normalizeRelPath(value: string): string {
-  return value.replaceAll("\\", "/");
-}
-
-function normalizeNewlines(value: string): string {
-  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
 function stripShellWrapper(value: string): string {
@@ -256,7 +253,7 @@ function stripShellWrapper(value: string): string {
 export function parsePatch(rawPatch: string, options?: ApplyPatchOptions): PatchHunk[] {
   if (!rawPatch.trim()) throw new Error("patch is empty");
 
-  const trimmed = normalizeNewlines(rawPatch).trim();
+  const trimmed = rawPatch.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (options?.strict && stripShellWrapper(trimmed) !== trimmed) {
     throw new Error("Invalid patch format: shell wrapper not allowed in strict mode");
   }

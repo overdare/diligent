@@ -27,10 +27,6 @@ export type HookMode = "sync" | "async";
 
 const DEFAULT_SYNC_TIMEOUT_SECONDS = 10;
 
-function getSyncTimeoutMs(handler: HookHandler): number {
-  return (handler.timeout ?? DEFAULT_SYNC_TIMEOUT_SECONDS) * 1_000;
-}
-
 function spawnHookCommand(handler: HookHandler, inputJson: string, cwd: string) {
   return Bun.spawn(["bash", "-c", handler.command], {
     cwd,
@@ -59,7 +55,7 @@ async function runSingleHook(handler: HookHandler, input: HookInput, cwd: string
     return { blocked: false };
   }
 
-  const timeoutMs = getSyncTimeoutMs(handler);
+  const timeoutMs = (handler.timeout ?? DEFAULT_SYNC_TIMEOUT_SECONDS) * 1_000;
   const proc = spawnHookCommand(handler, inputJson, cwd);
 
   const timeoutHandle = setTimeout(() => proc.kill(), timeoutMs);
@@ -112,12 +108,13 @@ async function runSingleHook(handler: HookHandler, input: HookInput, cwd: string
 
   // UserPromptSubmit context may be top-level or nested in hookSpecificOutput.
   const hookSpecific = parsed.hookSpecificOutput as Record<string, unknown> | undefined;
-  const additionalContext =
-    typeof parsed.additionalContext === "string"
-      ? parsed.additionalContext
-      : typeof hookSpecific?.additionalContext === "string"
-        ? hookSpecific.additionalContext
-        : undefined;
+  let additionalContext: string | undefined;
+  if (typeof parsed.additionalContext === "string") {
+    additionalContext = parsed.additionalContext;
+  } else {
+    additionalContext =
+      typeof hookSpecific?.additionalContext === "string" ? hookSpecific.additionalContext : undefined;
+  }
 
   return { blocked, reason, additionalContext };
 }

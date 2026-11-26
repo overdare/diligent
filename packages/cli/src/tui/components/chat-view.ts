@@ -8,12 +8,7 @@ import { appendHistoryItems } from "./history-items";
 import { MarkdownView } from "./markdown-view";
 import { ThreadStore, UserMessageView } from "./thread-store";
 import type { ThreadItem } from "./thread-store-primitives";
-import {
-  renderCommittedTranscriptItems,
-  renderTranscript,
-  renderTranscriptLiveStack,
-  renderTranscriptLiveStackBlocks,
-} from "./transcript-render";
+import { renderCommittedTranscriptItems, renderTranscript, renderTranscriptLiveStackBlocks } from "./transcript-render";
 
 export interface ChatViewOptions {
   requestRender: () => void;
@@ -48,14 +43,15 @@ export class ChatView implements Component {
       render: () => this.committedHistoryLines,
       renderBlocks: () => {
         const lines = this.committedHistoryLines;
-        return lines.length
-          ? [{ key: `history-${this.historyRevision}`, lines, persistence: "persistent" as const }]
-          : [];
+        if (lines.length) {
+          return [{ key: `history-${this.historyRevision}`, lines, persistence: "persistent" as const }];
+        }
+        return [];
       },
       invalidate: () => this.store.invalidate(),
     };
     this.liveStackView = {
-      render: (width: number) => renderTranscriptLiveStack(this.store, width),
+      render: (width: number) => renderTranscript(this.store, width),
       renderBlocks: (width: number) => renderTranscriptLiveStackBlocks(this.store, width),
       invalidate: () => this.store.invalidate(),
     };

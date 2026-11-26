@@ -99,9 +99,8 @@ function updateOutputState(current: AttemptOutputState, event: ProviderEvent): A
 }
 
 function toProviderError(err: unknown): ProviderError {
-  return err instanceof ProviderError
-    ? err
-    : new ProviderError(err instanceof Error ? err.message : String(err), ProviderErrorType.Unknown, false);
+  if (err instanceof ProviderError) return err;
+  return new ProviderError(err instanceof Error ? err.message : String(err), ProviderErrorType.Unknown, false);
 }
 
 function errorFields(error: ProviderError): Record<string, unknown> {
@@ -291,6 +290,7 @@ export function withRetry(
           observation = observeAttempt?.(attempt, callId);
         });
         let work: Promise<AttemptResult> | undefined;
+        // biome-ignore lint/plugin/no-tiny-function: memoized thunk shared by the observer and the direct call so both reuse one attempt
         const run = () => (work ??= runAttempt(streamFn, model, context, options, stream, observation));
         if (observation)
           safelyObserve(() => {

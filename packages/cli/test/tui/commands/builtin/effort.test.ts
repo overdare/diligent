@@ -8,10 +8,12 @@ import type { CommandContext } from "../../../../src/tui/commands/types";
 import type { ListPickerItem } from "../../../../src/tui/components/list-picker";
 
 function makeContext(modelId: string, overrides?: Partial<CommandContext>): CommandContext {
-  const ref =
-    modelId === "vertex-gemma-4-26b-it"
-      ? { provider: "vertex" as const, modelId }
-      : { provider: "openai" as const, modelId };
+  let ref: { provider: "vertex"; modelId: string } | { provider: "openai"; modelId: string };
+  if (modelId === "vertex-gemma-4-26b-it") {
+    ref = { provider: "vertex" as const, modelId };
+  } else {
+    ref = { provider: "openai" as const, modelId };
+  }
   return {
     app: {
       confirm: async () => true,

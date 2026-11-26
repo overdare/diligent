@@ -97,6 +97,45 @@ describe("mcpToolToDiligentTool", () => {
     expect(result.output).toMatch(/rejected/i);
   });
 
+  test("a user rejection lets the turn continue while a policy denial explains the rule", async () => {
+    let called = false;
+    let aborts = 0;
+    const ctx: ToolContext = { ...makeCtx(), abort: () => aborts++ };
+    const manager = fakeManager({ text: "x", images: [], isError: false }, () => {
+      called = true;
+    });
+    const userRejected = mcpToolToDiligentTool({
+      serverName: "github",
+      def,
+      manager,
+      host: { approveWithOutcome: async () => ({ decision: "reject", source: "user" }) },
+    });
+    expect(await userRejected.execute({ q: "open" }, ctx)).toEqual({ output: "Tool call rejected by user." });
+    expect(aborts).toBe(0);
+
+    const policyRejected = mcpToolToDiligentTool({
+      serverName: "github",
+      def,
+      manager,
+      host: {
+        approveWithOutcome: async () => ({
+          decision: "reject",
+          source: "policy",
+          consecutiveDenials: 1,
+          breaker: "none",
+        }),
+      },
+    });
+    const result = await policyRejected.execute({ q: "open" }, ctx);
+    expect(result.output).toStartWith("Denied by a permission rule.");
+    expect(result.metadata).toEqual({
+      error: true,
+      denial: { source: "policy", rule: undefined, consecutiveDenials: 1 },
+    });
+    expect(called).toBe(false);
+    expect(aborts).toBe(0);
+  });
+
   test("maps text and image content", async () => {
     const tool = mcpToolToDiligentTool({
       serverName: "github",

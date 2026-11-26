@@ -13,14 +13,16 @@ export function createSkillTool(skills: SkillMetadata[]): Tool<typeof SkillParam
   const availableSkills = skills.filter((skill) => !skill.disableModelInvocation);
   const byName = new Map(availableSkills.map((skill) => [skill.name, skill]));
 
-  const description =
-    availableSkills.length === 0
-      ? "Load a specialized skill. No skills are currently available."
-      : [
-          "Load a specialized skill with domain-specific instructions and workflow.",
-          "Use this tool when the user request matches one of these skills:",
-          ...availableSkills.map((skill) => `- ${skill.name}: ${skill.description}`),
-        ].join("\n");
+  let description: string;
+  if (availableSkills.length === 0) {
+    description = "Load a specialized skill. No skills are currently available.";
+  } else {
+    description = [
+      "Load a specialized skill with domain-specific instructions and workflow.",
+      "Use this tool when the user request matches one of these skills:",
+      ...availableSkills.map((skill) => `- ${skill.name}: ${skill.description}`),
+    ].join("\n");
+  }
 
   return {
     name: "skill",

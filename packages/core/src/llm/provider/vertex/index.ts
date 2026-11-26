@@ -48,14 +48,18 @@ export function classifyVertexError(err: unknown): ProviderError {
   }
   if (err && typeof err === "object") {
     const record = err as Record<string, unknown>;
-    const status =
-      typeof record.statusCode === "number"
-        ? record.statusCode
-        : typeof record.status === "number"
-          ? record.status
-          : undefined;
-    const message =
-      typeof record.message === "string" ? record.message : err instanceof Error ? err.message : String(err);
+    let status: number | undefined;
+    if (typeof record.statusCode === "number") {
+      status = record.statusCode;
+    } else {
+      status = typeof record.status === "number" ? record.status : undefined;
+    }
+    let message: string;
+    if (typeof record.message === "string") {
+      message = record.message;
+    } else {
+      message = err instanceof Error ? err.message : String(err);
+    }
     if (status === 400 && isContextOverflow(message)) {
       return new ProviderError(CONTEXT_OVERFLOW_ERROR_MESSAGE, {
         errorType: ProviderErrorType.ContextOverflow,

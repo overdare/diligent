@@ -10,13 +10,17 @@ import {
   resolveSelectedProfiles,
   validateCredentials,
 } from "./profiles";
-import { createLocalChatGPTEvalAuth, getChatGPTRedactionSecrets } from "./providers/chatgpt-oauth";
+import {
+  type ChatGPTEvalAuth,
+  createLocalChatGPTEvalAuth,
+  getChatGPTRedactionSecrets,
+} from "./providers/chatgpt-oauth";
 import { redactEvalText, writeEvalReport } from "./reporters/json";
 import { runRuntimeEvalSuite } from "./runner/runtime-suite";
 import { createGithubRootSeed, createRandomRootSeed } from "./runner/seed";
 import { runEvalSuite } from "./runner/suite";
-import type { RuntimeEvalExecutionResult } from "./runtime-task";
-import type { AnyEvalTask, EvalExecutionResult, EvalProfile } from "./task";
+import type { RuntimeEvalExecutionResult, RuntimeEvalSuiteReport } from "./runtime-task";
+import type { AnyEvalTask, EvalExecutionResult, EvalProfile, EvalSuiteReport } from "./task";
 import { CORE_EVAL_TASKS } from "./tasks/core";
 import { RUNTIME_EVAL_TASKS } from "./tasks/runtime";
 
@@ -38,20 +42,24 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     const profiles = resolveSelectedProfiles(options);
     const tasks = options.suite === "core" ? selectCoreTasks(options.task) : selectRuntimeTasks(options.task);
     validateCredentials(profiles);
-    const chatgptAuth = profiles.some((profile) => profile.provider === "chatgpt")
-      ? await createLocalChatGPTEvalAuth(process.cwd(), {
-          onStatus: (status) => console.log(`[eval] chatgpt oauth ${status}`),
-          onCredentials: (tokens) => {
-            secrets.push(...getChatGPTRedactionSecrets(tokens));
-          },
-        })
-      : undefined;
+    let chatgptAuth: ChatGPTEvalAuth | undefined;
+    if (profiles.some((profile) => profile.provider === "chatgpt")) {
+      chatgptAuth = await createLocalChatGPTEvalAuth(process.cwd(), {
+        onStatus: (status) => console.log(`[eval] chatgpt oauth ${status}`),
+        onCredentials: (tokens) => {
+          secrets.push(...getChatGPTRedactionSecrets(tokens));
+        },
+      });
+    }
     const metadata = resolveRunMetadata();
-    const rootSeed =
-      options.seed ??
-      (metadata.runId !== "local"
-        ? createGithubRootSeed(metadata.repository, metadata.runId, metadata.commitSha)
-        : createRandomRootSeed());
+    let rootSeed = options.seed;
+    if (rootSeed === undefined) {
+      if (metadata.runId !== "local") {
+        rootSeed = createGithubRootSeed(metadata.repository, metadata.runId, metadata.commitSha);
+      } else {
+        rootSeed = createRandomRootSeed();
+      }
+    }
 
     console.log(`[eval] ${options.suite} suite: ${tasks.length} task(s) x ${profiles.length} profile(s)`);
     const shared = {
@@ -63,21 +71,22 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         console.log(`[eval] start ${task.id} / ${profile.provider} / ${profile.model}`);
       },
     };
-    const report =
-      options.suite === "core"
-        ? await runEvalSuite({
-            ...shared,
-            tasks: tasks as AnyEvalTask[],
-            resolveModel: resolveProfileModel,
-            onExecutionEnd: (result) => printExecutionResult(result, secrets),
-          })
-        : await runRuntimeEvalSuite({
-            ...shared,
-            tasks: tasks as typeof RUNTIME_EVAL_TASKS,
-            configureProviderManager: (profile, manager) =>
-              configureProfileProviderManager(profile, manager, chatgptAuth),
-            onExecutionEnd: (result) => printRuntimeExecutionResult(result, secrets),
-          });
+    let report: EvalSuiteReport | RuntimeEvalSuiteReport;
+    if (options.suite === "core") {
+      report = await runEvalSuite({
+        ...shared,
+        tasks: tasks as AnyEvalTask[],
+        resolveModel: resolveProfileModel,
+        onExecutionEnd: (result) => printExecutionResult(result, secrets),
+      });
+    } else {
+      report = await runRuntimeEvalSuite({
+        ...shared,
+        tasks: tasks as typeof RUNTIME_EVAL_TASKS,
+        configureProviderManager: (profile, manager) => configureProfileProviderManager(profile, manager, chatgptAuth),
+        onExecutionEnd: (result) => printRuntimeExecutionResult(result, secrets),
+      });
+    }
 
     const reportPath = options.reportPath ?? defaultReportPath(options.suite);
     await writeEvalReport(reportPath, report, { secrets });

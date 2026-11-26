@@ -159,15 +159,16 @@ describe("ChatGPTEvalAuth", () => {
       shouldRefresh: () => false,
       createStream: (getTokens) => () => {
         attempts.push(getTokens().access_token);
-        return attempts.length === 1
-          ? errorStream(
-              new ProviderError("rejected", {
-                errorType: ProviderErrorType.Auth,
-                isRetryable: false,
-                statusCode: 401,
-              }),
-            )
-          : doneStream("recovered");
+        if (attempts.length === 1) {
+          return errorStream(
+            new ProviderError("rejected", {
+              errorType: ProviderErrorType.Auth,
+              isRetryable: false,
+              statusCode: 401,
+            }),
+          );
+        }
+        return doneStream("recovered");
       },
       createNativeCompaction: () => async () => ({ status: "unsupported" }),
       onCredentials: (value) => registeredSecrets.push(value.access_token),

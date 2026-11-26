@@ -61,6 +61,7 @@ export function shouldUseOAuth(config: McpHttpServerConfig): boolean {
   return !Object.keys(headers).some((key) => key.toLowerCase() === "authorization");
 }
 
+// biome-ignore lint/plugin/no-tiny-function: names the storage-key sanitizing formula
 function sanitizeKey(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
@@ -241,10 +242,12 @@ export function createMcpOAuthHandle(
     // Bind failures (e.g. port already in use) must surface as a clear login error instead
     // of an uncaught async exception that crashes the process.
     server.on("error", (err: NodeJS.ErrnoException) => {
-      const detail =
-        err.code === "EADDRINUSE"
-          ? `loopback callback port ${port} is already in use (set a free one if needed)`
-          : err.message;
+      let detail: string;
+      if (err.code === "EADDRINUSE") {
+        detail = `loopback callback port ${port} is already in use (set a free one if needed)`;
+      } else {
+        detail = err.message;
+      }
       codeWaiter.reject(new Error(`MCP OAuth callback server failed: ${detail}`));
     });
     server.listen(port, "127.0.0.1");

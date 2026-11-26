@@ -110,21 +110,23 @@ export async function broadcastServerRequest(
       }
       reject(new DOMException("Request aborted", "AbortError"));
     };
-    const timeoutId =
-      timeoutMs === null
-        ? null
-        : setTimeout(() => {
-            args.pendingServerRequests.delete(id);
-            for (const connectionId of sentTo) {
-              const connection = args.connections.get(connectionId);
-              if (!connection) continue;
-              void connection.peer.send({
-                method: DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED,
-                params: { requestId: id },
-              } as DiligentServerNotification);
-            }
-            settle(null);
-          }, timeoutMs);
+    let timeoutId: NodeJS.Timeout | null;
+    if (timeoutMs === null) {
+      timeoutId = null;
+    } else {
+      timeoutId = setTimeout(() => {
+        args.pendingServerRequests.delete(id);
+        for (const connectionId of sentTo) {
+          const connection = args.connections.get(connectionId);
+          if (!connection) continue;
+          void connection.peer.send({
+            method: DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED,
+            params: { requestId: id },
+          } as DiligentServerNotification);
+        }
+        settle(null);
+      }, timeoutMs);
+    }
 
     args.pendingServerRequests.set(id, {
       method: args.method,

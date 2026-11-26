@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AssistantMessage } from "@diligent/core/message-contract";
 import type { StreamContext, StreamFunction } from "@diligent/core/provider-contract";
 import { runRuntimeEvalExecution } from "../../../src/runner/runtime-execution";
 import { removeTemporaryRoot } from "../../../src/runner/runtime-workspace";
@@ -145,26 +146,35 @@ async function runScripted(transport: "direct" | "exec") {
       const target = join(cwdFromContext(context), world.targetPath);
       if (providerCall === 2)
         sawSteeringBeforeMutation = JSON.stringify(context.messages).includes(world.steeringContent);
-      scripted ??= sequenceStream([
-        assistantMessage(
-          [
-            transport === "exec"
-              ? {
-                  type: "tool_call",
-                  id: "steer-exec-1",
-                  name: "exec",
-                  input: { code: `return await tools.read({ file_path: ${JSON.stringify(target)} });` },
-                }
-              : { type: "tool_call", id: "steer-read-1", name: "read", input: { file_path: target } },
-          ],
-          "tool_use",
-        ),
-        assistantMessage(
-          [{ type: "tool_call", id: "steer-write-1", name: "apply_patch", input: { patch: expectedPatch(world) } }],
-          "tool_use",
-        ),
-        assistantMessage([{ type: "text", text: "Done." }]),
-      ]);
+      if (scripted === undefined) {
+        let firstRead: AssistantMessage;
+        if (transport === "exec") {
+          firstRead = assistantMessage(
+            [
+              {
+                type: "tool_call",
+                id: "steer-exec-1",
+                name: "exec",
+                input: { code: `return await tools.read({ file_path: ${JSON.stringify(target)} });` },
+              },
+            ],
+            "tool_use",
+          );
+        } else {
+          firstRead = assistantMessage(
+            [{ type: "tool_call", id: "steer-read-1", name: "read", input: { file_path: target } }],
+            "tool_use",
+          );
+        }
+        scripted = sequenceStream([
+          firstRead,
+          assistantMessage(
+            [{ type: "tool_call", id: "steer-write-1", name: "apply_patch", input: { patch: expectedPatch(world) } }],
+            "tool_use",
+          ),
+          assistantMessage([{ type: "text", text: "Done." }]),
+        ]);
+      }
       return scripted(model, context, options);
     },
   });
@@ -251,7 +261,7 @@ function validExecution(): RuntimeEvalExecution<SteerDuringFixWorld> {
     response: { queued: true, steerId: world.steerId },
     respondedAtMs: 6,
   };
-  const readNotification = agentEvent(action.triggerEvidence);
+  const readNotification = { method: "agent/event", params: { threadId: "thread-1", event: action.triggerEvidence } };
   const steeringNotification = {
     method: "agent/event",
     params: {
@@ -264,11 +274,17 @@ function validExecution(): RuntimeEvalExecution<SteerDuringFixWorld> {
       },
     },
   };
-  const writeNotification = agentEvent({
-    type: "tool_start",
-    toolCallId: writeTrace.toolCallId,
-    toolName: "apply_patch",
-  });
+  const writeNotification = {
+    method: "agent/event",
+    params: {
+      threadId: "thread-1",
+      event: {
+        type: "tool_start",
+        toolCallId: writeTrace.toolCallId,
+        toolName: "apply_patch",
+      },
+    },
+  };
   return {
     taskId: steerDuringFixTask.id,
     profile: { provider: "openai", model: "test-model", effort: "medium" },
@@ -344,10 +360,6 @@ function validExecution(): RuntimeEvalExecution<SteerDuringFixWorld> {
 
 function expectedPatch(world: SteerDuringFixWorld): string {
   return `*** Begin Patch\n*** Update File: ${world.targetPath}\n@@\n-${world.baseValue}\n+${world.replacementValue}\n*** End Patch`;
-}
-
-function agentEvent(event: unknown) {
-  return { method: "agent/event", params: { threadId: "thread-1", event } };
 }
 
 function providerCall(sequence: number, items: unknown[]) {

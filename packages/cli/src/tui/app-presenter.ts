@@ -16,27 +16,36 @@ export function buildWelcomeBanner(args: {
   const boxWidth = Math.min(54, Math.max(44, args.terminalColumns - 2));
   const inner = boxWidth - 4;
 
+  // biome-ignore lint/plugin/no-tiny-function: four banner rows pad to the same inner width
   const pad = (s: string) => s + " ".repeat(Math.max(0, inner - displayWidth(s)));
-  const truncate = (s: string) => (displayWidth(s) > inner ? `${s.slice(0, inner - 1)}…` : s);
+  const truncate = (s: string): string => {
+    if (displayWidth(s) <= inner) return s;
+    return `${s.slice(0, inner - 1)}…`;
+  };
 
   const title = `>_ diligent (v${args.version})`;
   const modelLine = truncate(`model:     ${args.modelId}`);
   const dirLine = truncate(`directory: ${dir}`);
-  const yoloLine = args.yolo ? truncate("yolo:      ON ⚡ all permissions auto-approved") : "";
+  let yoloLine = "";
+  if (args.yolo) yoloLine = truncate("yolo:      ON ⚡ all permissions auto-approved");
 
+  // biome-ignore lint/plugin/no-tiny-function: three box rows share this border layout and must stay in lockstep
   const row = (s: string) => `${t.dim}│ ${pad(s)} │${t.reset}`;
 
-  return [
+  const lines = [
     `${t.dim}╭${"─".repeat(boxWidth - 2)}╮${t.reset}`,
     `${t.dim}│${t.reset} ${t.bold}${pad(title)}${t.reset} ${t.dim}│${t.reset}`,
     row(""),
     row(modelLine),
     row(dirLine),
-    ...(yoloLine ? [`${t.dim}│${t.reset} ${t.warn}${pad(yoloLine)}${t.reset} ${t.dim}│${t.reset}`] : []),
+  ];
+  if (yoloLine) lines.push(`${t.dim}│${t.reset} ${t.warn}${pad(yoloLine)}${t.reset} ${t.dim}│${t.reset}`);
+  lines.push(
     `${t.dim}╰${"─".repeat(boxWidth - 2)}╯${t.reset}`,
     "",
     `${t.dim}  Tip: /help · ctrl+o toggle tool details · ctrl+c cancel · ctrl+d exit${t.reset}`,
-  ];
+  );
+  return lines;
 }
 
 export function formatDuration(ms?: number): string | null {

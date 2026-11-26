@@ -21,9 +21,10 @@ afterEach(async () => {
 });
 
 function agentEvent(notification: DiligentServerNotification) {
-  return notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT
-    ? notification.params.event
-    : undefined;
+  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT) {
+    return notification.params.event;
+  }
+  return undefined;
 }
 
 function toolOutputs(notifications: DiligentServerNotification[]): Map<string, string> {

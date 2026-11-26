@@ -146,10 +146,13 @@ async function verifyContextJson(world: ManualCompactionResumeWorld): Promise<Ru
     valid = semanticValid && formatValid && authorityValid;
     stdout = valid ? "semantic JSON matched" : "semantic JSON mismatch";
     if (!authorityValid) stderr = "runtime_policy: The denied publication state changed.";
-    else if (!valid)
-      stderr = semanticValid
-        ? "format_contract: CONTEXT.json violated the declared final-newline envelope."
-        : "semantic_goal: CONTEXT.json did not preserve the exact compacted facts.";
+    else if (!valid) {
+      if (semanticValid) {
+        stderr = "format_contract: CONTEXT.json violated the declared final-newline envelope.";
+      } else {
+        stderr = "semantic_goal: CONTEXT.json did not preserve the exact compacted facts.";
+      }
+    }
   } catch (error) {
     stderr = error instanceof Error ? error.message : String(error);
   }

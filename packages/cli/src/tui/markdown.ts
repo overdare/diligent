@@ -24,6 +24,7 @@ type MarkdownToken = Token & {
 const ANSI_CSI_RE = /\x1b\[[0-9;?]*[A-Za-z]/g;
 const ANSI_OSC_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
+// biome-ignore lint/plugin/no-tiny-function: names the ANSI-stripping regex
 function stripAnsi(value: string): string {
   return value.replace(ANSI_OSC_RE, "").replace(ANSI_CSI_RE, "");
 }
@@ -143,6 +144,7 @@ function wrapRenderedText(rendered: string, width: number): string {
     .join("\n");
 }
 
+// biome-ignore lint/plugin/no-tiny-function: seven call sites share the negative-count guard
 function repeat(char: string, count: number): string {
   return count > 0 ? char.repeat(count) : "";
 }
@@ -191,7 +193,10 @@ function renderListItem(parser: Renderer["parser"], item: ListItemToken, marker:
     .map((line) => line.replace(/<input[^>]*>\s*/g, "").trimEnd())
     .filter((line, index, all) => !(line === "" && index === all.length - 1));
 
-  const taskPrefix = item.task ? `[${item.checked ? "x" : " "}] ` : "";
+  let taskPrefix: string = "";
+  if (item.task) {
+    taskPrefix = `[${item.checked ? "x" : " "}] `;
+  }
   if (lines.length === 0) {
     return `${marker} ${taskPrefix}`.trimEnd();
   }

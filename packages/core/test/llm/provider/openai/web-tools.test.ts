@@ -22,6 +22,35 @@ const CHATGPT_MODEL: Model = {
 };
 
 describe("OpenAI native web tools", () => {
+  test("merged web search tool picks the largest configured context size", async () => {
+    const web = (maxContentTokens?: number): ToolDefinition => ({
+      kind: "provider_builtin",
+      capability: "web",
+      options: { maxContentTokens },
+    });
+    const webTool = async (tools: ToolDefinition[]) => {
+      const body = await buildResponsesRequestBody({
+        model: OPENAI_MODEL.modelId,
+        messages: [{ role: "user", content: "Find it", timestamp: 1 }],
+        tools,
+        strictTools: false,
+        useReasoning: true,
+        effort: "medium",
+      });
+      // The request body is typed loosely; tools is the Responses API tool array.
+      const requestTools = body.tools as Array<Record<string, unknown>> | undefined;
+      return requestTools?.find((tool) => tool.type === "web_search");
+    };
+
+    expect(await webTool([web(1_000), web(5_000)])).toEqual({ type: "web_search", search_context_size: "medium" });
+    expect(await webTool([web(1_000), web(20_000), web(5_000)])).toEqual({
+      type: "web_search",
+      search_context_size: "high",
+    });
+    expect(await webTool([web(1_000)])).toEqual({ type: "web_search", search_context_size: "low" });
+    expect(await webTool([web()])).toEqual({ type: "web_search" });
+  });
+
   test("request body includes function tools alongside merged web search tool", async () => {
     const tools: ToolDefinition[] = [
       {

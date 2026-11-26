@@ -10,7 +10,6 @@ import type {
   StreamFunction,
   SystemSection,
   ThinkingEffort,
-  ToolDefinition,
 } from "../llm/types";
 import { resolveMaxTokens } from "../llm/types";
 import { toToolInputSchema } from "../tool/input-schema";
@@ -28,12 +27,6 @@ function toFunctionToolDefinition(
     description: tool.description,
     inputSchema: toToolInputSchema(tool),
   };
-}
-
-function toToolDefinition(
-  tool: Pick<Tool, "name" | "description" | "parameters" | "inputSchema" | "modelExposure">,
-): ToolDefinition {
-  return tool.modelExposure ?? toFunctionToolDefinition(tool);
 }
 
 function createAssistantMessage(model: ModelRef): AssistantMessage {
@@ -85,7 +78,7 @@ export async function streamAssistantMessage(
     localImageLoader: request.config.localImageLoader,
     systemPrompt: runtime.systemPrompt,
     messages,
-    tools: runtime.tools.map(toToolDefinition),
+    tools: runtime.tools.map((tool) => tool.modelExposure ?? toFunctionToolDefinition(tool)),
     compactionSummary: request.compactionSummary,
   };
 
@@ -140,14 +133,17 @@ export async function streamAssistantMessage(
       case "thinking_delta": {
         currentMessage = ensureCurrentMessage(currentMessage, request.config.model, stream, messageItemId);
 
+        let delta: { type: "text_delta"; delta: string } | { type: "thinking_delta"; delta: string };
+        if (event.type === "text_delta") {
+          delta = { type: "text_delta", delta: event.delta };
+        } else {
+          delta = { type: "thinking_delta", delta: event.delta };
+        }
         stream.emit({
           type: "message_delta",
           itemId: messageItemId,
           message: currentMessage,
-          delta:
-            event.type === "text_delta"
-              ? { type: "text_delta", delta: event.delta }
-              : { type: "thinking_delta", delta: event.delta },
+          delta,
         });
         break;
       }

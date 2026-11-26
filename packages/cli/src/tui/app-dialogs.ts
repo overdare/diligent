@@ -90,16 +90,20 @@ export class AppDialogs {
         resolve(response);
       };
 
+      let details: string | undefined;
+      if (request.details?.command) {
+        details = String(request.details.command);
+      } else if (request.details?.file_path ?? request.details?.path) {
+        details = String(request.details.file_path ?? request.details.path);
+      } else {
+        details = undefined;
+      }
       const dialog = new ApprovalDialog(
         {
           toolName: request.toolName,
           permission: request.permission,
           description: request.description,
-          details: request.details?.command
-            ? String(request.details.command)
-            : (request.details?.file_path ?? request.details?.path)
-              ? String(request.details.file_path ?? request.details.path)
-              : undefined,
+          details,
         },
         finish,
       );

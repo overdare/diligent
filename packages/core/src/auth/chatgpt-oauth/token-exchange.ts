@@ -187,6 +187,7 @@ function readOptionalTokenField(response: Record<string, unknown>, field: string
   return readRequiredTokenField(response, field);
 }
 
+// biome-ignore lint/plugin/no-tiny-function: names the expires_in validity rule shared by two parsers
 function readValidExpiresIn(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }

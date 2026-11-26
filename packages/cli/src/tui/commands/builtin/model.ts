@@ -7,10 +7,6 @@ import type { Command } from "../types";
 import { fastCommand } from "./fast";
 import { promptApiKey } from "./provider";
 
-function providerDisplayName(provider: ProviderName): string {
-  return PROVIDER_DESCRIPTORS[provider].displayName;
-}
-
 export const modelCommand: Command = {
   name: "model",
   description: "Switch model or show picker",
@@ -23,7 +19,9 @@ export const modelCommand: Command = {
 
         // Check if provider has API key
         if (!ctx.config.providerManager.hasKeyFor(provider)) {
-          ctx.displayLines([`  ${t.warn}No API key for ${providerDisplayName(provider)}. Please enter one:${t.reset}`]);
+          ctx.displayLines([
+            `  ${t.warn}No API key for ${PROVIDER_DESCRIPTORS[provider].displayName}. Please enter one:${t.reset}`,
+          ]);
           await promptApiKey(provider, ctx);
           // After key input, check again
           if (!ctx.config.providerManager.hasKeyFor(provider)) {
@@ -68,7 +66,7 @@ export const modelCommand: Command = {
     for (const prov of sortedProviders) {
       const models = listModels(prov);
       if (models.length === 0) continue;
-      items.push({ label: providerDisplayName(prov), value: "", header: true });
+      items.push({ label: PROVIDER_DESCRIPTORS[prov].displayName, value: "", header: true });
       for (const m of models) {
         const aliases = m.aliases?.length ? m.aliases.join(", ") : "";
         items.push({ label: m.modelId, description: aliases, value: formatModelRef(m) });
@@ -105,7 +103,9 @@ export const modelCommand: Command = {
     const provider = (model.provider ?? DEFAULT_PROVIDER) as ProviderName;
 
     if (!ctx.config.providerManager.hasKeyFor(provider)) {
-      ctx.displayLines([`  ${t.warn}No API key for ${providerDisplayName(provider)}. Please enter one:${t.reset}`]);
+      ctx.displayLines([
+        `  ${t.warn}No API key for ${PROVIDER_DESCRIPTORS[provider].displayName}. Please enter one:${t.reset}`,
+      ]);
       await promptApiKey(provider, ctx);
       if (!ctx.config.providerManager.hasKeyFor(provider)) {
         ctx.displayError("Model switch cancelled — no API key provided.");

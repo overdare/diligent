@@ -306,13 +306,15 @@ describe("compact", () => {
     "rejects local fallback with existing native state when the adapter is %s",
     async (scenario) => {
       const nativeState = { type: "compaction", encrypted_content: "previous checkpoint" };
-      const llmCompactionFn: NativeCompactFn | undefined =
-        scenario === "unavailable"
-          ? undefined
-          : async (input) => {
-              if (scenario === "timeout") return rejectOnAbort(input.signal);
-              return { status: "unsupported", reason: "status_404" };
-            };
+      let llmCompactionFn: NativeCompactFn | undefined;
+      if (scenario === "unavailable") {
+        llmCompactionFn = undefined;
+      } else {
+        llmCompactionFn = async (input) => {
+          if (scenario === "timeout") return rejectOnAbort(input.signal);
+          return { status: "unsupported", reason: "status_404" };
+        };
+      }
       const input = {
         model: TEST_MODEL,
         messages: [userMsg("follow-up after compaction")],

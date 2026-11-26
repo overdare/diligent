@@ -23,10 +23,6 @@ interface MessageCardProps {
   onSelectEntry: (entry: unknown) => void;
 }
 
-function renderMarkdown(text: string): string {
-  return marked.parse(text, { async: false }) as string;
-}
-
 function blockKey(block: ContentBlock, index: number): string {
   if (block.type === "tool_call") return `tc-${block.id}`;
   return `${block.type}-${index}`;
@@ -98,7 +94,7 @@ function AssistantMessageCard({
           }
 
           if (block.type === "text") {
-            const html = renderMarkdown(block.text);
+            const html = marked.parse(block.text, { async: false }) as string;
             // biome-ignore lint/security/noDangerouslySetInnerHtml: rendering trusted markdown from session data
             return <div key={blockKey(block, i)} className="text-block" dangerouslySetInnerHTML={{ __html: html }} />;
           }

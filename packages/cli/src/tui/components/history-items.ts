@@ -27,14 +27,16 @@ export function appendHistoryItems(store: ThreadStore, items: ThreadItem[]): voi
         ]);
         break;
       case "userMessage": {
-        const text =
-          typeof item.message.content === "string"
-            ? item.message.content
-            : item.message.content
-                .filter((block) => block.type === "text")
-                .map((block) => block.text)
-                .join("");
-        if (text.trim()) store.addUserMessage(text);
+        let messageText: string;
+        if (typeof item.message.content === "string") {
+          messageText = item.message.content;
+        } else {
+          messageText = item.message.content
+            .filter((block) => block.type === "text")
+            .map((block) => block.text)
+            .join("");
+        }
+        if (messageText.trim()) store.addUserMessage(messageText);
         break;
       }
       case "agentMessage": {

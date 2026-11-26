@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import type { AssistantMessage } from "@diligent/core/message-contract";
 import type { StreamContext } from "@diligent/core/provider-contract";
 import { DEFAULT_PROFILES } from "../../../src/profiles";
 import { runRuntimeEvalExecution } from "../../../src/runner/runtime-execution";
@@ -49,14 +50,13 @@ describe("mcp-resource-grounding", () => {
 
   test("fails a decoy read, a missing intended read, a wrong artifact, or a wrong reply", async () => {
     const baseline = await assembledExecution(DEFAULT_PROFILES[0]!);
-    const read = (value: Execution) => value.toolCalls.find((call) => call.name === "mcp_read_resource")!;
     const cases: Array<[string, string, (value: Execution) => void]> = [
       [
         "decoy read",
         "mcp_resource.decoy_resource",
         (value) =>
           value.toolCalls.push({
-            ...structuredClone(read(value)),
+            ...structuredClone(value.toolCalls.find((call) => call.name === "mcp_read_resource")!),
             toolCallId: "decoy",
             input: { server: "fixture-reference", uri: value.world.resourceUris[1] },
           }),
@@ -64,7 +64,7 @@ describe("mcp-resource-grounding", () => {
       [
         "intended reference unread",
         "mcp_resource.resource_selection",
-        (value) => (read(value).outcome = "runtime_error"),
+        (value) => (value.toolCalls.find((call) => call.name === "mcp_read_resource")!.outcome = "runtime_error"),
       ],
       ["wrong artifact", "mcp_resource.result", (value) => (value.verifier!.exitCode = 1)],
       ["wrong reply", "mcp_resource.final", (value) => setFinal(value, value.world.fact)],
@@ -96,71 +96,85 @@ async function assembledExecution(
     profile,
     streamFunction(model, context, options) {
       call += 1;
-      const intendedUri = uriFor(seed, "PRIMARY_REFERENCE");
+      const intendedUri = `fixture://reference/${token(seed, "PRIMARY_REFERENCE").toLowerCase()}`;
       const fact = token(seed, "GROUNDED_FACT");
-      const response =
-        call === 1
-          ? assistantMessage(
-              [
-                ...(assembledOptions.includeProgressText
-                  ? [{ type: "text" as const, text: "I will inspect resources." }]
-                  : []),
-                {
-                  type: "tool_call",
-                  id: "resource-list-call-1",
-                  name: "mcp_list_resources",
-                  input: assembledOptions.scopeResourceList ? { server: "fixture-reference" } : {},
-                },
-              ],
-              "tool_use",
-            )
-          : call === 2
-            ? assistantMessage(
-                [
-                  assembledOptions.execRead
-                    ? {
-                        type: "tool_call" as const,
-                        id: "resource-read-call-2",
-                        name: "exec",
-                        input: {
-                          code: `return await tools.mcp_read_resource(${JSON.stringify({ server: "fixture-reference", uri: intendedUri })});`,
-                        },
-                      }
-                    : {
-                        type: "tool_call" as const,
-                        id: "resource-read-call-2",
-                        name: "mcp_read_resource",
-                        input: { server: "fixture-reference", uri: intendedUri },
-                      },
-                ],
-                "tool_use",
-              )
-            : call === 3
-              ? assistantMessage(
-                  [
-                    ...(assembledOptions.includeProgressText
-                      ? [{ type: "text" as const, text: "I will write the grounded fact." }]
-                      : []),
-                    {
-                      type: "tool_call",
-                      id: "resource-write-call-3",
-                      name: profile.provider === "anthropic" ? "edit" : "apply_patch",
-                      input:
-                        profile.provider === "anthropic"
-                          ? {
-                              file_path: join(cwdFromContext(context), "grounded-answer.txt"),
-                              old_string: "",
-                              new_string: `${fact}\n`,
-                              replace_all: false,
-                            }
-                          : {
-                              patch: `*** Begin Patch\n*** Add File: grounded-answer.txt\n+${fact}\n*** End Patch${assembledOptions.trailingPatchNewline ? "\n" : ""}`,
-                            },
-                    },
-                  ],
-                  "tool_use",
-                )
-              : assistantMessage([{ type: "text", text: "GROUNDING_COMPLETE" }]);
+      let response: AssistantMessage;
+      if (call === 1) {
+        let progress: { type: "text"; text: string }[] = [];
+        if (assembledOptions.includeProgressText) {
+          progress = [{ type: "text" as const, text: "I will inspect resources." }];
+        }
+        response = assistantMessage(
+          [
+            ...progress,
+            {
+              type: "tool_call",
+              id: "resource-list-call-1",
+              name: "mcp_list_resources",
+              input: assembledOptions.scopeResourceList ? { server: "fixture-reference" } : {},
+            },
+          ],
+          "tool_use",
+        );
+      } else if (call === 2 && assembledOptions.execRead) {
+        response = assistantMessage(
+          [
+            {
+              type: "tool_call" as const,
+              id: "resource-read-call-2",
+              name: "exec",
+              input: {
+                code: `return await tools.mcp_read_resource(${JSON.stringify({ server: "fixture-reference", uri: intendedUri })});`,
+              },
+            },
+          ],
+          "tool_use",
+        );
+      } else if (call === 2) {
+        response = assistantMessage(
+          [
+            {
+              type: "tool_call" as const,
+              id: "resource-read-call-2",
+              name: "mcp_read_resource",
+              input: { server: "fixture-reference", uri: intendedUri },
+            },
+          ],
+          "tool_use",
+        );
+      } else if (call === 3) {
+        let progress: { type: "text"; text: string }[] = [];
+        if (assembledOptions.includeProgressText) {
+          progress = [{ type: "text" as const, text: "I will write the grounded fact." }];
+        }
+        let writeInput: Record<string, unknown>;
+        if (profile.provider === "anthropic") {
+          writeInput = {
+            file_path: join(cwdFromContext(context), "grounded-answer.txt"),
+            old_string: "",
+            new_string: `${fact}\n`,
+            replace_all: false,
+          };
+        } else {
+          writeInput = {
+            patch: `*** Begin Patch\n*** Add File: grounded-answer.txt\n+${fact}\n*** End Patch${assembledOptions.trailingPatchNewline ? "\n" : ""}`,
+          };
+        }
+        response = assistantMessage(
+          [
+            ...progress,
+            {
+              type: "tool_call",
+              id: "resource-write-call-3",
+              name: profile.provider === "anthropic" ? "edit" : "apply_patch",
+              input: writeInput,
+            },
+          ],
+          "tool_use",
+        );
+      } else {
+        response = assistantMessage([{ type: "text", text: "GROUNDING_COMPLETE" }]);
+      }
       return sequenceStream([response])(model, context, options);
     },
   });
@@ -173,10 +187,6 @@ async function assembledExecution(
 
 function token(seed: string, prefix: string): string {
   return `${prefix}_${seed.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10) || "seed"}`;
-}
-
-function uriFor(seed: string, prefix: string): string {
-  return `fixture://reference/${token(seed, prefix).toLowerCase()}`;
 }
 
 function cwdFromContext(context: StreamContext): string {

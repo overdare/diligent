@@ -45,7 +45,7 @@ type ThinkingConfigWithBinding = Anthropic.ThinkingConfigParam & {
 
 export function createAnthropicStream(apiKey?: string, baseUrl?: string): StreamFunction {
   const resolvedApiKey = resolveAnthropicApiKey(apiKey);
-  const resolvedSdkBaseUrl = resolveAnthropicSdkBaseUrl(baseUrl);
+  const resolvedSdkBaseUrl = (baseUrl ?? "https://api.anthropic.com").replace(/\/+$/, "");
   const debugEndpoint = `${resolvedSdkBaseUrl.replace(/\/+$/, "")}/v1/messages`;
   const client = new Anthropic({
     apiKey: resolvedApiKey,
@@ -121,9 +121,8 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
           context.compactionSummary,
           context.localImageLoader,
         );
-        const referenced = imageFiles
-          ? await imageFiles.reference(convertedMessages)
-          : { messages: convertedMessages, usesFiles: false };
+        let referenced = { messages: convertedMessages, usesFiles: false };
+        if (imageFiles) referenced = await imageFiles.reference(convertedMessages);
 
         // Track active tool call for delta routing
         let activeToolId: string | undefined;
@@ -456,8 +455,4 @@ function resolveAnthropicApiKey(apiKey?: string): string {
   const resolved = apiKey?.trim() || process.env.ANTHROPIC_API_KEY?.trim();
   if (resolved) return resolved;
   throw new Error("Anthropic API key is required. Set ANTHROPIC_API_KEY or pass apiKey to createAnthropicStream().");
-}
-
-function resolveAnthropicSdkBaseUrl(baseUrl?: string): string {
-  return (baseUrl ?? "https://api.anthropic.com").replace(/\/+$/, "");
 }

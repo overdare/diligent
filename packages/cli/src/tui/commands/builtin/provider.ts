@@ -19,10 +19,6 @@ import type { ListPickerItem } from "../../components/list-picker";
 import { t } from "../../theme";
 import type { Command, CommandContext } from "../types";
 
-function providerDisplayName(provider: ProviderName): string {
-  return PROVIDER_DESCRIPTORS[provider].displayName;
-}
-
 export const providerCommand: Command = {
   name: "provider",
   description: "Connect AI providers and switch models",
@@ -68,11 +64,19 @@ export const providerCommand: Command = {
 function pickProvider(ctx: CommandContext): Promise<void> {
   return (async () => {
     const currentProvider = (ctx.config.model.provider ?? DEFAULT_PROVIDER) as ProviderName;
-    const items: ListPickerItem[] = PROVIDER_NAMES.map((p) => ({
-      label: providerDisplayName(p),
-      description: p === currentProvider ? "active" : ctx.config.providerManager.hasKeyFor(p) ? "configured" : "no key",
-      value: p,
-    }));
+    const items: ListPickerItem[] = PROVIDER_NAMES.map((p) => {
+      let description = "no key";
+      if (p === currentProvider) {
+        description = "active";
+      } else if (ctx.config.providerManager.hasKeyFor(p)) {
+        description = "configured";
+      }
+      return {
+        label: PROVIDER_DESCRIPTORS[p].displayName,
+        description,
+        value: p,
+      };
+    });
     const selectedIdx = items.findIndex((i) => i.value === currentProvider);
     const value = await ctx.app.pick({
       title: "Provider",
@@ -126,7 +130,7 @@ function pickConnectedProviderAction(provider: ProviderName, ctx: CommandContext
       { label: "Cancel", description: "Keep current authentication", value: "cancel" },
     ];
     const value = await ctx.app.pick({
-      title: `${providerDisplayName(provider)} is already connected`,
+      title: `${PROVIDER_DESCRIPTORS[provider].displayName} is already connected`,
       items,
       selectedIndex: 0,
       filterable: false,
@@ -157,17 +161,20 @@ async function switchProvider(provider: ProviderName, ctx: CommandContext): Prom
   await ctx.setModel(model);
   ctx.onModelChanged(model);
   ctx.displayLines([
-    `  Provider: ${t.bold}${providerDisplayName(provider)}${t.reset}  Model: ${t.bold}${formatModelRef(model)}${t.reset}`,
+    `  Provider: ${t.bold}${PROVIDER_DESCRIPTORS[provider].displayName}${t.reset}  Model: ${t.bold}${formatModelRef(model)}${t.reset}`,
   ]);
 }
 
 export async function disconnectProvider(provider: ProviderName, ctx: CommandContext): Promise<void> {
+  let message: string;
+  if (provider === "chatgpt") {
+    message = "Disconnect ChatGPT OAuth and remove saved authentication?";
+  } else {
+    message = `Remove saved API key for ${PROVIDER_DESCRIPTORS[provider].displayName}?`;
+  }
   const confirmed = await ctx.app.confirm({
     title: "Disconnect provider",
-    message:
-      provider === "chatgpt"
-        ? "Disconnect ChatGPT OAuth and remove saved authentication?"
-        : `Remove saved API key for ${providerDisplayName(provider)}?`,
+    message,
     confirmLabel: "Disconnect",
     cancelLabel: "Cancel",
   });
@@ -193,10 +200,10 @@ export async function disconnectProvider(provider: ProviderName, ctx: CommandCon
       ctx.config.providerAuthPresenter?.removeExternalAuth("chatgpt");
     }
 
-    ctx.displayLines([`  ${t.success}Disconnected ${providerDisplayName(provider)}.${t.reset}`]);
+    ctx.displayLines([`  ${t.success}Disconnected ${PROVIDER_DESCRIPTORS[provider].displayName}.${t.reset}`]);
   } catch (err) {
     ctx.displayError(
-      `Failed to disconnect ${providerDisplayName(provider)}: ${err instanceof Error ? err.message : String(err)}`,
+      `Failed to disconnect ${PROVIDER_DESCRIPTORS[provider].displayName}: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 }
@@ -269,7 +276,9 @@ function showProviderStatus(ctx: CommandContext): void {
     const oauthNote = authStatus?.oauthConnected ? ` ${t.dim}(OAuth)${t.reset}` : "";
     const status = maskedKey ? `${t.success}configured${t.reset} (${maskedKey})` : `${t.dim}not configured${t.reset}`;
     const marker = pm.hasKeyFor(provider) ? "\u2713" : "\u2717";
-    lines.push(`  ${marker} ${t.bold}${providerDisplayName(provider)}${t.reset}: ${status}${oauthNote}${active}`);
+    lines.push(
+      `  ${marker} ${t.bold}${PROVIDER_DESCRIPTORS[provider].displayName}${t.reset}: ${status}${oauthNote}${active}`,
+    );
   }
 
   lines.push("");
@@ -285,7 +294,7 @@ function showProviderStatus(ctx: CommandContext): void {
 function pickProviderThenSetKey(ctx: CommandContext): Promise<void> {
   return (async () => {
     const items: ListPickerItem[] = PROVIDER_NAMES.map((p) => ({
-      label: providerDisplayName(p),
+      label: PROVIDER_DESCRIPTORS[p].displayName,
       description: ctx.config.providerManager.hasKeyFor(p) ? "configured" : "not configured",
       value: p,
     }));
@@ -303,8 +312,8 @@ export function promptApiKey(provider: ProviderName, ctx: CommandContext): Promi
   return (async () => {
     const { apiKeyUrl, apiKeyPlaceholder } = PROVIDER_DESCRIPTORS[provider];
     const value = await ctx.app.prompt({
-      title: `${providerDisplayName(provider)} API Key`,
-      message: `Enter your ${providerDisplayName(provider)} API key (${apiKeyUrl})`,
+      title: `${PROVIDER_DESCRIPTORS[provider].displayName} API Key`,
+      message: `Enter your ${PROVIDER_DESCRIPTORS[provider].displayName} API key (${apiKeyUrl})`,
       placeholder: apiKeyPlaceholder,
       masked: true,
     });
@@ -312,7 +321,7 @@ export function promptApiKey(provider: ProviderName, ctx: CommandContext): Promi
       return;
     }
     ctx.config.providerManager.setApiKey(provider, value);
-    ctx.displayLines([`  ${t.success}API key set for ${providerDisplayName(provider)}.${t.reset}`]);
+    ctx.displayLines([`  ${t.success}API key set for ${PROVIDER_DESCRIPTORS[provider].displayName}.${t.reset}`]);
     await promptSaveKey(provider, value, ctx);
   })();
 }
@@ -321,7 +330,7 @@ export function promptSaveKey(provider: ProviderName, apiKey: string, ctx: Comma
   return (async () => {
     const confirmed = await ctx.app.confirm({
       title: "Save API Key?",
-      message: `Save ${providerDisplayName(provider)} key to ~/.diligent/auth.jsonc?`,
+      message: `Save ${PROVIDER_DESCRIPTORS[provider].displayName} key to ~/.diligent/auth.jsonc?`,
       confirmLabel: "Save",
       cancelLabel: "Skip",
     });

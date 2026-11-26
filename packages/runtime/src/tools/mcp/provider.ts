@@ -123,24 +123,29 @@ export function createMcpToolProvider(
       if (catalog.length === 0) return extras;
 
       const loading = resolveLoading(options.toolLoading, catalog.length, threshold);
-      const toolTools: Tool[] =
-        loading === "lazy"
-          ? [createMcpSearchTool(catalog), createMcpRunTool({ catalog, manager, host, outputLimit: defaultLimit })]
-          : catalog.map((entry) =>
-              mcpToolToDiligentTool({
-                serverName: entry.server,
-                def: {
-                  name: entry.tool,
-                  description: entry.description,
-                  inputSchema: entry.inputSchema,
-                  readOnly: entry.readOnly,
-                  maxResultSizeChars: entry.maxResultSizeChars,
-                },
-                manager,
-                host,
-                outputLimit: resolveMcpOutputLimit(entry.maxResultSizeChars, defaultLimit),
-              }),
-            );
+      let toolTools: Tool[];
+      if (loading === "lazy") {
+        toolTools = [
+          createMcpSearchTool(catalog),
+          createMcpRunTool({ catalog, manager, host, outputLimit: defaultLimit }),
+        ];
+      } else {
+        toolTools = catalog.map((entry) =>
+          mcpToolToDiligentTool({
+            serverName: entry.server,
+            def: {
+              name: entry.tool,
+              description: entry.description,
+              inputSchema: entry.inputSchema,
+              readOnly: entry.readOnly,
+              maxResultSizeChars: entry.maxResultSizeChars,
+            },
+            manager,
+            host,
+            outputLimit: resolveMcpOutputLimit(entry.maxResultSizeChars, defaultLimit),
+          }),
+        );
+      }
 
       return [...toolTools, ...extras];
     },

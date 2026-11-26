@@ -118,14 +118,15 @@ export function App() {
 
       {/* Main content */}
       <div className="main-content">
-        {selectedSessionId ? (
+        {selectedSessionId && (
           <ConversationView
             entries={entries}
             onSelectEntry={setSelectedEntry}
             loading={sessionLoading}
             highlightEntryId={currentMatch?.entryId ?? null}
           />
-        ) : (
+        )}
+        {!selectedSessionId && (
           <div className="home-view">
             <div className="home-header">
               <h2 className="home-title">Home</h2>

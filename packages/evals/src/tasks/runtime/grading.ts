@@ -56,7 +56,12 @@ const PATH_KEYS = ["file_path", "path", "filePath", "file"] as const;
 export function workspaceRelativePath(path: string, threadCwd = "$WORKSPACE"): string | undefined {
   const slashed = path.replaceAll("\\", "/").trim();
   const cwd = threadCwd.replaceAll("\\", "/");
-  const cwdRelative = cwd === "$WORKSPACE" ? "" : cwd.startsWith("$WORKSPACE/") ? cwd.slice("$WORKSPACE/".length) : "";
+  let cwdRelative: string;
+  if (cwd === "$WORKSPACE") {
+    cwdRelative = "";
+  } else {
+    cwdRelative = cwd.startsWith("$WORKSPACE/") ? cwd.slice("$WORKSPACE/".length) : "";
+  }
   let candidate: string;
   if (slashed === "$WORKSPACE") candidate = ".";
   else if (slashed.startsWith("$WORKSPACE/")) candidate = slashed.slice("$WORKSPACE/".length);
@@ -76,7 +81,12 @@ export function tracePaths(trace: Pick<RuntimeToolTrace, "input">, threadCwd?: s
     const value = input[key];
     if (typeof value === "string") raw.push(value);
   }
-  const patch = typeof input.patch === "string" ? input.patch : typeof input.input === "string" ? input.input : "";
+  let patch: string;
+  if (typeof input.patch === "string") {
+    patch = input.patch;
+  } else {
+    patch = typeof input.input === "string" ? input.input : "";
+  }
   for (const match of patch.matchAll(/^\*{3} (?:Add|Update|Delete) File: (.+)$/gm)) raw.push(match[1]!);
   for (const match of patch.matchAll(/^\*{3} Move to: (.+)$/gm)) raw.push(match[1]!);
   return raw.flatMap((path) => {

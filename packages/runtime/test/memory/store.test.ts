@@ -1,6 +1,6 @@
 // @summary Tests for the Markdown memory directory format shared with Claude Code auto memory
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readMemory, upsertMemory } from "@diligent/runtime/memory";
@@ -59,6 +59,32 @@ describe("memory directory", () => {
     await writeFile(join(tmpDir, "unknown.md"), "---\nname: unknown\nmetadata:\n  type: scratch\n---\nbody\n");
 
     expect(await readMemory(tmpDir)).toEqual([]);
+  });
+
+  it("reads modified from YAML timestamps or date strings and falls back to the file mtime otherwise", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "memory-"));
+    const mtime = new Date("2021-06-07T08:09:10.000Z");
+    const files: Record<string, string> = {
+      "tagged-date": "modified: !!timestamp 2024-03-05T10:20:30Z\nmetadata:\n  type: project",
+      "metadata-string": "modified: 2020-01-01T00:00:00Z\nmetadata:\n  type: project\n  modified: 2024-01-02T03:04:05Z",
+      "numeric-value": "modified: 1700000000000\nmetadata:\n  type: project",
+      "invalid-string": "modified: not a date\nmetadata:\n  type: project",
+      "empty-string": 'modified: ""\nmetadata:\n  type: project',
+    };
+    for (const [id, frontmatter] of Object.entries(files)) {
+      const path = join(tmpDir, `${id}.md`);
+      await writeFile(path, `---\n${frontmatter}\n---\nbody\n`);
+      await utimes(path, mtime, mtime);
+    }
+
+    const modifiedById = Object.fromEntries((await readMemory(tmpDir)).map((entry) => [entry.id, entry.modified]));
+    expect(modifiedById).toEqual({
+      "tagged-date": "2024-03-05T10:20:30.000Z",
+      "metadata-string": "2024-01-02T03:04:05.000Z",
+      "numeric-value": mtime.toISOString(),
+      "invalid-string": mtime.toISOString(),
+      "empty-string": mtime.toISOString(),
+    });
   });
 
   it("writes files Claude Code can read and keeps frontmatter and index lines written by other tools", async () => {

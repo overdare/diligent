@@ -93,10 +93,10 @@ export class StdioAppServerRpcClient implements SpawnedAppServer {
         return;
       }
       if (code !== 0 && !this.fatalError) {
-        this.fatalError = new Error(this.buildExitMessage(code));
+        this.fatalError = new Error(`${this.fatalErrorPrefix} with code ${code}`);
       }
       this.closed = true;
-      this.rejectPending(this.fatalError ?? new Error(this.buildExitMessage(code)));
+      this.rejectPending(this.fatalError ?? new Error(`${this.fatalErrorPrefix} with code ${code}`));
     });
   }
 
@@ -246,11 +246,14 @@ export class StdioAppServerRpcClient implements SpawnedAppServer {
 
   private async handleServerRequest(id: RequestId, request: DiligentServerRequest): Promise<JSONRPCResponse> {
     try {
-      const response = this.serverRequestHandler
-        ? await this.serverRequestHandler(id, request)
-        : request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST
-          ? DEFAULT_FATAL_APPROVAL
-          : DEFAULT_FATAL_USER_INPUT;
+      let response: DiligentServerRequestResponse;
+      if (this.serverRequestHandler) {
+        response = await this.serverRequestHandler(id, request);
+      } else if (request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
+        response = DEFAULT_FATAL_APPROVAL;
+      } else {
+        response = DEFAULT_FATAL_USER_INPUT;
+      }
 
       return { id, result: response.result };
     } catch (error) {
@@ -275,9 +278,5 @@ export class StdioAppServerRpcClient implements SpawnedAppServer {
     if (this.closed) {
       throw new Error("App-server RPC client is closed");
     }
-  }
-
-  private buildExitMessage(code: number): string {
-    return `${this.fatalErrorPrefix} with code ${code}`;
   }
 }

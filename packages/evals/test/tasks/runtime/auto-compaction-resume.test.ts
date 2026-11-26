@@ -306,7 +306,9 @@ async function assembledExecution(seed: string) {
               type: "tool_call",
               id: "auto-write-1",
               name: "apply_patch",
-              input: { patch: expectedPatch(world) },
+              input: {
+                patch: `*** Begin Patch\n*** Add File: ${world.targetPath}\n+ORBIT=${world.facts[0]}\n+CIPHER=${world.facts[1]}\n+ANCHOR=${world.facts[2]}\n*** End Patch`,
+              },
             },
           ],
           "tool_use",
@@ -340,10 +342,6 @@ function expectedWorld(seed: string): AutoCompactionResumeWorld {
     protectedPaths: ["control.txt"],
     allowedChanges: ["COMPACTED.txt"],
   };
-}
-
-function expectedPatch(world: AutoCompactionResumeWorld): string {
-  return `*** Begin Patch\n*** Add File: ${world.targetPath}\n+ORBIT=${world.facts[0]}\n+CIPHER=${world.facts[1]}\n+ANCHOR=${world.facts[2]}\n*** End Patch`;
 }
 
 function oneMessage(

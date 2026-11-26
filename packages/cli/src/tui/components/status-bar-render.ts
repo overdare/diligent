@@ -24,6 +24,7 @@ function shortenPath(cwd: string): string {
 
 const ANSI_RE = /\x1b\[[0-9;?]*[a-zA-Z]/g;
 
+// biome-ignore lint/plugin/no-tiny-function: names the ANSI-stripping regex
 function stripAnsi(text: string): string {
   return text.replace(ANSI_RE, "");
 }
@@ -109,15 +110,23 @@ export function renderStatusBar(store: StatusBarStore, width: number): string[] 
   }
 
   if (info.goal) {
-    const tokens = info.goal.tokenBudget
-      ? `${formatTokensCompact(info.goal.tokensUsed)}/${formatTokensCompact(info.goal.tokenBudget)}`
-      : `${formatTokensCompact(info.goal.tokensUsed)} tokens`;
+    let tokens: string;
+    if (info.goal.tokenBudget) {
+      tokens = `${formatTokensCompact(info.goal.tokensUsed)}/${formatTokensCompact(info.goal.tokenBudget)}`;
+    } else {
+      tokens = `${formatTokensCompact(info.goal.tokensUsed)} tokens`;
+    }
     leftParts.push(
       `goal:${info.goal.status} ${formatGoalDuration(goalElapsedMs({ ...info.goal, activeTimeMs: info.goal.activeTimeMs ?? 0 }))} ${tokens}${info.goal.maxTurns === undefined ? "" : ` ${info.goal.turnsUsed}/${info.goal.maxTurns} runs`}`,
     );
   }
 
-  const statusHint = info.status === "busy" ? "ctrl+c to cancel" : info.status === "retry" ? "retrying..." : "";
+  let statusHint: "" | "ctrl+c to cancel" | "retrying...";
+  if (info.status === "busy") {
+    statusHint = "ctrl+c to cancel";
+  } else {
+    statusHint = info.status === "retry" ? "retrying..." : "";
+  }
   const modeHint = !statusHint && info.mode ? formatModeHint(info.mode) : "";
   const rightHint = statusHint || modeHint;
 

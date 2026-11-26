@@ -162,10 +162,9 @@ export const mcpLazyToolTask: RuntimeEvalTask<McpLazyToolWorld> = {
     const grade = new RuntimeGrade("mcp_lazy");
     const { world } = input;
     const runs = input.toolCalls.filter((call) => call.name === "mcp_run_tool" && call.outcome === "success");
-    const toolOf = (call: (typeof runs)[number]) => (isRecord(call.input) ? call.input.tool : undefined);
-    if (runs.some((call) => toolOf(call) !== INTENDED_TOOL))
+    if (runs.some((call) => (isRecord(call.input) ? call.input.tool : undefined) !== INTENDED_TOOL))
       return grade.fail("decoy_tool", "A non-matching connected service was executed.", "behavior");
-    const intended = runs.filter((call) => toolOf(call) === INTENDED_TOOL);
+    const intended = runs.filter((call) => (isRecord(call.input) ? call.input.tool : undefined) === INTENDED_TOOL);
     if (intended.length === 0)
       return grade.fail("tool_selection", "The matching connected service was never executed.", "behavior");
     if (!intended.some((call) => JSON.stringify(call.output ?? "").includes(world.receipt)))

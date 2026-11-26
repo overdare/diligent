@@ -35,6 +35,7 @@ function textValue(value: unknown): string {
   return safeJson(value);
 }
 
+// biome-ignore lint/plugin/no-tiny-function: names the regex-escaping formula
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -89,9 +90,12 @@ export function formatLogRecordText(record: LogRecord, options: FormatLogRecordT
   ].join(" ");
   const prefix = /^(\[[^\]\r\n]+\])(?:\s*)([\s\S]*)$/.exec(record.message);
   const body = removeLeadingLegacyContext(prefix?.[2] ?? record.message);
-  const message = prefix
-    ? [prefix[1], requiredContext, body].filter((part) => part.length > 0).join(" ")
-    : [requiredContext, body].filter((part) => part.length > 0).join(" ");
+  let message: string;
+  if (prefix) {
+    message = [prefix[1], requiredContext, body].filter((part) => part.length > 0).join(" ");
+  } else {
+    message = [requiredContext, body].filter((part) => part.length > 0).join(" ");
+  }
   return appendTextMetadata(message, record);
 }
 

@@ -88,10 +88,6 @@ function mcpDiag(message: string): void {
   }
 }
 
-function errText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 /**
  * Builds the transport for a server. Injectable so tests can supply an in-memory
  * transport pair linked to a real MCP server without spawning processes or sockets.
@@ -107,24 +103,25 @@ export type McpAuthRefresh = (provider: OAuthClientProvider, options: { serverUr
 
 function stableSignature(name: string, config: McpServerConfig): string {
   // Excludes `enabled`/`tools` (applied downstream as filters) and timeouts (runtime-only).
-  const relevant = isStdioServer(config)
-    ? {
-        kind: "stdio",
-        command: config.command,
-        args: config.args ?? [],
-        env: config.env ?? {},
-        cwd: config.cwd ?? null,
-      }
-    : isHttpServer(config)
-      ? {
-          kind: "http",
-          type: config.type ?? "http",
-          url: config.url,
-          headers: config.headers ?? {},
-          bearerTokenEnvVar: config.bearerTokenEnvVar ?? null,
-          oauth: config.oauth ?? null,
-        }
-      : { kind: "unknown" };
+  let relevant: Record<string, unknown> = { kind: "unknown" };
+  if (isStdioServer(config)) {
+    relevant = {
+      kind: "stdio",
+      command: config.command,
+      args: config.args ?? [],
+      env: config.env ?? {},
+      cwd: config.cwd ?? null,
+    };
+  } else if (isHttpServer(config)) {
+    relevant = {
+      kind: "http",
+      type: config.type ?? "http",
+      url: config.url,
+      headers: config.headers ?? {},
+      bearerTokenEnvVar: config.bearerTokenEnvVar ?? null,
+      oauth: config.oauth ?? null,
+    };
+  }
   return createHash("sha256").update(JSON.stringify({ name, relevant })).digest("hex");
 }
 
@@ -421,9 +418,10 @@ export class McpConnectionManager {
   ): Promise<McpGetPromptResult> {
     const conn = this.connections.get(serverName);
     if (!conn) throw new Error(`MCP server "${serverName}" is not connected`);
-    const stringArgs = args
-      ? Object.fromEntries(Object.entries(args).map(([k, v]) => [k, typeof v === "string" ? v : String(v)]))
-      : undefined;
+    let stringArgs: { [k: string]: string } | undefined;
+    if (args) {
+      stringArgs = Object.fromEntries(Object.entries(args).map(([k, v]) => [k, typeof v === "string" ? v : String(v)]));
+    }
     const res = await conn.client.getPrompt({ name, arguments: stringArgs }, { signal, timeout: conn.toolTimeoutMs });
     const lines: string[] = [];
     for (const message of res.messages) {
@@ -484,7 +482,9 @@ export class McpConnectionManager {
       // fresh client + transport). If interactive login is actually required, `auth()` throws
       // `NeedsAuthError` (the connect-path provider never opens a browser) → propagates as
       // `needs_auth`.
-      mcpDiag(`"${name}" connect failed (authProvider=${authProvider ? "yes" : "no"}): ${errText(error)}`);
+      mcpDiag(
+        `"${name}" connect failed (authProvider=${authProvider ? "yes" : "no"}): ${error instanceof Error ? error.message : String(error)}`,
+      );
       if (!authProvider || !isHttpServer(config) || !isNeedsAuth(error)) throw error;
       const startupTimeoutMs = timeoutOf(config, "startupTimeoutMs", DEFAULT_MCP_STARTUP_TIMEOUT_MS);
       let result: string;
@@ -496,7 +496,9 @@ export class McpConnectionManager {
           () => {},
         );
       } catch (refreshError) {
-        mcpDiag(`"${name}" silent token refresh threw: ${errText(refreshError)}`);
+        mcpDiag(
+          `"${name}" silent token refresh threw: ${refreshError instanceof Error ? refreshError.message : String(refreshError)}`,
+        );
         throw refreshError;
       }
       mcpDiag(`"${name}" silent token refresh result: ${result}`);

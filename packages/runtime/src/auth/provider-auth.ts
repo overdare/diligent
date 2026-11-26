@@ -61,8 +61,6 @@ export function createChatGPTOAuthBinding(args?: {
     oauthTokens = undefined;
   };
 
-  const getTokens = (): OpenAIOAuthTokens | undefined => oauthTokens;
-
   const ensureFresh = async (): Promise<void> => {
     if (!oauthTokens || !shouldRefresh(oauthTokens)) return;
 
@@ -91,7 +89,13 @@ export function createChatGPTOAuthBinding(args?: {
     ensureFresh,
   };
 
-  return { auth, presentation: { maskedKey: "ChatGPT OAuth", oauth: true }, setTokens, clearTokens, getTokens };
+  return {
+    auth,
+    presentation: { maskedKey: "ChatGPT OAuth", oauth: true },
+    setTokens,
+    clearTokens,
+    getTokens: () => oauthTokens,
+  };
 }
 
 export function createVertexAccessTokenBinding(config: VertexProviderConfig): VertexAccessTokenBinding {
@@ -154,15 +158,18 @@ export function createVertexAccessTokenBinding(config: VertexProviderConfig): Ve
     ensureFresh,
   };
 
+  let maskedKey: "Vertex ADC" | "Vertex access token" | "Vertex token command";
+  if (config.authMode === "adc") {
+    maskedKey = "Vertex ADC";
+  } else if (config.authMode === "access_token" || (!config.authMode && accessToken)) {
+    maskedKey = "Vertex access token";
+  } else {
+    maskedKey = "Vertex token command";
+  }
   return {
     auth,
     presentation: {
-      maskedKey:
-        config.authMode === "adc"
-          ? "Vertex ADC"
-          : config.authMode === "access_token" || (!config.authMode && accessToken)
-            ? "Vertex access token"
-            : "Vertex token command",
+      maskedKey,
     },
     refresh,
     getToken: () => accessToken,

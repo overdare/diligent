@@ -1,7 +1,7 @@
 // @summary Tests for the direct collaboration-mode commands (/default, /plan, /exec)
 
 import { describe, expect, it, mock } from "bun:test";
-import { MODE_COMMAND_NAMES, type Mode, ModeSchema } from "@diligent/protocol";
+import { MODE_COMMAND_NAMES, ModeSchema } from "@diligent/protocol";
 import type { AppConfig } from "../../../../src/config";
 import { modeCommands } from "../../../../src/tui/commands/builtin/mode";
 import type { CommandContext } from "../../../../src/tui/commands/types";
@@ -44,10 +44,6 @@ function makeContext(overrides?: Partial<CommandContext>): CommandContext {
   } as CommandContext;
 }
 
-function commandFor(mode: Mode) {
-  return modeCommands.find((command) => command.name === MODE_COMMAND_NAMES[mode]);
-}
-
 describe("mode commands", () => {
   it("registers one argument-free command per supported mode", () => {
     expect(modeCommands.map((command) => command.name)).toEqual(
@@ -61,7 +57,9 @@ describe("mode commands", () => {
   it("switches straight to its own mode", async () => {
     for (const mode of ModeSchema.options) {
       const setMode = mock(() => {});
-      await commandFor(mode)?.handler(undefined, makeContext({ setMode }));
+      await modeCommands
+        .find((command) => command.name === MODE_COMMAND_NAMES[mode])
+        ?.handler(undefined, makeContext({ setMode }));
       expect(setMode).toHaveBeenCalledWith(mode);
     }
   });
@@ -70,7 +68,9 @@ describe("mode commands", () => {
   it("stays put when its mode is already active", async () => {
     for (const mode of ModeSchema.options) {
       const setMode = mock(() => {});
-      await commandFor(mode)?.handler(undefined, makeContext({ currentMode: mode, setMode }));
+      await modeCommands
+        .find((command) => command.name === MODE_COMMAND_NAMES[mode])
+        ?.handler(undefined, makeContext({ currentMode: mode, setMode }));
       expect(setMode).toHaveBeenCalledWith(mode);
     }
   });

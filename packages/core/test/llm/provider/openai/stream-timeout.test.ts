@@ -42,14 +42,28 @@ describe("OpenAI Responses stream idle timeout", () => {
       requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
-          setTimeout(() => controller.enqueue(eventChunk({ type: "response.output_text.delta", delta: "a" })), 6);
-          setTimeout(() => controller.enqueue(eventChunk({ type: "response.output_text.delta", delta: "b" })), 14);
+          setTimeout(
+            () =>
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ type: "response.output_text.delta", delta: "a" })}\n\n`),
+              ),
+            6,
+          );
+          setTimeout(
+            () =>
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ type: "response.output_text.delta", delta: "b" })}\n\n`),
+              ),
+            14,
+          );
           setTimeout(() => {
             controller.enqueue(
-              eventChunk({
-                type: "response.completed",
-                response: { status: "completed", usage: { input_tokens: 1, output_tokens: 2 } },
-              }),
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "response.completed",
+                  response: { status: "completed", usage: { input_tokens: 1, output_tokens: 2 } },
+                })}\n\n`,
+              ),
             );
             controller.close();
           }, 22);
@@ -72,7 +86,3 @@ describe("OpenAI Responses stream idle timeout", () => {
     expect(requestBody.store).toBe(false);
   });
 });
-
-function eventChunk(payload: Record<string, unknown>): Uint8Array {
-  return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
-}

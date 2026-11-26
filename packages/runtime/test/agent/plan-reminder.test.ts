@@ -22,7 +22,6 @@ const result = (output = planOutput(), isError = false): ToolResultMessage => ({
   isError,
   timestamp: Date.now(),
 });
-const user = (content: string): Message => ({ role: "user", content, timestamp: Date.now() });
 
 describe("plan reminder helpers", () => {
   test("parses valid steps and rejects malformed output", () => {
@@ -43,7 +42,12 @@ describe("plan reminder helpers", () => {
   });
 
   test("captures the latest user goal", () => {
-    expect(latestUserGoal([user("earlier"), user("real goal")])).toBe("real goal");
+    expect(
+      latestUserGoal([
+        { role: "user", content: "earlier", timestamp: Date.now() },
+        { role: "user", content: "real goal", timestamp: Date.now() },
+      ]),
+    ).toBe("real goal");
   });
 });
 
@@ -51,7 +55,7 @@ describe("plan reminder", () => {
   test("restores plan state and fires after the configured cadence", () => {
     const hook = createReminderHook({ intervalTurns: 2, policy: createPlanReminder() });
     hook.restore?.({ messages: [result()] });
-    hook.onPromptStart?.({ messages: [user("ship it")] });
+    hook.onPromptStart?.({ messages: [{ role: "user", content: "ship it", timestamp: Date.now() }] });
 
     expect(hook.beforeTurn?.({ messages: [], turnId: "t1", compactedThisTurn: false })).toBeUndefined();
     hook.afterTurn?.({ turnId: "t1", message: {} as never, toolResults: [] });

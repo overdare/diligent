@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AssistantMessage } from "@diligent/core/message-contract";
 import type { StreamContext } from "@diligent/core/provider-contract";
 import { DEFAULT_PROFILES } from "../../../src/profiles";
 import { runRuntimeEvalExecution } from "../../../src/runner/runtime-execution";
@@ -64,14 +65,13 @@ describe("mcp-prompt-grounding", () => {
 
   test("fails a decoy fetch, a missing intended fetch, a wrong artifact, or a wrong reply", async () => {
     const baseline = await assembledExecution(DEFAULT_PROFILES[0]!);
-    const fetch = (value: Execution) => value.toolCalls.find((call) => call.name === "mcp_get_prompt")!;
     const cases: Array<[string, string, (value: Execution) => void]> = [
       [
         "decoy fetched",
         "mcp_prompt.decoy_prompt",
         (value) =>
           value.toolCalls.push({
-            ...structuredClone(fetch(value)),
+            ...structuredClone(value.toolCalls.find((call) => call.name === "mcp_get_prompt")!),
             toolCallId: "decoy",
             input: { server: "fixture-workflows", name: value.world.promptNames[1] },
           }),
@@ -79,7 +79,7 @@ describe("mcp-prompt-grounding", () => {
       [
         "intended prompt not fetched",
         "mcp_prompt.prompt_selection",
-        (value) => (fetch(value).outcome = "runtime_error"),
+        (value) => (value.toolCalls.find((call) => call.name === "mcp_get_prompt")!.outcome = "runtime_error"),
       ],
       ["wrong artifact", "mcp_prompt.result", (value) => (value.verifier!.exitCode = 1)],
       ["wrong reply", "mcp_prompt.final", (value) => setFinal(value, `Wrote ${value.world.fact}`)],
@@ -118,99 +118,95 @@ async function assembledExecution(
         relay_designator: token(seed, "RELAY_DESIGNATOR"),
         handoff_window: token(seed, "HANDOFF_WINDOW"),
       };
-      const response =
-        call === 1
-          ? assembledOptions.promptLookupRecovery
-            ? assistantMessage(
-                [
-                  {
-                    type: "tool_call",
-                    id: "prompt-unknown-call-1",
-                    name: "mcp_get_prompt",
-                    input: { server: "fixture-workflows", name: "orbital_relay_handoff", args },
-                  },
-                ],
-                "tool_use",
-              )
-            : assistantMessage(
-                [
-                  ...(assembledOptions.includeProgressText
-                    ? [{ type: "text" as const, text: "I will inspect prompts." }]
-                    : []),
-                  {
-                    type: "tool_call",
-                    id: "prompt-list-call-1",
-                    name: "mcp_list_prompts",
-                    input: assembledOptions.scopePromptList ? { server: "fixture-workflows" } : {},
-                  },
-                ],
-                "tool_use",
-              )
-          : call === (assembledOptions.promptLookupRecovery ? 2 : -1)
-            ? assistantMessage(
-                [
-                  ...(assembledOptions.includeProgressText
-                    ? [{ type: "text" as const, text: "I will inspect prompts." }]
-                    : []),
-                  {
-                    type: "tool_call",
-                    id: "prompt-list-call-2",
-                    name: "mcp_list_prompts",
-                    input: assembledOptions.scopePromptList ? { server: "fixture-workflows" } : {},
-                  },
-                ],
-                "tool_use",
-              )
-            : call === (assembledOptions.promptLookupRecovery ? 3 : 2)
-              ? assistantMessage(
-                  [
-                    {
-                      type: "tool_call",
-                      id: assembledOptions.promptLookupRecovery ? "prompt-get-call-3" : "prompt-get-call-2",
-                      name: "mcp_get_prompt",
-                      input: { server: "fixture-workflows", name: intendedName, args },
-                    },
-                  ],
-                  "tool_use",
-                )
-              : call === (assembledOptions.promptLookupRecovery ? 4 : 3) ||
-                  (assembledOptions.recoveryKind !== undefined && call === 4)
-                ? assistantMessage(
-                    [
-                      ...(assembledOptions.includeProgressText
-                        ? [{ type: "text" as const, text: "I will write the rendered workflow." }]
-                        : []),
-                      {
-                        type: "tool_call",
-                        id:
-                          call === (assembledOptions.promptLookupRecovery ? 4 : 3)
-                            ? assembledOptions.promptLookupRecovery
-                              ? "prompt-write-call-4"
-                              : "prompt-write-call-3"
-                            : "prompt-write-recovery-call-4",
-                        name: profile.provider === "anthropic" ? "edit" : "apply_patch",
-                        input:
-                          profile.provider === "anthropic"
-                            ? {
-                                file_path:
-                                  assembledOptions.recoveryKind === "relative-path" && call === 3
-                                    ? "orbital-workflow.txt"
-                                    : join(cwdFromContext(context), "orbital-workflow.txt"),
-                                old_string:
-                                  assembledOptions.recoveryKind === "missing-file" && call === 3
-                                    ? "REPLACE_ME_FILE_DOES_NOT_EXIST"
-                                    : "",
-                                new_string: `${fact}\n`,
-                                replace_all: false,
-                              }
-                            : {
-                                patch: `*** Begin Patch\n*** Add File: orbital-workflow.txt\n+${fact}\n*** End Patch${assembledOptions.trailingPatchNewline ? "\n" : ""}`,
-                              },
-                      },
-                    ],
-                    "tool_use",
-                  )
-                : assistantMessage([{ type: "text", text: "ORBITAL_WORKFLOW_COMPLETE" }]);
+      const recovery = assembledOptions.promptLookupRecovery;
+      let response: AssistantMessage;
+      if (call === 1 && recovery) {
+        response = assistantMessage(
+          [
+            {
+              type: "tool_call",
+              id: "prompt-unknown-call-1",
+              name: "mcp_get_prompt",
+              input: { server: "fixture-workflows", name: "orbital_relay_handoff", args },
+            },
+          ],
+          "tool_use",
+        );
+      } else if (call === 1 || call === (recovery ? 2 : -1)) {
+        let progress: { type: "text"; text: string }[] = [];
+        if (assembledOptions.includeProgressText) {
+          progress = [{ type: "text" as const, text: "I will inspect prompts." }];
+        }
+        response = assistantMessage(
+          [
+            ...progress,
+            {
+              type: "tool_call",
+              id: call === 1 ? "prompt-list-call-1" : "prompt-list-call-2",
+              name: "mcp_list_prompts",
+              input: assembledOptions.scopePromptList ? { server: "fixture-workflows" } : {},
+            },
+          ],
+          "tool_use",
+        );
+      } else if (call === (recovery ? 3 : 2)) {
+        response = assistantMessage(
+          [
+            {
+              type: "tool_call",
+              id: recovery ? "prompt-get-call-3" : "prompt-get-call-2",
+              name: "mcp_get_prompt",
+              input: { server: "fixture-workflows", name: intendedName, args },
+            },
+          ],
+          "tool_use",
+        );
+      } else if (call === (recovery ? 4 : 3) || (assembledOptions.recoveryKind !== undefined && call === 4)) {
+        let progress: { type: "text"; text: string }[] = [];
+        if (assembledOptions.includeProgressText) {
+          progress = [{ type: "text" as const, text: "I will write the rendered workflow." }];
+        }
+        let writeId: string;
+        if (call !== (recovery ? 4 : 3)) {
+          writeId = "prompt-write-recovery-call-4";
+        } else if (recovery) {
+          writeId = "prompt-write-call-4";
+        } else {
+          writeId = "prompt-write-call-3";
+        }
+        let writeInput: Record<string, unknown>;
+        if (profile.provider === "anthropic") {
+          let filePath: string;
+          if (assembledOptions.recoveryKind === "relative-path" && call === 3) {
+            filePath = "orbital-workflow.txt";
+          } else {
+            filePath = join(cwdFromContext(context), "orbital-workflow.txt");
+          }
+          let oldString = "";
+          if (assembledOptions.recoveryKind === "missing-file" && call === 3) {
+            oldString = "REPLACE_ME_FILE_DOES_NOT_EXIST";
+          }
+          writeInput = { file_path: filePath, old_string: oldString, new_string: `${fact}\n`, replace_all: false };
+        } else {
+          writeInput = {
+            patch: `*** Begin Patch\n*** Add File: orbital-workflow.txt\n+${fact}\n*** End Patch${assembledOptions.trailingPatchNewline ? "\n" : ""}`,
+          };
+        }
+        response = assistantMessage(
+          [
+            ...progress,
+            {
+              type: "tool_call",
+              id: writeId,
+              name: profile.provider === "anthropic" ? "edit" : "apply_patch",
+              input: writeInput,
+            },
+          ],
+          "tool_use",
+        );
+      } else {
+        response = assistantMessage([{ type: "text", text: "ORBITAL_WORKFLOW_COMPLETE" }]);
+      }
       return sequenceStream([response])(model, context, options);
     },
   });

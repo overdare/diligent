@@ -111,6 +111,33 @@ describe("resource/prompt proxy tools", () => {
     const result = await readTool.execute({ server: "nope", uri: "test://doc" }, ctx);
     expect(result.metadata).toMatchObject({ error: true });
   });
+
+  test.each([
+    ["user", { decision: "reject", source: "user" } as const],
+    ["policy", { decision: "reject", source: "policy", consecutiveDenials: 2, breaker: "none" } as const],
+  ])("a %s rejection skips the resource read and prompt render", async (source, outcome) => {
+    const manager = new McpConnectionManager(factoryFor(richServer));
+    await manager.sync({ docs: { command: "x" } });
+    const host = { approveWithOutcome: async () => outcome };
+    const [, readTool] = createMcpResourceTools(["docs"], manager, host);
+    const [, getTool] = createMcpPromptTools(["docs"], manager, host);
+
+    const read = await readTool.execute({ server: "docs", uri: "test://doc" }, ctx);
+    const prompt = await getTool.execute({ server: "docs", name: "greet", args: { who: "Sam" } }, ctx);
+
+    if (source === "user") {
+      expect(read).toEqual({ output: "Resource read rejected by user." });
+      expect(prompt).toEqual({ output: "Prompt render rejected by user." });
+      return;
+    }
+    for (const result of [read, prompt]) {
+      expect(result.output).toStartWith("Denied by a permission rule. Do not retry");
+      expect(result.metadata).toEqual({
+        error: true,
+        denial: { source: "policy", rule: undefined, consecutiveDenials: 2 },
+      });
+    }
+  });
 });
 
 describe("provider capability gating", () => {

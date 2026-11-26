@@ -204,10 +204,10 @@ function reduceResponsesAPIEvent(
 
     case "reasoning_done": {
       const provider: "openai" | "chatgpt" = model.provider === "chatgpt" ? "chatgpt" : "openai";
-      const providerState =
-        event.itemId && event.encryptedContent
-          ? { provider, itemId: event.itemId, encryptedContent: event.encryptedContent }
-          : undefined;
+      let providerState: { provider: "openai" | "chatgpt"; itemId: string; encryptedContent: string } | undefined;
+      if (event.itemId && event.encryptedContent) {
+        providerState = { provider, itemId: event.itemId, encryptedContent: event.encryptedContent };
+      }
       return state.accumulator.flushThinking(event.summaryText, "prepend", providerState);
     }
 

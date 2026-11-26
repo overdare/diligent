@@ -87,6 +87,58 @@ describe("runtime tool policy", () => {
     }
   });
 
+  test("describes an empty command allowlist as permitting no command strings", async () => {
+    const root = await mkdtemp(join(tmpdir(), "diligent-runtime-eval-"));
+    try {
+      const [bash, read] = transformRuntimeTools({
+        tools: [tool("bash", []), tool("read", [])],
+        root,
+        traces: [],
+        ...DEFAULT_LIMITS,
+        policy: { allowedCapabilities: ["execute", "read"], allowedCommands: [] },
+        isTerminated: () => false,
+        onBudgetExceeded: () => {},
+      });
+      expect(bash?.description).toBe("bash\n\nRuntime eval command contract: no command strings are permitted.");
+      expect(read?.description).toBe("read");
+    } finally {
+      await removeTemporaryRoot(root);
+    }
+  });
+
+  test("validates apply_patch headers from input when patch is not a string", async () => {
+    const root = await mkdtemp(join(tmpdir(), "diligent-runtime-eval-"));
+    const executed: string[] = [];
+    const traces: RuntimeToolTrace[] = [];
+    const escapingPatch = "*** Begin Patch\n*** Add File: ../outside\n*** End Patch";
+    try {
+      const [patch] = transformRuntimeTools({
+        tools: [tool("apply_patch", executed)],
+        root,
+        traces,
+        ...DEFAULT_LIMITS,
+        policy: { allowedCapabilities: ["write"], allowedCommands: [] },
+        isTerminated: () => false,
+        onBudgetExceeded: () => {},
+      });
+      await patch!.execute({ input: escapingPatch }, {} as never);
+      await patch!.execute({ patch: 7, input: escapingPatch }, {} as never);
+      await patch!.execute({ patch: "*** Begin Patch\n*** End Patch", input: escapingPatch }, {} as never);
+      await patch!.execute({ patch: 7, input: 7 }, {} as never);
+      expect(traces.map((trace) => trace.outcome)).toEqual([
+        "policy_rejection",
+        "policy_rejection",
+        "success",
+        "success",
+      ]);
+      expect(traces[0]?.error).toContain("workspace_escape");
+      expect(traces[1]?.error).toContain("workspace_escape");
+      expect(executed).toEqual(["apply_patch", "apply_patch"]);
+    } finally {
+      await removeTemporaryRoot(root);
+    }
+  });
+
   test("stops over-budget calls synchronously and removes disallowed capabilities", async () => {
     const root = await mkdtemp(join(tmpdir(), "diligent-runtime-eval-"));
     const executed: string[] = [];

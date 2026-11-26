@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { DiligentServerRequest } from "@diligent/protocol";
 import type {
   AssistantMessage,
   DiligentPaths,
@@ -15,6 +16,7 @@ import { EventStream, ensureDiligentDir } from "@diligent/runtime";
 import type { AppConfig } from "../../src/config";
 import { ProviderManager } from "../../src/provider-manager";
 import { App } from "../../src/tui/app";
+import type { SpawnedAppServer } from "../../src/tui/rpc-client";
 import { createFakeTerminalHarness } from "../helpers/fake-terminal";
 import { createInProcessRpcClientFactory } from "../helpers/in-process-server";
 
@@ -741,5 +743,60 @@ describe("App", () => {
     }
 
     expect(terminal.stdout.writes.join("")).not.toContain("\x07");
+  });
+});
+
+describe("App server requests", () => {
+  test("approval server request renders the command and resolves with the chosen decision", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const cfg = makeConfig(createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }]));
+    const baseFactory = createInProcessRpcClientFactory(cfg, workspace.paths, workspace.root);
+    type ServerRequestHandler = Parameters<SpawnedAppServer["setServerRequestHandler"]>[0];
+    let serverRequestHandler: ServerRequestHandler = null;
+    const terminal = createFakeTerminalHarness();
+    const app = new App(cfg, workspace.paths, {
+      rpcClientFactory: async (options) => {
+        const inner = await baseFactory(options);
+        return {
+          ...inner,
+          setServerRequestHandler(handler) {
+            serverRequestHandler = handler;
+            inner.setServerRequestHandler(handler);
+          },
+        };
+      },
+      terminalOptions: { stdin: terminal.stdin, stdout: terminal.stdout },
+    });
+    const renderOutput = () =>
+      stripAnsi(
+        ((app as unknown as { root: { render: (width: number) => string[] } }).root.render(120) ?? []).join("\n"),
+      );
+    try {
+      await app.start();
+      await wait(30);
+      expect(serverRequestHandler).not.toBeNull();
+
+      const response = serverRequestHandler?.(7, {
+        method: "approval/request",
+        params: {
+          threadId: "thread-x",
+          request: {
+            toolName: "bash",
+            permission: "execute",
+            description: "run a shell command",
+            details: { command: "echo approval-probe" },
+          },
+        },
+      } as DiligentServerRequest);
+      await waitFor(() => renderOutput().includes("echo approval-probe"), { timeoutMs: 4000 });
+      expect(renderOutput()).not.toContain("run a shell command");
+
+      terminal.emitText("a");
+      expect(await response).toEqual({ method: "approval/request", result: { decision: "always" } });
+      expect(renderOutput()).not.toContain("echo approval-probe");
+    } finally {
+      app.stop();
+      workspace.cleanup();
+    }
   });
 });

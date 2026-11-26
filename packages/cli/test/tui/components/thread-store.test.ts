@@ -568,4 +568,20 @@ describe("ThreadStore", () => {
     const lines = renderTranscript(store, 100).map(stripAnsi);
     expect(lines.some((line) => line.includes("Waiting for Holly"))).toBe(true);
   });
+
+  test("compaction_end commits rounded-k token summary with optional summary prefix", () => {
+    const store = new ThreadStore({ requestRender: () => {} });
+    store.handleEvent({ type: "compaction_start" } as never);
+    store.handleEvent({ type: "compaction_end", tokensBefore: 1500, tokensAfter: 499, summary: "  trimmed  " });
+    store.handleEvent({ type: "compaction_start" } as never);
+    store.handleEvent({ type: "compaction_end", tokensBefore: 0, tokensAfter: 1499, summary: "   " });
+
+    const plain = store
+      .getItems()
+      .filter((item) => "kind" in item && item.kind === "plain")
+      .flatMap((item) => ("lines" in item ? item.lines : []))
+      .map(stripAnsi);
+    expect(plain).toContain("⏺ Compacted: trimmed, 2k → 0k tokens");
+    expect(plain).toContain("⏺ Compacted: 0k → 1k tokens");
+  });
 });

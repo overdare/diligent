@@ -57,21 +57,24 @@ export function getCompactionDecision(
 ): CompactionDecision {
   const assistantUsageTokens = getLastAssistantContextWindowUsage(allMessages);
   const messageEstimatedTokens = estimateTokens(allMessages);
-  const estimatedTokens =
-    assistantUsageTokens !== undefined
-      ? Math.max(assistantUsageTokens, messageEstimatedTokens)
-      : messageEstimatedTokens;
+  let estimatedTokens: number;
+  if (assistantUsageTokens !== undefined) {
+    estimatedTokens = Math.max(assistantUsageTokens, messageEstimatedTokens);
+  } else {
+    estimatedTokens = messageEstimatedTokens;
+  }
   const reserveTokens = Math.floor(contextWindow * (reservePercent / 100));
   const thresholdTokens = contextWindow - reserveTokens;
+  let tokenSource: "assistant_usage" | "estimated_messages" = "estimated_messages";
+  if (assistantUsageTokens !== undefined && assistantUsageTokens >= messageEstimatedTokens) {
+    tokenSource = "assistant_usage";
+  }
   return {
     estimatedTokens,
     reserveTokens,
     thresholdTokens,
     shouldCompact: estimatedTokens > thresholdTokens,
-    source:
-      assistantUsageTokens !== undefined && assistantUsageTokens >= messageEstimatedTokens
-        ? "assistant_usage"
-        : "estimated_messages",
+    source: tokenSource,
   };
 }
 
@@ -130,6 +133,7 @@ function estimateCompactionSummaryTokens(compactionSummary?: Record<string, unkn
   return Math.ceil(JSON.stringify(compactionSummary).length / 4);
 }
 
+// biome-ignore lint/plugin/no-tiny-function: names the effective-context token formula shared by two callers
 function estimateEffectiveContextTokens(messages: Message[], compactionSummary?: Record<string, unknown>): number {
   return estimateTokens(messages) + estimateCompactionSummaryTokens(compactionSummary);
 }
@@ -193,13 +197,18 @@ export async function runCompaction(input: RunCompactionInput): Promise<RunCompa
     streamFn: input.llmMsgStreamFn,
     llmCompactionFn: input.llmCompactionFn,
   });
-  const summary =
-    result.mode === "local"
-      ? `${COMPACTION_SUMMARY_PREFIX}\n\n${result.displaySummary ?? ""}`.trim()
-      : (result.displaySummary ?? "");
-  const messages = result.compactionSummary
-    ? [...preservedMessages]
-    : [{ role: "user" as const, content: summary, timestamp: Date.now() }, ...preservedMessages];
+  let summary: string;
+  if (result.mode === "local") {
+    summary = `${COMPACTION_SUMMARY_PREFIX}\n\n${result.displaySummary ?? ""}`.trim();
+  } else {
+    summary = result.displaySummary ?? "";
+  }
+  let messages: Message[];
+  if (result.compactionSummary) {
+    messages = [...preservedMessages];
+  } else {
+    messages = [{ role: "user" as const, content: summary, timestamp: Date.now() }, ...preservedMessages];
+  }
   const tokensAfterCandidate = estimateEffectiveContextTokens(messages, result.compactionSummary);
   if (tokensAfterCandidate >= tokensBefore) {
     return {

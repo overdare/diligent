@@ -15,10 +15,10 @@ function textTask(id: string, passed: boolean): EvalTask<{ expected: string }> {
     createTools: () => [],
     createUserMessage: () => ({ role: "user", content: "respond", timestamp: Date.now() }),
     snapshotWorld: (world) => ({ ...world }),
-    evaluate: () =>
-      passed
-        ? { passed: true }
-        : { passed: false, code: "expected_failure", message: "failed", dimension: "semantic_goal" },
+    evaluate: () => {
+      if (passed) return { passed: true };
+      return { passed: false, code: "expected_failure", message: "failed", dimension: "semantic_goal" };
+    },
   };
 }
 

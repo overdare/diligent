@@ -196,10 +196,19 @@ export class ProviderError extends Error {
   ) {
     super(message);
     this.name = "ProviderError";
-    const options =
-      typeof optionsOrType === "string"
-        ? { errorType: optionsOrType, isRetryable: isRetryable ?? false, retryAfterMs, statusCode, cause, reason }
-        : optionsOrType;
+    let options: ProviderErrorOptions;
+    if (typeof optionsOrType === "string") {
+      options = {
+        errorType: optionsOrType,
+        isRetryable: isRetryable ?? false,
+        retryAfterMs,
+        statusCode,
+        cause,
+        reason,
+      };
+    } else {
+      options = optionsOrType;
+    }
     this.errorType = options.errorType;
     this.isRetryable = options.isRetryable;
     this.retryAfterMs = options.retryAfterMs;

@@ -1,5 +1,6 @@
 // @summary Factory that builds a DiligentAppServerConfig from a RuntimeConfig, eliminating Web/CLI duplication
 import { dirname, join } from "node:path";
+import type { AgentLoopHook } from "@diligent/core/agent";
 import { getModelInfoList, resolveModel } from "@diligent/core/model-registry";
 import type { ProviderName, SystemSection } from "@diligent/core/provider-contract";
 import { resolveMaxTokens } from "@diligent/core/provider-contract";
@@ -236,9 +237,14 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions, parentSystemPr
 
   const activeMode = (mode ?? "default") as Mode;
   const modeFilteredTools = filterToolsByMode(activeMode, toolsResult.tools);
-  const filteredTools = transformTools
-    ? transformTools(modeFilteredTools, { cwd, mode: activeMode, provider: model.provider as ProviderName })
-    : modeFilteredTools;
+  let filteredTools = modeFilteredTools;
+  if (transformTools) {
+    filteredTools = transformTools(modeFilteredTools, {
+      cwd,
+      mode: activeMode,
+      provider: model.provider as ProviderName,
+    });
+  }
   if (toolsResult.registry) {
     toolsResult.registry.updateDeps({
       parentSystemPrompt,
@@ -291,14 +297,19 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
   );
   const loopHookLogger = logger.child({ scope: "runtime.agent.loop-hooks" });
   const { planIntervalTurns, memoryIntervalTurns } = runtimeConfig.reminders;
-  const loopHooks = [
-    ...(request.goalHost ? [createGoalContextHook(request.goalHost)] : []),
-    ...(planIntervalTurns > 0
-      ? [createReminderHook({ intervalTurns: planIntervalTurns, policy: createPlanReminder(loopHookLogger) })]
-      : []),
-    ...(memoryIntervalTurns > 0
-      ? [createReminderHook({ intervalTurns: memoryIntervalTurns, policy: createMemoryNudge(loopHookLogger) })]
-      : []),
+  const loopHooks: AgentLoopHook[] = [];
+  if (request.goalHost) loopHooks.push(createGoalContextHook(request.goalHost));
+  if (planIntervalTurns > 0) {
+    loopHooks.push(
+      createReminderHook({ intervalTurns: planIntervalTurns, policy: createPlanReminder(loopHookLogger) }),
+    );
+  }
+  if (memoryIntervalTurns > 0) {
+    loopHooks.push(
+      createReminderHook({ intervalTurns: memoryIntervalTurns, policy: createMemoryNudge(loopHookLogger) }),
+    );
+  }
+  loopHooks.push(
     ...createBundledAgentLoopHooks(bundledToolProviders, {
       cwd,
       agentKind: "main",
@@ -307,7 +318,7 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
       sessionId: request.getSessionId?.(),
       logger: loopHookLogger,
     }),
-  ];
+  );
   return new RuntimeAgent(
     model,
     applyModeToPrompt(activeMode, withToolInstructions(promptSections, availableTools)),

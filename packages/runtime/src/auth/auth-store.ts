@@ -150,10 +150,6 @@ async function readValidatedStore(filePath: string, warnOnInvalid: boolean): Pro
   }
 }
 
-async function loadFileStore(filePath: string, warnOnInvalid: boolean): Promise<AuthKeys> {
-  return readValidatedStore(filePath, warnOnInvalid);
-}
-
 async function writeStore(filePath: string, store: AuthKeys): Promise<void> {
   await mkdir(dirname(filePath), { recursive: true });
   await Bun.write(filePath, `${JSON.stringify(store, null, 2)}\n`);
@@ -187,7 +183,7 @@ class FileAuthStorage implements AuthStorageBackend {
   constructor(private readonly filePath: string) {}
 
   load(): Promise<AuthKeys> {
-    return loadFileStore(this.filePath, true);
+    return readValidatedStore(this.filePath, true);
   }
 
   async save(store: AuthKeys): Promise<void> {
@@ -347,6 +343,7 @@ async function createAuthStorage(options?: string | AuthStoreOptions): Promise<A
   const normalized = normalizeOptions(options);
   const { path, mode } = normalized;
   const fileStorage = new FileAuthStorage(path);
+  // biome-ignore lint/plugin/no-tiny-function: one keyring factory shared by both storage strategies
   const createKeyringStorage: KeyringStorageFactory = async () => new KeyringAuthStorage(path, await loadKeytar());
 
   switch (mode) {

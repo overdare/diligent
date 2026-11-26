@@ -178,14 +178,20 @@ export const mcpPromptGroundingTask: RuntimeEvalTask<McpPromptGroundingWorld> = 
     const grade = new RuntimeGrade("mcp_prompt");
     const { world } = input;
     const fetches = input.toolCalls.filter((call) => call.name === "mcp_get_prompt");
-    const promptName = (call: (typeof fetches)[number]) => (isRecord(call.input) ? call.input.name : undefined);
     if (
       fetches.some(
-        (call) => call.outcome === "success" && world.promptNames.slice(1).includes(String(promptName(call))),
+        (call) =>
+          call.outcome === "success" &&
+          world.promptNames.slice(1).includes(String(isRecord(call.input) ? call.input.name : undefined)),
       )
     )
       return grade.fail("decoy_prompt", "A decoy workflow prompt was fetched.", "behavior");
-    if (!fetches.some((call) => call.outcome === "success" && promptName(call) === world.intendedName))
+    if (
+      !fetches.some(
+        (call) =>
+          call.outcome === "success" && (isRecord(call.input) ? call.input.name : undefined) === world.intendedName,
+      )
+    )
       return grade.fail("prompt_selection", "The current orbital workflow prompt was never fetched.", "behavior");
     if (input.verifier?.timedOut)
       return grade.fail("verifier_timeout", "The independent artifact verifier timed out.", "harness_terminal");

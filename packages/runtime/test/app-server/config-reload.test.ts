@@ -9,10 +9,6 @@ import type { ThreadRuntime } from "../../src/app-server/thread-handlers";
 import { GoalController } from "../../src/goals/controller";
 import { openGoalStore } from "../../src/goals/store";
 
-function fakeRuntime(agent: unknown): ThreadRuntime {
-  return { agent } as unknown as ThreadRuntime;
-}
-
 const dirs: string[] = [];
 afterEach(async () => {
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
@@ -78,8 +74,8 @@ describe("handleConfigReload", () => {
 
   test("returns the reloaded skills and clears every thread's cached agent", async () => {
     const threads = new Map<string, ThreadRuntime>([
-      ["t1", fakeRuntime({ id: "agent-1" })],
-      ["t2", fakeRuntime({ id: "agent-2" })],
+      ["t1", { agent: { id: "agent-1" } } as unknown as ThreadRuntime],
+      ["t2", { agent: { id: "agent-2" } } as unknown as ThreadRuntime],
     ]);
     const reloadConfig = async () => ({
       skills: [{ name: "write-plan", description: "Create implementation plans" }],

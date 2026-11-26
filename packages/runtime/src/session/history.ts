@@ -189,7 +189,10 @@ export function firstUserPreview(content: UserMessage["content"]): string | unde
     .join(" ")
     .slice(0, 100);
   const imageCount = content.filter((block) => block.type === "local_image").length;
-  return text || (imageCount > 1 ? "[images]" : imageCount === 1 ? "[image]" : undefined);
+  if (text) return text;
+  if (imageCount > 1) return "[images]";
+  if (imageCount === 1) return "[image]";
+  return undefined;
 }
 
 export type SessionPreview = Omit<SessionInfo, "messageCount"> & { messageCount?: number };
@@ -345,23 +348,24 @@ export async function readSessionHistoryPage(
       entries.push(restored);
       parentId = entry.parentId ?? null;
     }
+    let nextCursor: string | undefined;
+    if (parentId !== null && reader.offset > dataOffset) {
+      nextCursor = Buffer.from(
+        JSON.stringify({
+          version: 1,
+          threadId: header.id,
+          created: header.timestamp,
+          end,
+          before: reader.offset,
+          parentId,
+          ino: stat.ino,
+        }),
+      ).toString("base64url");
+    }
     return {
       header,
       entries: normalizePersistedEntries(entries.reverse()),
-      nextCursor:
-        parentId !== null && reader.offset > dataOffset
-          ? Buffer.from(
-              JSON.stringify({
-                version: 1,
-                threadId: header.id,
-                created: header.timestamp,
-                end,
-                before: reader.offset,
-                parentId,
-                ino: stat.ino,
-              }),
-            ).toString("base64url")
-          : undefined,
+      nextCursor,
     };
   } finally {
     await file.close();

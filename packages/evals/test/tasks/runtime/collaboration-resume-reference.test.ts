@@ -77,22 +77,22 @@ describe("collaboration-resume-reference", () => {
 
   test("fails without resume, with a reread or leaked initial value, with direct reads, or with wrong outputs", async () => {
     const baseline = await assembledExecution(DEFAULT_PROFILES[0]!);
-    const resumeSpawn = (value: Execution) =>
-      value.toolCalls.find((call) => call.name === "spawn_agent" && call.turnIndex === 1)!;
-    const followUpRead = (value: Execution) =>
-      value.toolCalls.find((call) => call.name === "read" && call.turnIndex === 1)!;
     const cases: Array<[string, string, (value: Execution) => void]> = [
       [
         "fresh spawn instead of resume",
         "collaboration_resume_reference.resume",
-        (value) => (resumeSpawn(value).input = { message: "Read references/follow-up.fact", agent_type: "explore" }),
+        (value) =>
+          (value.toolCalls.find((call) => call.name === "spawn_agent" && call.turnIndex === 1)!.input = {
+            message: "Read references/follow-up.fact",
+            agent_type: "explore",
+          }),
       ],
       [
         "initial reference reread",
         "collaboration_resume_reference.reread_initial",
         (value) =>
           value.toolCalls.push({
-            ...structuredClone(followUpRead(value)),
+            ...structuredClone(value.toolCalls.find((call) => call.name === "read" && call.turnIndex === 1)!),
             toolCallId: "reread",
             input: { file_path: `$WORKSPACE/${value.world.sourcePaths[0]}` },
           }),
@@ -100,12 +100,19 @@ describe("collaboration-resume-reference", () => {
       [
         "initial value supplied in the resume request",
         "collaboration_resume_reference.leaked_initial",
-        (value) => ((resumeSpawn(value).input as { message: string }).message += ` ${value.world.tokens[0]}`),
+        (value) =>
+          ((
+            value.toolCalls.find((call) => call.name === "spawn_agent" && call.turnIndex === 1)!.input as {
+              message: string;
+            }
+          ).message += ` ${value.world.tokens[0]}`),
       ],
       [
         "direct parent read",
         "collaboration_resume_reference.parent_read",
-        (value) => (followUpRead(value).threadId = value.session.threadId),
+        (value) =>
+          (value.toolCalls.find((call) => call.name === "read" && call.turnIndex === 1)!.threadId =
+            value.session.threadId),
       ],
       ["wrong artifact", "collaboration_resume_reference.result", (value) => (value.verifier!.exitCode = 1)],
       [
@@ -167,22 +174,33 @@ function fixtureStream(
   let parentCall = 0;
   let childCall = 0;
   const tokens = [seeded(seed, "FIRST_REFERENCE"), seeded(seed, "SECOND_REFERENCE")];
-  const callIds = assembledOptions.generatedIds
-    ? {
-        spawnInitial: "runtime-spawn-initial",
-        readInitial: "runtime-read-initial",
-        waitInitial: "runtime-wait-initial",
-        spawnFollowUp: "runtime-spawn-follow-up",
-        readFollowUp: "runtime-read-follow-up",
-        waitFollowUp: "runtime-wait-follow-up",
-        write: "runtime-write-reference",
-      }
-    : CALL_IDS;
+  let callIds: Record<keyof typeof CALL_IDS, string>;
+  if (assembledOptions.generatedIds) {
+    callIds = {
+      spawnInitial: "runtime-spawn-initial",
+      readInitial: "runtime-read-initial",
+      waitInitial: "runtime-wait-initial",
+      spawnFollowUp: "runtime-spawn-follow-up",
+      readFollowUp: "runtime-read-follow-up",
+      waitFollowUp: "runtime-wait-follow-up",
+      write: "runtime-write-reference",
+    };
+  } else {
+    callIds = CALL_IDS;
+  }
   return (model, context, options) => {
-    const response = context.systemPrompt.some((section) => section.label === "agent_role")
-      ? childResponse(++childCall, context, tokens, callIds, assembledOptions)
-      : parentResponse(++parentCall, profile, context, tokens, callIds, assembledOptions);
-    return sequenceStream([response])(model, context, options);
+    if (context.systemPrompt.some((section) => section.label === "agent_role")) {
+      return sequenceStream([childResponse(++childCall, context, tokens, callIds, assembledOptions)])(
+        model,
+        context,
+        options,
+      );
+    }
+    return sequenceStream([parentResponse(++parentCall, profile, context, tokens, callIds, assembledOptions)])(
+      model,
+      context,
+      options,
+    );
   };
 }
 
@@ -195,55 +213,71 @@ function childResponse(
 ) {
   if (call === 1 || call === 3) {
     const index = call === 1 ? 0 : 1;
+    let thinkingBlocks: { type: "thinking"; thinking: string }[];
+    if (assembledOptions.includeProviderProgress) {
+      thinkingBlocks = [{ type: "thinking" as const, thinking: "I will perform the one requested read." }];
+    } else {
+      thinkingBlocks = [];
+    }
+    if (assembledOptions.childExec) {
+      return assistantMessage(
+        [
+          ...thinkingBlocks,
+          {
+            type: "tool_call" as const,
+            id: index === 0 ? callIds.readInitial : callIds.readFollowUp,
+            name: "exec",
+            input: {
+              code: `return await tools.read({ file_path: ${JSON.stringify(join(cwdFromContext(context, "runtime_context"), index === 0 ? "references/initial.fact" : "references/follow-up.fact"))} });`,
+            },
+          },
+        ],
+        "tool_use",
+      );
+    }
     return assistantMessage(
       [
-        ...(assembledOptions.includeProviderProgress
-          ? [{ type: "thinking" as const, thinking: "I will perform the one requested read." }]
-          : []),
-        assembledOptions.childExec
-          ? {
-              type: "tool_call" as const,
-              id: index === 0 ? callIds.readInitial : callIds.readFollowUp,
-              name: "exec",
-              input: {
-                code: `return await tools.read({ file_path: ${JSON.stringify(join(cwdFromContext(context, "runtime_context"), index === 0 ? "references/initial.fact" : "references/follow-up.fact"))} });`,
-              },
-            }
-          : {
-              type: "tool_call" as const,
-              id: index === 0 ? callIds.readInitial : callIds.readFollowUp,
-              name: "read",
-              input: {
-                file_path: join(
-                  cwdFromContext(context, "runtime_context"),
-                  index === 0 ? "references/initial.fact" : "references/follow-up.fact",
-                ),
-                ...(assembledOptions.explicitReadDefaults ? { offset: 1, limit: 2000 } : {}),
-              },
-            },
+        ...thinkingBlocks,
+        {
+          type: "tool_call" as const,
+          id: index === 0 ? callIds.readInitial : callIds.readFollowUp,
+          name: "read",
+          input: {
+            file_path: join(
+              cwdFromContext(context, "runtime_context"),
+              index === 0 ? "references/initial.fact" : "references/follow-up.fact",
+            ),
+            ...(assembledOptions.explicitReadDefaults ? { offset: 1, limit: 2000 } : {}),
+          },
+        },
       ],
       "tool_use",
     );
   }
   const token = tokens[call === 2 ? 0 : 1]!;
+  let items2: { type: "thinking"; thinking: string }[];
+  if (assembledOptions.includeProviderProgress) {
+    items2 = [{ type: "thinking" as const, thinking: "The requested value is ready." }];
+  } else {
+    items2 = [];
+  }
+  let reportText: string;
+  if (assembledOptions.deferredCombinedChildReport && call === 2) {
+    reportText = "Completed the single requested read.";
+  } else if (assembledOptions.deferredCombinedChildReport && call === 4) {
+    reportText = `${tokens[0]}  \n${tokens[1]}`;
+  } else if (assembledOptions.verboseInitialChildReport && call === 2) {
+    reportText = `Completed. Contents:\n\n\`\`\`text\n${token}\n\`\`\``;
+  } else if (assembledOptions.inlineInitialChildReport && call === 2) {
+    reportText = `\`${token}\``;
+  } else {
+    reportText = assembledOptions.trailingChildReport ? `${token}\n` : token;
+  }
   return assistantMessage([
-    ...(assembledOptions.includeProviderProgress
-      ? [{ type: "thinking" as const, thinking: "The requested value is ready." }]
-      : []),
+    ...items2,
     {
       type: "text",
-      text:
-        assembledOptions.deferredCombinedChildReport && call === 2
-          ? "Completed the single requested read."
-          : assembledOptions.deferredCombinedChildReport && call === 4
-            ? `${tokens[0]}  \n${tokens[1]}`
-            : assembledOptions.verboseInitialChildReport && call === 2
-              ? `Completed. Contents:\n\n\`\`\`text\n${token}\n\`\`\``
-              : assembledOptions.inlineInitialChildReport && call === 2
-                ? `\`${token}\``
-                : assembledOptions.trailingChildReport
-                  ? `${token}\n`
-                  : token,
+      text: reportText,
     },
   ]);
 }
@@ -258,36 +292,45 @@ function parentResponse(
 ) {
   if (call === 1 || call === 4) {
     const resume = call === 4;
+    let progressBlocks: { type: "text"; text: string }[];
+    if (assembledOptions.includeProviderProgress) {
+      progressBlocks = [
+        {
+          type: "text" as const,
+          text: resume ? "I will resume the prior specialist." : "I will delegate the lookup.",
+        },
+      ];
+    } else {
+      progressBlocks = [];
+    }
+    let spawnMessage: string;
+    if (assembledOptions.semanticSpawnInputs && resume) {
+      spawnMessage =
+        "Continue the restored session. Read references/follow-up.fact once and return that file's exact contents alone; do not read references/initial.fact again.";
+    } else if (assembledOptions.semanticSpawnInputs) {
+      spawnMessage = "Retrieve the exact contents of references/initial.fact with one read and return the value alone.";
+    } else if (resume) {
+      spawnMessage =
+        "Continue the prior assignment by reading only references/follow-up.fact exactly once. Return only its exact token, without commentary or a trailing newline. Do not reread the initial reference.";
+    } else {
+      spawnMessage =
+        "Read only references/initial.fact exactly once. Return only its exact token, without commentary or a trailing newline. Do not inspect any other reference.";
+    }
     return assistantMessage(
       [
-        ...(assembledOptions.includeProviderProgress
-          ? [
-              {
-                type: "text" as const,
-                text: resume ? "I will resume the prior specialist." : "I will delegate the lookup.",
-              },
-            ]
-          : []),
+        ...progressBlocks,
         {
           type: "tool_call",
           id: resume ? callIds.spawnFollowUp : callIds.spawnInitial,
           name: "spawn_agent",
           input: {
-            message: assembledOptions.semanticSpawnInputs
-              ? resume
-                ? "Continue the restored session. Read references/follow-up.fact once and return that file's exact contents alone; do not read references/initial.fact again."
-                : "Retrieve the exact contents of references/initial.fact with one read and return the value alone."
-              : resume
-                ? "Continue the prior assignment by reading only references/follow-up.fact exactly once. Return only its exact token, without commentary or a trailing newline. Do not reread the initial reference."
-                : "Read only references/initial.fact exactly once. Return only its exact token, without commentary or a trailing newline. Do not inspect any other reference.",
+            message: spawnMessage,
             ...(!resume || !assembledOptions.omitResumeAgentType ? { agent_type: "explore" } : {}),
             ...(resume ? { resume_id: spawnedThreadId(context) } : {}),
-            ...(!assembledOptions.omitSpawnOptionalDefaults
-              ? {
-                  description: "Retrieve the private reference",
-                  allow_nested_agents: false,
-                }
-              : {}),
+            ...(!assembledOptions.omitSpawnOptionalDefaults && {
+              description: "Retrieve the private reference",
+              allow_nested_agents: false,
+            }),
           },
         },
       ],
@@ -306,13 +349,15 @@ function parentResponse(
       ],
       "tool_use",
     );
-  if (call === 3)
-    return assistantMessage([
-      ...(assembledOptions.includeProviderProgress
-        ? [{ type: "thinking" as const, thinking: "I should acknowledge without revealing the value." }]
-        : []),
-      { type: "text", text: "REFERENCE_ACK" },
-    ]);
+  if (call === 3) {
+    let thinkingBlocks: { type: "thinking"; thinking: string }[];
+    if (assembledOptions.includeProviderProgress) {
+      thinkingBlocks = [{ type: "thinking" as const, thinking: "I should acknowledge without revealing the value." }];
+    } else {
+      thinkingBlocks = [];
+    }
+    return assistantMessage([...thinkingBlocks, { type: "text", text: "REFERENCE_ACK" }]);
+  }
   if (call === 6 && assembledOptions.anthropicWriteRecovery)
     return assistantMessage(
       [
@@ -329,34 +374,41 @@ function parentResponse(
       ],
       "tool_use",
     );
-  if (call === 6 || (call === 7 && assembledOptions.anthropicWriteRecovery))
+  if (call === 6 || (call === 7 && assembledOptions.anthropicWriteRecovery)) {
+    let input:
+      | { replace_all?: boolean | undefined; file_path: string; old_string: string; new_string: string }
+      | { patch: string };
+    if (profile.provider === "anthropic") {
+      input = {
+        file_path: join(cwdFromContext(context, "base"), "collaboration-resume-reference.txt"),
+        old_string: "",
+        new_string: `${tokens[0]}\n${tokens[1]}\n`,
+        ...(!assembledOptions.omitEditReplaceAll ? { replace_all: false } : {}),
+      };
+    } else {
+      input = {
+        patch: `*** Begin Patch\n*** Add File: collaboration-resume-reference.txt\n+${tokens[0]}\n+${tokens[1]}\n*** End Patch${assembledOptions.trailingPatchNewline ? "\n" : ""}`,
+      };
+    }
     return assistantMessage(
       [
         {
           type: "tool_call",
           id: callIds.write,
           name: profile.provider === "anthropic" ? "edit" : "apply_patch",
-          input:
-            profile.provider === "anthropic"
-              ? {
-                  file_path: join(cwdFromContext(context, "base"), "collaboration-resume-reference.txt"),
-                  old_string: "",
-                  new_string: `${tokens[0]}\n${tokens[1]}\n`,
-                  ...(!assembledOptions.omitEditReplaceAll ? { replace_all: false } : {}),
-                }
-              : {
-                  patch: `*** Begin Patch\n*** Add File: collaboration-resume-reference.txt\n+${tokens[0]}\n+${tokens[1]}\n*** End Patch${assembledOptions.trailingPatchNewline ? "\n" : ""}`,
-                },
+          input,
         },
       ],
       "tool_use",
     );
-  return assistantMessage([
-    ...(assembledOptions.includeProviderProgress
-      ? [{ type: "thinking" as const, thinking: "The ordered artifact is complete." }]
-      : []),
-    { type: "text", text: "REFERENCE_PAIR_RECORDED" },
-  ]);
+  }
+  let items3: { type: "thinking"; thinking: string }[];
+  if (assembledOptions.includeProviderProgress) {
+    items3 = [{ type: "thinking" as const, thinking: "The ordered artifact is complete." }];
+  } else {
+    items3 = [];
+  }
+  return assistantMessage([...items3, { type: "text", text: "REFERENCE_PAIR_RECORDED" }]);
 }
 
 function cwdFromContext(context: StreamContext, label: "base" | "runtime_context") {

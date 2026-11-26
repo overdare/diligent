@@ -8,10 +8,6 @@ interface SessionListProps {
   loading: boolean;
 }
 
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleString();
-}
-
 function truncatePreview(text: string, max = 96): string {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (normalized.length <= max) return normalized;
@@ -41,7 +37,7 @@ export function SessionList({ sessions, selectedId, onSelect, loading }: Session
             <div className="session-preview">{truncatePreview(session.firstUserMessage)}</div>
           )}
           <div className="session-meta">
-            <span className="session-time">{formatTime(session.lastActivity)}</span>
+            <span className="session-time">{new Date(session.lastActivity).toLocaleString()}</span>
             <span className="session-counts">
               {session.messageCount} msgs, {session.toolCallCount} tools
             </span>

@@ -259,15 +259,16 @@ describe("AgentRegistry", () => {
           onChildStop: (async (info: Record<string, unknown>) => {
             stopCalls += 1;
             stopInfo = info;
-            return stopCalls === 1
-              ? {
-                  continueWith: {
-                    role: "user",
-                    content: "legacy child Stop feedback must be ignored",
-                    timestamp: Date.now(),
-                  },
-                }
-              : undefined;
+            if (stopCalls === 1) {
+              return {
+                continueWith: {
+                  role: "user",
+                  content: "legacy child Stop feedback must be ignored",
+                  timestamp: Date.now(),
+                },
+              };
+            }
+            return undefined;
           }) as never,
         }),
       );

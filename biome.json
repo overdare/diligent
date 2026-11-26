@@ -24,6 +24,13 @@
       "enabled": false
     }
   },
+  "plugins": [
+    "./scripts/lint/no-multiline-ternary.grit",
+    {
+      "path": "./scripts/lint/no-tiny-function.grit",
+      "includes": ["**", "!**/test/**", "!**/*.test.ts", "!**/*.test.tsx", "!packages/e2e/**"]
+    }
+  ],
   "linter": {
     "enabled": true,
     "rules": {
@@ -39,7 +46,8 @@
       "style": {
         "noNonNullAssertion": "off",
         "useNodejsImportProtocol": "off",
-        "noParameterAssign": "off"
+        "noParameterAssign": "off",
+        "noNestedTernary": "error"
       },
       "suspicious": {
         "noExplicitAny": "warn",

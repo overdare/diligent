@@ -83,6 +83,7 @@ export function applyCodeMode(tools: Tool[], options: CodeModeAssemblyOptions): 
     if (canYieldBash || !tools.some(isYieldingBash)) return tools;
     return tools.map((tool) => (isYieldingBash(tool) ? restrictBash(tool, "foreground") : tool));
   }
+  // biome-ignore lint/plugin/no-tiny-function: several filters must agree on which tools are nested
   const isNested = (tool: Tool) => !tool.modelExposure && !TOOL_CAPABILITIES[tool.name]?.codeModeDirect;
   const nestedTools = tools
     .filter(isNested)

@@ -27,17 +27,14 @@ export async function discoverAgents(options: AgentDiscoveryOptions): Promise<Ag
   return { agents, errors };
 }
 
-function resolveGlobalConfigDir(): string {
-  return join(process.env.HOME ?? process.env.USERPROFILE ?? homedir(), resolveProjectDirName());
-}
-
 function getDiscoveryRoots(options: AgentDiscoveryOptions): Array<{ dir: string; source: AgentMetadata["source"] }> {
   const roots: Array<{ dir: string; source: AgentMetadata["source"] }> = [];
   roots.push({ dir: join(options.cwd, resolveProjectDirName(), "agents"), source: "project" });
   for (const path of options.additionalPaths ?? []) {
     roots.push({ dir: path, source: "config" });
   }
-  const globalDir = options.globalConfigDir ?? resolveGlobalConfigDir();
+  const globalDir =
+    options.globalConfigDir ?? join(process.env.HOME ?? process.env.USERPROFILE ?? homedir(), resolveProjectDirName());
   roots.push({ dir: join(globalDir, "agents"), source: "global" });
   return roots;
 }

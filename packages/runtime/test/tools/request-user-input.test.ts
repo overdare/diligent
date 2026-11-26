@@ -2,7 +2,6 @@
 import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import type { ToolContext } from "@diligent/core/tool-contract";
 import { createRequestUserInputTool } from "../../src/tools/request-user-input";
-import type { UserInputRequest, UserInputResponse } from "../../src/tools/user-input-types";
 
 function makeCtx(): ToolContext & { abortCalled: boolean } {
   const ctx = {
@@ -34,7 +33,7 @@ describe("createRequestUserInputTool", () => {
   });
 
   it("formats single question answer with header prefix", async () => {
-    const tool = createRequestUserInputTool(asyncHost(async () => ({ answers: { q1: "Yes" } })));
+    const tool = createRequestUserInputTool({ ask: async () => ({ answers: { q1: "Yes" } }) });
     const result = await tool.execute(
       { questions: [{ id: "q1", header: "confirm", question: "Continue?", options: YES_NO_OPTIONS }] },
       makeCtx(),
@@ -43,7 +42,7 @@ describe("createRequestUserInputTool", () => {
   });
 
   it("formats multiple questions with double newline separator", async () => {
-    const tool = createRequestUserInputTool(asyncHost(async () => ({ answers: { q1: "Fix in place", q2: "Yes" } })));
+    const tool = createRequestUserInputTool({ ask: async () => ({ answers: { q1: "Fix in place", q2: "Yes" } }) });
     const result = await tool.execute(
       {
         questions: [
@@ -70,7 +69,7 @@ describe("createRequestUserInputTool", () => {
   });
 
   it("calls ctx.abort() when question answer is missing", async () => {
-    const tool = createRequestUserInputTool(asyncHost(async () => ({ answers: {} })));
+    const tool = createRequestUserInputTool({ ask: async () => ({ answers: {} }) });
     const ctx = makeCtx();
     const result = await tool.execute(
       { questions: [{ id: "q1", header: "info", question: "Any thoughts?", options: YES_NO_OPTIONS }] },
@@ -81,7 +80,7 @@ describe("createRequestUserInputTool", () => {
   });
 
   it("calls ctx.abort() when question answer is blank", async () => {
-    const tool = createRequestUserInputTool(asyncHost(async () => ({ answers: { q1: "   " } })));
+    const tool = createRequestUserInputTool({ ask: async () => ({ answers: { q1: "   " } }) });
     const ctx = makeCtx();
     const result = await tool.execute(
       { questions: [{ id: "q1", header: "info", question: "Any thoughts?", options: YES_NO_OPTIONS }] },
@@ -92,7 +91,7 @@ describe("createRequestUserInputTool", () => {
   });
 
   it("formats multi-select answers by joining selected values", async () => {
-    const tool = createRequestUserInputTool(asyncHost(async () => ({ answers: { q1: ["A", "C"] } })));
+    const tool = createRequestUserInputTool({ ask: async () => ({ answers: { q1: ["A", "C"] } }) });
     const result = await tool.execute(
       {
         questions: [
@@ -115,7 +114,7 @@ describe("createRequestUserInputTool", () => {
   });
 
   it("calls ctx.abort() when multi-select answer is empty", async () => {
-    const tool = createRequestUserInputTool(asyncHost(async () => ({ answers: { q1: [] } })));
+    const tool = createRequestUserInputTool({ ask: async () => ({ answers: { q1: [] } }) });
     const ctx = makeCtx();
     const result = await tool.execute(
       {
@@ -161,7 +160,3 @@ describe("createRequestUserInputTool", () => {
     expect(parsed.success).toBe(false);
   });
 });
-
-function asyncHost(ask: (req: UserInputRequest) => Promise<UserInputResponse>) {
-  return { ask };
-}

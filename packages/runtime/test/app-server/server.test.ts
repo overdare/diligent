@@ -283,15 +283,13 @@ it("another completed send cannot release a peer whose timed-out send is still p
   const b = new Promise<void>((resolve) => {
     releaseB = resolve;
   });
-  connection.setNotificationListener((n) =>
-    n.method === "thread/goal/updated"
-      ? n.params.sequence === 1
-        ? a
-        : n.params.sequence === 2
-          ? b
-          : undefined
-      : undefined,
-  );
+  connection.setNotificationListener((n) => {
+    if (n.method === "thread/goal/updated") {
+      if (n.params.sequence === 1) return a;
+      return n.params.sequence === 2 ? b : undefined;
+    }
+    return undefined;
+  });
   const timeouts: Array<() => void> = [];
   const realTimeout = globalThis.setTimeout;
   const timer = spyOn(globalThis, "setTimeout").mockImplementation((callback) => {
@@ -470,9 +468,12 @@ function connectTestPeer(server: DiligentAppServer, connectionId = TEST_CONNECTI
         params: message.params,
       } as DiligentServerRequest;
 
-      const response = serverRequestHandler
-        ? await serverRequestHandler(request)
-        : defaultServerRequestResponse(message.method);
+      let response: DiligentServerRequestResponse;
+      if (serverRequestHandler) {
+        response = await serverRequestHandler(request);
+      } else {
+        response = defaultServerRequestResponse(message.method);
+      }
       await serverMessageListener?.({ id: message.id, result: response.result });
     },
     onMessage(listener) {
@@ -517,15 +518,18 @@ function makeFactoryRuntimeConfig(overrides?: {
   const providerManager = new ProviderManager({});
   providerManager.setApiKey("anthropic", "test-key");
   providerManager.setApiKey("openai", "test-key");
-  const model: Model = overrides?.model
-    ? resolveModel(overrides.model)
-    : {
-        modelId: TEST_ANTHROPIC_MODEL_ID,
-        provider: "anthropic",
-        contextWindow: 200_000,
-        maxOutputTokens: 128_000,
-        supportsThinking: true,
-      };
+  let model: Model;
+  if (overrides?.model) {
+    model = resolveModel(overrides.model);
+  } else {
+    model = {
+      modelId: TEST_ANTHROPIC_MODEL_ID,
+      provider: "anthropic",
+      contextWindow: 200_000,
+      maxOutputTokens: 128_000,
+      supportsThinking: true,
+    };
+  }
 
   return {
     model,

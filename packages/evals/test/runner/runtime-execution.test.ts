@@ -3,7 +3,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { AssistantMessage, Message } from "@diligent/core/message-contract";
 import type { StreamContext, StreamFunction } from "@diligent/core/provider-contract";
@@ -635,26 +635,28 @@ describe("runRuntimeEvalExecution", () => {
       profile: { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
       streamFunction: (() => {
         let call = 0;
-        return (model, context, options) =>
-          sequenceStream([
-            call++ === 0
-              ? assistantMessage(
-                  [
-                    {
-                      type: "tool_call",
-                      id: "unexpected-write",
-                      name: "edit",
-                      input: {
-                        file_path: join(fixtureRoot, "PROTECTED.txt"),
-                        old_string: "original\n",
-                        new_string: "wrong\n",
-                      },
+        return (model, context, options) => {
+          if (call++ === 0) {
+            return sequenceStream([
+              assistantMessage(
+                [
+                  {
+                    type: "tool_call",
+                    id: "unexpected-write",
+                    name: "edit",
+                    input: {
+                      file_path: join(fixtureRoot, "PROTECTED.txt"),
+                      old_string: "original\n",
+                      new_string: "wrong\n",
                     },
-                  ],
-                  "tool_use",
-                )
-              : assistantMessage([{ type: "text", text: "Done." }]),
-          ])(model, context, options);
+                  },
+                ],
+                "tool_use",
+              ),
+            ])(model, context, options);
+          }
+          return sequenceStream([assistantMessage([{ type: "text", text: "Done." }])])(model, context, options);
+        };
       })(),
     });
 
@@ -1130,22 +1132,24 @@ describe("runRuntimeEvalExecution", () => {
       profile: { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
       streamFunction: (() => {
         let call = 0;
-        return (model, context, options) =>
-          sequenceStream([
-            call++ === 0
-              ? assistantMessage(
-                  [
-                    {
-                      type: "tool_call",
-                      id: "write-1",
-                      name: "edit",
-                      input: { file_path: `${nestedCwd}/RESULT.txt`, old_string: "old\n", new_string: "nested\n" },
-                    },
-                  ],
-                  "tool_use",
-                )
-              : assistantMessage([{ type: "text", text: "done" }]),
-          ])(model, context, options);
+        return (model, context, options) => {
+          if (call++ === 0) {
+            return sequenceStream([
+              assistantMessage(
+                [
+                  {
+                    type: "tool_call",
+                    id: "write-1",
+                    name: "edit",
+                    input: { file_path: `${nestedCwd}/RESULT.txt`, old_string: "old\n", new_string: "nested\n" },
+                  },
+                ],
+                "tool_use",
+              ),
+            ])(model, context, options);
+          }
+          return sequenceStream([assistantMessage([{ type: "text", text: "done" }])])(model, context, options);
+        };
       })(),
     });
 
@@ -1610,6 +1614,221 @@ describe("runRuntimeEvalExecution", () => {
     expect(result.passed).toBe(false);
     expect(result.failures.some((failure) => failure.code === "budget_exceeded.turn_limit")).toBe(true);
     expect(providerCalls).toBe(hard.maxTurns);
+  });
+
+  test("terminates with tool_call_limit when one turn exceeds the hard tool-call budget", async () => {
+    const limits = { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 3, maxToolCalls: 1, timeoutMs: 5_000 };
+    const hard = resolveEvalHardLimits(limits);
+    const calls = Array.from({ length: hard.maxToolCalls + 1 }, (_, index) => ({
+      type: "tool_call" as const,
+      id: `read-${index + 1}`,
+      name: "read",
+      input: { file_path: "value.txt" },
+    }));
+    const task: RuntimeEvalTask<RuntimeFixtureWorld> = {
+      id: "runtime-tool-call-limit",
+      description: "tool call limit",
+      fixtureVersion: "tool-call-limit-v0",
+      limits,
+      toolPolicy: { allowedCapabilities: ["read"], allowedCommands: [] },
+      async setup(seed, root) {
+        await writeFixture(root, { "value.txt": "value\n" });
+        return { root, seed, expected: "", protectedPaths: ["value.txt"], allowedChanges: [] };
+      },
+      createRuntimeConfig: createFixtureRuntimeConfig,
+      createSteps: () => [{ kind: "turn", message: "read" }],
+      snapshotWorld: async () => ({}),
+      evaluate: () => ({ passed: true }),
+    };
+    const result = await runRuntimeEvalExecution({
+      task,
+      seed: "seed",
+      profile: { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
+      streamFunction: sequenceStream([
+        assistantMessage(calls, "tool_use"),
+        assistantMessage([{ type: "text", text: "Done." }]),
+      ]),
+    });
+
+    expect(result.execution.termination).toBe("tool_call_limit");
+    const budgetFailure = result.failures.find((failure) => failure.code === "budget_exceeded.tool_call_limit");
+    expect(budgetFailure?.message).toBe(
+      `Tool-call count exceeded runaway limit ${hard.maxToolCalls} (target ${limits.maxToolCalls}).`,
+    );
+    expect(result.failures.some((failure) => failure.code === "budget_exceeded.turn_limit")).toBe(false);
+  });
+
+  test.each([
+    {
+      reason: "changed_files",
+      limits: { maxChangedFiles: 1, maxChangedBytes: 10_000 },
+      files: ["a.txt", "b.txt"],
+      message: "Changed-file count exceeded 1.",
+    },
+    {
+      reason: "changed_bytes",
+      limits: { maxChangedFiles: 10, maxChangedBytes: 3 },
+      files: ["a.txt"],
+      message: "Changed-byte count exceeded 3.",
+    },
+  ])("terminates as workspace_limit with a $reason budget failure", async ({ reason, limits, files, message }) => {
+    const task: RuntimeEvalTask<RuntimeFixtureWorld> = {
+      id: `runtime-${reason}`,
+      description: reason,
+      fixtureVersion: `${reason}-v0`,
+      limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 3, maxToolCalls: 5, timeoutMs: 5_000, ...limits },
+      toolPolicy: { allowedCapabilities: ["write"], allowedCommands: [] },
+      async setup(seed, root) {
+        return { root, seed, expected: "", protectedPaths: [], allowedChanges: [] };
+      },
+      createRuntimeConfig: createFixtureRuntimeConfig,
+      createSteps: () => [
+        { kind: "turn", message: "write" },
+        { kind: "turn", message: "never sent" },
+      ],
+      snapshotWorld: async () => ({}),
+      evaluate: () => ({ passed: true }),
+    };
+    let providerCalls = 0;
+    let scripted: StreamFunction | undefined;
+    const result = await runRuntimeEvalExecution({
+      task,
+      seed: "seed",
+      profile: { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
+      streamFunction: (model, context, options) => {
+        providerCalls += 1;
+        const cwd = cwdFromContext(context);
+        scripted ??= sequenceStream([
+          assistantMessage(
+            files.map((file) => ({
+              type: "tool_call" as const,
+              id: `edit-${file}`,
+              name: "edit",
+              input: { file_path: join(cwd, file), old_string: "", new_string: "0123456789\n", replace_all: false },
+            })),
+            "tool_use",
+          ),
+          assistantMessage([{ type: "text", text: "Done." }]),
+          assistantMessage([{ type: "text", text: "Second turn." }]),
+        ]);
+        return scripted(model, context, options);
+      },
+    });
+
+    expect(result.execution.termination).toBe("workspace_limit");
+    expect(result.execution.turns).toHaveLength(1);
+    expect(providerCalls).toBe(2);
+    const budgetFailures = result.failures.filter((failure) => failure.category === "budget_exceeded");
+    expect(budgetFailures.find((failure) => failure.code === `budget_exceeded.${reason}`)?.message).toBe(message);
+  });
+
+  test("records an interrupted turn when a protocol action interrupts a running provider call", async () => {
+    const task: RuntimeEvalTask<RuntimeFixtureWorld> = {
+      id: "runtime-interrupt-action",
+      description: "interrupt action",
+      fixtureVersion: "interrupt-action-v0",
+      limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 3, maxToolCalls: 2, timeoutMs: 5_000 },
+      toolPolicy: { allowedCapabilities: ["read"], allowedCommands: [] },
+      async setup(seed, root) {
+        await writeFixture(root, { "value.txt": "value\n" });
+        return { root, seed, expected: "", protectedPaths: ["value.txt"], allowedChanges: [] };
+      },
+      createRuntimeConfig: createFixtureRuntimeConfig,
+      createSteps: () => [
+        {
+          kind: "turn",
+          message: "read",
+          actions: [
+            {
+              id: "interrupt-after-read",
+              timeoutMs: 1_000,
+              trigger: { source: "runtime_event", eventType: "tool_end", toolName: "read", occurrence: 1 },
+              request: { method: "turn/interrupt", params: {} },
+            },
+          ],
+        },
+      ],
+      snapshotWorld: async () => ({}),
+      evaluate: () => ({ passed: true }),
+    };
+    let providerCall = 0;
+    const first = sequenceStream([
+      assistantMessage(
+        [{ type: "tool_call", id: "read-1", name: "read", input: { file_path: "value.txt" } }],
+        "tool_use",
+      ),
+    ]);
+    const hanging = hangingStream();
+    const result = await runRuntimeEvalExecution({
+      task,
+      seed: "seed",
+      profile: { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
+      streamFunction: (...args) => {
+        providerCall += 1;
+        if (providerCall === 1) return first(...args);
+        return hanging(...args);
+      },
+    });
+
+    expect(result.execution.turns.map((turn) => turn.termination)).toEqual(["interrupted"]);
+    expect(result.execution.threadReads.filter((read) => read.phase === "after_turn")).toEqual([]);
+    expect(result.failures.map((failure) => failure.code)).toContain("runtime_contract.turn_interrupted");
+  });
+
+  test("falls back to the initial snapshot when final capture fails after a runner error", async () => {
+    const task: RuntimeEvalTask<RuntimeFixtureWorld> = {
+      id: "runtime-final-capture-failure",
+      description: "final capture failure",
+      fixtureVersion: "final-capture-failure-v0",
+      limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 1, maxToolCalls: 0, timeoutMs: 5_000 },
+      toolPolicy: { allowedCapabilities: [], allowedCommands: [] },
+      async setup(_seed, root) {
+        await rm(root, { recursive: true, force: true });
+        throw new Error("runner_error.setup_failed: fixture vanished");
+      },
+      createRuntimeConfig: createFixtureRuntimeConfig,
+      createSteps: () => [],
+      snapshotWorld: async () => ({}),
+      evaluate: () => ({ passed: true }),
+    };
+    const result = await runRuntimeEvalExecution({
+      task,
+      seed: "seed",
+      profile: { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
+      streamFunction: hangingStream(),
+    });
+
+    expect(result.execution.termination).toBe("runner_error");
+    expect(result.failures[0]?.code).toBe("runner_error.setup_failed");
+    expect(result.execution.workspace.final).toEqual({ entries: [] });
+    expect(result.failures.map((failure) => failure.code)).toContain("runner_error.evidence_collection_failed");
+  });
+
+  test("uses the empty initial snapshot without capture when the fixture root was never created", async () => {
+    const task: RuntimeEvalTask<RuntimeFixtureWorld> = {
+      id: "missing-parent/runtime-root-creation-failure",
+      description: "root creation failure",
+      fixtureVersion: "root-creation-failure-v0",
+      limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 1, maxToolCalls: 0, timeoutMs: 5_000 },
+      toolPolicy: { allowedCapabilities: [], allowedCommands: [] },
+      async setup(seed, root) {
+        return { root, seed, expected: "", protectedPaths: [], allowedChanges: [] };
+      },
+      createRuntimeConfig: createFixtureRuntimeConfig,
+      createSteps: () => [],
+      snapshotWorld: async () => ({}),
+      evaluate: () => ({ passed: true }),
+    };
+    const result = await runRuntimeEvalExecution({
+      task,
+      seed: "seed",
+      profile: { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
+      streamFunction: hangingStream(),
+    });
+
+    expect(result.execution.termination).toBe("runner_error");
+    expect(result.execution.workspace.final).toEqual({ entries: [] });
+    expect(result.failures.map((failure) => failure.code)).not.toContain("runner_error.evidence_collection_failed");
   });
 
   test("captures initial and post-tool provider context with session, prompt, and tool evidence", async () => {
@@ -2120,18 +2339,20 @@ function imagePairStream(expected: string): StreamFunction {
     const results = context.messages.filter((message) => message.role === "tool_result") as Array<
       Message & { role: "tool_result"; toolName: string }
     >;
-    const response =
-      results.length === 0
-        ? assistantMessage(
-            [{ type: "tool_call", id: "image-a", name: "read_image", input: { file_path: paths[0] } }],
-            "tool_use",
-          )
-        : results.length === 1
-          ? assistantMessage(
-              [{ type: "tool_call", id: "image-b", name: "read_image", input: { file_path: paths[1] } }],
-              "tool_use",
-            )
-          : assistantMessage([{ type: "text", text: expected }]);
+    let response: AssistantMessage;
+    if (results.length === 0) {
+      response = assistantMessage(
+        [{ type: "tool_call", id: "image-a", name: "read_image", input: { file_path: paths[0] } }],
+        "tool_use",
+      );
+    } else if (results.length === 1) {
+      response = assistantMessage(
+        [{ type: "tool_call", id: "image-b", name: "read_image", input: { file_path: paths[1] } }],
+        "tool_use",
+      );
+    } else {
+      response = assistantMessage([{ type: "text", text: expected }]);
+    }
     return sequenceStream([response])(model, context, options);
   };
 }

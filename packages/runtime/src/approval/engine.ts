@@ -48,12 +48,14 @@ export function createPermissionEngine(configRules: PermissionRule[]): Permissio
 
   function findMatchingRule(request: ApprovalRequest): PermissionRule | undefined {
     const subject = extractSubject(request);
+    // biome-ignore lint/plugin/no-tiny-function: one predicate applied to both session and config rules
     const matches = (rule: PermissionRule) =>
       rule.permission === request.permission && wildcardMatch(rule.pattern, subject);
     // Last match wins within each list, and session rules take precedence (D027).
     return sessionRules.findLast(matches) ?? configRules.findLast(matches);
   }
 
+  // biome-ignore lint/plugin/no-tiny-function: implements the ApprovalEngine.evaluate contract
   function evaluate(request: ApprovalRequest): PermissionAction {
     return findMatchingRule(request)?.action ?? "prompt";
   }

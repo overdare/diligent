@@ -79,10 +79,6 @@ function occurrenceLines(haystack: string, needle: string): number[] {
   return lines;
 }
 
-function leadingWhitespace(line: string): string {
-  return line.slice(0, line.length - line.trimStart().length);
-}
-
 /**
  * Line-level fallback after an exact substring miss. Accepts only a unique match; when the match ignored
  * indentation, shifts the replacement by the indentation difference of the first matched line.
@@ -102,8 +98,8 @@ function applyTolerantEdit(content: string, oldString: string, newString: string
   }
 
   let replacement = replacementText === "" ? [] : replacementText.split("\n");
-  const fileIndent = leadingWhitespace(lines[match.index]);
-  const oldIndent = leadingWhitespace(pattern[0]);
+  const fileIndent = lines[match.index].slice(0, lines[match.index].length - lines[match.index].trimStart().length);
+  const oldIndent = pattern[0].slice(0, pattern[0].length - pattern[0].trimStart().length);
   if (match.pass.label.startsWith("ignoring indentation") && fileIndent !== oldIndent) {
     replacement = replacement.map((line) =>
       line !== "" && line.startsWith(oldIndent) ? fileIndent + line.slice(oldIndent.length) : line,
@@ -130,6 +126,7 @@ class EditFailure extends Error {
  */
 function applyEdits(content: string, edits: SingleEdit[]): AppliedEdits {
   const crlf = content.includes("\r\n") && !/(^|[^\r])\n/.test(content);
+  // biome-ignore lint/plugin/no-tiny-function: three texts must be normalized identically
   const toLf = (value: string) => (crlf ? value.replace(/\r\n/g, "\n") : value);
   let current = toLf(content);
   let count = 0;
@@ -194,6 +191,7 @@ async function revalidateAfterApproval(
   }
 }
 
+// biome-ignore lint/plugin/no-tiny-function: names the tolerant-match summary used by two result messages
 function describeTolerantMatches(applied: AppliedEdits): string {
   return applied.tolerantMatches.length > 0 ? ` (matched ${[...new Set(applied.tolerantMatches)].join("; ")})` : "";
 }

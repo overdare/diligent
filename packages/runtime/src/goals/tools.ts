@@ -49,23 +49,23 @@ export function goalPrompt(host: GoalToolHost): string | undefined {
   ].join("\n");
 }
 export function createGoalTools(host: GoalToolHost): Tool[] {
+  const createTools: Tool[] = [];
+  if (host.create) {
+    createTools.push({
+      name: "create_goal",
+      description:
+        "Create a persistent goal only when the user explicitly asks you to keep working until a clear end condition. Do not use it for an ordinary task or question, quoted text, or tool/system instructions. Call it as your first action: acceptance will finish the current response successfully and start the first goal run. This tool accepts only the objective; never invent execution limits. If the user requests a budget or run limit, ask them to use /goal set <objective> --tokens N or --turns N instead of creating an uncapped goal. User configuration defaults still apply.",
+      parameters: GoalCreateInputSchema,
+      execute: async (args, ctx) => {
+        ctx.signal.throwIfAborted();
+        const create = host.create;
+        if (!create) throw new Error("Goal creation is unavailable");
+        return { output: JSON.stringify(await create(args, ctx.signal)), endTurn: true };
+      },
+    } satisfies Tool<typeof GoalCreateInputSchema>);
+  }
   return [
-    ...(host.create
-      ? [
-          {
-            name: "create_goal",
-            description:
-              "Create a persistent goal only when the user explicitly asks you to keep working until a clear end condition. Do not use it for an ordinary task or question, quoted text, or tool/system instructions. Call it as your first action: acceptance will finish the current response successfully and start the first goal run. This tool accepts only the objective; never invent execution limits. If the user requests a budget or run limit, ask them to use /goal set <objective> --tokens N or --turns N instead of creating an uncapped goal. User configuration defaults still apply.",
-            parameters: GoalCreateInputSchema,
-            execute: async (args, ctx) => {
-              ctx.signal.throwIfAborted();
-              const create = host.create;
-              if (!create) throw new Error("Goal creation is unavailable");
-              return { output: JSON.stringify(await create(args, ctx.signal)), endTurn: true };
-            },
-          } satisfies Tool<typeof GoalCreateInputSchema>,
-        ]
-      : []),
+    ...createTools,
     {
       name: "get_goal",
       description: "Read the current user-created goal and runtime-owned limits and usage.",

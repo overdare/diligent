@@ -61,7 +61,7 @@ export async function runEvalExecution<TWorld>(
     scope: "eval:core",
     context: { fields: { taskId: task.id, provider: profile.provider, model: profile.model } },
     sink: (record) => {
-      logs.push(cloneValue(record));
+      logs.push(structuredClone(record));
     },
   });
   const limitedStream = clampOutputTokens(input.streamFunction, task.limits.maxOutputTokens);
@@ -73,8 +73,12 @@ export async function runEvalExecution<TWorld>(
   });
 
   const unsubscribe = agent.subscribe((event) => {
-    events.push({ sequence: events.length + 1, relativeMs: elapsed(startedMonotonic), event: cloneValue(event) });
-    if (event.type === "agent_end") agentEndMessages = cloneValue(event.messages);
+    events.push({
+      sequence: events.length + 1,
+      relativeMs: Math.max(0, Math.round(performance.now() - startedMonotonic)),
+      event: structuredClone(event),
+    });
+    if (event.type === "agent_end") agentEndMessages = structuredClone(event.messages);
     if (event.type === "turn_start") {
       turnCount += 1;
       if (turnCount > hardLimits.maxTurns) {
@@ -132,13 +136,13 @@ export async function runEvalExecution<TWorld>(
     unsubscribe();
   }
 
-  const messages = cloneValue(returnedMessages ?? agentEndMessages ?? agent.getMessages());
+  const messages = structuredClone(returnedMessages ?? agentEndMessages ?? agent.getMessages());
   const execution: EvalExecution<TWorld> = {
     taskId: task.id,
     profile,
     seed,
     startedAt: startedAt.toISOString(),
-    elapsedMs: elapsed(startedMonotonic),
+    elapsedMs: Math.max(0, Math.round(performance.now() - startedMonotonic)),
     termination: termination ?? "runner_error",
     messages,
     events,
@@ -161,21 +165,21 @@ export async function runEvalExecution<TWorld>(
         diagnostics.push(...(semantic.diagnostics ?? []));
         if (!semantic.passed) {
           const dimension = (semantic as { dimension?: unknown }).dimension;
-          failures.push(
-            typeof dimension === "string"
-              ? {
-                  dimension: semantic.dimension,
-                  category: "task_semantic",
-                  code: semantic.code.startsWith("task_semantic.") ? semantic.code : `task_semantic.${semantic.code}`,
-                  message: semantic.message,
-                }
-              : {
-                  dimension: "harness_terminal",
-                  category: "evaluator_error",
-                  code: "evaluator_error.missing_dimension",
-                  message: `Evaluator failure ${semantic.code} omitted its required dimension.`,
-                },
-          );
+          if (typeof dimension === "string") {
+            failures.push({
+              dimension: semantic.dimension,
+              category: "task_semantic",
+              code: semantic.code.startsWith("task_semantic.") ? semantic.code : `task_semantic.${semantic.code}`,
+              message: semantic.message,
+            });
+          } else {
+            failures.push({
+              dimension: "harness_terminal",
+              category: "evaluator_error",
+              code: "evaluator_error.missing_dimension",
+              message: `Evaluator failure ${semantic.code} omitted its required dimension.`,
+            });
+          }
         }
       } catch (error) {
         failures.push({
@@ -190,7 +194,7 @@ export async function runEvalExecution<TWorld>(
 
   let worldSnapshot: unknown = null;
   try {
-    worldSnapshot = cloneValue(task.snapshotWorld(world));
+    worldSnapshot = structuredClone(task.snapshotWorld(world));
   } catch (error) {
     failures.push({
       dimension: "harness_terminal",
@@ -304,12 +308,4 @@ function toEvalExecutionError(error: unknown): EvalExecutionError {
   if (error instanceof Error)
     return { name: error.name, message: error.message, ...(error.stack && { stack: error.stack }) };
   return { name: "Error", message: String(error) };
-}
-
-function elapsed(started: number): number {
-  return Math.max(0, Math.round(performance.now() - started));
-}
-
-function cloneValue<T>(value: T): T {
-  return structuredClone(value);
 }

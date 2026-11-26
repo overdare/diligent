@@ -12,22 +12,10 @@ import type { SessionEntry } from "./types";
 const BLOB_REF_PREFIX = "blob:";
 const BLOBS_SUBDIR = "blobs";
 
-function isBlobRef(data: string): boolean {
-  return data.startsWith(BLOB_REF_PREFIX);
-}
-
 async function sha256Hex(input: string): Promise<string> {
   const bytes = new TextEncoder().encode(input);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function blobsDir(sessionsDir: string): string {
-  return join(sessionsDir, BLOBS_SUBDIR);
-}
-
-function blobPath(sessionsDir: string, hash: string): string {
-  return join(blobsDir(sessionsDir), `${hash}.bin`);
 }
 
 /**
@@ -45,13 +33,13 @@ export async function externalizeEntryImages(sessionsDir: string, entry: Session
   let dirEnsured = false;
   const externalizedImages = await Promise.all(
     images.map(async (img) => {
-      if (isBlobRef(img.source.data)) return img;
+      if (img.source.data.startsWith(BLOB_REF_PREFIX)) return img;
       const hash = await sha256Hex(img.source.data);
       if (!dirEnsured) {
-        await mkdir(blobsDir(sessionsDir), { recursive: true });
+        await mkdir(join(sessionsDir, BLOBS_SUBDIR), { recursive: true });
         dirEnsured = true;
       }
-      const path = blobPath(sessionsDir, hash);
+      const path = join(join(sessionsDir, BLOBS_SUBDIR), `${hash}.bin`);
       // Avoid re-writing identical blobs; treat any error as "must write".
       const existing = Bun.file(path);
       if (!(await existing.exists())) {
@@ -81,10 +69,10 @@ export async function materializeEntryImages(sessionsDir: string, entry: Session
 
   const materializedImages = await Promise.all(
     images.map(async (img) => {
-      if (!isBlobRef(img.source.data)) return img;
+      if (!img.source.data.startsWith(BLOB_REF_PREFIX)) return img;
       const hash = img.source.data.slice(BLOB_REF_PREFIX.length);
       try {
-        const bytes = await readFile(blobPath(sessionsDir, hash));
+        const bytes = await readFile(join(join(sessionsDir, BLOBS_SUBDIR), `${hash}.bin`));
         return { ...img, source: { ...img.source, data: bytes.toString("base64") } };
       } catch {
         // Blob missing on disk — return a 1px transparent PNG placeholder so the

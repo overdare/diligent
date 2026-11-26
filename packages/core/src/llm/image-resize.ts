@@ -212,6 +212,7 @@ export async function inspectImageAlpha(
   }
 }
 
+// biome-ignore lint/plugin/no-tiny-function: six WASM loaders share this byte-loading step
 async function wasmBytes(path: string): Promise<ArrayBuffer> {
   return await Bun.file(path).arrayBuffer();
 }

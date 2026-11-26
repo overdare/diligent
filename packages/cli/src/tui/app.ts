@@ -3,14 +3,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type {
-  AgentEvent,
-  DiligentServerNotification,
-  DiligentServerRequest,
-  DiligentServerRequestResponse,
-  PendingSteer,
-  RequestId,
-} from "@diligent/protocol";
+import type { AgentEvent, DiligentServerNotification, PendingSteer } from "@diligent/protocol";
 import {
   DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
@@ -34,7 +27,7 @@ import { ChatView } from "./components/chat-view";
 import type { ConfirmDialogOptions } from "./components/confirm-dialog";
 import { InputEditor } from "./components/input-editor";
 import { PrivateTerminal } from "./components/private-terminal";
-import { StatusBar } from "./components/status-bar";
+import { StatusBar, type StatusBarInfo } from "./components/status-bar";
 import { type ConfigManager, createConfigManager } from "./config-manager";
 import { Container } from "./framework/container";
 import { matchesKey } from "./framework/keys";
@@ -117,7 +110,6 @@ export class App {
     this.commandRegistry = new CommandRegistry();
     registerBuiltinCommands(this.commandRegistry, this.skills);
 
-    const requestRender = () => this.renderer.requestRender();
     const requestRenderBatched = () => {
       if (this.streamRenderTimer) return;
       this.streamRenderTimer = setTimeout(() => {
@@ -132,7 +124,7 @@ export class App {
 
     // Build component tree
     this.chatView = new ChatView({
-      requestRender,
+      requestRender: () => this.renderer.requestRender(),
       requestRenderBatched,
       cwd: process.cwd(),
       getCommitWidth: () => this.terminal.columns,
@@ -153,7 +145,7 @@ export class App {
         onCompleteDetailed: (partial) => this.commandRegistry.completeDetailed(partial),
         history: this.inputHistory,
       },
-      requestRender,
+      () => this.renderer.requestRender(),
     );
     this.statusBar = new StatusBar();
     this.bottomPane = new BottomPane(this.chatView.getLiveStackComponent(), this.inputEditor, this.statusBar);
@@ -430,7 +422,9 @@ export class App {
       onStderrLine: (line) => this.handleAppServerStderr(line),
     });
     this.rpcClient.setNotificationListener((notification) => this.handleServerNotification(notification));
-    this.rpcClient.setServerRequestHandler((requestId, request) => this.handleServerRequest(requestId, request));
+    this.rpcClient.setServerRequestHandler((requestId, request) =>
+      this.eventController.handleServerRequest(requestId, request),
+    );
     const rpc = this.rpcClient;
     this.goalTimer = setInterval(() => {
       if (this.runtime.goalSnapshot.goal?.runStartedAt !== undefined) this.renderer.requestRender();
@@ -559,9 +553,12 @@ export class App {
         .filter((content): content is string => content !== null);
 
       const expectedCount = Math.max(0, event.messageCount);
-      const consumed = event.steerIds?.length
-        ? this.runtime.consumePendingSteersByIds(event.steerIds)
-        : this.runtime.consumePendingSteersByText(injectedTexts);
+      let consumed: string[];
+      if (event.steerIds?.length) {
+        consumed = this.runtime.consumePendingSteersByIds(event.steerIds);
+      } else {
+        consumed = this.runtime.consumePendingSteersByText(injectedTexts);
+      }
       const fallbackCount = Math.max(0, (expectedCount > 0 ? expectedCount : injectedTexts.length) - consumed.length);
       if (fallbackCount > 0) {
         consumed.push(...this.runtime.consumePendingSteersFallback(fallbackCount));
@@ -597,16 +594,18 @@ export class App {
 
     if (event.type === "user_message") {
       const content = event.message.content;
-      const text =
-        typeof content === "string"
-          ? content
-          : content
-              .filter((block) => block.type === "text")
-              .map((block) => block.text)
-              .join("\n")
-              .trim();
-      if (text.length > 0) {
-        this.handleRemoteUserMessage(text);
+      let messageText: string;
+      if (typeof content === "string") {
+        messageText = content;
+      } else {
+        messageText = content
+          .filter((block) => block.type === "text")
+          .map((block) => block.text)
+          .join("\n")
+          .trim();
+      }
+      if (messageText.length > 0) {
+        this.handleRemoteUserMessage(messageText);
       }
     }
 
@@ -784,19 +783,19 @@ export class App {
         this.chatView.addLines([`${t.warn}${stopMessage}${t.reset}`, "Resume: /goal resume"], { separateBefore: true });
       }
       if (goal?.status !== "active") this.runtime.cancelRequested = false;
-      this.statusBar.update({
-        goal: goal
-          ? {
-              status: goal.status,
-              tokensUsed: goal.tokensUsed,
-              tokenBudget: goal.tokenBudget,
-              turnsUsed: goal.turnsUsed,
-              maxTurns: goal.maxTurns,
-              activeTimeMs: goal.activeTimeMs,
-              runStartedAt: goal.runStartedAt,
-            }
-          : undefined,
-      });
+      let goalInfo: StatusBarInfo["goal"];
+      if (goal) {
+        goalInfo = {
+          status: goal.status,
+          tokensUsed: goal.tokensUsed,
+          tokenBudget: goal.tokenBudget,
+          turnsUsed: goal.turnsUsed,
+          maxTurns: goal.maxTurns,
+          activeTimeMs: goal.activeTimeMs,
+          runStartedAt: goal.runStartedAt,
+        };
+      }
+      this.statusBar.update({ goal: goalInfo });
       this.renderer.requestRender();
     }
 
@@ -816,13 +815,6 @@ export class App {
     await this.sessionLifecycle.syncActiveThreadState();
   }
 
-  private async handleServerRequest(
-    requestId: RequestId,
-    request: DiligentServerRequest,
-  ): Promise<DiligentServerRequestResponse> {
-    return this.eventController.handleServerRequest(requestId, request);
-  }
-
   private ringTerminalBell(): void {
     if (!this.shouldBellOnComplete) {
       return;
@@ -833,10 +825,12 @@ export class App {
   private appendLocalTurnTimingLine(): void {
     const now = Date.now();
     const loopMs = this.runtime.turnStartedAtMs !== null ? Math.max(0, now - this.runtime.turnStartedAtMs) : null;
-    const thinkingMs =
-      this.runtime.reasoningStartedAtMs !== null
-        ? this.runtime.reasoningAccumulatedMs + (now - this.runtime.reasoningStartedAtMs)
-        : this.runtime.reasoningAccumulatedMs;
+    let thinkingMs: number;
+    if (this.runtime.reasoningStartedAtMs !== null) {
+      thinkingMs = this.runtime.reasoningAccumulatedMs + (now - this.runtime.reasoningStartedAtMs);
+    } else {
+      thinkingMs = this.runtime.reasoningAccumulatedMs;
+    }
     const line = buildTurnTimingLine({ loopMs, thinkingMs });
     if (line) {
       this.chatView.addLines([line], { separateBefore: true });

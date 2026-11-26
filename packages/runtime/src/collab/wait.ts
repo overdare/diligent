@@ -47,9 +47,12 @@ export function createWaitTool(registry: AgentRegistry): Tool<typeof WaitParams>
     execute: async (args, ctx: ToolContext): Promise<ToolResult> => {
       const timeoutMs = Math.min(Math.max(args.timeout_ms ?? DEFAULT_TIMEOUT_MS, MIN_TIMEOUT_MS), MAX_TIMEOUT_MS);
 
-      const onUpdate = (summary: string) => ctx.onUpdate?.(summary);
-
-      const { status, timedOut } = await registry.wait(args.ids, timeoutMs, onUpdate, ctx.signal);
+      const { status, timedOut } = await registry.wait(
+        args.ids,
+        timeoutMs,
+        (summary: string) => ctx.onUpdate?.(summary),
+        ctx.signal,
+      );
 
       // Build human-readable summary
       const lines: string[] = [];

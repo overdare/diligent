@@ -48,7 +48,8 @@ function wrapInputTextWithCursor(text: string, maxTextWidth: number, includesCur
     const lastIndex = wrapped.length - 1;
     wrapped[lastIndex] = wrapped[lastIndex].replace(CURSOR_MARKER, "");
   }
-  return wrapped.length > 0 ? wrapped : [includesCursorMarker ? CURSOR_MARKER : ""];
+  if (wrapped.length > 0) return wrapped;
+  return [includesCursorMarker ? CURSOR_MARKER : ""];
 }
 
 function wrapLogicalLine(line: string, maxTextWidth: number): string[] {
@@ -111,7 +112,12 @@ function renderCompletionPopup(store: PromptStore, width: number): string[] {
     const name = item.name.padEnd(maxNameLen);
     const desc = item.description;
     const descSpace = width - 3 - maxNameLen - 3;
-    const truncDesc = descSpace > 4 ? (desc.length > descSpace ? `${desc.slice(0, descSpace - 1)}…` : desc) : "";
+    let truncDesc: string;
+    if (descSpace > 4) {
+      truncDesc = desc.length > descSpace ? `${desc.slice(0, descSpace - 1)}…` : desc;
+    } else {
+      truncDesc = "";
+    }
 
     if (isSelected) {
       lines.push(`${marker}${name}${t.reset}   ${t.dim}${truncDesc}${t.reset}`);

@@ -81,16 +81,14 @@ function makeAgent(stream: StreamFunction, hooks: readonly AgentLoopHook[], reco
     {
       llmMsgStreamFn: stream,
       loopHooks: hooks,
-      ...(records
-        ? {
-            logger: createLogger({
-              scope: "test",
-              sink: (record) => {
-                records.push(record);
-              },
-            }),
-          }
-        : {}),
+      ...(records && {
+        logger: createLogger({
+          scope: "test",
+          sink: (record) => {
+            records.push(record);
+          },
+        }),
+      }),
     },
   );
 }

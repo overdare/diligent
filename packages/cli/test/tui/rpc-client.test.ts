@@ -69,7 +69,7 @@ describe("StdioAppServerRpcClient", () => {
       protocolVersion: 1,
     });
 
-    expect(wireFrames(mock.writes)).toEqual([
+    expect(mock.writes.map((chunk) => JSON.parse(chunk.trim()) as JSONRPCMessage)).toEqual([
       {
         id: 1,
         method: "initialize",
@@ -117,7 +117,7 @@ describe("StdioAppServerRpcClient", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(wireFrames(mock.writes)).toEqual([
+    expect(mock.writes.map((chunk) => JSON.parse(chunk.trim()) as JSONRPCMessage)).toEqual([
       { id: 9, result: { decision: "once" } },
       { id: 10, result: { answers: {} } },
     ]);
@@ -128,7 +128,3 @@ describe("StdioAppServerRpcClient", () => {
     await client.dispose();
   });
 });
-
-function wireFrames(chunks: string[]): JSONRPCMessage[] {
-  return chunks.map((chunk) => JSON.parse(chunk.trim()) as JSONRPCMessage);
-}

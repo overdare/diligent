@@ -23,9 +23,12 @@ export const DEFAULT_PROFILES: readonly EvalProfile[] = [
 
 export function resolveSelectedProfiles(options: EvalCliOptions): EvalProfile[] {
   if (options.model) {
-    const model = options.provider
-      ? resolveModel({ provider: options.provider, modelId: options.model })
-      : resolveModelSelector(options.model);
+    let model: Model;
+    if (options.provider) {
+      model = resolveModel({ provider: options.provider, modelId: options.model });
+    } else {
+      model = resolveModelSelector(options.model);
+    }
     if (!isEvalProvider(model.provider)) {
       throw new Error(
         `Eval suites support only OpenAI, Anthropic, Gemini, and ChatGPT models, received ${model.provider}.`,

@@ -15,8 +15,14 @@ const context: StreamContext = {
 };
 
 function model(provider: ProviderName): Model {
+  let modelId: "claude-test" | "gpt-5" | "gpt-test";
+  if (provider === "anthropic") {
+    modelId = "claude-test";
+  } else {
+    modelId = provider === "chatgpt" ? "gpt-5" : "gpt-test";
+  }
   return {
-    modelId: provider === "anthropic" ? "claude-test" : provider === "chatgpt" ? "gpt-5" : "gpt-test",
+    modelId,
     provider,
     contextWindow: 100_000,
     maxOutputTokens: 4_096,

@@ -44,6 +44,7 @@ export class TerminalTextDecoder {
   }
 }
 
+// biome-ignore lint/plugin/no-tiny-function: names the terminal-to-plain-text formula used by two callers
 function toPlainText(text: string): string {
   return text.replace(ESCAPE_SEQUENCE, "").replace(/\r+\n/g, "\n").replace(/\r/g, "\n").replace(CONTROL, "");
 }

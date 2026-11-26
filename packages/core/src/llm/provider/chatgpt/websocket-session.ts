@@ -391,8 +391,11 @@ export class ChatGPTWebSocketSession {
   }
 
   private attachSocketListeners(socket: WebSocket): void {
+    // biome-ignore lint/plugin/no-tiny-function: listener identity: added and removed by reference
     const onMessage = (event: MessageEvent) => this.handleMessage(socket, event);
+    // biome-ignore lint/plugin/no-tiny-function: listener identity: added and removed by reference
     const onError = () => this.handleError(socket);
+    // biome-ignore lint/plugin/no-tiny-function: listener identity: added and removed by reference
     const onClose = (event: CloseEvent) => this.handleClose(socket, event);
     socket.addEventListener("message", onMessage);
     socket.addEventListener("error", onError);

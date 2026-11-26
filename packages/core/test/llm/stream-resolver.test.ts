@@ -35,8 +35,7 @@ describe("resolveStream", () => {
 
   test("provider layer enforces env fallback requirements", () => {
     delete process.env.ANTHROPIC_API_KEY;
-    const build = () => resolveStream("anthropic");
-    expect(build).toThrow(
+    expect(() => resolveStream("anthropic")).toThrow(
       "Anthropic API key is required. Set ANTHROPIC_API_KEY or pass apiKey to createAnthropicStream().",
     );
   });

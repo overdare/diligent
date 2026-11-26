@@ -43,7 +43,7 @@ export function classifyOpenAIFamilyError(options: ClassifyOpenAIFamilyErrorOpti
     });
 
   if (code) {
-    if (isContextCode(code)) {
+    if (code === "context_length_exceeded" || code === "context_window_exceeded") {
       return providerError({
         errorType: ProviderErrorType.ContextOverflow,
         isRetryable: false,
@@ -58,7 +58,7 @@ export function classifyOpenAIFamilyError(options: ClassifyOpenAIFamilyErrorOpti
         reason: ProviderErrorReason.UsageLimitReached,
       });
     }
-    if (isTransientRateLimitCode(code)) {
+    if (code === "rate_limit_exceeded" || code === "rate_limit" || code.includes("connection_limit_reached")) {
       return providerError({ errorType: ProviderErrorType.RateLimit, isRetryable: true });
     }
     if (isAuthenticationCode(code)) {
@@ -68,10 +68,10 @@ export function classifyOpenAIFamilyError(options: ClassifyOpenAIFamilyErrorOpti
         reason: ProviderErrorReason.CredentialsRejected,
       });
     }
-    if (isServerCode(code)) {
+    if (code === "server_error" || code === "overloaded" || code === "service_unavailable") {
       return providerError({ errorType: ProviderErrorType.ServerError, isRetryable: true });
     }
-    if (isPolicyCode(code)) {
+    if (code === "invalid_prompt" || code === "bio_policy" || code.includes("policy_violation")) {
       return providerError({ errorType: ProviderErrorType.Unknown, isRetryable: false });
     }
   }
@@ -218,10 +218,6 @@ function normalizeProviderCode(code: string | undefined): string | undefined {
   return normalized || undefined;
 }
 
-function isContextCode(code: string): boolean {
-  return code === "context_length_exceeded" || code === "context_window_exceeded";
-}
-
 function isUsageLimitCode(code: string): boolean {
   return (
     code === "insufficient_quota" ||
@@ -229,10 +225,6 @@ function isUsageLimitCode(code: string): boolean {
     code.includes("usage_limit") ||
     code.includes("quota_exceeded")
   );
-}
-
-function isTransientRateLimitCode(code: string): boolean {
-  return code === "rate_limit_exceeded" || code === "rate_limit" || code.includes("connection_limit_reached");
 }
 
 function isAuthenticationCode(code: string): boolean {
@@ -244,14 +236,6 @@ function isAuthenticationCode(code: string): boolean {
     code === "permission_denied" ||
     code === "account_deactivated"
   );
-}
-
-function isServerCode(code: string): boolean {
-  return code === "server_error" || code === "overloaded" || code === "service_unavailable";
-}
-
-function isPolicyCode(code: string): boolean {
-  return code === "invalid_prompt" || code === "bio_policy" || code.includes("policy_violation");
 }
 
 function isUsageLimitMessage(message: string): boolean {

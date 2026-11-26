@@ -77,13 +77,11 @@ async function requestImageGeneration(
       size: input.size ?? "auto",
       n: 1,
       output_format: "png",
-      ...(references.length
-        ? {
-            images: references.map((image) => ({
-              image_url: `data:${image.mediaType};base64,${Buffer.from(image.bytes).toString("base64")}`,
-            })),
-          }
-        : {}),
+      ...(references.length && {
+        images: references.map((image) => ({
+          image_url: `data:${image.mediaType};base64,${Buffer.from(image.bytes).toString("base64")}`,
+        })),
+      }),
     }),
   }).catch((error: unknown) => {
     signal.throwIfAborted();
