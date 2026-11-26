@@ -1,7 +1,7 @@
-// @summary Model capability matrix contracts: support classification, result mapping, and Markdown rendering
+// @summary Model capability matrix contracts for catalog-wide runtime runs: support, cost policy, cells, Markdown
 
 import type { Model } from "@diligent/core/provider-contract";
-import type { RuntimeEvalExecutionReport, RuntimeEvalExecutionResult } from "./runtime-task";
+import type { RuntimeEvalExecutionResult, RuntimeEvalSuiteReport } from "./runtime-task";
 import type { EvalProvider } from "./task";
 
 export const MODEL_CAPABILITIES = [
@@ -37,28 +37,11 @@ export interface CapabilityCell {
   elapsedMs?: number;
 }
 
-export interface CapabilityMatrixReport {
-  schemaVersion: 1;
-  suite: "capabilities";
-  suiteVersion: "capabilities-v1";
-  repository: string;
-  commitSha: string;
-  ref: string;
-  runId: string;
-  runAttempt: string;
-  bunVersion: string;
-  os: string;
-  architecture: string;
-  startedAt: string;
-  endedAt: string;
-  rootSeed: string;
-  providers: EvalProvider[];
+/** Matrix section of a catalog-wide runtime suite report. */
+export interface RuntimeCapabilityMatrix {
   capabilities: ModelCapability[];
   cells: CapabilityCell[];
   counts: Record<CapabilityCellStatus, number>;
-  /** True only when no selected cell failed or was not run. */
-  passed: boolean;
-  executions: RuntimeEvalExecutionReport[];
 }
 
 const CAPABILITY_LABELS: Record<ModelCapability, string> = {
@@ -157,19 +140,23 @@ export function countCapabilityCells(cells: readonly CapabilityCell[]): Record<C
   return counts;
 }
 
-export function renderCapabilityMatrixMarkdown(report: CapabilityMatrixReport): string {
-  const columns = report.capabilities;
+export function renderCapabilityMatrixMarkdown(
+  report: Pick<RuntimeEvalSuiteReport, "commitSha" | "runId" | "os" | "architecture" | "startedAt">,
+  matrix: RuntimeCapabilityMatrix,
+): string {
+  const columns = matrix.capabilities;
   const rows = new Map<string, CapabilityCell[]>();
-  for (const cell of report.cells) {
+  for (const cell of matrix.cells) {
     const key = `${cell.provider}\u0000${cell.model}`;
     rows.set(key, [...(rows.get(key) ?? []), cell]);
   }
+  const { counts } = matrix;
   const lines = [
     "## Model capability matrix",
     "",
     `Commit \`${report.commitSha}\` · run \`${report.runId}\` · ${report.os}/${report.architecture} · ${report.startedAt}`,
     "",
-    `PASS ${report.counts.pass} · FAIL ${report.counts.fail} · NOT RUN ${report.counts.not_run} · UNSUPPORTED ${report.counts.unsupported} · SKIPPED ${report.counts.skipped}`,
+    `PASS ${counts.pass} · FAIL ${counts.fail} · NOT RUN ${counts.not_run} · UNSUPPORTED ${counts.unsupported} · SKIPPED ${counts.skipped}`,
     "",
     `| Provider | Auth | Model | ${columns.map((capability) => CAPABILITY_LABELS[capability]).join(" | ")} |`,
     `|---|---|---|${columns.map(() => "---").join("|")}|`,
@@ -186,7 +173,7 @@ export function renderCapabilityMatrixMarkdown(report: CapabilityMatrixReport): 
       `| ${first.provider} | ${first.authPath === "chatgpt_oauth" ? "ChatGPT OAuth" : "API key"} | ${first.model} | ${values.join(" | ")} |`,
     );
   }
-  const problems = report.cells.filter((cell) => cell.status === "fail" || cell.status === "not_run");
+  const problems = matrix.cells.filter((cell) => cell.status === "fail" || cell.status === "not_run");
   if (problems.length > 0) {
     lines.push("", "### Failed and not-run cells", "");
     for (const cell of problems) {
@@ -197,7 +184,7 @@ export function renderCapabilityMatrixMarkdown(report: CapabilityMatrixReport): 
     }
   }
   const unsupported = new Map<string, Set<string>>();
-  for (const cell of report.cells.filter((candidate) => candidate.status === "unsupported")) {
+  for (const cell of matrix.cells.filter((candidate) => candidate.status === "unsupported")) {
     const key = `${cell.capability}: ${cell.reason ?? "unsupported"}`;
     unsupported.set(key, (unsupported.get(key) ?? new Set()).add(cell.provider));
   }
@@ -206,7 +193,7 @@ export function renderCapabilityMatrixMarkdown(report: CapabilityMatrixReport): 
     for (const [key, providers] of unsupported) lines.push(`- ${key} (${[...providers].join(", ")})`);
   }
   const skipped = new Map<string, Set<string>>();
-  for (const cell of report.cells.filter((candidate) => candidate.status === "skipped")) {
+  for (const cell of matrix.cells.filter((candidate) => candidate.status === "skipped")) {
     const key = cell.reason ?? "Skipped.";
     skipped.set(key, (skipped.get(key) ?? new Set()).add(`${cell.provider}/${cell.model}`));
   }

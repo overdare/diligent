@@ -1,14 +1,16 @@
-// @summary Parses eval commands and optional provider, task, capability, model, seed, report, and auth options
+// @summary Parses eval commands and optional provider, task, model scope, capability, seed, report, and auth options
 
 import { MODEL_CAPABILITIES, type ModelCapability } from "./capabilities";
 import type { EvalProvider } from "./task";
 
-export type EvalCommand = "core" | "runtime" | "capabilities" | "chatgpt-login";
+export type EvalCommand = "core" | "runtime" | "chatgpt-login";
 
 export interface EvalCliOptions {
   command: EvalCommand;
   provider?: EvalProvider;
   task?: string;
+  /** `catalog` runs the capability-tagged runtime tasks on every catalog model and reports a capability matrix. */
+  models?: "default" | "catalog";
   capability?: ModelCapability;
   model?: string;
   seed?: string;
@@ -20,7 +22,7 @@ export interface EvalCliOptions {
   help: boolean;
 }
 
-const COMMANDS: readonly EvalCommand[] = ["core", "runtime", "capabilities", "chatgpt-login"];
+const COMMANDS: readonly EvalCommand[] = ["core", "runtime", "chatgpt-login"];
 
 export function parseCliOptions(args: string[]): EvalCliOptions {
   if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
@@ -55,6 +57,13 @@ export function parseCliOptions(args: string[]): EvalCliOptions {
         options.capability = capability;
         break;
       }
+      case "--models": {
+        const value = requireValue(args, ++index, arg);
+        if (value !== "default" && value !== "catalog")
+          throw new Error(`Invalid models scope "${value}". Expected default or catalog.`);
+        options.models = value;
+        break;
+      }
       case "--model":
         options.model = requireValue(args, ++index, arg);
         break;
@@ -79,12 +88,10 @@ export function parseCliOptions(args: string[]): EvalCliOptions {
     }
   }
 
-  if (options.task && options.command !== "core" && options.command !== "runtime") {
-    throw new Error("--task applies only to the core and runtime suites.");
-  }
-  if (options.capability && options.command !== "capabilities") {
-    throw new Error("--capability applies only to the capabilities suite.");
-  }
+  const catalog = options.models === "catalog";
+  if (catalog && options.command !== "runtime") throw new Error("--models catalog applies only to the runtime suite.");
+  if (catalog && options.task) throw new Error("--task cannot be combined with --models catalog; use --capability.");
+  if (options.capability && !catalog) throw new Error("--capability requires --models catalog.");
   return options;
 }
 

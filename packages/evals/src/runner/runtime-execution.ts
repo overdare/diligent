@@ -22,6 +22,7 @@ import type {
 } from "../runtime-task";
 import { deriveEvalStatus, type EvalDiagnostic, type EvalFailure, type EvalProfile, ZERO_USAGE } from "../task";
 import { createBudgetGraceDiagnostics, describeHardLimitExceeded, resolveEvalHardLimits } from "./budget-policy";
+import { collectProviderHttpErrors } from "./provider-http-observer";
 import { RuntimeDeadline, RuntimeDeadlineError, raceBounded } from "./runtime-deadline";
 import { checkRuntimeInvariants } from "./runtime-invariants";
 import { createRuntimeEvalOutputStore, type RuntimeEvalOutputStore } from "./runtime-output-store";
@@ -50,6 +51,7 @@ export async function runRuntimeEvalExecution(input: {
 }): Promise<RuntimeEvalExecutionResult> {
   const { task, profile, seed } = input;
   const hardLimits = resolveEvalHardLimits(task.limits);
+  const http = collectProviderHttpErrors();
   const deadline = new RuntimeDeadline(task.limits.timeoutMs);
   const started = deadline.started;
   let root = "";
@@ -426,11 +428,21 @@ export async function runRuntimeEvalExecution(input: {
         runtimeState: captureRuntimeState(initial, final, stateRoots),
         verifier: verifier ? normalizeWorkspaceEvidence(verifier, root, outputRoot) : undefined,
         world: normalizeWorkspaceEvidence(world, root, outputRoot),
+        ...(http.errors.length > 0 && { providerHttpErrors: http.errors }),
       },
       root,
       outputRoot,
     );
     if (termination === "provider_error") failures.push(classifyRuntimeTerminalFailure(execution));
+    // A request the provider rejected stays a compatibility regression even when the product recovers and continues.
+    const badRequest = http.errors.find((error) => error.status === 400);
+    if (badRequest)
+      failures.push({
+        dimension: "harness_terminal",
+        category: "provider_terminal",
+        code: "provider_terminal.http_400",
+        message: `${badRequest.endpoint} returned HTTP 400${badRequest.code ? ` (${badRequest.code}${badRequest.param ? `, param ${badRequest.param}` : ""})` : ""}.`,
+      });
     if (budgetReason) {
       failures.push({
         dimension: "harness_terminal",
@@ -622,6 +634,7 @@ export async function runRuntimeEvalExecution(input: {
         verifier: verifier ? normalizeWorkspaceEvidence(verifier, root, outputRoot) : undefined,
         world: normalizeWorkspaceEvidence(world, root, outputRoot),
         error: { name: error instanceof Error ? error.name : "Error", message },
+        ...(http.errors.length > 0 && { providerHttpErrors: http.errors }),
       },
       root,
       outputRoot,
@@ -675,6 +688,7 @@ export async function runRuntimeEvalExecution(input: {
     return resultForCleanup;
   } finally {
     deadline.close();
+    http.stop();
     try {
       for (const action of activeActions) {
         action.cancelled = true;

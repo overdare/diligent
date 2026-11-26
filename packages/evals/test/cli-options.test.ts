@@ -15,21 +15,30 @@ describe("parseCliOptions", () => {
     expect(parseCliOptions(["runtime"])).toEqual({ command: "runtime", help: false });
   });
 
-  test("accepts a capability filter only for the capabilities suite", () => {
-    expect(parseCliOptions(["capabilities", "--provider", "gemini", "--capability", "web_search"])).toEqual({
-      command: "capabilities",
+  test("accepts a catalog-wide runtime run with an optional capability filter", () => {
+    expect(
+      parseCliOptions(["runtime", "--models", "catalog", "--provider", "gemini", "--capability", "web_search"]),
+    ).toEqual({
+      command: "runtime",
+      models: "catalog",
       provider: "gemini",
       capability: "web_search",
       help: false,
     });
-    expect(() => parseCliOptions(["capabilities", "--capability", "video"])).toThrow('Invalid capability "video"');
-    expect(() => parseCliOptions(["runtime", "--capability", "web_search"])).toThrow("only to the capabilities suite");
-    expect(() => parseCliOptions(["capabilities", "--task", "project-fix"])).toThrow("only to the core and runtime");
+    expect(() => parseCliOptions(["runtime", "--models", "all"])).toThrow('Invalid models scope "all"');
+    expect(() => parseCliOptions(["runtime", "--models", "catalog", "--capability", "video"])).toThrow(
+      'Invalid capability "video"',
+    );
+    expect(() => parseCliOptions(["runtime", "--capability", "web_search"])).toThrow("requires --models catalog");
+    expect(() => parseCliOptions(["core", "--models", "catalog"])).toThrow("only to the runtime suite");
+    expect(() => parseCliOptions(["runtime", "--models", "catalog", "--task", "project-fix"])).toThrow(
+      "use --capability",
+    );
   });
 
   test("accepts unattended ChatGPT options and the login command", () => {
     expect(
-      parseCliOptions(["capabilities", "--provider", "chatgpt", "--non-interactive", "--chatgpt-auth-file", "a.jsonc"]),
+      parseCliOptions(["runtime", "--provider", "chatgpt", "--non-interactive", "--chatgpt-auth-file", "a.jsonc"]),
     ).toMatchObject({ nonInteractive: true, chatgptAuthFile: "a.jsonc" });
     expect(parseCliOptions(["chatgpt-login", "--chatgpt-auth-file", "a.jsonc"])).toEqual({
       command: "chatgpt-login",

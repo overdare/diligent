@@ -1,20 +1,16 @@
-// @summary Capability probe: one plain runtime turn returns an exact seeded reply
+// @summary Runtime eval for one tool-free turn that must return an exact seeded reply
 
 import type { RuntimeEvalTask } from "../../runtime-task";
-import { finalAssistantText, RuntimeGrade, unwrapReply } from "../runtime/grading";
-import {
-  createFixtureRuntimeConfig,
-  DEFAULT_RUNTIME_LIMITS,
-  type RuntimeFixtureWorld,
-  seededToken,
-} from "../runtime/helpers";
+import { finalAssistantText, RuntimeGrade, unwrapReply } from "./grading";
+import { createFixtureRuntimeConfig, DEFAULT_RUNTIME_LIMITS, type RuntimeFixtureWorld, seededToken } from "./helpers";
 
-export type BasicResponseCapabilityWorld = RuntimeFixtureWorld;
+export type BasicResponseWorld = RuntimeFixtureWorld;
 
-export const basicResponseCapabilityTask: RuntimeEvalTask<BasicResponseCapabilityWorld> = {
-  id: "capability-basic-response",
+export const basicResponseTask: RuntimeEvalTask<BasicResponseWorld> = {
+  id: "basic-response",
   description: "Answer one tool-free prompt through the runtime with an exact seeded reply.",
-  fixtureVersion: "capability-basic-response-v1",
+  fixtureVersion: "basic-response-v1",
+  capability: "basic_response",
   limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 1, maxToolCalls: 0, maxChangedFiles: 0, timeoutMs: 300_000 },
   toolPolicy: { allowedTools: [], allowedCapabilities: [], allowedCommands: [] },
   async setup(seed, root) {
@@ -24,7 +20,7 @@ export const basicResponseCapabilityTask: RuntimeEvalTask<BasicResponseCapabilit
   createSteps: (world) => [{ kind: "turn", message: `Reply with exactly ${world.expected} and nothing else.` }],
   snapshotWorld: async (world) => ({ expected: world.expected }),
   evaluate(input) {
-    const grade = new RuntimeGrade("capability_basic_response");
+    const grade = new RuntimeGrade("basic_response");
     const answer = finalAssistantText(input);
     if (!answer) return grade.fail("empty", "The model returned no assistant text.", "semantic_goal");
     if (unwrapReply(answer) === input.world.expected) return grade.pass();

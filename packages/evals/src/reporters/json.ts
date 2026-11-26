@@ -2,11 +2,10 @@
 
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { CapabilityMatrixReport } from "../capabilities";
 import type { RuntimeEvalSuiteReport } from "../runtime-task";
 import type { EvalSuiteReport } from "../task";
 
-type EvalReport = EvalSuiteReport | RuntimeEvalSuiteReport | CapabilityMatrixReport;
+type EvalReport = EvalSuiteReport | RuntimeEvalSuiteReport;
 
 export interface EvalRedactionOptions {
   secrets?: readonly string[];

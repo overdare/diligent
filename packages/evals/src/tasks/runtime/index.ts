@@ -1,8 +1,10 @@
-// @summary Registry for all runtime eval tasks
+// @summary Registry for all runtime eval tasks and the capability-tagged tasks of the model matrix
 
+import { MODEL_CAPABILITIES } from "../../capabilities";
 import type { AnyRuntimeEvalTask } from "../../runtime-task";
 import { autoCompactionResumeTask } from "./auto-compaction-resume";
 import { autonomousExploreDelegationTask } from "./autonomous-explore-delegation";
+import { basicResponseTask } from "./basic-response";
 import { bundledToolRoutingTask } from "./bundled-tool-routing";
 import { clarifyThenExecuteTask } from "./clarify-then-execute";
 import { collaborationParallelSynthesisTask } from "./collaboration-parallel-synthesis";
@@ -12,6 +14,7 @@ import { customAgentRoutingTask } from "./custom-agent-routing";
 import { fileRoundtripTask } from "./file-roundtrip";
 import { freshPromptAfterCompactionTask } from "./fresh-prompt-after-compaction";
 import { hookContextFollowTask } from "./hook-context-follow";
+import { imageGenerationOutputTask } from "./image-generation-output";
 import { imageResumeRecallTask } from "./image-resume-recall";
 import { inputCancelResumeTask } from "./input-cancel-resume";
 import { instructionHierarchyTask } from "./instruction-hierarchy";
@@ -35,11 +38,14 @@ import { sessionResumeTask } from "./session-resume";
 import { skillAbstainTask } from "./skill-abstain";
 import { skillAutoSelectTask } from "./skill-auto-select";
 import { steerDuringFixTask } from "./steer-during-fix";
+import { webSearchGroundingTask } from "./web-search-grounding";
 
 export type { AutoCompactionResumeWorld } from "./auto-compaction-resume";
 export { autoCompactionResumeTask } from "./auto-compaction-resume";
 export type { AutonomousExploreDelegationWorld } from "./autonomous-explore-delegation";
 export { autonomousExploreDelegationTask } from "./autonomous-explore-delegation";
+export type { BasicResponseWorld } from "./basic-response";
+export { basicResponseTask } from "./basic-response";
 export type { BundledToolRoutingWorld } from "./bundled-tool-routing";
 export { bundledToolRoutingTask } from "./bundled-tool-routing";
 export type { ClarifyThenExecuteWorld } from "./clarify-then-execute";
@@ -58,6 +64,8 @@ export type { FreshPromptAfterCompactionWorld } from "./fresh-prompt-after-compa
 export { freshPromptAfterCompactionTask } from "./fresh-prompt-after-compaction";
 export type { HookContextFollowWorld } from "./hook-context-follow";
 export { hookContextFollowTask } from "./hook-context-follow";
+export type { GeneratedImageRecord, ImageGenerationOutputWorld } from "./image-generation-output";
+export { dominantColor, IMAGE_GENERATION_TOOL, imageGenerationOutputTask } from "./image-generation-output";
 export type { ImageResumeRecallWorld } from "./image-resume-recall";
 export { imageResumeRecallTask } from "./image-resume-recall";
 export type { InputCancelResumeWorld } from "./input-cancel-resume";
@@ -98,6 +106,13 @@ export type { SkillAutoSelectWorld } from "./skill-auto-select";
 export { skillAutoSelectTask } from "./skill-auto-select";
 export type { SteerDuringFixWorld } from "./steer-during-fix";
 export { steerDuringFixTask } from "./steer-during-fix";
+export type { WebSearchEvidence, WebSearchGroundingWorld } from "./web-search-grounding";
+export {
+  collectWebSearchEvidence,
+  extractUrlHosts,
+  webResultHosts,
+  webSearchGroundingTask,
+} from "./web-search-grounding";
 
 export const RUNTIME_EVAL_TASKS: readonly AnyRuntimeEvalTask[] = [
   projectFixTask,
@@ -135,3 +150,17 @@ export const RUNTIME_EVAL_TASKS: readonly AnyRuntimeEvalTask[] = [
   collaborationParallelSynthesisTask,
   collaborationResumeReferenceTask,
 ];
+
+/** Capability probes that are not part of the default runtime run. */
+export const RUNTIME_PROBE_TASKS: readonly AnyRuntimeEvalTask[] = [
+  basicResponseTask,
+  webSearchGroundingTask,
+  imageGenerationOutputTask,
+];
+
+/** One capability-tagged task per model capability, in `MODEL_CAPABILITIES` order. */
+export const RUNTIME_CAPABILITY_TASKS: readonly AnyRuntimeEvalTask[] = MODEL_CAPABILITIES.map((capability) => {
+  const task = [...RUNTIME_EVAL_TASKS, ...RUNTIME_PROBE_TASKS].find((candidate) => candidate.capability === capability);
+  if (!task) throw new Error(`No runtime task checks capability ${capability}.`);
+  return task;
+});

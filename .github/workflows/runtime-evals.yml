@@ -4,13 +4,23 @@ on:
   workflow_dispatch:
     inputs:
       provider:
-        description: "Provider filter; all runs both providers"
+        description: "Provider filter; all runs the defaults (OpenAI and Anthropic, plus Gemini for catalog). chatgpt runs on the shared self-hosted runner."
         required: true
         type: choice
-        options: [all, openai, anthropic]
+        options: [all, openai, anthropic, gemini, chatgpt]
         default: all
+      models:
+        description: "default runs the representative profiles; catalog runs the capability tasks on every catalog model"
+        required: true
+        type: choice
+        options: [default, catalog]
+        default: default
+      capability:
+        description: "Optional capability for catalog runs: basic_response, web_search, image_read, image_generation, or compaction"
+        required: false
+        type: string
       task:
-        description: "Optional task ID; empty runs every runtime task"
+        description: "Optional task ID for default runs; empty runs every runtime task"
         required: false
         type: string
       model:
@@ -32,6 +42,8 @@ on:
         required: true
       ANTHROPIC_API_KEY:
         required: true
+      GEMINI_API_KEY:
+        required: false
 
 concurrency:
   group: ${{ github.repository }}-model-evals
@@ -40,22 +52,29 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  EVAL_PROVIDER: ${{ inputs.provider || 'all' }}
+  EVAL_MODELS: ${{ inputs.models || 'default' }}
+  EVAL_CAPABILITY: ${{ inputs.capability || '' }}
+  EVAL_TASK: ${{ inputs.task || '' }}
+  EVAL_MODEL: ${{ inputs.model || '' }}
+  EVAL_SEED: ${{ inputs.seed || '' }}
+
 jobs:
   runtime-evals:
     name: Runtime eval suite (shadow, ${{ matrix.os }})
+    if: ${{ inputs.provider != 'chatgpt' }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 300
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # A catalog matrix samples models, not platforms, so it runs once on Ubuntu.
+        os: ${{ fromJSON(inputs.models == 'catalog' && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest"]') }}
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      EVAL_PROVIDER: ${{ inputs.provider || 'all' }}
-      EVAL_TASK: ${{ inputs.task || '' }}
-      EVAL_MODEL: ${{ inputs.model || '' }}
-      EVAL_SEED: ${{ inputs.seed || '' }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -75,6 +94,8 @@ jobs:
         run: |
           args=(runtime)
           if [ "$EVAL_PROVIDER" != "all" ]; then args+=(--provider "$EVAL_PROVIDER"); fi
+          if [ "$EVAL_MODELS" = "catalog" ]; then args+=(--models catalog); fi
+          if [ -n "$EVAL_CAPABILITY" ]; then args+=(--capability "$EVAL_CAPABILITY"); fi
           if [ -n "$EVAL_TASK" ]; then args+=(--task "$EVAL_TASK"); fi
           if [ -n "$EVAL_MODEL" ]; then args+=(--model "$EVAL_MODEL"); fi
           if [ -n "$EVAL_SEED" ]; then args+=(--seed "$EVAL_SEED"); fi
@@ -84,6 +105,51 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: runtime-evals-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/evals/runtime-*.json
+          path: artifacts/evals/runtime-*
+          if-no-files-found: warn
+          retention-days: ${{ inputs.artifact_retention_days || 30 }}
+
+  # ChatGPT OAuth runs only on the shared self-hosted runner that holds the approved test account's credential file.
+  # Credentials never enter GitHub: the runner's .env sets DILIGENT_EVAL_CHATGPT_AUTH_FILE. Never add pull_request
+  # triggers to this workflow; see docs/guide/evals.md before changing runner access.
+  runtime-evals-chatgpt:
+    name: Runtime eval suite (ChatGPT OAuth, shared runner)
+    if: ${{ inputs.provider == 'chatgpt' }}
+    runs-on: [self-hosted, diligent-chatgpt-oauth]
+    timeout-minutes: 360
+    env:
+      # The ChatGPT path must never borrow an API key; clear any machine-level value.
+      OPENAI_API_KEY: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.5
+      - run: bun install --frozen-lockfile
+      - name: Check the dedicated OAuth store
+        shell: bash
+        run: |
+          if [ -z "${DILIGENT_EVAL_CHATGPT_AUTH_FILE:-}" ]; then
+            echo "::error::DILIGENT_EVAL_CHATGPT_AUTH_FILE is not set in the runner environment."
+            exit 1
+          fi
+      - name: Run runtime eval suite
+        shell: bash
+        run: |
+          args=(runtime --provider chatgpt --non-interactive --chatgpt-auth-file "$DILIGENT_EVAL_CHATGPT_AUTH_FILE")
+          if [ "$EVAL_MODELS" = "catalog" ]; then args+=(--models catalog); fi
+          if [ -n "$EVAL_CAPABILITY" ]; then args+=(--capability "$EVAL_CAPABILITY"); fi
+          if [ -n "$EVAL_TASK" ]; then args+=(--task "$EVAL_TASK"); fi
+          if [ -n "$EVAL_MODEL" ]; then args+=(--model "$EVAL_MODEL"); fi
+          if [ -n "$EVAL_SEED" ]; then args+=(--seed "$EVAL_SEED"); fi
+          bun run eval "${args[@]}"
+      - name: Upload runtime eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-evals-chatgpt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/evals/runtime-*
           if-no-files-found: warn
           retention-days: ${{ inputs.artifact_retention_days || 30 }}

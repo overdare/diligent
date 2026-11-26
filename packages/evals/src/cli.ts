@@ -1,4 +1,4 @@
-// @summary CLI entrypoint for core, runtime, and capability-matrix eval runs and unattended ChatGPT login
+// @summary CLI entrypoint for core and runtime eval runs, catalog-wide capability matrices, and unattended ChatGPT login
 
 import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -11,7 +11,7 @@ import {
   type ModelCapability,
   renderCapabilityMatrixMarkdown,
 } from "./capabilities";
-import { type EvalCliOptions, parseCliOptions } from "./cli-options";
+import { parseCliOptions } from "./cli-options";
 import {
   configureProfileProviderManager,
   createProfileStream,
@@ -23,20 +23,19 @@ import {
 } from "./profiles";
 import {
   type ChatGPTEvalAuth,
-  type ChatGPTEvalAuthOptions,
   createLocalChatGPTEvalAuth,
   getChatGPTRedactionSecrets,
   loginChatGPTEvalAuth,
 } from "./providers/chatgpt-oauth";
 import { redactEvalText, writeEvalReport } from "./reporters/json";
-import { type CapabilityUnavailable, runCapabilitySuite } from "./runner/capability-suite";
-import { runRuntimeEvalSuite } from "./runner/runtime-suite";
+import { installProviderHttpObserver } from "./runner/provider-http-observer";
+import { type CapabilityUnavailable, runRuntimeEvalSuite } from "./runner/runtime-suite";
 import { createGithubRootSeed, createRandomRootSeed } from "./runner/seed";
-import { type EvalRunMetadata, runEvalSuite } from "./runner/suite";
-import type { RuntimeEvalExecutionResult } from "./runtime-task";
+import { runEvalSuite } from "./runner/suite";
+import type { AnyRuntimeEvalTask, RuntimeEvalExecutionResult } from "./runtime-task";
 import type { AnyEvalTask, EvalExecutionResult, EvalProfile } from "./task";
 import { CORE_EVAL_TASKS } from "./tasks/core";
-import { RUNTIME_EVAL_TASKS } from "./tasks/runtime";
+import { RUNTIME_CAPABILITY_TASKS, RUNTIME_EVAL_TASKS, RUNTIME_PROBE_TASKS } from "./tasks/runtime";
 
 const SUITE_VERSION = "core-v0";
 
@@ -60,6 +59,8 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       console.log("[eval] chatgpt oauth credentials_saved");
       return 0;
     }
+    // SDK clients may keep the fetch they see at construction, so observe HTTP before any client exists.
+    installProviderHttpObserver();
 
     const metadata = resolveRunMetadata();
     const rootSeed =
@@ -67,25 +68,41 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       (metadata.runId !== "local"
         ? createGithubRootSeed(metadata.repository, metadata.runId, metadata.commitSha)
         : createRandomRootSeed());
-    const chatgptAuthOptions: ChatGPTEvalAuthOptions = {
-      interactive: !options.nonInteractive,
-      authFile: options.chatgptAuthFile,
-      onStatus: (status) => console.log(`[eval] chatgpt oauth ${status}`),
-      onCredentials: (tokens) => {
-        secrets.push(...getChatGPTRedactionSecrets(tokens));
-      },
-    };
-    if (options.command === "capabilities") {
-      return await runCapabilities(options, metadata, rootSeed, chatgptAuthOptions, secrets);
-    }
-
     const suite = options.command;
-    const profiles = resolveSelectedProfiles(options);
-    const tasks = suite === "core" ? selectCoreTasks(options.task) : selectRuntimeTasks(options.task);
-    validateCredentials(profiles);
-    const chatgptAuth = profiles.some((profile) => profile.provider === "chatgpt")
-      ? await createLocalChatGPTEvalAuth(process.cwd(), chatgptAuthOptions)
-      : undefined;
+    const catalog = options.models === "catalog";
+    const profiles = catalog ? resolveCapabilityProfiles(options) : resolveSelectedProfiles(options);
+    const tasks =
+      suite === "core"
+        ? selectCoreTasks(options.task)
+        : catalog
+          ? selectCapabilityTasks(options.capability)
+          : selectRuntimeTasks(options.task);
+    // A catalog run records missing credentials as not-run cells instead of refusing to start.
+    if (!catalog) validateCredentials(profiles);
+    let chatgptAuth: ChatGPTEvalAuth | undefined;
+    let chatgptUnavailable: CapabilityUnavailable | undefined;
+    if (profiles.some((profile) => profile.provider === "chatgpt")) {
+      try {
+        chatgptAuth = await createLocalChatGPTEvalAuth(process.cwd(), {
+          interactive: !options.nonInteractive,
+          authFile: options.chatgptAuthFile,
+          onStatus: (status) => console.log(`[eval] chatgpt oauth ${status}`),
+          onCredentials: (tokens) => {
+            secrets.push(...getChatGPTRedactionSecrets(tokens));
+          },
+        });
+      } catch (error) {
+        if (!catalog) throw error;
+        chatgptUnavailable = {
+          code:
+            error instanceof ProviderError && error.errorType === ProviderErrorType.Auth
+              ? `provider_auth.${error.reason ?? "rejected"}`
+              : "chatgpt_auth.setup_failed",
+          reason: redactEvalText(error instanceof Error ? error.message : String(error), secrets),
+        };
+        console.error(`[eval] chatgpt oauth unavailable: ${chatgptUnavailable.reason}`);
+      }
+    }
 
     console.log(`[eval] ${suite} suite: ${tasks.length} task(s) x ${profiles.length} profile(s)`);
     const shared = {
@@ -107,84 +124,42 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
           })
         : await runRuntimeEvalSuite({
             ...shared,
-            tasks: tasks as typeof RUNTIME_EVAL_TASKS,
+            tasks: tasks as AnyRuntimeEvalTask[],
+            // Register API keys as the product does, so native compaction runs the provider endpoint.
             configureProviderManager: (profile, manager) =>
-              configureProfileProviderManager(profile, manager, chatgptAuth),
+              configureProfileProviderManager(profile, manager, chatgptAuth, { apiKeyEnv: process.env }),
             onExecutionEnd: (result) => printRuntimeExecutionResult(result, secrets),
+            ...(catalog && {
+              matrix: {
+                unavailable: (profile: EvalProfile) => {
+                  if (profile.provider === "chatgpt") return chatgptUnavailable;
+                  const missing = missingApiKey(profile.provider);
+                  return missing ? { code: "credentials_missing", reason: `${missing} is not set.` } : undefined;
+                },
+                // An explicit --model selection is an intentional spend, so it runs every supported cell.
+                ...(!options.model && { costPolicy: createCapabilityCostPolicy(listModels()) }),
+                onCell: (cell: CapabilityCell) => printCapabilityCell(cell, secrets),
+              },
+            }),
           });
 
     const reportPath = options.reportPath ?? defaultReportPath(suite);
     await writeEvalReport(reportPath, report, { secrets });
     console.log(`[eval] report ${reportPath}`);
     await writeGithubSummary(report, reportPath);
+    if ("matrix" in report && report.matrix) {
+      const markdown = redactEvalText(renderCapabilityMatrixMarkdown(report, report.matrix), secrets);
+      const markdownPath = `${reportPath.replace(/\.json$/, "")}.md`;
+      await Bun.write(markdownPath, markdown);
+      console.log(`[eval] matrix ${markdownPath}`);
+      if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, markdown, "utf8");
+    }
     return report.passed ? 0 : 1;
   } catch (error) {
     const message = redactEvalText(error instanceof Error ? error.message : String(error), secrets);
     console.error(`[eval] configuration or runner error: ${message}`);
     return 2;
   }
-}
-
-async function runCapabilities(
-  options: EvalCliOptions,
-  metadata: EvalRunMetadata,
-  rootSeed: string,
-  chatgptAuthOptions: ChatGPTEvalAuthOptions,
-  secrets: string[],
-): Promise<number> {
-  const profiles = resolveCapabilityProfiles(options);
-  const capabilities: ModelCapability[] = options.capability ? [options.capability] : [...MODEL_CAPABILITIES];
-  let chatgptAuth: ChatGPTEvalAuth | undefined;
-  let chatgptUnavailable: CapabilityUnavailable | undefined;
-  if (profiles.some((profile) => profile.provider === "chatgpt")) {
-    try {
-      chatgptAuth = await createLocalChatGPTEvalAuth(process.cwd(), chatgptAuthOptions);
-    } catch (error) {
-      // Record every ChatGPT cell as not run, with the reason, instead of aborting the API-key matrix.
-      chatgptUnavailable = {
-        code:
-          error instanceof ProviderError && error.errorType === ProviderErrorType.Auth
-            ? `provider_auth.${error.reason ?? "rejected"}`
-            : "chatgpt_auth.setup_failed",
-        reason: redactEvalText(error instanceof Error ? error.message : String(error), secrets),
-      };
-      console.error(`[eval] chatgpt oauth unavailable: ${chatgptUnavailable.reason}`);
-    }
-  }
-
-  console.log(`[eval] capabilities: ${profiles.length} model(s) x ${capabilities.length} capability(ies)`);
-  const report = await runCapabilitySuite({
-    profiles,
-    capabilities,
-    rootSeed,
-    metadata,
-    unavailable: (profile) => {
-      if (profile.provider === "chatgpt") return chatgptUnavailable;
-      const missing = missingApiKey(profile.provider);
-      return missing ? { code: "credentials_missing", reason: `${missing} is not set.` } : undefined;
-    },
-    // An explicit --model selection is an intentional spend, so it runs every supported cell.
-    ...(!options.model && { costPolicy: createCapabilityCostPolicy(listModels()) }),
-    createStream: (profile) => createProfileStream(profile, process.env, chatgptAuth),
-    configureProviderManager: (profile, manager) =>
-      configureProfileProviderManager(profile, manager, chatgptAuth, { apiKeyEnv: process.env }),
-    onCellStart: (profile, capability) => {
-      console.log(`[eval] start ${capability} / ${profile.provider} / ${profile.model}`);
-    },
-    onCellEnd: (cell) => printCapabilityCell(cell, secrets),
-  });
-
-  const reportPath = options.reportPath ?? defaultReportPath("capabilities");
-  await writeEvalReport(reportPath, report, { secrets });
-  const markdown = redactEvalText(renderCapabilityMatrixMarkdown(report), secrets);
-  const markdownPath = `${reportPath.replace(/\.json$/, "")}.md`;
-  await Bun.write(markdownPath, markdown);
-  console.log(`[eval] report ${reportPath}`);
-  console.log(`[eval] matrix ${markdownPath}`);
-  const { pass, fail, not_run: notRun, unsupported, skipped } = report.counts;
-  console.log(`[eval] cells pass=${pass} fail=${fail} not_run=${notRun} unsupported=${unsupported} skipped=${skipped}`);
-  if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, markdown, "utf8");
-  return report.passed ? 0 : 1;
 }
 
 export function selectCoreTasks(taskId?: string): AnyEvalTask[] {
@@ -194,11 +169,16 @@ export function selectCoreTasks(taskId?: string): AnyEvalTask[] {
   return [task];
 }
 
-export function selectRuntimeTasks(taskId?: string) {
+/** The default run uses `RUNTIME_EVAL_TASKS`; `--task` may also name a capability probe outside it. */
+export function selectRuntimeTasks(taskId?: string): AnyRuntimeEvalTask[] {
   if (!taskId) return [...RUNTIME_EVAL_TASKS];
-  const task = RUNTIME_EVAL_TASKS.find((candidate) => candidate.id === taskId);
+  const task = [...RUNTIME_EVAL_TASKS, ...RUNTIME_PROBE_TASKS].find((candidate) => candidate.id === taskId);
   if (!task) throw new Error(`Unknown runtime eval task "${taskId}".`);
   return [task];
+}
+
+export function selectCapabilityTasks(capability?: ModelCapability): AnyRuntimeEvalTask[] {
+  return RUNTIME_CAPABILITY_TASKS.filter((task) => !capability || task.capability === capability);
 }
 
 function resolveRunMetadata() {
@@ -220,7 +200,7 @@ function localCommitSha(): string {
   return new TextDecoder().decode(result.stdout).trim() || "unknown";
 }
 
-export function defaultReportPath(suite: "core" | "runtime" | "capabilities", now = new Date()): string {
+export function defaultReportPath(suite: "core" | "runtime", now = new Date()): string {
   const timestamp = now.toISOString().replaceAll(":", "-");
   return join("artifacts", "evals", `${suite}-${timestamp}.json`);
 }
@@ -292,9 +272,9 @@ function printHelp(): void {
   bun run eval runtime [--provider openai|anthropic|gemini|chatgpt] [--task <id>]
                          [--model <model-id>] [--seed <seed>] [--report <path>]
 
-  bun run eval capabilities [--provider openai|anthropic|gemini|chatgpt] [--model <model-id>]
-                              [--capability ${MODEL_CAPABILITIES.join("|")}]
-                              [--seed <seed>] [--report <path>]
+  bun run eval runtime --models catalog [--provider openai|anthropic|gemini|chatgpt]
+                         [--capability ${MODEL_CAPABILITIES.join("|")}]
+                         [--model <model-id>] [--seed <seed>] [--report <path>]
 
   bun run eval chatgpt-login [--chatgpt-auth-file <path>]
 
@@ -302,8 +282,9 @@ ChatGPT options for every suite:
   --non-interactive           Never open a browser; missing or rejected OAuth fails the run.
   --chatgpt-auth-file <path>  Use a dedicated file-backed OAuth store instead of the Diligent auth store.
 
-Omitting --task runs every task in the selected suite. Omitting --provider runs the OpenAI and Anthropic
-defaults for core and runtime, and every OpenAI, Anthropic, and Gemini catalog model for capabilities.`);
+Omitting --task runs every task in the selected suite. Omitting --provider runs the OpenAI and Anthropic defaults.
+--models catalog runs the capability-tagged runtime tasks on every catalog model of the selected providers
+(OpenAI, Anthropic, and Gemini by default) and writes a capability matrix next to the report.`);
 }
 
 if (import.meta.main) {

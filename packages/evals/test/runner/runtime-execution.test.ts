@@ -13,6 +13,7 @@ import { z } from "zod";
 import { resolveEvalHardLimits } from "../../src/runner/budget-policy";
 import { runRuntimeEvalExecution } from "../../src/runner/runtime-execution";
 import type { RuntimeEvalExecution, RuntimeEvalTask } from "../../src/runtime-task";
+import { seededImagePair } from "../../src/tasks/image-fixture";
 import {
   clarifyThenExecuteTask,
   hookContextFollowTask,
@@ -39,6 +40,7 @@ import {
   writeFixture,
 } from "../../src/tasks/runtime/helpers";
 import { assistantMessage, hangingStream, sequenceStream } from "../helpers/fake-stream";
+import { lastUserText, runScripted, splitTextStream, text } from "../helpers/scripted-runtime";
 
 describe("runRuntimeEvalExecution", () => {
   test("uses explicit plugin discovery by default for isolated app-server assembly", async () => {
@@ -177,6 +179,7 @@ describe("runRuntimeEvalExecution", () => {
       seed,
       profile: { provider: "openai", model: "gpt-6.1-terra", effort: "medium" },
       streamFunction: sequenceStream([
+        assistantMessage([{ type: "tool_call", id: "archive", name: "load_archive", input: {} }], "tool_use"),
         assistantMessage([{ type: "text", text: "ACK" }]),
         assistantMessage([{ type: "text", text: "ACK" }]),
         assistantMessage([{ type: "text", text: `Retain alpha ${alpha} and beta ${beta} for the resumed task.` }]),
@@ -2053,6 +2056,65 @@ describe("runRuntimeEvalExecution", () => {
     expect(result.execution.turns[0]?.notifications.length).toBeGreaterThan(0);
     expect(result.execution.turns[0]?.termination).not.toBe("completed");
     expect(result.execution.session.lines.length).toBeGreaterThan(1);
+  });
+
+  test("a fixture path split across streamed text deltas still mirrors the normalized final message", async () => {
+    const result = await runScripted(readImagePairTask, (call, context) => {
+      const prompt = lastUserText(context);
+      const [first, second] = prompt.match(/\S+\.png/g) ?? [];
+      if (call === 2) {
+        const colors = seededImagePair("scripted-seed");
+        return text(`A=${colors.a}; B=${colors.b}`);
+      }
+      const narration = `I will read \`${first}\` and \`${second}\`.`;
+      const split = narration.indexOf("/", narration.indexOf("/") + 1);
+      return splitTextStream(
+        assistantMessage(
+          [
+            { type: "text", text: narration },
+            { type: "tool_call", id: "a", name: "read_image", input: { file_path: first } },
+            { type: "tool_call", id: "b", name: "read_image", input: { file_path: second } },
+          ],
+          "tool_use",
+        ),
+        [narration.slice(0, split), narration.slice(split)],
+      );
+    });
+    expect(result.failures).toEqual([]);
+  });
+
+  test("fails an execution whose provider request returned HTTP 400 even when the run recovered", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => Response.json({ error: { code: "invalid_value", param: "tools" } }, { status: 400 }),
+    });
+    try {
+      const colors = seededImagePair("scripted-seed");
+      const result = await runScripted(readImagePairTask, (call, context) => {
+        if (call === 2) return text(`A=${colors.a}; B=${colors.b}`);
+        const [first, second] = lastUserText(context).match(/\S+\.png/g) ?? [];
+        // A rejected request the product recovers from, observed while the provider call is in flight.
+        const rejected = fetch(`http://127.0.0.1:${server.port}/v1/responses?key=secret`);
+        return splitTextStream(
+          assistantMessage(
+            [
+              { type: "tool_call", id: "a", name: "read_image", input: { file_path: first } },
+              { type: "tool_call", id: "b", name: "read_image", input: { file_path: second } },
+            ],
+            "tool_use",
+          ),
+          [],
+          rejected,
+        );
+      });
+      expect(result.failures.map((failure) => failure.code)).toEqual(["provider_terminal.http_400"]);
+      expect(result.execution.providerHttpErrors).toEqual([
+        expect.objectContaining({ status: 400, code: "invalid_value", param: "tools" }),
+      ]);
+      expect(JSON.stringify(result.execution.providerHttpErrors)).not.toContain("secret");
+    } finally {
+      server.stop(true);
+    }
   });
 });
 

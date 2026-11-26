@@ -9,6 +9,8 @@ import { removeTemporaryRoot } from "../../../src/runner/runtime-workspace";
 import type { RuntimeEvalExecution } from "../../../src/runtime-task";
 import { writeFixture } from "../../../src/tasks/runtime/helpers";
 import {
+  ARCHIVE_OUTPUT,
+  ARCHIVE_TOOL,
   type ManualCompactionResumeWorld,
   manualCompactionResumeTask,
 } from "../../../src/tasks/runtime/manual-compaction-resume";
@@ -40,11 +42,7 @@ describe("manual-compaction-resume", () => {
     const root = await mkdtemp(join(tmpdir(), "diligent-eval-manual-compaction-contract-"));
     try {
       const world = await manualCompactionResumeTask.setup("shared-seed-123", root);
-      const first = manualCompactionResumeTask.createSteps(world)[0];
-      expect(first.kind).toBe("turn");
-      expect(first.kind === "turn" ? Math.ceil(first.message.length / 4) : 0).toBeGreaterThanOrEqual(
-        COMPACTION_MIN_INPUT_TOKENS,
-      );
+      expect(Math.ceil(ARCHIVE_OUTPUT.length / 4)).toBeGreaterThanOrEqual(COMPACTION_MIN_INPUT_TOKENS);
       await writeFixture(root, { "CONTEXT.json": world.expected });
       const verifier = await manualCompactionResumeTask.verify!(world, new AbortController().signal);
       const skipped = execution(world, verifier);
@@ -107,6 +105,7 @@ describe("manual-compaction-resume", () => {
           input: { patch: `*** Begin Patch\n*** Add File: CONTEXT.json\n+${world.expected.trimEnd()}\n*** End Patch` },
           outcome: "success",
         },
+        archiveLoad(),
       ];
       const result = manualCompactionResumeTask.evaluate(input);
       expect(result.passed).toBe(true);
@@ -163,6 +162,23 @@ describe("manual-compaction-resume", () => {
       await removeTemporaryRoot(root);
     }
   });
+
+  test("fails when the archive filler was never loaded", async () => {
+    const root = await mkdtemp(join(tmpdir(), "diligent-eval-manual-compaction-archive-"));
+    try {
+      const world = await manualCompactionResumeTask.setup("shared-seed-123", root);
+      await writeFixture(root, { "CONTEXT.json": world.expected });
+      const input = execution(world, await manualCompactionResumeTask.verify!(world, new AbortController().signal));
+      input.toolCalls = input.toolCalls.filter((call) => call.name !== ARCHIVE_TOOL);
+      expect(manualCompactionResumeTask.evaluate(input)).toMatchObject({
+        passed: false,
+        code: "manual_compaction.archive_not_loaded",
+        dimension: "behavior",
+      });
+    } finally {
+      await removeTemporaryRoot(root);
+    }
+  });
 });
 
 function execution(
@@ -199,6 +215,7 @@ function execution(
         input: { file_path: "CONTEXT.json", old_string: "", new_string: world.expected, replace_all: false },
         outcome: "success",
       },
+      archiveLoad(),
     ],
     toolOutputFiles: [],
     approvals: [],
@@ -221,6 +238,18 @@ function execution(
     runtimeState: { initial: [], final: [], diff: [] },
     verifier,
     world,
+  };
+}
+
+function archiveLoad(): RuntimeEvalExecution<ManualCompactionResumeWorld>["toolCalls"][number] {
+  return {
+    sequence: 9,
+    toolCallId: "archive",
+    name: ARCHIVE_TOOL,
+    capability: "execute",
+    turnIndex: 0,
+    input: {},
+    outcome: "success",
   };
 }
 

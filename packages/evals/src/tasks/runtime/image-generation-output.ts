@@ -1,4 +1,4 @@
-// @summary Capability probe: runtime image generation returns a valid image that reaches the thread and the model
+// @summary Runtime eval for image generation that returns a valid image to the thread and the model
 
 import { createHash } from "node:crypto";
 import { resizeImageToSquarePng, validateImage } from "@diligent/core/image-contract";
@@ -6,8 +6,8 @@ import type { BundledToolProvider } from "@diligent/runtime";
 import { z } from "zod";
 import type { RuntimeEvalExecution, RuntimeEvalTask } from "../../runtime-task";
 import { singlePixelPngRgb } from "../image-fixture";
-import { finalAssistantText, RuntimeGrade, unwrapReply } from "../runtime/grading";
-import { createFixtureRuntimeConfig, DEFAULT_RUNTIME_LIMITS, type RuntimeFixtureWorld } from "../runtime/helpers";
+import { finalAssistantText, RuntimeGrade, unwrapReply } from "./grading";
+import { createFixtureRuntimeConfig, DEFAULT_RUNTIME_LIMITS, type RuntimeFixtureWorld } from "./helpers";
 
 export const IMAGE_GENERATION_TOOL = "generate_image";
 /** The model id the ChatGPT image endpoint expects from Codex-compatible clients. */
@@ -28,16 +28,17 @@ export interface GeneratedImageRecord {
   dominantColor?: GeneratedColor;
 }
 
-export interface ImageGenerationCapabilityWorld extends RuntimeFixtureWorld {
+export interface ImageGenerationOutputWorld extends RuntimeFixtureWorld {
   /** Color the tool requests from the generator; the model is never told it. */
   color: GeneratedColor;
   generated: GeneratedImageRecord[];
 }
 
-export const imageGenerationCapabilityTask: RuntimeEvalTask<ImageGenerationCapabilityWorld> = {
-  id: "capability-image-generation",
+export const imageGenerationOutputTask: RuntimeEvalTask<ImageGenerationOutputWorld> = {
+  id: "image-generation-output",
   description: "Generate an image through the runtime binding, deliver it to the thread, and name its color.",
-  fixtureVersion: "capability-image-generation-v1",
+  fixtureVersion: "image-generation-output-v1",
+  capability: "image_generation",
   limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 3, maxToolCalls: 1, maxChangedFiles: 0, timeoutMs: 900_000 },
   statePolicy: { allowedMutations: ["infrastructure", "sessions", "image_sidecars"] },
   toolPolicy: { allowedTools: [IMAGE_GENERATION_TOOL], allowedCapabilities: ["execute"], allowedCommands: [] },
@@ -59,7 +60,7 @@ export const imageGenerationCapabilityTask: RuntimeEvalTask<ImageGenerationCapab
   ],
   snapshotWorld: async (world) => ({ color: world.color, generated: world.generated }),
   evaluate(input) {
-    const grade = new RuntimeGrade("capability_image_generation");
+    const grade = new RuntimeGrade("image_generation_output");
     const calls = input.toolCalls.filter((call) => call.name === IMAGE_GENERATION_TOOL);
     if (calls.length === 0) return grade.fail("not_called", "The model never requested image generation.", "behavior");
     const image = input.world.generated[0];
@@ -93,9 +94,9 @@ export const imageGenerationCapabilityTask: RuntimeEvalTask<ImageGenerationCapab
   },
 };
 
-function imageGenerationProvider(world: ImageGenerationCapabilityWorld): BundledToolProvider {
+function imageGenerationProvider(world: ImageGenerationOutputWorld): BundledToolProvider {
   return {
-    id: "eval-capability-image-generation",
+    id: "eval-image-generation-output",
     createTools: (context) => [
       {
         name: IMAGE_GENERATION_TOOL,

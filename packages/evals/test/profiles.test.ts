@@ -107,7 +107,7 @@ describe("eval profiles", () => {
   });
 
   test("the capability matrix covers every catalog model of the API-key providers by default", () => {
-    const profiles = resolveCapabilityProfiles({ command: "capabilities", help: false });
+    const profiles = resolveCapabilityProfiles({ command: "runtime", models: "catalog", help: false });
     const expected = CAPABILITY_DEFAULT_PROVIDERS.flatMap((provider) =>
       listModels(provider).map((model) => `${provider}/${model.modelId}`),
     );
@@ -116,7 +116,12 @@ describe("eval profiles", () => {
   });
 
   test("a capability provider filter selects that provider's whole catalog", () => {
-    const profiles = resolveCapabilityProfiles({ command: "capabilities", provider: "chatgpt", help: false });
+    const profiles = resolveCapabilityProfiles({
+      command: "runtime",
+      models: "catalog",
+      provider: "chatgpt",
+      help: false,
+    });
     expect(profiles.map((profile) => profile.model)).toEqual(listModels("chatgpt").map((model) => model.modelId));
   });
 

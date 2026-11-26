@@ -1,15 +1,15 @@
-// @summary Capability probe: provider-native web search returns results that the final answer cites
+// @summary Runtime eval for provider-native web search whose results the final answer must cite
 
 import type { ContentBlock } from "@diligent/core/message-contract";
 import type { RuntimeEvalExecution, RuntimeEvalTask } from "../../runtime-task";
-import { finalAssistantText, RuntimeGrade } from "../runtime/grading";
-import { createFixtureRuntimeConfig, DEFAULT_RUNTIME_LIMITS, type RuntimeFixtureWorld } from "../runtime/helpers";
+import { finalAssistantText, RuntimeGrade } from "./grading";
+import { createFixtureRuntimeConfig, DEFAULT_RUNTIME_LIMITS, type RuntimeFixtureWorld } from "./helpers";
 
 const WEB_TOOL = "web_action";
 const URL_PATTERN = /https?:\/\/[^\s<>()[\]"'`]+/gi;
 const HOST_PATTERN = /^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i;
 
-export type WebSearchCapabilityWorld = RuntimeFixtureWorld;
+export type WebSearchGroundingWorld = RuntimeFixtureWorld;
 
 export interface WebSearchEvidence {
   searches: number;
@@ -17,10 +17,11 @@ export interface WebSearchEvidence {
   errors: string[];
 }
 
-export const webSearchCapabilityTask: RuntimeEvalTask<WebSearchCapabilityWorld> = {
-  id: "capability-web-search",
+export const webSearchGroundingTask: RuntimeEvalTask<WebSearchGroundingWorld> = {
+  id: "web-search-grounding",
   description: "Search the web with the provider-native tool and answer with a URL taken from the results.",
-  fixtureVersion: "capability-web-search-v1",
+  fixtureVersion: "web-search-grounding-v1",
+  capability: "web_search",
   limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 3, maxToolCalls: 0, maxChangedFiles: 0, timeoutMs: 600_000 },
   toolPolicy: { allowedTools: [WEB_TOOL], allowedCapabilities: ["execute"], allowedCommands: [] },
   async setup(seed, root) {
@@ -39,7 +40,7 @@ export const webSearchCapabilityTask: RuntimeEvalTask<WebSearchCapabilityWorld> 
   ],
   snapshotWorld: async () => ({}),
   evaluate(input) {
-    const grade = new RuntimeGrade("capability_web_search");
+    const grade = new RuntimeGrade("web_search_grounding");
     const evidence = collectWebSearchEvidence(input);
     if (evidence.searches === 0)
       return grade.fail("not_searched", "The provider never issued a native web search.", "behavior");

@@ -17,6 +17,7 @@ import type {
   ProviderName,
   RuntimeConfig,
 } from "@diligent/runtime";
+import type { ModelCapability, RuntimeCapabilityMatrix } from "./capabilities";
 import type {
   EvalDiagnostic,
   EvalEventSnapshot,
@@ -271,12 +272,25 @@ export interface RuntimeEvalExecution<TWorld> {
   verifier?: RuntimeVerifierResult;
   world: TWorld;
   error?: EvalExecutionError;
+  /** Provider HTTP error responses observed during the run, including ones the product recovered from. */
+  providerHttpErrors?: ProviderHttpError[];
+}
+
+export interface ProviderHttpError {
+  status: number;
+  /** Origin and path only; query strings can carry credentials. */
+  endpoint: string;
+  requestId?: string;
+  code?: string;
+  param?: string;
 }
 
 export interface RuntimeEvalTask<TWorld> {
   id: string;
   description: string;
   fixtureVersion: string;
+  /** Basic capability this task checks; tagged tasks form the catalog-wide capability matrix. */
+  capability?: ModelCapability;
   pluginDiscovery?: NonNullable<CreateAppServerConfigOptions["pluginDiscovery"]>;
   limits: RuntimeEvalLimits;
   toolPolicy: RuntimeEvalToolPolicy;
@@ -350,6 +364,8 @@ export interface RuntimeEvalSuiteReport {
   passed: boolean;
   status: EvalStatus;
   executions: RuntimeEvalExecutionReport[];
+  /** Present for catalog-wide capability runs; cells without an execution are unsupported, skipped, or not run. */
+  matrix?: RuntimeCapabilityMatrix;
 }
 
 export type RuntimeToolTransformer = (tools: Tool[]) => Tool[];

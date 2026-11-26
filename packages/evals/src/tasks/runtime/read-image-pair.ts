@@ -15,6 +15,7 @@ export const readImagePairTask: RuntimeEvalTask<ReadImagePairWorld> = {
   id: "read-image-pair",
   description: "Read two seed-swapped images and report each dominant color exactly.",
   fixtureVersion: "read-image-pair-v1",
+  capability: "image_read",
   limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 6, maxToolCalls: 4, timeoutMs: 180_000 },
   statePolicy: {
     allowedMutations: ["infrastructure", "sessions", "image_sidecars"],

@@ -4,13 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       provider:
-        description: "Provider filter; all runs both providers"
+        description: "Provider filter; all runs both providers. chatgpt runs on the shared self-hosted runner."
         required: true
         type: choice
         options:
           - all
           - openai
           - anthropic
+          - gemini
+          - chatgpt
         default: all
       task:
         description: "Optional task ID; empty runs every core task"
@@ -36,6 +38,8 @@ on:
         required: true
       ANTHROPIC_API_KEY:
         required: true
+      GEMINI_API_KEY:
+        required: false
 
 concurrency:
   group: ${{ github.repository }}-model-evals
@@ -44,18 +48,22 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  EVAL_PROVIDER: ${{ inputs.provider || 'all' }}
+  EVAL_TASK: ${{ inputs.task || '' }}
+  EVAL_MODEL: ${{ inputs.model || '' }}
+  EVAL_SEED: ${{ inputs.seed || '' }}
+
 jobs:
   core-evals:
     name: Core eval suite
+    if: ${{ inputs.provider != 'chatgpt' }}
     runs-on: ubuntu-latest
     timeout-minutes: 50
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      EVAL_PROVIDER: ${{ inputs.provider || 'all' }}
-      EVAL_TASK: ${{ inputs.task || '' }}
-      EVAL_MODEL: ${{ inputs.model || '' }}
-      EVAL_SEED: ${{ inputs.seed || '' }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -91,6 +99,58 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: core-evals-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/evals/*.json
+          if-no-files-found: warn
+          retention-days: ${{ inputs.artifact_retention_days || 30 }}
+
+  # ChatGPT OAuth runs only on the shared self-hosted runner; see the runtime-evals.yml ChatGPT job.
+  core-evals-chatgpt:
+    name: Core eval suite (ChatGPT OAuth, shared runner)
+    if: ${{ inputs.provider == 'chatgpt' }}
+    runs-on: [self-hosted, diligent-chatgpt-oauth]
+    timeout-minutes: 50
+    env:
+      OPENAI_API_KEY: ""
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.5
+
+      - run: bun install --frozen-lockfile
+
+      - name: Check the dedicated OAuth store
+        shell: bash
+        run: |
+          if [ -z "${DILIGENT_EVAL_CHATGPT_AUTH_FILE:-}" ]; then
+            echo "::error::DILIGENT_EVAL_CHATGPT_AUTH_FILE is not set in the runner environment."
+            exit 1
+          fi
+
+      - name: Run core eval suite
+        shell: bash
+        run: |
+          args=(core --provider chatgpt --non-interactive --chatgpt-auth-file "$DILIGENT_EVAL_CHATGPT_AUTH_FILE")
+          if [ -n "$EVAL_TASK" ]; then
+            args+=(--task "$EVAL_TASK")
+          fi
+          if [ -n "$EVAL_MODEL" ]; then
+            args+=(--model "$EVAL_MODEL")
+          fi
+          if [ -n "$EVAL_SEED" ]; then
+            args+=(--seed "$EVAL_SEED")
+          fi
+          bun run eval "${args[@]}"
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-evals-chatgpt-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/evals/*.json
           if-no-files-found: warn
           retention-days: ${{ inputs.artifact_retention_days || 30 }}

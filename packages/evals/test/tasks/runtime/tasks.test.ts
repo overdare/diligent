@@ -507,7 +507,7 @@ describe("runtime eval tasks", () => {
         "restart_and_resume",
         "turn",
       ]);
-      expect(manualCompactionResumeTask.toolPolicy.allowedCapabilities).toEqual(["write"]);
+      expect(manualCompactionResumeTask.toolPolicy.allowedCapabilities).toEqual(["execute", "write"]);
       expect(world.allowedChanges).toEqual(["CONTEXT.json"]);
     } finally {
       await removeTemporaryRoot(root);
