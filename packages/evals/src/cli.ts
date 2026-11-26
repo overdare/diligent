@@ -2,9 +2,11 @@
 
 import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
+import { listModels } from "@diligent/core/model-registry";
 import { ProviderError, ProviderErrorType } from "@diligent/core/provider-contract";
 import {
   type CapabilityCell,
+  createCapabilityCostPolicy,
   MODEL_CAPABILITIES,
   type ModelCapability,
   renderCapabilityMatrixMarkdown,
@@ -161,6 +163,8 @@ async function runCapabilities(
       const missing = missingApiKey(profile.provider);
       return missing ? { code: "credentials_missing", reason: `${missing} is not set.` } : undefined;
     },
+    // An explicit --model selection is an intentional spend, so it runs every supported cell.
+    ...(!options.model && { costPolicy: createCapabilityCostPolicy(listModels()) }),
     createStream: (profile) => createProfileStream(profile, process.env, chatgptAuth),
     configureProviderManager: (profile, manager) =>
       configureProfileProviderManager(profile, manager, chatgptAuth, { apiKeyEnv: process.env }),
@@ -177,8 +181,8 @@ async function runCapabilities(
   await Bun.write(markdownPath, markdown);
   console.log(`[eval] report ${reportPath}`);
   console.log(`[eval] matrix ${markdownPath}`);
-  const { pass, fail, not_run: notRun, unsupported } = report.counts;
-  console.log(`[eval] cells pass=${pass} fail=${fail} not_run=${notRun} unsupported=${unsupported}`);
+  const { pass, fail, not_run: notRun, unsupported, skipped } = report.counts;
+  console.log(`[eval] cells pass=${pass} fail=${fail} not_run=${notRun} unsupported=${unsupported} skipped=${skipped}`);
   if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, markdown, "utf8");
   return report.passed ? 0 : 1;
 }
@@ -229,7 +233,7 @@ function printCapabilityCell(cell: CapabilityCell, secrets: readonly string[]): 
   }
   const detail = redactEvalText(`${cell.code ? `${cell.code}: ` : ""}${cell.reason ?? ""}`, secrets);
   const line = `[eval] ${cell.status.replace("_", " ")} ${identity}: ${detail}`;
-  if (cell.status === "unsupported") console.log(line);
+  if (cell.status === "unsupported" || cell.status === "skipped") console.log(line);
   else console.error(line);
 }
 

@@ -6,6 +6,7 @@ import type { ProviderManager, StreamFunction } from "@diligent/core/provider-co
 import {
   authPathForProvider,
   type CapabilityCell,
+  type CapabilityCostPolicy,
   type CapabilityMatrixReport,
   capabilitySupport,
   classifyCapabilityExecution,
@@ -32,6 +33,8 @@ export async function runCapabilitySuite(input: {
   metadata: EvalRunMetadata;
   /** Credential or environment problem that prevents any live call for the profile's provider. */
   unavailable(profile: EvalProfile): CapabilityUnavailable | undefined;
+  /** Skip reason for cells excluded by cost; omit to run every supported cell. */
+  costPolicy?: CapabilityCostPolicy;
   createStream(profile: EvalProfile): StreamFunction;
   configureProviderManager(profile: EvalProfile, manager: ProviderManager): void;
   execute?: typeof runRuntimeEvalExecution;
@@ -55,9 +58,12 @@ export async function runCapabilitySuite(input: {
         capability,
       };
       const support = capabilitySupport(model, capability);
+      const skipReason = support.supported ? input.costPolicy?.(model, capability) : undefined;
       let cell: CapabilityCell;
       if (!support.supported) {
         cell = { ...identity, status: "unsupported", reason: support.reason };
+      } else if (skipReason) {
+        cell = { ...identity, status: "skipped", reason: skipReason };
       } else if (unavailable) {
         cell = { ...identity, status: "not_run", ...unavailable };
       } else {

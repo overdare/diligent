@@ -239,7 +239,7 @@ API-key profiles register their key in `ProviderManager` as the product does. Na
 Anthropic therefore runs the provider endpoint; Gemini uses summarization. The facts arrive in tool output because
 OpenAI native compaction keeps user messages verbatim, so facts in a user message would survive without compaction.
 
-Every cell has one of four statuses. Only `PASS` counts as a pass:
+Every cell has one of five statuses. Only `PASS` counts as a pass:
 
 - `PASS`: the probe passed, possibly with degraded diagnostics.
 - `FAIL`: the probe ran and failed, including provider rejections other than authentication, such as an unknown model.
@@ -247,6 +247,13 @@ Every cell has one of four statuses. Only `PASS` counts as a pass:
   subscription usage limit prevented a valid live call.
 - `UNSUPPORTED`: Diligent does not offer the capability for that model, so nothing ran. Image generation is bound only to
   ChatGPT OAuth, and image reading requires a vision-capable model card.
+- `SKIPPED`: the cost policy excluded the cell, so nothing ran.
+
+The cost policy treats a model whose input price is at least $4 per million tokens as expensive
+(`EXPENSIVE_INPUT_COST_PER_1M`). Per provider, only the newest expensive model runs, which is the first expensive card
+in the provider catalog, and that model skips compaction, the most token-heavy probe. Older expensive models are
+`SKIPPED` in every capability. ChatGPT subscription cards carry no token price and are never skipped. An explicit
+`--model` selection disables the policy and runs every supported capability for that model.
 
 The command exits 1 when any cell is `FAIL` or `NOT RUN`. It writes the full evidence report (`--report`, default
 `artifacts/evals/capabilities-<timestamp>.json`) and a Markdown matrix next to it with the same name and a `.md`

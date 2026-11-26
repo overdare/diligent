@@ -11,7 +11,12 @@ import {
   type ProviderResult,
   type StreamFunction,
 } from "@diligent/core/provider-contract";
-import { capabilitySupport, renderCapabilityMatrixMarkdown } from "../../src/capabilities";
+import {
+  capabilitySupport,
+  createCapabilityCostPolicy,
+  EXPENSIVE_INPUT_COST_PER_1M,
+  renderCapabilityMatrixMarkdown,
+} from "../../src/capabilities";
 import { runCapabilitySuite } from "../../src/runner/capability-suite";
 import type { EvalRunMetadata } from "../../src/runner/suite";
 import type { EvalProfile } from "../../src/task";
@@ -96,7 +101,7 @@ describe("runCapabilitySuite", () => {
     expect(status("chatgpt", "image_generation")).toBe("not_run");
     expect(executed).toEqual(["openai", "anthropic", "gemini"]);
     expect(report.executions).toHaveLength(3);
-    expect(report.counts).toEqual({ pass: 1, fail: 1, not_run: 3, unsupported: 3 });
+    expect(report.counts).toEqual({ pass: 1, fail: 1, not_run: 3, unsupported: 3, skipped: 0 });
     expect(report.passed).toBe(false);
     const geminiCell = report.cells.find((cell) => cell.provider === "gemini");
     expect(geminiCell?.code).toBe("provider_terminal.unknown");
@@ -123,6 +128,47 @@ describe("runCapabilitySuite", () => {
     });
     expect(report.cells).toEqual([expect.objectContaining({ status: "unsupported" })]);
     expect(report.passed).toBe(true);
+  });
+
+  test("cost-skipped cells never execute, do not fail the run, and do not count as passes", async () => {
+    const report = await runCapabilitySuite({
+      profiles: [profile("openai", "gpt-6.1-terra")],
+      capabilities: ["compaction"],
+      rootSeed: "seed",
+      metadata: METADATA,
+      unavailable: () => ({ code: "credentials_missing", reason: "unset" }),
+      costPolicy: () => "Cost policy: test skip.",
+      createStream: () => {
+        throw new Error("skipped cells never stream");
+      },
+      configureProviderManager: () => {},
+    });
+    expect(report.cells).toEqual([expect.objectContaining({ status: "skipped", reason: "Cost policy: test skip." })]);
+    expect(report.counts).toMatchObject({ pass: 0, skipped: 1 });
+    expect(report.passed).toBe(true);
+    expect(renderCapabilityMatrixMarkdown(report)).toContain("- Cost policy: test skip. (openai/gpt-6.1-terra)");
+  });
+});
+
+describe("createCapabilityCostPolicy", () => {
+  const expensive = EXPENSIVE_INPUT_COST_PER_1M;
+  const policy = createCapabilityCostPolicy([
+    { provider: "anthropic", modelId: "newest-expensive", inputCostPer1M: expensive * 2 },
+    { provider: "anthropic", modelId: "cheap", inputCostPer1M: expensive / 4 },
+    { provider: "anthropic", modelId: "older-expensive", inputCostPer1M: expensive },
+    { provider: "chatgpt", modelId: "subscription" },
+  ]);
+
+  test("runs only the newest expensive model per provider, without compaction", () => {
+    const anthropic = (modelId: string) => ({ provider: "anthropic" as const, modelId });
+    expect(policy(anthropic("newest-expensive"), "web_search")).toBeUndefined();
+    expect(policy(anthropic("newest-expensive"), "compaction")).toContain("skip compaction");
+    expect(policy(anthropic("older-expensive"), "basic_response")).toContain("(newest-expensive)");
+    expect(policy(anthropic("cheap"), "compaction")).toBeUndefined();
+  });
+
+  test("models without a token price, such as subscriptions, are never skipped", () => {
+    expect(policy({ provider: "chatgpt", modelId: "subscription" }, "compaction")).toBeUndefined();
   });
 });
 
