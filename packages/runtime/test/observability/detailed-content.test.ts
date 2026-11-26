@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { projectModelMessages, sanitizeDetailedValue } from "../../src/observability/detailed-content";
+import {
+  boundDetailedAttributes,
+  projectModelMessages,
+  sanitizeDetailedValue,
+} from "../../src/observability/detailed-content";
 
 const mask = (text: string) => text.replaceAll("synthetic-secret", "[MASKED]");
 
@@ -278,4 +282,105 @@ test("truncates collections to the relay contract while retaining system and new
 test("removes repeated data scheme markers even without a terminating comma", () => {
   const result = sanitizeDetailedValue(`prefix ${"data:".repeat(2000)} suffix`, (text) => text);
   expect(result.value).toBe("prefix [MEDIA OMITTED] suffix");
+});
+
+describe("detailed content branch coverage", () => {
+  test("clips oversized JSON-looking strings as text and oversized objects as a JSON preview", () => {
+    const big = "a".repeat(200000);
+    const fromString = sanitizeDetailedValue(JSON.stringify([big, big]), (text) => text);
+    expect(fromString.truncated).toBe(true);
+    expect(fromString.value.startsWith(`["${big.slice(0, 100)}`)).toBe(true);
+    expect(fromString.value.endsWith("[TRUNCATED]")).toBe(true);
+    expect(Buffer.byteLength(fromString.value)).toBe(262144);
+
+    const fromObject = sanitizeDetailedValue({ first: big, second: big }, (text) => text);
+    expect(fromObject.truncated).toBe(true);
+    const preview = JSON.parse(fromObject.value);
+    expect(preview.truncated).toBe(true);
+    expect(preview.preview.startsWith('{"first":"aaa')).toBe(true);
+    expect(preview.preview.endsWith("[TRUNCATED]")).toBe(true);
+    expect(Buffer.byteLength(preview.preview)).toBe(65536);
+  });
+
+  test("renders object content as JSON text and audio references with audio modality", () => {
+    const result = projectModelMessages(
+      {
+        "input.value": JSON.stringify({
+          messages: [
+            { role: "user", content: { note: "structured" } },
+            { role: "user", content: [{ type: "input_audio", url: "https://media.example/a.wav" }] },
+            { role: "user", content: [{ type: "input_file", url: "https://media.example/a.pdf" }] },
+            { role: "user", content: [{ type: "image", url: "https://media.example/a.png", modality: "video" }] },
+          ],
+        }),
+      },
+      (text) => text,
+    );
+    expect(JSON.parse(String(result["gen_ai.input.messages"]))).toEqual([
+      { role: "user", parts: [{ type: "text", content: '{"note":"structured"}' }] },
+      { role: "user", parts: [{ type: "uri", modality: "audio", uri: "https://media.example/a.wav" }] },
+      { role: "user", parts: [{ type: "uri", modality: "file", uri: "https://media.example/a.pdf" }] },
+      { role: "user", parts: [{ type: "uri", modality: "video", uri: "https://media.example/a.png" }] },
+    ]);
+  });
+
+  test("empty string values fall back to indexed attributes and plain strings map by direction", () => {
+    const result = projectModelMessages(
+      {
+        "input.value": "",
+        "llm.input_messages.0.message.content": "indexed question",
+        "output.value": "plain answer",
+      },
+      (text) => text,
+    );
+    expect(JSON.parse(String(result["gen_ai.input.messages"]))).toEqual([
+      { role: "user", parts: [{ type: "text", content: "indexed question" }] },
+    ]);
+    expect(JSON.parse(String(result["gen_ai.output.messages"]))).toEqual([
+      { role: "assistant", parts: [{ type: "text", content: "plain answer" }] },
+    ]);
+    expect(projectModelMessages({ "input.value": "", "output.value": "" }, (text) => text)).toEqual({});
+  });
+
+  test("top-level message arrays keep valid roles, map function to tool, and default unknown roles by direction", () => {
+    const list = [
+      { role: "function", content: "function text" },
+      { role: "robot", content: "robot text" },
+      { role: "developer", content: "developer text" },
+    ];
+    const result = projectModelMessages(
+      { "input.value": JSON.stringify(list), "output.value": JSON.stringify(list) },
+      (text) => text,
+    );
+    const roles = (key: string) =>
+      JSON.parse(String(result[key])).map((message: { role: string; parts: { content: string }[] }) => [
+        message.role,
+        message.parts[0]?.content,
+      ]);
+    expect(roles("gen_ai.input.messages")).toEqual([
+      ["tool", "function text"],
+      ["user", "robot text"],
+      ["developer", "developer text"],
+    ]);
+    expect(roles("gen_ai.output.messages")).toEqual([
+      ["tool", "function text"],
+      ["assistant", "robot text"],
+      ["developer", "developer text"],
+    ]);
+  });
+
+  test("bounds oversized attributes by clipping plain text and previewing JSON", () => {
+    const plain = boundDetailedAttributes({ "tool.output": "x".repeat(600000), kept: true });
+    expect(plain["diligent.content.truncated"]).toBe(true);
+    expect(plain.kept).toBe(true);
+    const clipped = String(plain["tool.output"]);
+    expect(clipped.endsWith("[TRUNCATED]")).toBe(true);
+    expect(Buffer.byteLength(clipped)).toBe(300000);
+
+    const json = boundDetailedAttributes({ "tool.output": JSON.stringify({ body: "y".repeat(600000) }) });
+    const preview = JSON.parse(String(json["tool.output"]));
+    expect(preview.truncated).toBe(true);
+    expect(preview.preview.startsWith('{"body":"yyy')).toBe(true);
+    expect(Buffer.byteLength(preview.preview)).toBe(75001);
+  });
 });

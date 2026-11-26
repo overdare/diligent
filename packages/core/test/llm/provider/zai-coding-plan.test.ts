@@ -3,12 +3,33 @@ import { describe, expect, it } from "bun:test";
 import { getModelInfoList, resolveModel } from "../../../src/llm/models";
 import {
   buildZaiCodingPlanProviderOptions,
+  classifyZaiCodingPlanError,
   createZaiCodingPlanStream,
   resolveZaiCodingPlanBaseUrl,
   transformZaiCodingPlanRequest,
 } from "../../../src/llm/provider/zai-coding-plan";
 import { normalizeThinkingEffort } from "../../../src/llm/thinking-effort";
 import type { Model } from "../../../src/llm/types";
+import { ProviderErrorType } from "../../../src/llm/types";
+
+describe("classifyZaiCodingPlanError", () => {
+  it("prefers statusCode over status and falls back to status", () => {
+    expect(classifyZaiCodingPlanError({ statusCode: 401, status: 503, message: "nope" })).toMatchObject({
+      errorType: ProviderErrorType.Auth,
+      statusCode: 401,
+    });
+    expect(classifyZaiCodingPlanError({ status: 429, message: "slow" })).toMatchObject({
+      errorType: ProviderErrorType.RateLimit,
+      statusCode: 429,
+    });
+  });
+
+  it("stringifies objects without a string message", () => {
+    const result = classifyZaiCodingPlanError({ message: 7 });
+    expect(result).toMatchObject({ errorType: ProviderErrorType.Unknown, message: "[object Object]" });
+    expect(result.statusCode).toBeUndefined();
+  });
+});
 
 const model: Model = {
   modelId: "glm-test",

@@ -40,4 +40,18 @@ describe("classifyVertexError", () => {
       isRetryable: true,
     });
   });
+
+  it("reads status, then statusCode precedence, and stringifies non-string messages", () => {
+    expect(classifyVertexError({ status: 429, message: "slow down" })).toMatchObject({
+      errorType: ProviderErrorType.RateLimit,
+      statusCode: 429,
+    });
+    expect(classifyVertexError({ statusCode: 401, status: 503, message: "nope" })).toMatchObject({
+      errorType: ProviderErrorType.Auth,
+      statusCode: 401,
+    });
+    const unknown = classifyVertexError({ message: 42 });
+    expect(unknown).toMatchObject({ errorType: ProviderErrorType.Unknown, message: "[object Object]" });
+    expect(unknown.statusCode).toBeUndefined();
+  });
 });

@@ -29,4 +29,22 @@ describe("renderPromptEditor", () => {
     expect(lines[0]).not.toBe("");
     expect(lines[0]).toContain("─");
   });
+
+  test("completion popup hides, truncates, or shows descriptions by available width", () => {
+    const store = new PromptStore({});
+    store.focused = true;
+    store.completionVisible = true;
+    store.completionItems = [
+      { name: "abc", description: "abcdef" },
+      { name: "xyz", description: "abcde" },
+    ] as never;
+    store.completionIndex = 0;
+    store.completionScrollOffset = 0;
+
+    const popupAt = (width: number) => renderPromptEditor(store, width).map(stripAnsi).slice(-2);
+
+    expect(popupAt(14)).toEqual([" ▸ abc   ", "   xyz   "]);
+    expect(popupAt(15)).toEqual([" ▸ abc   abcd…", "   xyz   abcde"]);
+    expect(popupAt(41)).toEqual([" ▸ abc   abcdef", "   xyz   abcde"]);
+  });
 });

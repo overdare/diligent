@@ -260,6 +260,82 @@ describe("exec", () => {
   });
 });
 
+describe("exec guest builtins and error reporting", () => {
+  test("image() accepts a data URL string or { image_url } and rejects other values", async () => {
+    const { exec } = setup([]);
+    const result = await exec.execute(
+      {
+        code: `image("data:image/png;base64,AAAA");\nimage({ image_url: "data:image/jpeg;base64,BBBB" });\ntry { image({ image_url: 5 }); } catch (e) { text(e.message); }\ntry { image(null); } catch (e) { text(e instanceof Error); }`,
+      },
+      makeCtx("call-1"),
+    );
+    expect(result.output).toBe("Script completed\nimage() expects a data: URL string or { image_url }\ntrue");
+    expect(result.outputImages).toEqual([
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
+      { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "BBBB" } },
+    ]);
+  });
+
+  test("a returned value is appended as text, while undefined adds nothing", async () => {
+    const { exec } = setup([]);
+    const returned = await exec.execute({ code: `return { n: 0 };` }, makeCtx("call-1"));
+    expect(returned.output).toBe('Script completed\n{"n":0}');
+    const falsy = await exec.execute({ code: `return 0;` }, makeCtx("call-2"));
+    expect(falsy.output).toBe("Script completed\n0");
+    const none = await exec.execute({ code: `text("x"); return undefined;` }, makeCtx("call-3"));
+    expect(none.output).toBe("Script completed\nx");
+  });
+
+  test("exit() completes without an error and drops later text", async () => {
+    const { exec } = setup([]);
+    const result = await exec.execute({ code: `text("a"); exit(); text("b");` }, makeCtx("call-1"));
+    expect(result.output).toBe("Script completed\na");
+    expect(result.metadata?.error).toBeUndefined();
+  });
+
+  test("store() publishes values to later cells", async () => {
+    const { exec } = setup([]);
+    await exec.execute({ code: `store("k", [1, "two"]);` }, makeCtx("call-1"));
+    const result = await exec.execute({ code: `text(load("k"));` }, makeCtx("call-2"));
+    expect(result.output).toBe('Script completed\n[1,"two"]');
+  });
+
+  test.each([
+    ["an object with message but no name", `throw { message: "m" };`, "Error: m"],
+    ["an object with name and message", `throw { name: "Custom", message: "m", stack: 7 };`, "Custom: m"],
+    ["an object with an empty message", `throw { name: "Custom", message: "" };`, "Custom: "],
+    ["an object without a message", `throw { code: 1 };`, '{"code":1}'],
+    ["a string", `throw "plain";`, "plain"],
+    ["a number", `throw 0;`, "0"],
+    ["null", `throw null;`, "null"],
+  ])("reports a thrown %s", async (_label, code, expected) => {
+    const { exec } = setup([]);
+    const result = await exec.execute({ code }, makeCtx("call-1"));
+    expect(result.metadata?.error).toBe(true);
+    expect(result.output).toBe(`Script failed\nScript error:\n${expected}`);
+  });
+
+  test("a thrown Error lists only exec.js stack frames under its header", async () => {
+    const { exec } = setup([]);
+    const result = await exec.execute(
+      {
+        code: `const e = new RangeError("r");\ne.stack = "RangeError: r\\n  at foo (exec.js:2:3)\\n  at bar (other.js:1:1)";\nthrow e;`,
+      },
+      makeCtx("call-1"),
+    );
+    expect(result.output).toBe("Script failed\nScript error:\nRangeError: r\n    at foo (exec.js:2:3)");
+  });
+
+  test("syntax error excerpts clip source lines longer than 160 characters", async () => {
+    const { exec } = setup([]);
+    const long = `const s = "${"x".repeat(200)}";`;
+    const result = await exec.execute({ code: `${long}\nlet x = {;` }, makeCtx("call-1"));
+    expect(result.metadata?.error).toBe(true);
+    expect(result.output).toContain(`  1 | ${long.slice(0, 157)}...\n  2 | let x = {;`);
+    expect(result.output).not.toContain("x".repeat(170));
+  });
+});
+
 describe("exec_wait", () => {
   test("without a run scope, holds calls requested while detached and runs them under the next wait", async () => {
     const echo = makeTool("echo", async (args) => ({ output: `echo:${args.value}` }), { supportParallel: true });

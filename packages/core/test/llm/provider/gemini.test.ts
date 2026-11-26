@@ -7,10 +7,52 @@ import {
   classifyGeminiError,
   createGeminiStream,
   extractGeminiWebBlocks,
+  handleGeminiProviderPart,
   resolveGeminiThinkingLevel,
 } from "../../../src/llm/provider/gemini";
 import type { Model, ToolDefinition } from "../../../src/llm/types";
 import { ProviderErrorReason, ProviderErrorType } from "../../../src/llm/types";
+
+type GeminiPart = Parameters<typeof handleGeminiProviderPart>[0];
+type GeminiState = Parameters<typeof handleGeminiProviderPart>[1];
+
+function geminiPart(part: Record<string, unknown>): GeminiPart {
+  return part as unknown as GeminiPart;
+}
+
+describe("Gemini stream provider parts", () => {
+  test("maps provider-executed google_search and url_context calls and ignores other tools", () => {
+    const state: GeminiState = { blocksByKey: new Map(), sourceResults: new Map() };
+    const call = { type: "tool-call", providerExecuted: true, input: { q: "x" } };
+    expect(
+      handleGeminiProviderPart(geminiPart({ ...call, toolCallId: "s1", toolName: "google_search" }), state),
+    ).toEqual([{ type: "provider_tool_use", id: "s1", provider: "gemini", name: "web_search", input: { q: "x" } }]);
+    expect(handleGeminiProviderPart(geminiPart({ ...call, toolCallId: "f1", toolName: "url_context" }), state)).toEqual(
+      [{ type: "provider_tool_use", id: "f1", provider: "gemini", name: "web_fetch", input: { q: "x" } }],
+    );
+    expect(
+      handleGeminiProviderPart(geminiPart({ ...call, toolCallId: "o1", toolName: "code_execution" }), state),
+    ).toEqual([]);
+    expect(
+      handleGeminiProviderPart(
+        geminiPart({ ...call, providerExecuted: false, toolCallId: "s2", toolName: "google_search" }),
+        state,
+      ),
+    ).toEqual([]);
+  });
+
+  test("records url sources with a title only when present", () => {
+    const state: GeminiState = { blocksByKey: new Map(), sourceResults: new Map() };
+    const source = { type: "source", sourceType: "url" };
+    handleGeminiProviderPart(geminiPart({ ...source, id: "a", url: "https://a.example", title: "A" }), state);
+    handleGeminiProviderPart(geminiPart({ ...source, id: "b", url: "https://b.example", title: "" }), state);
+    expect([...state.sourceResults.entries()]).toEqual([
+      ["a", { url: "https://a.example", title: "A" }],
+      ["b", { url: "https://b.example" }],
+    ]);
+    expect(Object.hasOwn(state.sourceResults.get("b") ?? {}, "title")).toBe(false);
+  });
+});
 
 const model: Model = {
   modelId: "gemini-test",
@@ -221,6 +263,21 @@ describe("Gemini web metadata normalization", () => {
 });
 
 describe("Gemini error classification", () => {
+  test("reads status, then code, with statusCode taking precedence", () => {
+    expect(classifyGeminiError(Object.assign(new Error("slow"), { status: 429, code: 503 }))).toMatchObject({
+      errorType: ProviderErrorType.RateLimit,
+      statusCode: 429,
+    });
+    expect(classifyGeminiError(Object.assign(new Error("down"), { code: 503 }))).toMatchObject({
+      errorType: ProviderErrorType.ServerError,
+      statusCode: 503,
+    });
+    expect(classifyGeminiError(Object.assign(new Error("auth"), { statusCode: 401, status: 429 }))).toMatchObject({
+      errorType: ProviderErrorType.Auth,
+      statusCode: 401,
+    });
+  });
+
   test("recognizes AI SDK statusCode errors and context overflow", () => {
     expect(classifyGeminiError(Object.assign(new Error("bad credentials"), { statusCode: 403 }))).toMatchObject({
       errorType: ProviderErrorType.Auth,

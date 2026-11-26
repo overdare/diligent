@@ -11,7 +11,7 @@ import { runRuntimeEvalExecution } from "../../../src/runner/runtime-execution";
 import { removeTemporaryRoot } from "../../../src/runner/runtime-workspace";
 import type { RuntimeEvalExecution, RuntimeToolTrace } from "../../../src/runtime-task";
 import type { EvalProfile } from "../../../src/task";
-import { writeFixture } from "../../../src/tasks/runtime/helpers";
+import { sha256Text, writeFixture } from "../../../src/tasks/runtime/helpers";
 import {
   type LoopContextAdaptationWorld,
   loopContextAdaptationTask,
@@ -122,6 +122,34 @@ describe("loop-context-adaptation", () => {
       passed: false,
       code: "loop_context_adaptation.result",
       dimension: "semantic_goal",
+    });
+  });
+
+  test("names the stale lane only when RESULT.txt holds exactly the initial lane bytes", async () => {
+    const execution = await assembledExecution(DEFAULT_PROFILES[0]!, "direct");
+    const result = execution.workspace.final.entries.find((entry) => entry.path === "RESULT.txt")!;
+    result.sha256 = sha256Text(`${execution.world.initialValue}\n`);
+    expect(loopContextAdaptationTask.evaluate(execution)).toMatchObject({
+      passed: false,
+      code: "loop_context_adaptation.result",
+      message: "RESULT.txt kept the stale lane instead of the updated requirement.",
+      dimension: "semantic_goal",
+    });
+    result.sha256 = sha256Text(execution.world.initialValue);
+    expect(loopContextAdaptationTask.evaluate(execution)).toMatchObject({
+      passed: false,
+      code: "loop_context_adaptation.result",
+      message: "RESULT.txt does not contain exactly the updated lane.",
+    });
+  });
+
+  test("fails the result when the verifier rejects even though RESULT.txt hashes to the expected lane", async () => {
+    const execution = await assembledExecution(DEFAULT_PROFILES[0]!, "direct");
+    execution.verifier!.exitCode = 1;
+    expect(loopContextAdaptationTask.evaluate(execution)).toMatchObject({
+      passed: false,
+      code: "loop_context_adaptation.result",
+      message: "RESULT.txt does not contain exactly the updated lane.",
     });
   });
 

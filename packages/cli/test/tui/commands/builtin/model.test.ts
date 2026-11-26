@@ -204,3 +204,61 @@ describe("modelCommand picker", () => {
     expect(onEffortChanged).not.toHaveBeenCalled();
   });
 });
+
+describe("modelCommand missing API key", () => {
+  it("asks for the provider key by display name and cancels an explicit switch without one", async () => {
+    const config = makeConfig(TEST_ANTHROPIC_MODEL_ID, {
+      hasKeyFor: () => false,
+    } as unknown as AppConfig["providerManager"]);
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const promptTitles: string[] = [];
+    const setModel = mock(async () => {});
+    const ctx = makeContext(config, {
+      displayLines: (l) => lines.push(...l),
+      displayError: (msg) => errors.push(msg),
+      setModel,
+    });
+    ctx.app.prompt = async (options) => {
+      promptTitles.push(options.title);
+      return null;
+    };
+
+    await modelCommand.handler("openai/gpt-6-astra", ctx);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("No API key for OpenAI. Please enter one:");
+    expect(promptTitles).toEqual(["OpenAI API Key"]);
+    expect(errors).toEqual(["Model switch cancelled — no API key provided."]);
+    expect(setModel).not.toHaveBeenCalled();
+    expect(config.model.provider).toBe("anthropic");
+  });
+
+  it("asks for the provider key by display name and cancels a picked switch without one", async () => {
+    const config = makeConfig(TEST_ANTHROPIC_MODEL_ID, {
+      hasKeyFor: () => false,
+    } as unknown as AppConfig["providerManager"]);
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const promptTitles: string[] = [];
+    const setModel = mock(async () => {});
+    const ctx = makeContext(config, {
+      displayLines: (l) => lines.push(...l),
+      displayError: (msg) => errors.push(msg),
+      setModel,
+    });
+    ctx.app.pick = async ({ items }) => items.find((item) => item.value.startsWith("anthropic/"))?.value ?? null;
+    ctx.app.prompt = async (options) => {
+      promptTitles.push(options.title);
+      return null;
+    };
+
+    await modelCommand.handler(undefined, ctx);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("No API key for Anthropic. Please enter one:");
+    expect(promptTitles).toEqual(["Anthropic API Key"]);
+    expect(errors).toEqual(["Model switch cancelled — no API key provided."]);
+    expect(setModel).not.toHaveBeenCalled();
+  });
+});

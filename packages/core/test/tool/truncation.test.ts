@@ -53,6 +53,17 @@ describe("truncation", () => {
       expect(new TextEncoder().encode(result.output).length).toBeLessThanOrEqual(50);
       expect(result.output).toBe("😀".repeat(12));
     });
+
+    test("counts 1-, 2-, 3-, and 4-byte characters when cutting mixed text", () => {
+      const mixed = "aé€😀b"; // 1 + 2 + 3 + 4 + 1 = 11 bytes
+      expect(truncateHead(mixed, 1).output).toBe("a");
+      expect(truncateHead(mixed, 2).output).toBe("a");
+      expect(truncateHead(mixed, 3).output).toBe("aé");
+      expect(truncateHead(mixed, 5).output).toBe("aé");
+      expect(truncateHead(mixed, 6).output).toBe("aé€");
+      expect(truncateHead(mixed, 9).output).toBe("aé€");
+      expect(truncateHead(mixed, 10).output).toBe("aé€😀");
+    });
   });
 
   describe("truncateTail", () => {

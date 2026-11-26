@@ -652,4 +652,54 @@ describe("Anthropic message conversion", () => {
       });
     });
   });
+
+  test("replays Anthropic web search and fetch errors as native error results", async () => {
+    const converted = await convertMessages([
+      makeAssistantMessage({
+        content: [
+          anthropicWebSearchCall("ws_err"),
+          {
+            type: "web_search_result",
+            toolUseId: "ws_err",
+            provider: "anthropic",
+            results: [{ url: "https://ignored.example", encryptedContent: "enc" }],
+            error: { code: "max_uses_exceeded" },
+          },
+          {
+            type: "provider_tool_use",
+            id: "wf_err",
+            provider: "anthropic",
+            name: "web_fetch",
+            input: { url: "https://example.com/blocked" },
+          },
+          {
+            type: "web_fetch_result",
+            toolUseId: "wf_err",
+            provider: "anthropic",
+            url: "https://example.com/blocked",
+            retrievedAt: "2026-04-06T00:00:00Z",
+            error: { code: "url_not_accessible" },
+          },
+        ] as ContentBlock[],
+      }),
+      { role: "user", content: "next", timestamp: 2 },
+    ]);
+
+    expect(converted[0]?.content).toEqual([
+      { type: "server_tool_use", id: "ws_err", name: "web_search", input: { query: "diligent" } },
+      {
+        type: "web_search_tool_result",
+        tool_use_id: "ws_err",
+        caller: { type: "direct" },
+        content: { type: "web_search_tool_result_error", error_code: "max_uses_exceeded" },
+      },
+      { type: "server_tool_use", id: "wf_err", name: "web_fetch", input: { url: "https://example.com/blocked" } },
+      {
+        type: "web_fetch_tool_result",
+        tool_use_id: "wf_err",
+        caller: { type: "direct" },
+        content: { type: "web_fetch_tool_result_error", error_code: "url_not_accessible" },
+      },
+    ]);
+  });
 });

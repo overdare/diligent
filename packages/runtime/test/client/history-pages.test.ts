@@ -125,3 +125,35 @@ test("tool page merging preserves completed render blocks while enriching the in
     render: { inputSummary: "file.ts", outputSummary: "read complete", blocks: [{ type: "text", text: "contents" }] },
   });
 });
+
+test("an earlier-started newer page entry becomes the start while older completion output is kept", () => {
+  const [merged] = mergeHistoryItems([result], [{ ...start, parentToolCallId: undefined }]);
+  expect(merged).toMatchObject({
+    input: { path: "file.ts" },
+    startedAt: 10,
+    timestamp: 20,
+    output: "contents",
+    durationMs: 10,
+  });
+});
+
+test("a newer page start wins when the older entry has no start time", () => {
+  const resultOnly: ToolItem = {
+    ...result,
+    startedAt: undefined,
+    render: { inputSummary: "result summary", blocks: [] },
+  };
+  const restarted: ToolItem = { ...start, startedAt: 15, render: { inputSummary: "start summary", blocks: [] } };
+  const [merged] = mergeHistoryItems([resultOnly], [restarted]);
+  expect(merged).toMatchObject({ input: { path: "file.ts" }, startedAt: 15, output: "contents", timestamp: 20 });
+  expect(merged.type === "toolCall" && merged.render?.inputSummary).toBe("start summary");
+});
+
+test("an older start keeps its position fields when the newer entry starts later and both lack output", () => {
+  const [merged] = mergeHistoryItems(
+    [start],
+    [{ ...start, input: { path: "other.ts" }, startedAt: 30, timestamp: 30 }],
+  );
+  expect(merged).toMatchObject({ input: { path: "file.ts" }, startedAt: 10, timestamp: 30 });
+  expect(merged.type === "toolCall" && merged.output).toBeUndefined();
+});

@@ -705,4 +705,22 @@ describe("native compaction adapters", () => {
       content: [{ type: "text", text: "follow-up" }],
     });
   });
+
+  test("Anthropic adapter throws non-unsupported failures with and without an error body", async () => {
+    const request = {
+      model: ANTHROPIC_MODEL,
+      systemPrompt: [],
+      messages: [{ role: "user" as const, content: "hello", timestamp: 1 }],
+    };
+    globalThis.fetch = mock(
+      async () => new Response("overloaded upstream", { status: 503 }),
+    ) as unknown as typeof fetch;
+    const withBody = await createAnthropicNativeCompaction("sk-ant")(request).catch((error: unknown) => error);
+    expect((withBody as Error).message).toStartWith("Anthropic native compaction failed (503) ");
+    expect((withBody as Error).message).toContain("overloaded upstream");
+
+    globalThis.fetch = mock(async () => new Response("", { status: 500 })) as unknown as typeof fetch;
+    const withoutBody = await createAnthropicNativeCompaction("sk-ant")(request).catch((error: unknown) => error);
+    expect((withoutBody as Error).message).toBe("Anthropic native compaction failed (500)");
+  });
 });

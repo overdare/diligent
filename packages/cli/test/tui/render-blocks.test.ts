@@ -5,6 +5,7 @@ import { TUIRenderer } from "../../src/tui/framework/renderer";
 import type { Terminal } from "../../src/tui/framework/terminal";
 import type { Component } from "../../src/tui/framework/types";
 import { renderToolPayload } from "../../src/tui/render-blocks";
+import { t } from "../../src/tui/theme";
 
 describe("renderToolPayload", () => {
   test("keeps MCP links and unavailable media references visible in the text fallback", () => {
@@ -179,6 +180,31 @@ describe("renderToolPayload", () => {
     expect(lines.some((line) => line.includes("Input"))).toBe(true);
     expect(lines.some((line) => line.includes('{"alpha":1}'))).toBe(true);
     expect(lines.some((line) => line.includes("failed"))).toBe(true);
+  });
+});
+
+describe("renderToolPayload file and diff headers", () => {
+  const strip = (s: string) => s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+  const fileHeader = (offset?: number, limit?: number) =>
+    strip(renderToolPayload({ blocks: [{ type: "file", filePath: "f.ts", content: "x", offset, limit }] })[0] ?? "");
+
+  test("file range label covers offset+limit, offset only, limit only, and neither", () => {
+    expect(fileHeader(3, 2)).toBe("↗ f.ts L3-4");
+    expect(fileHeader(3)).toBe("↗ f.ts from L3");
+    expect(fileHeader(undefined, 5)).toBe("↗ f.ts 5 lines");
+    expect(fileHeader(0, 5)).toBe("↗ f.ts 5 lines");
+    expect(fileHeader(3, 0)).toBe("↗ f.ts from L3");
+    expect(fileHeader()).toBe("↗ f.ts");
+  });
+
+  test("diff action color and moved path per action", () => {
+    const header = (file: Record<string, unknown>) =>
+      renderToolPayload({ blocks: [{ type: "diff", files: [{ filePath: "a.ts", hunks: [], ...file }] }] } as never)[0];
+    expect(header({ action: "Add" })).toContain(`${t.success}[Add]`);
+    expect(header({ action: "Delete" })).toContain(`${t.error}[Delete]`);
+    expect(header({ action: "Move", movedTo: "b.ts" })).toContain(`a.ts -> b.ts ${t.warn}[Move]`);
+    expect(header({ action: "Update" })).toContain(`${t.accent}[Update]`);
+    expect(header({})).toContain(`${t.accent}[Update]`);
   });
 });
 
