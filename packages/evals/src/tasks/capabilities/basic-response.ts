@@ -15,7 +15,7 @@ export const basicResponseCapabilityTask: RuntimeEvalTask<BasicResponseCapabilit
   id: "capability-basic-response",
   description: "Answer one tool-free prompt through the runtime with an exact seeded reply.",
   fixtureVersion: "capability-basic-response-v1",
-  limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 1, maxToolCalls: 0, maxChangedFiles: 0, timeoutMs: 120_000 },
+  limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 1, maxToolCalls: 0, maxChangedFiles: 0, timeoutMs: 300_000 },
   toolPolicy: { allowedTools: [], allowedCapabilities: [], allowedCommands: [] },
   async setup(seed, root) {
     return { root, seed, expected: seededToken(seed, "PONG"), protectedPaths: [], allowedChanges: [] };

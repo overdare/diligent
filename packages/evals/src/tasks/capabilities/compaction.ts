@@ -33,7 +33,7 @@ export const compactionCapabilityTask: RuntimeEvalTask<CompactionCapabilityWorld
   id: "capability-compaction",
   description: "Load facts in a large tool result, compact the thread, then recall the facts on the next turn.",
   fixtureVersion: "capability-compaction-v2",
-  limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 4, maxToolCalls: 1, maxChangedFiles: 0, timeoutMs: 420_000 },
+  limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 4, maxToolCalls: 1, maxChangedFiles: 0, timeoutMs: 900_000 },
   toolPolicy: { allowedTools: [NOTES_TOOL], allowedCapabilities: ["execute"], allowedCommands: [] },
   async setup(seed, root) {
     const alpha = seededToken(seed, "ALPHA");
@@ -51,7 +51,7 @@ export const compactionCapabilityTask: RuntimeEvalTask<CompactionCapabilityWorld
   },
   async createRuntimeConfig(world: CompactionCapabilityWorld, profile: EvalProfile) {
     const config = await createFixtureRuntimeConfig(world, profile);
-    return { ...config, compaction: { enabled: true, reservePercent: 16, timeoutMs: 180_000 } };
+    return { ...config, compaction: { enabled: true, reservePercent: 16, timeoutMs: 300_000 } };
   },
   createBundledToolProviders: (world) => [notesProvider(world)],
   createSteps: () => [

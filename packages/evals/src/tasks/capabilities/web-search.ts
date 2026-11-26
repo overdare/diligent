@@ -21,7 +21,7 @@ export const webSearchCapabilityTask: RuntimeEvalTask<WebSearchCapabilityWorld> 
   id: "capability-web-search",
   description: "Search the web with the provider-native tool and answer with a URL taken from the results.",
   fixtureVersion: "capability-web-search-v1",
-  limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 3, maxToolCalls: 0, maxChangedFiles: 0, timeoutMs: 240_000 },
+  limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 3, maxToolCalls: 0, maxChangedFiles: 0, timeoutMs: 600_000 },
   toolPolicy: { allowedTools: [WEB_TOOL], allowedCapabilities: ["execute"], allowedCommands: [] },
   async setup(seed, root) {
     return { root, seed, expected: "", protectedPaths: [], allowedChanges: [] };

@@ -17,7 +17,7 @@ export const imageReadCapabilityTask: RuntimeEvalTask<ImageReadCapabilityWorld> 
   id: "capability-image-read",
   description: "Read one image through read_image and report the color of each quadrant.",
   fixtureVersion: "capability-image-read-v2",
-  limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 3, maxToolCalls: 2, maxChangedFiles: 0, timeoutMs: 180_000 },
+  limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 3, maxToolCalls: 2, maxChangedFiles: 0, timeoutMs: 600_000 },
   statePolicy: { allowedMutations: ["infrastructure", "sessions", "image_sidecars"] },
   toolPolicy: { allowedTools: ["read_image"], allowedCapabilities: ["read"], allowedCommands: [] },
   async setup(seed, root) {

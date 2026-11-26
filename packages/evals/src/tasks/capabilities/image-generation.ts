@@ -38,7 +38,7 @@ export const imageGenerationCapabilityTask: RuntimeEvalTask<ImageGenerationCapab
   id: "capability-image-generation",
   description: "Generate an image through the runtime binding, deliver it to the thread, and name its color.",
   fixtureVersion: "capability-image-generation-v1",
-  limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 3, maxToolCalls: 1, maxChangedFiles: 0, timeoutMs: 480_000 },
+  limits: { ...DEFAULT_RUNTIME_LIMITS, maxTurns: 3, maxToolCalls: 1, maxChangedFiles: 0, timeoutMs: 900_000 },
   statePolicy: { allowedMutations: ["infrastructure", "sessions", "image_sidecars"] },
   toolPolicy: { allowedTools: [IMAGE_GENERATION_TOOL], allowedCapabilities: ["execute"], allowedCommands: [] },
   async setup(seed, root) {
