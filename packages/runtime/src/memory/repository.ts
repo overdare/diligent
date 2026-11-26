@@ -86,14 +86,19 @@ export function upsertMemory(memoryPath: string, input: MemoryUpsertInput): Prom
     const previous = existing?.entry;
     const index = await readMemoryIndex(memoryPath);
     const sessionId = previous?.sessionId ?? input.sessionId;
+    const name = input.name?.trim() || readIndexTitles(index).get(id) || previous?.name || id;
+    let description = input.description?.trim();
+    if (!description) {
+      if (previous && normalizeContent(previous.content) === normalizeContent(content)) {
+        description = previous.description;
+      } else {
+        description = summarizeMemoryContent(content);
+      }
+    }
     const entry: MemoryEntry = {
       id,
-      name: input.name?.trim() || readIndexTitles(index).get(id) || previous?.name || id,
-      description:
-        input.description?.trim() ||
-        (previous && normalizeContent(previous.content) === normalizeContent(content)
-          ? previous.description
-          : summarizeMemoryContent(content)),
+      name,
+      description,
       type: input.type,
       content,
       modified: new Date().toISOString(),
@@ -148,6 +153,7 @@ export function searchMemory(entries: MemoryEntry[], { id, idPrefix, query }: Me
     .map(({ entry }) => entry);
 }
 
+// biome-ignore lint/plugin/no-tiny-function: dedupe and description reuse must compare identically normalized content
 function normalizeContent(content: string): string {
   return content.normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim();
 }

@@ -15,7 +15,7 @@ import { createApplyPatchTool } from "./apply-patch";
 import { createBashTools } from "./bash";
 import type { BundledToolProvider, TextGenerationFn } from "./bundled-provider";
 import type { RuntimeToolHost } from "./capabilities";
-import type { PluginLoadError, PluginStateEntry, ToolStateEntry } from "./catalog";
+import type { PluginLoadError, PluginStateEntry, ToolCatalogResult, ToolStateEntry } from "./catalog";
 import { buildToolCatalog } from "./catalog";
 import { createEditTool, createMultiEditTool } from "./edit";
 import { createGlobTool } from "./glob";
@@ -144,49 +144,50 @@ export async function buildDefaultTools(options: BuildDefaultToolsOptions): Prom
       }),
     );
   }
-  const catalog = parentToolOverride
-    ? {
-        tools: [...parentToolOverride],
-        state: [],
-        plugins: [],
-        pluginErrors: [],
-      }
-    : await (async () => {
-        const webEnabled = toolsConfig?.web_action !== false;
+  let catalog: ToolCatalogResult;
+  if (parentToolOverride) {
+    catalog = {
+      tools: [...parentToolOverride],
+      state: [],
+      plugins: [],
+      pluginErrors: [],
+    };
+  } else {
+    const webEnabled = toolsConfig?.web_action !== false;
 
-        const builtinTools: Tool[] = [
-          ...createBashTools(cwd, host, options.shellProcesses ?? new ShellProcessRegistry()),
-          createSkillTool(skills),
-          createReadTool(),
-          createReadImageTool(),
-          ...createProviderEditTools(provider, cwd, host),
-          createLsTool(),
-          createGlobTool(cwd),
-          createGrepTool(cwd),
-          createPlanTool(),
-          createRequestUserInputTool(host),
-          ...(options.goalHost ? createGoalTools(options.goalHost) : []),
-        ];
+    const builtinTools: Tool[] = [
+      ...createBashTools(cwd, host, options.shellProcesses ?? new ShellProcessRegistry()),
+      createSkillTool(skills),
+      createReadTool(),
+      createReadImageTool(),
+      ...createProviderEditTools(provider, cwd, host),
+      createLsTool(),
+      createGlobTool(cwd),
+      createGrepTool(cwd),
+      createPlanTool(),
+      createRequestUserInputTool(host),
+      ...(options.goalHost ? createGoalTools(options.goalHost) : []),
+    ];
 
-        if (webEnabled) {
-          builtinTools.push(createWebTool());
-        }
+    if (webEnabled) {
+      builtinTools.push(createWebTool());
+    }
 
-        if (paths) {
-          builtinTools.push(createSearchMemoryTool(paths.memory));
-          builtinTools.push(createUpdateMemoryTool(paths.memory));
-        }
+    if (paths) {
+      builtinTools.push(createSearchMemoryTool(paths.memory));
+      builtinTools.push(createUpdateMemoryTool(paths.memory));
+    }
 
-        return buildToolCatalog(builtinTools, toolsConfig, cwd, host, {
-          bundledProviders: providers,
-          modelProvider: provider,
-          generateImage: options.generateImage,
-          generateText: options.generateText,
-          sessionId: options.sessionId,
-          disabledToolNames,
-          pluginDiscovery,
-        });
-      })();
+    catalog = await buildToolCatalog(builtinTools, toolsConfig, cwd, host, {
+      bundledProviders: providers,
+      modelProvider: provider,
+      generateImage: options.generateImage,
+      generateText: options.generateText,
+      sessionId: options.sessionId,
+      disabledToolNames,
+      pluginDiscovery,
+    });
+  }
 
   // 2. Add collab tools (always enabled, not user-configurable)
   if (enableCollabTools && paths && collabDeps) {

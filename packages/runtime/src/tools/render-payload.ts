@@ -228,7 +228,7 @@ export function createGlobRenderPayload(
   });
 
   const blocks: ToolRenderPayload["blocks"] = [
-    { type: "summary", text: buildSearchHeader(pattern, displaySearchPath), tone: "info" },
+    { type: "summary", text: buildSearchSummary(pattern, displaySearchPath), tone: "info" },
     { type: "list", title: buildFoundTitle(items.length, "file"), items },
   ];
   if (queryItems.length > 0) blocks.push({ type: "key_value", title: "Query", items: queryItems });
@@ -262,7 +262,7 @@ export function createGrepRenderPayload(
   });
 
   const blocks: ToolRenderPayload["blocks"] = [
-    { type: "summary", text: buildSearchHeader(pattern, displaySearchPath), tone: "info" },
+    { type: "summary", text: buildSearchSummary(pattern, displaySearchPath), tone: "info" },
     { type: "list", title: buildFoundTitle(items.length, "match"), items },
   ];
   if (queryItems.length > 0) blocks.push({ type: "key_value", title: "Query", items: queryItems });
@@ -549,10 +549,6 @@ function buildSearchSummary(pattern?: string, path?: string): string {
   return `Search(${parts.join(", ")})`;
 }
 
-function buildSearchHeader(pattern?: string, path?: string): string {
-  return buildSearchSummary(pattern, path);
-}
-
 function buildFoundTitle(count: number, singularNoun: string): string {
   const noun = pluralizeNoun(singularNoun, count);
   return `└ Found ${count} ${noun}`;
@@ -717,6 +713,7 @@ function trimTrailingSlash(pathValue: string): string {
   return pathValue.endsWith("/") ? pathValue.slice(0, -1) : pathValue;
 }
 
+// biome-ignore lint/plugin/no-tiny-function: six renderers must normalize paths identically
 function normalizePath(pathValue: string): string {
   return pathValue.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
 }

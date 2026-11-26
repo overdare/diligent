@@ -125,7 +125,8 @@ async function verifyIntentSplit(world: MemoryIntentSplitWorld, signal: AbortSig
   const validEntry =
     entries.length === 1 &&
     entry !== undefined &&
-    sameKeys(entry, ["content", "description", "id", "modified", "name", "type"]) &&
+    JSON.stringify(Object.keys(entry).sort()) ===
+      JSON.stringify(["content", "description", "id", "modified", "name", "type"]) &&
     entry.id === world.memoryId &&
     (entry.type === "user" || entry.type === "feedback") &&
     entry.content.includes(world.durableValue) &&
@@ -141,10 +142,6 @@ async function verifyIntentSplit(world: MemoryIntentSplitWorld, signal: AbortSig
     valid ? JSON.stringify({ entry, outputHash: world.expectedHash }) : JSON.stringify({ entries, output }),
     "Memory intent split did not match the exact final store and project output.",
   );
-}
-
-function sameKeys(value: object, expected: string[]): boolean {
-  return JSON.stringify(Object.keys(value).sort()) === JSON.stringify(expected);
 }
 
 function verifierResult(

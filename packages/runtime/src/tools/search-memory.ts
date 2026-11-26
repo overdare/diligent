@@ -51,15 +51,17 @@ export function createSearchMemoryTool(memoryPath: string): Tool<typeof searchMe
         query: args.query,
       });
 
-      const output =
-        matches.length === 0
-          ? "No memory entries found"
-          : matches
-              .map((entry) => {
-                const preview = clipInlineText(entry.content.replace(/\s+/g, " ").trim(), CONTENT_PREVIEW_LENGTH);
-                return `${entry.id}\t[${entry.type}] ${entry.description}\n  ${preview}`;
-              })
-              .join("\n");
+      let output: string;
+      if (matches.length === 0) {
+        output = "No memory entries found";
+      } else {
+        output = matches
+          .map((entry) => {
+            const preview = clipInlineText(entry.content.replace(/\s+/g, " ").trim(), CONTENT_PREVIEW_LENGTH);
+            return `${entry.id}\t[${entry.type}] ${entry.description}\n  ${preview}`;
+          })
+          .join("\n");
+      }
 
       return {
         output,

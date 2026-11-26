@@ -89,10 +89,10 @@ const RENDER_STRATEGIES: Map<string, RenderStrategy> = new Map([
     "update_memory",
     {
       startInputSummary: (parsedInput) => {
-        const contentPreview =
-          typeof parsedInput?.content === "string"
-            ? clipInlineText(parsedInput.content.replace(/\s+/g, " ").trim(), 140)
-            : "";
+        let contentPreview: string = "";
+        if (typeof parsedInput?.content === "string") {
+          contentPreview = clipInlineText(parsedInput.content.replace(/\s+/g, " ").trim(), 140);
+        }
         return buildMemoryInputSummary(parsedInput ?? {}, contentPreview);
       },
     },
@@ -242,9 +242,12 @@ export function createToolStartRenderPayload(toolName: string, input: unknown): 
   const parsedInput = readRecordInput(input);
   const normalizedToolName = toolName.trim().toLowerCase();
   const strategy = RENDER_STRATEGIES.get(normalizedToolName);
-  const inputSummary = strategy?.startInputSummary
-    ? strategy.startInputSummary(parsedInput)
-    : summarizeRenderText(stringifyInputPreview(input), 120);
+  let inputSummary: string | undefined;
+  if (strategy?.startInputSummary) {
+    inputSummary = strategy.startInputSummary(parsedInput);
+  } else {
+    inputSummary = summarizeRenderText(stringifyInputPreview(input), 120);
+  }
 
   if (!inputSummary) return undefined;
   return {
@@ -285,9 +288,10 @@ export function createToolEndRenderPayloadFromInput(args: {
  */
 function ensureErrorBlocks(payload: ToolRenderPayload, output: string): ToolRenderPayload {
   const hasErrorText = payload.blocks.some((block) => block.type === "text" && block.isError === true);
-  const blocks = hasErrorText
-    ? payload.blocks
-    : [...payload.blocks, { type: "text" as const, title: "Error", text: output, isError: true as const }];
+  let blocks = payload.blocks;
+  if (!hasErrorText) {
+    blocks = [...payload.blocks, { type: "text" as const, title: "Error", text: output, isError: true as const }];
+  }
   return { ...payload, blocks };
 }
 

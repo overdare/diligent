@@ -49,6 +49,7 @@ export function buildMemorySection(
   return `${header}${included.join("\n")}${note}\n`;
 }
 
+// biome-ignore lint/plugin/no-tiny-function: the initial and the recomputed note must use identical text
 function continuationNote(omittedLines: number): string {
   return omittedLines > 0 ? `\n\n(MEMORY.md continues; ${omittedLines} more lines are not shown.)` : "";
 }

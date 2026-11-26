@@ -139,7 +139,7 @@ export function withMemoryLock<T>(memoryPath: string, run: () => Promise<T>): Pr
 
 export function formatIndexLine(entry: Pick<MemoryEntry, "id" | "name" | "description">): string {
   const title = entry.name.replace(/[[\]\\]/g, (char) => `\\${char}`);
-  const description = toSingleLine(entry.description);
+  const description = entry.description.replace(/\s+/g, " ").trim();
   return `- [${title}](${entry.id}${MEMORY_FILE_EXTENSION})${description ? ` — ${description}` : ""}`;
 }
 
@@ -173,7 +173,7 @@ export function summarizeMemoryContent(content: string): string {
       .split("\n")
       .map((line) => line.replace(/^\s*(?:#+|[-*+]|\d+\.)\s+/, "").trim())
       .find(Boolean) ?? "";
-  const line = toSingleLine(firstLine);
+  const line = firstLine.replace(/\s+/g, " ").trim();
   return line.length > MAX_DESCRIPTION_LENGTH ? `${line.slice(0, MAX_DESCRIPTION_LENGTH - 1).trimEnd()}…` : line;
 }
 
@@ -217,6 +217,7 @@ function parseMemoryFile(id: string, text: string, path: string, mtime: Date): M
   };
 }
 
+// biome-ignore lint/plugin/no-tiny-function: read, write, and delete must resolve the same file layout
 function memoryFilePath(memoryPath: string, id: string): string {
   return join(memoryPath, `${id}${MEMORY_FILE_EXTENSION}`);
 }
@@ -226,16 +227,18 @@ function indexLinkPattern(id: string): RegExp {
   return new RegExp(`\\]\\((?:\\./)?${escaped}\\)`);
 }
 
-function toSingleLine(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
-}
-
+// biome-ignore lint/plugin/no-tiny-function: three frontmatter fields share one coercion rule
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function asTimestamp(value: unknown): string | undefined {
-  const time = value instanceof Date ? value.getTime() : typeof value === "string" ? Date.parse(value) : Number.NaN;
+  let time: number;
+  if (value instanceof Date) {
+    time = value.getTime();
+  } else {
+    time = typeof value === "string" ? Date.parse(value) : Number.NaN;
+  }
   return Number.isFinite(time) ? new Date(time).toISOString() : undefined;
 }
 
