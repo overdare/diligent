@@ -68,8 +68,10 @@ export const GEMINI_MODELS = defineProviderModels("gemini", [
     display: "Gemini 3.8 Flash",
     contextWindow: 1_048_576,
     maxOutputTokens: 65_536,
-    inputCostPer1M: 1.5,
-    outputCostPer1M: 7.5,
+    // Promotional Standard rates through December 31, 2026; storage is not included.
+    inputCostPer1M: 0.75,
+    outputCostPer1M: 3.75,
+    cacheReadCostPer1M: 0.075,
     supportsThinking: true,
     supportedEfforts: ["low", "medium", "high"],
     supportsVision: true,

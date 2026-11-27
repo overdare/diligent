@@ -51,6 +51,28 @@ test("prices Astra 30-minute cache writes at the OpenAI Standard short-context r
   }
 });
 
+for (const modelId of ["gemini-3.8-flash", "gemini-3.7-flash"]) {
+  test(`prices ${modelId} at promotional Standard paid rates`, () => {
+    const model = resolveModel({ provider: "gemini", modelId });
+    expect(
+      calculateUsageCost(model, {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 80_000,
+        cacheWriteTokens: 0,
+      }),
+    ).toBeCloseTo(0.006, 10);
+    expect(
+      calculateUsageCost(model, {
+        inputTokens: 20_000,
+        outputTokens: 10_000,
+        cacheReadTokens: 80_000,
+        cacheWriteTokens: 0,
+      }),
+    ).toBeCloseTo(0.0585, 10);
+  });
+}
+
 for (const modelId of ["gemini-3.5-flash-lite", "gemini-flash-lite"]) {
   test(`prices ${modelId} cached input at the documented Standard paid rate`, () => {
     const model = resolveModel({ provider: "gemini", modelId });
